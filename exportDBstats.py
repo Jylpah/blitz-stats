@@ -182,17 +182,6 @@ async def qWGtankStats(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDataba
             bu.debug('[' + str(workerID) + '] Start: ' + str(timeA) + ' End: ' + str(timeB))
 
             async with aiofiles.open(fn, 'w', encoding="utf8") as fp:
-                # id_step = int(5e7)
-                # for id in range(0, int(4e9), id_step):
-                    # for tank_id in tanks:
-                #         pipeline = [{'$match': {
-                #             '$and': [{'last_battle_time': {'$lte': timeB}}, {'last_battle_time': {'$gt': timeA}},
-                #                     {'account_id': {'$lte': id + id_step}}, {'account_id': {'$gt': id}}, {'tank_id': tank_id } ]}},
-                #                     {'$sort': {'last_battle_time': -1}},
-                #                     {'$group': { '_id': 'account_id',
-                #                                 'doc': {'$first': '$$ROOT'}}},
-                #                     {'$replaceRoot': {'newRoot': '$doc'}}, {'$project': {'_id':False}} ]
-
                 for tank_id in tanks:
                     pipeline = [ {'$match': { '$and': [{'last_battle_time': {'$lte': timeB}}, {'last_battle_time': {'$gt': timeA}}, {'tank_id': tank_id } ] }},
                                 {'$sort': {'last_battle_time': -1}},
@@ -270,19 +259,21 @@ async def qBSplayerStats(workerID: int, db: motor.motor_asyncio.AsyncIOMotorData
     return None
 
 
+async def getDBtanks(db: motor.motor_asyncio.AsyncIOMotorDatabase):
+    """Get tank_ids of tanks in the DB"""
+    dbc = db[DB_C_WG_TANK_STATS]
+    tanks = await dbc.distinct('tank_id')
+        
+    return tanks
+
+
 async def getDBtanksTier(db: motor.motor_asyncio.AsyncIOMotorDatabase, tier: int):
     """Get tank_ids of tanks in a particular tier"""
     dbc = db[DB_C_TANKS]
     tanks = list()
     
     if (tier == None):
-        cursor = dbc.find({}, {'_id': 1})
-        async for tank in cursor:
-            try:
-                tanks.append(tank['_id'])
-            except Exception as err:
-                bu.error('Unexpected error: ' +
-                         str(type(err)) + ' : ' + str(err))
+        tanks = await getDBtanks(db)
         
     elif (tier <= 10) and (tier > 0):
         cursor = dbc.find({'tier': tier}, {'_id': 1})
