@@ -1,0 +1,3792 @@
+{
+    "status": "ok",
+    "meta": {
+        "count": 424
+    },
+    "data": {
+        "1": {
+            "tank_id": 1,
+            "nation": "ussr",
+            "tier": 5,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "T-34"
+        },
+        "17": {
+            "tank_id": 17,
+            "nation": "germany",
+            "tier": 5,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Pz.Kpfw. IV Ausf. G"
+        },
+        "33": {
+            "tank_id": 33,
+            "nation": "usa",
+            "tier": 5,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "T14"
+        },
+        "49": {
+            "tank_id": 49,
+            "nation": "china",
+            "tier": 8,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Type 59"
+        },
+        "81": {
+            "tank_id": 81,
+            "nation": "uk",
+            "tier": 1,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Vickers Medium Mk. I"
+        },
+        "113": {
+            "tank_id": 113,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "Vindicator Ultramarines"
+        },
+        "257": {
+            "tank_id": 257,
+            "nation": "ussr",
+            "tier": 5,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "SU-85"
+        },
+        "289": {
+            "tank_id": 289,
+            "nation": "usa",
+            "tier": 2,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "M3 Stuart"
+        },
+        "321": {
+            "tank_id": 321,
+            "nation": "france",
+            "tier": 3,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "D2"
+        },
+        "337": {
+            "tank_id": 337,
+            "nation": "uk",
+            "tier": 2,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Vickers Medium Mk. II"
+        },
+        "353": {
+            "tank_id": 353,
+            "nation": "japan",
+            "tier": 2,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Chi-Ni"
+        },
+        "513": {
+            "tank_id": 513,
+            "nation": "ussr",
+            "tier": 7,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "IS"
+        },
+        "529": {
+            "tank_id": 529,
+            "nation": "germany",
+            "tier": 7,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "Tiger I"
+        },
+        "545": {
+            "tank_id": 545,
+            "nation": "usa",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "T1 Cunningham"
+        },
+        "577": {
+            "tank_id": 577,
+            "nation": "france",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "Renault FT"
+        },
+        "593": {
+            "tank_id": 593,
+            "nation": "uk",
+            "tier": 6,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Sherman Firefly"
+        },
+        "609": {
+            "tank_id": 609,
+            "nation": "japan",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "Renault Otsu"
+        },
+        "625": {
+            "tank_id": 625,
+            "nation": "other",
+            "tier": 6,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Stridsvagn 74A2"
+        },
+        "769": {
+            "tank_id": 769,
+            "nation": "ussr",
+            "tier": 3,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "BT-7"
+        },
+        "785": {
+            "tank_id": 785,
+            "nation": "germany",
+            "tier": 2,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "Pz.Kpfw. 35 (t)"
+        },
+        "801": {
+            "tank_id": 801,
+            "nation": "usa",
+            "tier": 6,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "M6"
+        },
+        "817": {
+            "tank_id": 817,
+            "nation": "china",
+            "tier": 8,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "WZ-111"
+        },
+        "849": {
+            "tank_id": 849,
+            "nation": "uk",
+            "tier": 4,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "Matilda"
+        },
+        "865": {
+            "tank_id": 865,
+            "nation": "japan",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "Type 95 Ha-Go"
+        },
+        "881": {
+            "tank_id": 881,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Edelweiss"
+        },
+        "1025": {
+            "tank_id": 1025,
+            "nation": "ussr",
+            "tier": 2,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "BT-2"
+        },
+        "1041": {
+            "tank_id": 1041,
+            "nation": "germany",
+            "tier": 5,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "StuG III Ausf. G"
+        },
+        "1057": {
+            "tank_id": 1057,
+            "nation": "usa",
+            "tier": 5,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "M4 Sherman"
+        },
+        "1073": {
+            "tank_id": 1073,
+            "nation": "china",
+            "tier": 7,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "T-34-1"
+        },
+        "1089": {
+            "tank_id": 1089,
+            "nation": "france",
+            "tier": 4,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "B1"
+        },
+        "1105": {
+            "tank_id": 1105,
+            "nation": "uk",
+            "tier": 6,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Cromwell"
+        },
+        "1121": {
+            "tank_id": 1121,
+            "nation": "japan",
+            "tier": 7,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Type 5 Chi-Ri"
+        },
+        "1137": {
+            "tank_id": 1137,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Predator Ultramarines"
+        },
+        "1297": {
+            "tank_id": 1297,
+            "nation": "germany",
+            "tier": 7,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Panther I"
+        },
+        "1313": {
+            "tank_id": 1313,
+            "nation": "usa",
+            "tier": 6,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "M4A3E8 Sherman"
+        },
+        "1329": {
+            "tank_id": 1329,
+            "nation": "china",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "Renault NC-31"
+        },
+        "1361": {
+            "tank_id": 1361,
+            "nation": "uk",
+            "tier": 6,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Churchill Mk. VI"
+        },
+        "1377": {
+            "tank_id": 1377,
+            "nation": "japan",
+            "tier": 5,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Type 3 Chi-Nu"
+        },
+        "1393": {
+            "tank_id": 1393,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Nameless"
+        },
+        "1537": {
+            "tank_id": 1537,
+            "nation": "ussr",
+            "tier": 4,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "T-28 mod. 1940"
+        },
+        "1553": {
+            "tank_id": 1553,
+            "nation": "germany",
+            "tier": 6,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "Jagdpanzer IV"
+        },
+        "1569": {
+            "tank_id": 1569,
+            "nation": "usa",
+            "tier": 7,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "T20"
+        },
+        "1585": {
+            "tank_id": 1585,
+            "nation": "china",
+            "tier": 8,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "T-34-2"
+        },
+        "1601": {
+            "tank_id": 1601,
+            "nation": "france",
+            "tier": 2,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "D1"
+        },
+        "1617": {
+            "tank_id": 1617,
+            "nation": "uk",
+            "tier": 5,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Sherman V"
+        },
+        "1633": {
+            "tank_id": 1633,
+            "nation": "japan",
+            "tier": 4,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Type 1 Chi-He"
+        },
+        "1649": {
+            "tank_id": 1649,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "Helsing H0"
+        },
+        "1809": {
+            "tank_id": 1809,
+            "nation": "germany",
+            "tier": 4,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "Hetzer"
+        },
+        "1825": {
+            "tank_id": 1825,
+            "nation": "usa",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "M2 Light Tank"
+        },
+        "1841": {
+            "tank_id": 1841,
+            "nation": "china",
+            "tier": 9,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "WZ-120"
+        },
+        "1857": {
+            "tank_id": 1857,
+            "nation": "france",
+            "tier": 9,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "Bat.-Châtillon 25 t AP"
+        },
+        "1889": {
+            "tank_id": 1889,
+            "nation": "japan",
+            "tier": 6,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Type 4 Chi-To"
+        },
+        "1905": {
+            "tank_id": 1905,
+            "nation": "other",
+            "tier": 8,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "O-47"
+        },
+        "2049": {
+            "tank_id": 2049,
+            "nation": "ussr",
+            "tier": 4,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "A-20"
+        },
+        "2065": {
+            "tank_id": 2065,
+            "nation": "germany",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "Pz.Kpfw. II"
+        },
+        "2097": {
+            "tank_id": 2097,
+            "nation": "china",
+            "tier": 9,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "WZ-111 model 1-4"
+        },
+        "2129": {
+            "tank_id": 2129,
+            "nation": "uk",
+            "tier": 5,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "Crusader"
+        },
+        "2145": {
+            "tank_id": 2145,
+            "nation": "japan",
+            "tier": 3,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Type 97 Chi-Ha"
+        },
+        "2161": {
+            "tank_id": 2161,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "WZ 135G FT Blaze"
+        },
+        "2305": {
+            "tank_id": 2305,
+            "nation": "ussr",
+            "tier": 7,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "SU-152"
+        },
+        "2321": {
+            "tank_id": 2321,
+            "nation": "germany",
+            "tier": 6,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "VK 36.01 (H)"
+        },
+        "2353": {
+            "tank_id": 2353,
+            "nation": "china",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "Vickers Mk. E Type B"
+        },
+        "2369": {
+            "tank_id": 2369,
+            "nation": "france",
+            "tier": 3,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "FCM 36 Pak 40"
+        },
+        "2385": {
+            "tank_id": 2385,
+            "nation": "uk",
+            "tier": 3,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Vickers Medium Mk. III"
+        },
+        "2401": {
+            "tank_id": 2401,
+            "nation": "japan",
+            "tier": 3,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "Type 98 Ke-Ni"
+        },
+        "2561": {
+            "tank_id": 2561,
+            "nation": "ussr",
+            "tier": 6,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "T-34-85"
+        },
+        "2577": {
+            "tank_id": 2577,
+            "nation": "germany",
+            "tier": 5,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "VK 30.01 (H)"
+        },
+        "2593": {
+            "tank_id": 2593,
+            "nation": "usa",
+            "tier": 9,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "T30"
+        },
+        "2609": {
+            "tank_id": 2609,
+            "nation": "china",
+            "tier": 6,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "Type 64"
+        },
+        "2625": {
+            "tank_id": 2625,
+            "nation": "france",
+            "tier": 6,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "ARL 44"
+        },
+        "2657": {
+            "tank_id": 2657,
+            "nation": "japan",
+            "tier": 8,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "STA-1"
+        },
+        "2817": {
+            "tank_id": 2817,
+            "nation": "ussr",
+            "tier": 6,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "KV-1S"
+        },
+        "2849": {
+            "tank_id": 2849,
+            "nation": "usa",
+            "tier": 8,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "T34"
+        },
+        "2865": {
+            "tank_id": 2865,
+            "nation": "china",
+            "tier": 8,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "WZ-110"
+        },
+        "2881": {
+            "tank_id": 2881,
+            "nation": "france",
+            "tier": 4,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "AMX 40"
+        },
+        "2897": {
+            "tank_id": 2897,
+            "nation": "uk",
+            "tier": 5,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "Churchill I"
+        },
+        "2913": {
+            "tank_id": 2913,
+            "nation": "japan",
+            "tier": 4,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "Type 5 Ke-Ho"
+        },
+        "3073": {
+            "tank_id": 3073,
+            "nation": "ussr",
+            "tier": 3,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "T-46"
+        },
+        "3089": {
+            "tank_id": 3089,
+            "nation": "germany",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "Leichttraktor"
+        },
+        "3105": {
+            "tank_id": 3105,
+            "nation": "usa",
+            "tier": 4,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "M3 Lee"
+        },
+        "3121": {
+            "tank_id": 3121,
+            "nation": "china",
+            "tier": 4,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "M5A1 Stuart"
+        },
+        "3137": {
+            "tank_id": 3137,
+            "nation": "france",
+            "tier": 8,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "AMX 50 100"
+        },
+        "3153": {
+            "tank_id": 3153,
+            "nation": "uk",
+            "tier": 7,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "Black Prince"
+        },
+        "3329": {
+            "tank_id": 3329,
+            "nation": "ussr",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "MS-1"
+        },
+        "3345": {
+            "tank_id": 3345,
+            "nation": "germany",
+            "tier": 3,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "Pz.Kpfw. 38 (t)"
+        },
+        "3361": {
+            "tank_id": 3361,
+            "nation": "usa",
+            "tier": 5,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "T1 Heavy Tank"
+        },
+        "3425": {
+            "tank_id": 3425,
+            "nation": "japan",
+            "tier": 9,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Type 61"
+        },
+        "3585": {
+            "tank_id": 3585,
+            "nation": "ussr",
+            "tier": 6,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "SU-100"
+        },
+        "3601": {
+            "tank_id": 3601,
+            "nation": "germany",
+            "tier": 2,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "Panzerjäger I"
+        },
+        "3633": {
+            "tank_id": 3633,
+            "nation": "china",
+            "tier": 7,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "IS-2"
+        },
+        "3649": {
+            "tank_id": 3649,
+            "nation": "france",
+            "tier": 10,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "Bat.-Châtillon 25 t"
+        },
+        "3681": {
+            "tank_id": 3681,
+            "nation": "japan",
+            "tier": 10,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "STB-1"
+        },
+        "3697": {
+            "tank_id": 3697,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Lupus"
+        },
+        "3857": {
+            "tank_id": 3857,
+            "nation": "germany",
+            "tier": 7,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "Jagdpanther"
+        },
+        "3873": {
+            "tank_id": 3873,
+            "nation": "usa",
+            "tier": 7,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "T29"
+        },
+        "3905": {
+            "tank_id": 3905,
+            "nation": "france",
+            "tier": 9,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "AMX 50 120"
+        },
+        "3921": {
+            "tank_id": 3921,
+            "nation": "uk",
+            "tier": 8,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "Caernarvon"
+        },
+        "3953": {
+            "tank_id": 3953,
+            "nation": "other",
+            "tier": 9,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "T 55A"
+        },
+        "4113": {
+            "tank_id": 4113,
+            "nation": "germany",
+            "tier": 7,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "VK 30.02 (D)"
+        },
+        "4145": {
+            "tank_id": 4145,
+            "nation": "china",
+            "tier": 10,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "WZ-121"
+        },
+        "4209": {
+            "tank_id": 4209,
+            "nation": "other",
+            "tier": 1,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "WarDuck"
+        },
+        "4353": {
+            "tank_id": 4353,
+            "nation": "ussr",
+            "tier": 8,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "T-44"
+        },
+        "4369": {
+            "tank_id": 4369,
+            "nation": "germany",
+            "tier": 3,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Pz.Kpfw. III"
+        },
+        "4385": {
+            "tank_id": 4385,
+            "nation": "usa",
+            "tier": 8,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "T32"
+        },
+        "4401": {
+            "tank_id": 4401,
+            "nation": "china",
+            "tier": 3,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Type 2597 Chi-Ha"
+        },
+        "4433": {
+            "tank_id": 4433,
+            "nation": "uk",
+            "tier": 9,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "Conqueror"
+        },
+        "4465": {
+            "tank_id": 4465,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Hafen"
+        },
+        "4609": {
+            "tank_id": 4609,
+            "nation": "ussr",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "T-26"
+        },
+        "4657": {
+            "tank_id": 4657,
+            "nation": "china",
+            "tier": 5,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Type T-34"
+        },
+        "4689": {
+            "tank_id": 4689,
+            "nation": "uk",
+            "tier": 6,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "Churchill VII"
+        },
+        "4721": {
+            "tank_id": 4721,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Gravedigger"
+        },
+        "4881": {
+            "tank_id": 4881,
+            "nation": "germany",
+            "tier": 3,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "Pz.Kpfw. III Ausf. A"
+        },
+        "4897": {
+            "tank_id": 4897,
+            "nation": "usa",
+            "tier": 3,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "M2 Medium Tank"
+        },
+        "4929": {
+            "tank_id": 4929,
+            "nation": "france",
+            "tier": 8,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "AMX 13 90"
+        },
+        "4945": {
+            "tank_id": 4945,
+            "nation": "uk",
+            "tier": 4,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "Valentine Mk. IX"
+        },
+        "4977": {
+            "tank_id": 4977,
+            "nation": "other",
+            "tier": 5,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Scavenger"
+        },
+        "5121": {
+            "tank_id": 5121,
+            "nation": "ussr",
+            "tier": 2,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "AT-1"
+        },
+        "5137": {
+            "tank_id": 5137,
+            "nation": "germany",
+            "tier": 8,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "Tiger II"
+        },
+        "5153": {
+            "tank_id": 5153,
+            "nation": "usa",
+            "tier": 3,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "M5 Stuart"
+        },
+        "5169": {
+            "tank_id": 5169,
+            "nation": "china",
+            "tier": 6,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Type 58"
+        },
+        "5185": {
+            "tank_id": 5185,
+            "nation": "france",
+            "tier": 7,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "AMX 13 75"
+        },
+        "5201": {
+            "tank_id": 5201,
+            "nation": "uk",
+            "tier": 2,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "Cruiser Mk. I"
+        },
+        "5377": {
+            "tank_id": 5377,
+            "nation": "ussr",
+            "tier": 8,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "IS-3"
+        },
+        "5393": {
+            "tank_id": 5393,
+            "nation": "germany",
+            "tier": 5,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "VK 16.02 Leopard"
+        },
+        "5409": {
+            "tank_id": 5409,
+            "nation": "usa",
+            "tier": 4,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "M7"
+        },
+        "5425": {
+            "tank_id": 5425,
+            "nation": "china",
+            "tier": 10,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "WZ-113"
+        },
+        "5441": {
+            "tank_id": 5441,
+            "nation": "france",
+            "tier": 9,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "AMX 30 1er prototype"
+        },
+        "5457": {
+            "tank_id": 5457,
+            "nation": "uk",
+            "tier": 7,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Comet"
+        },
+        "5665": {
+            "tank_id": 5665,
+            "nation": "usa",
+            "tier": 2,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "T2 Medium Tank"
+        },
+        "5681": {
+            "tank_id": 5681,
+            "nation": "china",
+            "tier": 10,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "121B"
+        },
+        "5713": {
+            "tank_id": 5713,
+            "nation": "uk",
+            "tier": 9,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Centurion Mk. 7/1"
+        },
+        "5889": {
+            "tank_id": 5889,
+            "nation": "ussr",
+            "tier": 7,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "KV-3"
+        },
+        "5921": {
+            "tank_id": 5921,
+            "nation": "usa",
+            "tier": 8,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "M26 Pershing"
+        },
+        "5937": {
+            "tank_id": 5937,
+            "nation": "china",
+            "tier": 8,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "59-Patton"
+        },
+        "5953": {
+            "tank_id": 5953,
+            "nation": "france",
+            "tier": 2,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "AMX 38"
+        },
+        "5969": {
+            "tank_id": 5969,
+            "nation": "uk",
+            "tier": 8,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Centurion Mk. I"
+        },
+        "6145": {
+            "tank_id": 6145,
+            "nation": "ussr",
+            "tier": 10,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "IS-4"
+        },
+        "6161": {
+            "tank_id": 6161,
+            "nation": "germany",
+            "tier": 4,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "Pz.Kpfw. II Luchs"
+        },
+        "6177": {
+            "tank_id": 6177,
+            "nation": "usa",
+            "tier": 2,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "T18"
+        },
+        "6193": {
+            "tank_id": 6193,
+            "nation": "china",
+            "tier": 8,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "T-34-3"
+        },
+        "6209": {
+            "tank_id": 6209,
+            "nation": "france",
+            "tier": 10,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "AMX 50 B"
+        },
+        "6225": {
+            "tank_id": 6225,
+            "nation": "uk",
+            "tier": 10,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "FV215b"
+        },
+        "6401": {
+            "tank_id": 6401,
+            "nation": "ussr",
+            "tier": 3,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "SU-76"
+        },
+        "6417": {
+            "tank_id": 6417,
+            "nation": "germany",
+            "tier": 5,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Pz.Kpfw. III/IV"
+        },
+        "6433": {
+            "tank_id": 6433,
+            "nation": "usa",
+            "tier": 3,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "T82"
+        },
+        "6449": {
+            "tank_id": 6449,
+            "nation": "china",
+            "tier": 10,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "WZ-113G FT"
+        },
+        "6465": {
+            "tank_id": 6465,
+            "nation": "france",
+            "tier": 6,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "AMX 12 t"
+        },
+        "6481": {
+            "tank_id": 6481,
+            "nation": "uk",
+            "tier": 4,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "Covenanter"
+        },
+        "6657": {
+            "tank_id": 6657,
+            "nation": "ussr",
+            "tier": 7,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "T-43"
+        },
+        "6673": {
+            "tank_id": 6673,
+            "nation": "germany",
+            "tier": 3,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "Marder II"
+        },
+        "6689": {
+            "tank_id": 6689,
+            "nation": "usa",
+            "tier": 7,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "T49 ATM"
+        },
+        "6705": {
+            "tank_id": 6705,
+            "nation": "china",
+            "tier": 2,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "LT vz. 38"
+        },
+        "6721": {
+            "tank_id": 6721,
+            "nation": "france",
+            "tier": 5,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "BDR G1 B"
+        },
+        "6913": {
+            "tank_id": 6913,
+            "nation": "ussr",
+            "tier": 4,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "SU-85B"
+        },
+        "6929": {
+            "tank_id": 6929,
+            "nation": "germany",
+            "tier": 10,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "Maus"
+        },
+        "6945": {
+            "tank_id": 6945,
+            "nation": "usa",
+            "tier": 5,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "M10 Wolverine"
+        },
+        "6961": {
+            "tank_id": 6961,
+            "nation": "china",
+            "tier": 8,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "WZ-120-1G FT"
+        },
+        "6977": {
+            "tank_id": 6977,
+            "nation": "france",
+            "tier": 7,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "AMX M4 mle. 45"
+        },
+        "6993": {
+            "tank_id": 6993,
+            "nation": "uk",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "Cruiser Mk. II"
+        },
+        "7169": {
+            "tank_id": 7169,
+            "nation": "ussr",
+            "tier": 10,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "IS-7"
+        },
+        "7185": {
+            "tank_id": 7185,
+            "nation": "germany",
+            "tier": 6,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "VK 30.01 (P)"
+        },
+        "7201": {
+            "tank_id": 7201,
+            "nation": "usa",
+            "tier": 6,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "M36 Jackson"
+        },
+        "7249": {
+            "tank_id": 7249,
+            "nation": "uk",
+            "tier": 10,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "FV4202"
+        },
+        "7425": {
+            "tank_id": 7425,
+            "nation": "ussr",
+            "tier": 8,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "ISU-152"
+        },
+        "7441": {
+            "tank_id": 7441,
+            "nation": "germany",
+            "tier": 9,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "VK 45.02 (P) Ausf. B"
+        },
+        "7505": {
+            "tank_id": 7505,
+            "nation": "uk",
+            "tier": 3,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Cruiser Mk. IV"
+        },
+        "7697": {
+            "tank_id": 7697,
+            "nation": "germany",
+            "tier": 8,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "Ferdinand"
+        },
+        "7713": {
+            "tank_id": 7713,
+            "nation": "usa",
+            "tier": 4,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "T40"
+        },
+        "7745": {
+            "tank_id": 7745,
+            "nation": "france",
+            "tier": 2,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "Renault FT AC"
+        },
+        "7761": {
+            "tank_id": 7761,
+            "nation": "uk",
+            "tier": 2,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Cruiser Mk. III"
+        },
+        "7937": {
+            "tank_id": 7937,
+            "nation": "ussr",
+            "tier": 9,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "T-54"
+        },
+        "7953": {
+            "tank_id": 7953,
+            "nation": "germany",
+            "tier": 9,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "Jagdtiger"
+        },
+        "8001": {
+            "tank_id": 8001,
+            "nation": "france",
+            "tier": 8,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Lorraine 40 t"
+        },
+        "8017": {
+            "tank_id": 8017,
+            "nation": "uk",
+            "tier": 3,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "Valentine AT"
+        },
+        "8193": {
+            "tank_id": 8193,
+            "nation": "ussr",
+            "tier": 9,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "Object 704"
+        },
+        "8209": {
+            "tank_id": 8209,
+            "nation": "germany",
+            "tier": 4,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "Pz.Kpfw. 38 (t) n.A."
+        },
+        "8225": {
+            "tank_id": 8225,
+            "nation": "usa",
+            "tier": 8,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "T28"
+        },
+        "8257": {
+            "tank_id": 8257,
+            "nation": "france",
+            "tier": 3,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "Renault UE 57"
+        },
+        "8273": {
+            "tank_id": 8273,
+            "nation": "uk",
+            "tier": 2,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "Universal Carrier 2-pdr"
+        },
+        "8465": {
+            "tank_id": 8465,
+            "nation": "germany",
+            "tier": 8,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Panther II"
+        },
+        "8513": {
+            "tank_id": 8513,
+            "nation": "france",
+            "tier": 10,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "AMX 30 B"
+        },
+        "8529": {
+            "tank_id": 8529,
+            "nation": "uk",
+            "tier": 8,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "AT 15"
+        },
+        "8737": {
+            "tank_id": 8737,
+            "nation": "usa",
+            "tier": 9,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "T95"
+        },
+        "8785": {
+            "tank_id": 8785,
+            "nation": "uk",
+            "tier": 5,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "AT 2"
+        },
+        "8961": {
+            "tank_id": 8961,
+            "nation": "ussr",
+            "tier": 7,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "KV-13"
+        },
+        "8993": {
+            "tank_id": 8993,
+            "nation": "usa",
+            "tier": 9,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "M46 Patton"
+        },
+        "9041": {
+            "tank_id": 9041,
+            "nation": "uk",
+            "tier": 4,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "Alecto"
+        },
+        "9217": {
+            "tank_id": 9217,
+            "nation": "ussr",
+            "tier": 8,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "IS-6"
+        },
+        "9249": {
+            "tank_id": 9249,
+            "nation": "usa",
+            "tier": 7,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "T25 AT"
+        },
+        "9297": {
+            "tank_id": 9297,
+            "nation": "uk",
+            "tier": 10,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "FV215b (183)"
+        },
+        "9489": {
+            "tank_id": 9489,
+            "nation": "germany",
+            "tier": 10,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "E 100"
+        },
+        "9505": {
+            "tank_id": 9505,
+            "nation": "usa",
+            "tier": 9,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "M103"
+        },
+        "9553": {
+            "tank_id": 9553,
+            "nation": "uk",
+            "tier": 6,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "AT 8"
+        },
+        "9745": {
+            "tank_id": 9745,
+            "nation": "germany",
+            "tier": 9,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "E 75"
+        },
+        "9761": {
+            "tank_id": 9761,
+            "nation": "usa",
+            "tier": 6,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "M24 Chaffee"
+        },
+        "9793": {
+            "tank_id": 9793,
+            "nation": "france",
+            "tier": 4,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "Somua SAu 40"
+        },
+        "9809": {
+            "tank_id": 9809,
+            "nation": "uk",
+            "tier": 6,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "Churchill Gun Carrier"
+        },
+        "9985": {
+            "tank_id": 9985,
+            "nation": "ussr",
+            "tier": 8,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "SU-101"
+        },
+        "10001": {
+            "tank_id": 10001,
+            "nation": "germany",
+            "tier": 6,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "VK 28.01"
+        },
+        "10017": {
+            "tank_id": 10017,
+            "nation": "usa",
+            "tier": 6,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "M4A3E2 Sherman Jumbo"
+        },
+        "10049": {
+            "tank_id": 10049,
+            "nation": "france",
+            "tier": 5,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "S35 CA"
+        },
+        "10065": {
+            "tank_id": 10065,
+            "nation": "uk",
+            "tier": 7,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "AT 7"
+        },
+        "10241": {
+            "tank_id": 10241,
+            "nation": "ussr",
+            "tier": 7,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "SU-100M1"
+        },
+        "10257": {
+            "tank_id": 10257,
+            "nation": "germany",
+            "tier": 9,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "E 50"
+        },
+        "10273": {
+            "tank_id": 10273,
+            "nation": "usa",
+            "tier": 4,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "M8A1"
+        },
+        "10497": {
+            "tank_id": 10497,
+            "nation": "ussr",
+            "tier": 6,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "KV-2"
+        },
+        "10513": {
+            "tank_id": 10513,
+            "nation": "germany",
+            "tier": 8,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "VK 45.02 (P) Ausf. A"
+        },
+        "10529": {
+            "tank_id": 10529,
+            "nation": "usa",
+            "tier": 5,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "T67"
+        },
+        "10753": {
+            "tank_id": 10753,
+            "nation": "ussr",
+            "tier": 9,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "ST-I"
+        },
+        "10769": {
+            "tank_id": 10769,
+            "nation": "germany",
+            "tier": 7,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "Tiger (P)"
+        },
+        "10785": {
+            "tank_id": 10785,
+            "nation": "usa",
+            "tier": 10,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "T110E5"
+        },
+        "10817": {
+            "tank_id": 10817,
+            "nation": "france",
+            "tier": 7,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "AMX AC mle. 46"
+        },
+        "11009": {
+            "tank_id": 11009,
+            "nation": "ussr",
+            "tier": 8,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "KV-4"
+        },
+        "11025": {
+            "tank_id": 11025,
+            "nation": "germany",
+            "tier": 7,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "Sturer Emil"
+        },
+        "11041": {
+            "tank_id": 11041,
+            "nation": "usa",
+            "tier": 7,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "T25/2"
+        },
+        "11073": {
+            "tank_id": 11073,
+            "nation": "france",
+            "tier": 9,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "AMX 50 Foch"
+        },
+        "11265": {
+            "tank_id": 11265,
+            "nation": "ussr",
+            "tier": 6,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "T-150"
+        },
+        "11281": {
+            "tank_id": 11281,
+            "nation": "germany",
+            "tier": 9,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "KpfPz 70"
+        },
+        "11297": {
+            "tank_id": 11297,
+            "nation": "usa",
+            "tier": 8,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "T28 Prototype"
+        },
+        "11521": {
+            "tank_id": 11521,
+            "nation": "ussr",
+            "tier": 9,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "IS-8"
+        },
+        "11537": {
+            "tank_id": 11537,
+            "nation": "germany",
+            "tier": 8,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "Jagdpanther II"
+        },
+        "11553": {
+            "tank_id": 11553,
+            "nation": "usa",
+            "tier": 6,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "M18 Hellcat"
+        },
+        "11585": {
+            "tank_id": 11585,
+            "nation": "france",
+            "tier": 6,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "ARL V39"
+        },
+        "11777": {
+            "tank_id": 11777,
+            "nation": "ussr",
+            "tier": 5,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "KV-1"
+        },
+        "11793": {
+            "tank_id": 11793,
+            "nation": "germany",
+            "tier": 6,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "Nashorn"
+        },
+        "11809": {
+            "tank_id": 11809,
+            "nation": "usa",
+            "tier": 7,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "T23E3"
+        },
+        "12033": {
+            "tank_id": 12033,
+            "nation": "ussr",
+            "tier": 9,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "SU-122-54"
+        },
+        "12049": {
+            "tank_id": 12049,
+            "nation": "germany",
+            "tier": 10,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "Jagdpanzer E 100"
+        },
+        "12065": {
+            "tank_id": 12065,
+            "nation": "usa",
+            "tier": 8,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "T95E2"
+        },
+        "12097": {
+            "tank_id": 12097,
+            "nation": "france",
+            "tier": 8,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "AMX AC mle. 48"
+        },
+        "12305": {
+            "tank_id": 12305,
+            "nation": "germany",
+            "tier": 10,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "E 50 Ausf. M"
+        },
+        "12321": {
+            "tank_id": 12321,
+            "nation": "usa",
+            "tier": 4,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "T6E1"
+        },
+        "12545": {
+            "tank_id": 12545,
+            "nation": "ussr",
+            "tier": 9,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "K-91"
+        },
+        "13073": {
+            "tank_id": 13073,
+            "nation": "germany",
+            "tier": 3,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "Pz.Kpfw. II Ausf. G"
+        },
+        "13089": {
+            "tank_id": 13089,
+            "nation": "usa",
+            "tier": 10,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "T110E4"
+        },
+        "13329": {
+            "tank_id": 13329,
+            "nation": "germany",
+            "tier": 4,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Durchbruchswagen 2"
+        },
+        "13345": {
+            "tank_id": 13345,
+            "nation": "usa",
+            "tier": 8,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "T26E4 SuperPershing"
+        },
+        "13569": {
+            "tank_id": 13569,
+            "nation": "ussr",
+            "tier": 10,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "Object 268"
+        },
+        "13825": {
+            "tank_id": 13825,
+            "nation": "ussr",
+            "tier": 10,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "T-62A"
+        },
+        "13841": {
+            "tank_id": 13841,
+            "nation": "germany",
+            "tier": 8,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Indien-Panzer"
+        },
+        "13857": {
+            "tank_id": 13857,
+            "nation": "usa",
+            "tier": 10,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "T110E3"
+        },
+        "13889": {
+            "tank_id": 13889,
+            "nation": "france",
+            "tier": 10,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "AMX 50 Foch (155)"
+        },
+        "14097": {
+            "tank_id": 14097,
+            "nation": "germany",
+            "tier": 6,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "VK 30.01 (D)"
+        },
+        "14113": {
+            "tank_id": 14113,
+            "nation": "usa",
+            "tier": 10,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "M48 Patton"
+        },
+        "14145": {
+            "tank_id": 14145,
+            "nation": "france",
+            "tier": 5,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "AMX ELC bis"
+        },
+        "14337": {
+            "tank_id": 14337,
+            "nation": "ussr",
+            "tier": 10,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "Object 263"
+        },
+        "14609": {
+            "tank_id": 14609,
+            "nation": "germany",
+            "tier": 10,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Leopard 1"
+        },
+        "14625": {
+            "tank_id": 14625,
+            "nation": "usa",
+            "tier": 8,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "T69"
+        },
+        "14865": {
+            "tank_id": 14865,
+            "nation": "germany",
+            "tier": 9,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Leopard Prototyp A"
+        },
+        "14881": {
+            "tank_id": 14881,
+            "nation": "usa",
+            "tier": 10,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "T57 Heavy Tank"
+        },
+        "15137": {
+            "tank_id": 15137,
+            "nation": "usa",
+            "tier": 6,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "T21"
+        },
+        "15393": {
+            "tank_id": 15393,
+            "nation": "usa",
+            "tier": 9,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "T54E1"
+        },
+        "15441": {
+            "tank_id": 15441,
+            "nation": "uk",
+            "tier": 8,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Chieftain/T95"
+        },
+        "15649": {
+            "tank_id": 15649,
+            "nation": "usa",
+            "tier": 7,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "T71"
+        },
+        "15697": {
+            "tank_id": 15697,
+            "nation": "uk",
+            "tier": 10,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Chieftain Mk.6"
+        },
+        "15889": {
+            "tank_id": 15889,
+            "nation": "germany",
+            "tier": 6,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "VK 30.02 (M)"
+        },
+        "15905": {
+            "tank_id": 15905,
+            "nation": "usa",
+            "tier": 10,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "M60"
+        },
+        "15937": {
+            "tank_id": 15937,
+            "nation": "france",
+            "tier": 1,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Renault R35"
+        },
+        "15953": {
+            "tank_id": 15953,
+            "nation": "uk",
+            "tier": 7,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "FV201 (A45)"
+        },
+        "16145": {
+            "tank_id": 16145,
+            "nation": "germany",
+            "tier": 5,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "Pz.Sfl. IVc"
+        },
+        "16193": {
+            "tank_id": 16193,
+            "nation": "france",
+            "tier": 8,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "M4A1 Revalorisé"
+        },
+        "16209": {
+            "tank_id": 16209,
+            "nation": "uk",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "Cruiser Mk. I"
+        },
+        "16401": {
+            "tank_id": 16401,
+            "nation": "germany",
+            "tier": 9,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "Waffenträger auf Pz. IV"
+        },
+        "16449": {
+            "tank_id": 16449,
+            "nation": "france",
+            "tier": 7,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "AMX 13 57"
+        },
+        "16465": {
+            "tank_id": 16465,
+            "nation": "uk",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "Cruiser Mk. I"
+        },
+        "16641": {
+            "tank_id": 16641,
+            "nation": "ussr",
+            "tier": 6,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "MT-25"
+        },
+        "16657": {
+            "tank_id": 16657,
+            "nation": "germany",
+            "tier": 8,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "Rhm.-Borsig Waffenträger"
+        },
+        "16673": {
+            "tank_id": 16673,
+            "nation": "usa",
+            "tier": 6,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "T37"
+        },
+        "16705": {
+            "tank_id": 16705,
+            "nation": "france",
+            "tier": 8,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "AMX M4 mle. 49"
+        },
+        "16897": {
+            "tank_id": 16897,
+            "nation": "ussr",
+            "tier": 10,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Object 140"
+        },
+        "17169": {
+            "tank_id": 17169,
+            "nation": "germany",
+            "tier": 3,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Pz.Kpfw. IV Ausf. A"
+        },
+        "17425": {
+            "tank_id": 17425,
+            "nation": "germany",
+            "tier": 4,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Pz.Kpfw. IV Ausf. D"
+        },
+        "17953": {
+            "tank_id": 17953,
+            "nation": "usa",
+            "tier": 7,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "M41 Walker Bulldog"
+        },
+        "18177": {
+            "tank_id": 18177,
+            "nation": "ussr",
+            "tier": 8,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "T-54 ltwt."
+        },
+        "18209": {
+            "tank_id": 18209,
+            "nation": "usa",
+            "tier": 8,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "T49"
+        },
+        "18433": {
+            "tank_id": 18433,
+            "nation": "ussr",
+            "tier": 7,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "LTTB"
+        },
+        "18449": {
+            "tank_id": 18449,
+            "nation": "germany",
+            "tier": 8,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "Spähpanzer Ru 251"
+        },
+        "18465": {
+            "tank_id": 18465,
+            "nation": "usa",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "M2 Light Tank"
+        },
+        "18689": {
+            "tank_id": 18689,
+            "nation": "ussr",
+            "tier": 3,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "T-70/57"
+        },
+        "18721": {
+            "tank_id": 18721,
+            "nation": "usa",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "M2 Light Tank"
+        },
+        "18945": {
+            "tank_id": 18945,
+            "nation": "ussr",
+            "tier": 8,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "ISU-130"
+        },
+        "18961": {
+            "tank_id": 18961,
+            "nation": "germany",
+            "tier": 7,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "Spähpanzer SP I C"
+        },
+        "18977": {
+            "tank_id": 18977,
+            "nation": "usa",
+            "tier": 10,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "T95E6"
+        },
+        "19201": {
+            "tank_id": 19201,
+            "nation": "ussr",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "T-26"
+        },
+        "19217": {
+            "tank_id": 19217,
+            "nation": "germany",
+            "tier": 10,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "Grille 15"
+        },
+        "19457": {
+            "tank_id": 19457,
+            "nation": "ussr",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "T-26"
+        },
+        "19473": {
+            "tank_id": 19473,
+            "nation": "germany",
+            "tier": 5,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Krupp-38(D)"
+        },
+        "19713": {
+            "tank_id": 19713,
+            "nation": "ussr",
+            "tier": 6,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Loza's M4-A2 Sherman"
+        },
+        "19969": {
+            "tank_id": 19969,
+            "nation": "ussr",
+            "tier": 10,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "T-22 medium"
+        },
+        "19985": {
+            "tank_id": 19985,
+            "nation": "germany",
+            "tier": 8,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "Rheinmetall Skorpion G"
+        },
+        "20241": {
+            "tank_id": 20241,
+            "nation": "germany",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "Pz.Kpfw. II"
+        },
+        "20497": {
+            "tank_id": 20497,
+            "nation": "germany",
+            "tier": 8,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "VK 100.01 (P)"
+        },
+        "20753": {
+            "tank_id": 20753,
+            "nation": "germany",
+            "tier": 9,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "Mäuschen"
+        },
+        "21009": {
+            "tank_id": 21009,
+            "nation": "germany",
+            "tier": 8,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Panzer 58"
+        },
+        "51201": {
+            "tank_id": 51201,
+            "nation": "ussr",
+            "tier": 5,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "KV-220 Beta-Test"
+        },
+        "51457": {
+            "tank_id": 51457,
+            "nation": "ussr",
+            "tier": 5,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Matilda IV"
+        },
+        "51473": {
+            "tank_id": 51473,
+            "nation": "germany",
+            "tier": 5,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Pz.Kpfw. V/IV"
+        },
+        "51489": {
+            "tank_id": 51489,
+            "nation": "usa",
+            "tier": 2,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "T2 Light Tank"
+        },
+        "51713": {
+            "tank_id": 51713,
+            "nation": "ussr",
+            "tier": 5,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Churchill III"
+        },
+        "51729": {
+            "tank_id": 51729,
+            "nation": "germany",
+            "tier": 3,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "Pz.Kpfw. II Ausf. J"
+        },
+        "51745": {
+            "tank_id": 51745,
+            "nation": "usa",
+            "tier": 5,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Ram II"
+        },
+        "51809": {
+            "tank_id": 51809,
+            "nation": "japan",
+            "tier": 3,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "Type 98 Ke-Ni Otsu"
+        },
+        "51985": {
+            "tank_id": 51985,
+            "nation": "germany",
+            "tier": 3,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Pz.Kpfw. S35 739 (f)"
+        },
+        "52065": {
+            "tank_id": 52065,
+            "nation": "japan",
+            "tier": 4,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "Hetzer Kame SP"
+        },
+        "52225": {
+            "tank_id": 52225,
+            "nation": "ussr",
+            "tier": 3,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "BT-SV"
+        },
+        "52241": {
+            "tank_id": 52241,
+            "nation": "germany",
+            "tier": 4,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Pz.Kpfw. B2 740 (f)"
+        },
+        "52257": {
+            "tank_id": 52257,
+            "nation": "usa",
+            "tier": 5,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "M4A2E4 Sherman"
+        },
+        "52481": {
+            "tank_id": 52481,
+            "nation": "ussr",
+            "tier": 4,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "Valentine II"
+        },
+        "52497": {
+            "tank_id": 52497,
+            "nation": "germany",
+            "tier": 2,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "Pz.Kpfw. 38H 735 (f)"
+        },
+        "52513": {
+            "tank_id": 52513,
+            "nation": "usa",
+            "tier": 7,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "M6A2E1"
+        },
+        "52561": {
+            "tank_id": 52561,
+            "nation": "uk",
+            "tier": 9,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "Tortoise"
+        },
+        "52737": {
+            "tank_id": 52737,
+            "nation": "ussr",
+            "tier": 3,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "M3 Light"
+        },
+        "52769": {
+            "tank_id": 52769,
+            "nation": "usa",
+            "tier": 3,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "M22 Locust"
+        },
+        "52993": {
+            "tank_id": 52993,
+            "nation": "ussr",
+            "tier": 4,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "A-32"
+        },
+        "53025": {
+            "tank_id": 53025,
+            "nation": "usa",
+            "tier": 8,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "M6A2E1 EXP"
+        },
+        "53249": {
+            "tank_id": 53249,
+            "nation": "ussr",
+            "tier": 8,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "KV-5"
+        },
+        "53505": {
+            "tank_id": 53505,
+            "nation": "ussr",
+            "tier": 3,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "T-127"
+        },
+        "53537": {
+            "tank_id": 53537,
+            "nation": "usa",
+            "tier": 2,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "T1E6"
+        },
+        "53585": {
+            "tank_id": 53585,
+            "nation": "uk",
+            "tier": 5,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Matilda Black Prince"
+        },
+        "53761": {
+            "tank_id": 53761,
+            "nation": "ussr",
+            "tier": 5,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "SU-85I"
+        },
+        "53841": {
+            "tank_id": 53841,
+            "nation": "uk",
+            "tier": 6,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "TOG II*"
+        },
+        "54097": {
+            "tank_id": 54097,
+            "nation": "uk",
+            "tier": 7,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "AT 15A"
+        },
+        "54273": {
+            "tank_id": 54273,
+            "nation": "ussr",
+            "tier": 3,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "SU-76I"
+        },
+        "54289": {
+            "tank_id": 54289,
+            "nation": "germany",
+            "tier": 8,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Löwe"
+        },
+        "54353": {
+            "tank_id": 54353,
+            "nation": "uk",
+            "tier": 5,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Excelsior"
+        },
+        "54529": {
+            "tank_id": 54529,
+            "nation": "ussr",
+            "tier": 2,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "Tetrarch"
+        },
+        "54545": {
+            "tank_id": 54545,
+            "nation": "germany",
+            "tier": 5,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "T-25"
+        },
+        "54785": {
+            "tank_id": 54785,
+            "nation": "ussr",
+            "tier": 6,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "SU-100Y"
+        },
+        "54801": {
+            "tank_id": 54801,
+            "nation": "germany",
+            "tier": 3,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "T-15"
+        },
+        "54865": {
+            "tank_id": 54865,
+            "nation": "uk",
+            "tier": 2,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "Light Mk. VIC"
+        },
+        "55057": {
+            "tank_id": 55057,
+            "nation": "germany",
+            "tier": 5,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Pz.Kpfw. IV hydrostat."
+        },
+        "55073": {
+            "tank_id": 55073,
+            "nation": "usa",
+            "tier": 2,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "T7 Combat Car"
+        },
+        "55297": {
+            "tank_id": 55297,
+            "nation": "ussr",
+            "tier": 7,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "SU-122-44"
+        },
+        "55313": {
+            "tank_id": 55313,
+            "nation": "germany",
+            "tier": 8,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "8,8 cm Pak 43 Jagdtiger"
+        },
+        "55889": {
+            "tank_id": 55889,
+            "nation": "uk",
+            "tier": 6,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Cromwell B"
+        },
+        "56097": {
+            "tank_id": 56097,
+            "nation": "usa",
+            "tier": 6,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "M4A3E8 Fury"
+        },
+        "56577": {
+            "tank_id": 56577,
+            "nation": "ussr",
+            "tier": 3,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "LTP"
+        },
+        "56609": {
+            "tank_id": 56609,
+            "nation": "usa",
+            "tier": 7,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "T28 Concept"
+        },
+        "57105": {
+            "tank_id": 57105,
+            "nation": "germany",
+            "tier": 6,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "Dicker Max"
+        },
+        "57361": {
+            "tank_id": 57361,
+            "nation": "germany",
+            "tier": 6,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Pz.Kpfw. IV Schmalturm"
+        },
+        "57617": {
+            "tank_id": 57617,
+            "nation": "germany",
+            "tier": 7,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Panther/M10"
+        },
+        "58641": {
+            "tank_id": 58641,
+            "nation": "germany",
+            "tier": 10,
+            "is_premium": false,
+            "type": "heavyTank",
+            "name": "VK 72.01 (K)"
+        },
+        "58881": {
+            "tank_id": 58881,
+            "nation": "ussr",
+            "tier": 8,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "IS-5 (Object 730)"
+        },
+        "59137": {
+            "tank_id": 59137,
+            "nation": "ussr",
+            "tier": 7,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "IS-2 (1945)"
+        },
+        "59649": {
+            "tank_id": 59649,
+            "nation": "ussr",
+            "tier": 7,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "ISU-122S"
+        },
+        "59665": {
+            "tank_id": 59665,
+            "nation": "germany",
+            "tier": 3,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Großtraktor - Krupp"
+        },
+        "59905": {
+            "tank_id": 59905,
+            "nation": "ussr",
+            "tier": 8,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "T-54 first prototype"
+        },
+        "60161": {
+            "tank_id": 60161,
+            "nation": "ussr",
+            "tier": 8,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "IS-2Sh"
+        },
+        "60177": {
+            "tank_id": 60177,
+            "nation": "germany",
+            "tier": 8,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Panther mit 8,8 cm L/71"
+        },
+        "60417": {
+            "tank_id": 60417,
+            "nation": "ussr",
+            "tier": 8,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "IS-3 Defender"
+        },
+        "60929": {
+            "tank_id": 60929,
+            "nation": "ussr",
+            "tier": 3,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "BT-7 artillery"
+        },
+        "62737": {
+            "tank_id": 62737,
+            "nation": "germany",
+            "tier": 8,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "leKpz M 41 90 mm"
+        },
+        "62977": {
+            "tank_id": 62977,
+            "nation": "ussr",
+            "tier": 8,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "T-44-100"
+        },
+        "62993": {
+            "tank_id": 62993,
+            "nation": "germany",
+            "tier": 7,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "VK 45.03"
+        },
+        "63553": {
+            "tank_id": 63553,
+            "nation": "france",
+            "tier": 8,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "AMX Chasseur de chars"
+        },
+        "63585": {
+            "tank_id": 63585,
+            "nation": "japan",
+            "tier": 6,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Kuro Mori Mine"
+        },
+        "63601": {
+            "tank_id": 63601,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "T6 Dracula"
+        },
+        "63841": {
+            "tank_id": 63841,
+            "nation": "japan",
+            "tier": 5,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Panzer IV Anko Special"
+        },
+        "64001": {
+            "tank_id": 64001,
+            "nation": "ussr",
+            "tier": 7,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "T-34-85 Rudy"
+        },
+        "64017": {
+            "tank_id": 64017,
+            "nation": "germany",
+            "tier": 7,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Tankenstein"
+        },
+        "64065": {
+            "tank_id": 64065,
+            "nation": "france",
+            "tier": 8,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "FCM 50 t"
+        },
+        "64081": {
+            "tank_id": 64081,
+            "nation": "uk",
+            "tier": 1,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Mk I* Heavy Tank"
+        },
+        "64257": {
+            "tank_id": 64257,
+            "nation": "ussr",
+            "tier": 6,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "T-34-85 Victory"
+        },
+        "64273": {
+            "tank_id": 64273,
+            "nation": "germany",
+            "tier": 8,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "Snowstorm Jagdtiger 8.8"
+        },
+        "64337": {
+            "tank_id": 64337,
+            "nation": "uk",
+            "tier": 6,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "AC IV Sentinel"
+        },
+        "64529": {
+            "tank_id": 64529,
+            "nation": "germany",
+            "tier": 7,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "E 25"
+        },
+        "64561": {
+            "tank_id": 64561,
+            "nation": "china",
+            "tier": 8,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "112 Glacial"
+        },
+        "64593": {
+            "tank_id": 64593,
+            "nation": "uk",
+            "tier": 5,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "Angry Connor"
+        },
+        "64769": {
+            "tank_id": 64769,
+            "nation": "ussr",
+            "tier": 8,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "IS-6 Fearless"
+        },
+        "64785": {
+            "tank_id": 64785,
+            "nation": "germany",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "Pz.Kpfw. II"
+        },
+        "64801": {
+            "tank_id": 64801,
+            "nation": "usa",
+            "tier": 8,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "T34 Independence"
+        },
+        "64849": {
+            "tank_id": 64849,
+            "nation": "uk",
+            "tier": 4,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "AC 1 Sentinel"
+        },
+        "65025": {
+            "tank_id": 65025,
+            "nation": "ussr",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "MS-1"
+        },
+        "65041": {
+            "tank_id": 65041,
+            "nation": "germany",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "Leichttraktor"
+        },
+        "65057": {
+            "tank_id": 65057,
+            "nation": "usa",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "T1 Cunningham"
+        },
+        "65105": {
+            "tank_id": 65105,
+            "nation": "uk",
+            "tier": 1,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Vickers Medium Mk. I"
+        },
+        "65281": {
+            "tank_id": 65281,
+            "nation": "ussr",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "MS-1"
+        },
+        "65297": {
+            "tank_id": 65297,
+            "nation": "germany",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "Leichttraktor"
+        },
+        "65313": {
+            "tank_id": 65313,
+            "nation": "usa",
+            "tier": 1,
+            "is_premium": false,
+            "type": "lightTank",
+            "name": "T1 Cunningham"
+        },
+        "65329": {
+            "tank_id": 65329,
+            "nation": "china",
+            "tier": 7,
+            "is_premium": true,
+            "type": "lightTank",
+            "name": "Type 62"
+        },
+        "65361": {
+            "tank_id": 65361,
+            "nation": "uk",
+            "tier": 1,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "Vickers Medium Mk. I"
+        },
+        "65377": {
+            "tank_id": 65377,
+            "nation": "japan",
+            "tier": 5,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Type 3 Chi-Nu Kai"
+        },
+        "5233": {
+            "tank_id": 5233,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Smasher"
+        },
+        "7217": {
+            "tank_id": 7217,
+            "nation": "china",
+            "tier": 8,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "WZ-112-2"
+        },
+        "19233": {
+            "tank_id": 19233,
+            "nation": "usa",
+            "tier": 8,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Chrysler K"
+        },
+        "7473": {
+            "tank_id": 7473,
+            "nation": "china",
+            "tier": 7,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "T-34-2G FT"
+        },
+        "7729": {
+            "tank_id": 7729,
+            "nation": "china",
+            "tier": 6,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "WZ-131G FT"
+        },
+        "7985": {
+            "tank_id": 7985,
+            "nation": "china",
+            "tier": 8,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "WZ-111-1G FT"
+        },
+        "8241": {
+            "tank_id": 8241,
+            "nation": "china",
+            "tier": 9,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "WZ-111G FT"
+        },
+        "17745": {
+            "tank_id": 17745,
+            "nation": "uk",
+            "tier": 10,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "FV217 Badger"
+        },
+        "18001": {
+            "tank_id": 18001,
+            "nation": "uk",
+            "tier": 10,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "FV4005"
+        },
+        "19489": {
+            "tank_id": 19489,
+            "nation": "usa",
+            "tier": 8,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "T28 Defender"
+        },
+        "6257": {
+            "tank_id": 6257,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "M4/FL10"
+        },
+        "20481": {
+            "tank_id": 20481,
+            "nation": "ussr",
+            "tier": 8,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Object 252U"
+        },
+        "5489": {
+            "tank_id": 5489,
+            "nation": "other",
+            "tier": 5,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Y5 T-34"
+        },
+        "5745": {
+            "tank_id": 5745,
+            "nation": "other",
+            "tier": 6,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Y5 Firefly"
+        },
+        "6001": {
+            "tank_id": 6001,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Y5 ELC bis"
+        },
+        "17233": {
+            "tank_id": 17233,
+            "nation": "uk",
+            "tier": 9,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "FV4004 Conway"
+        },
+        "17489": {
+            "tank_id": 17489,
+            "nation": "uk",
+            "tier": 8,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "Charioteer"
+        },
+        "18257": {
+            "tank_id": 18257,
+            "nation": "uk",
+            "tier": 7,
+            "is_premium": false,
+            "type": "AT-SPG",
+            "name": "Challenger"
+        },
+        "19729": {
+            "tank_id": 19729,
+            "nation": "germany",
+            "tier": 6,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Tiger 131"
+        },
+        "19745": {
+            "tank_id": 19745,
+            "nation": "usa",
+            "tier": 8,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "T26E5"
+        },
+        "21265": {
+            "tank_id": 21265,
+            "nation": "germany",
+            "tier": 8,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "VK 168.01 (P)"
+        },
+        "129": {
+            "tank_id": 129,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "Vindicator Ultramarines"
+        },
+        "641": {
+            "tank_id": 641,
+            "nation": "other",
+            "tier": 6,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Stridsvagn 74A2"
+        },
+        "897": {
+            "tank_id": 897,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Edelweiss"
+        },
+        "1153": {
+            "tank_id": 1153,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Predator Ultramarines"
+        },
+        "1409": {
+            "tank_id": 1409,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Nameless"
+        },
+        "1665": {
+            "tank_id": 1665,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "Helsing H0"
+        },
+        "1921": {
+            "tank_id": 1921,
+            "nation": "other",
+            "tier": 8,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "O-47"
+        },
+        "2177": {
+            "tank_id": 2177,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "AT-SPG",
+            "name": "WZ 135G FT Blaze"
+        },
+        "3713": {
+            "tank_id": 3713,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Lupus"
+        },
+        "3969": {
+            "tank_id": 3969,
+            "nation": "other",
+            "tier": 9,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "T 55A"
+        },
+        "4225": {
+            "tank_id": 4225,
+            "nation": "other",
+            "tier": 1,
+            "is_premium": false,
+            "type": "mediumTank",
+            "name": "WarDuck"
+        },
+        "4481": {
+            "tank_id": 4481,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Hafen"
+        },
+        "4737": {
+            "tank_id": 4737,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Gravedigger"
+        },
+        "4993": {
+            "tank_id": 4993,
+            "nation": "other",
+            "tier": 5,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Scavenger"
+        },
+        "5249": {
+            "tank_id": 5249,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Smasher"
+        },
+        "5505": {
+            "tank_id": 5505,
+            "nation": "other",
+            "tier": 5,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Y5 T-34"
+        },
+        "5761": {
+            "tank_id": 5761,
+            "nation": "other",
+            "tier": 6,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Y5 Firefly"
+        },
+        "6017": {
+            "tank_id": 6017,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Y5 ELC bis"
+        },
+        "6273": {
+            "tank_id": 6273,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "M4/FL10"
+        },
+        "63617": {
+            "tank_id": 63617,
+            "nation": "other",
+            "tier": 7,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "T6 Dracula"
+        },
+        "385": {
+            "tank_id": 385,
+            "nation": "european",
+            "tier": 10,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Progetto M40 mod. 65"
+        }
+    },
+    "userStr": {
+        "A-20": "A-20",
+        "A-32": "A-32",
+        "A100_T49": "T49",
+        "A102_T28_concept": "T28 Concept",
+        "A104_M4A3E8A": "M4A3E8 Fury",
+        "A77_T6M": "T6E1",
+        "A95_T95E6": "T95E6",
+        "AMX38": "AMX 38",
+        "AMX40": "AMX 40",
+        "AMX50_Foch": "AMX 50 Foch",
+        "AMX_12t": "AMX 12 t",
+        "AMX_13_75": "AMX 13 75",
+        "AMX_13_90": "AMX 13 90",
+        "AMX_50Fosh_155": "AMX 50 Foch (155)",
+        "AMX_50_100": "AMX 50 100",
+        "AMX_50_120": "AMX 50 120",
+        "AMX_50_68t": "AMX 50 B",
+        "AMX_AC_Mle1946": "AMX AC mle. 46",
+        "AMX_AC_Mle1948": "AMX AC mle. 48",
+        "AMX_M4_1945": "AMX M4 mle. 45",
+        "AMX_dracula": "T6 Dracula",
+        "ARL_44": "ARL 44",
+        "ARL_V39": "ARL V39",
+        "AT-1": "AT-1",
+        "Akawara": "O-47",
+        "B-1bis_captured": "Pz.Kpfw. B2 740 (f)",
+        "B1": "B1",
+        "BDR_G1B": "BDR G1 B",
+        "BT-2": "BT-2",
+        "BT-7": "BT-7",
+        "BT-SV": "BT-SV",
+        "Bat_Chatillon25t": "Bat.-Châtillon 25 t",
+        "CH38_WZ113G-FT": "WZ-113G FT",
+        "Ch01_Type59": "Type 59",
+        "Ch02_Type62": "Type 62",
+        "Ch03_WZ-111": "WZ-111",
+        "Ch04_T34_1": "T-34-1",
+        "Ch05_T34_2": "T-34-2",
+        "Ch06_Renault_NC31": "Renault NC-31",
+        "Ch07_Vickers_MkE_Type_BT26": "Vickers Mk. E Type B",
+        "Ch08_Type97_Chi_Ha": "Type 2597 Chi-Ha",
+        "Ch09_M5": "M5A1 Stuart",
+        "Ch10_IS2": "IS-2",
+        "Ch11_110": "WZ-110",
+        "Ch12_111_1_2_3": "WZ-111 model 1-4",
+        "Ch14_T34_3": "T-34-3",
+        "Ch18_WZ-120": "WZ-120",
+        "Ch19_121": "WZ-121",
+        "Ch20_Type58": "Type 58",
+        "Ch21_T34": "Type T-34",
+        "Ch22_113": "WZ-113",
+        "Ch23_112": "112 Glacial",
+        "Ch24_Type64": "Type 64",
+        "Ch25_121_mod_1971B": "121B",
+        "Ch26_59_Patton": "59-Patton",
+        "Ch39_WZ120_1G_FT": "WZ-120-1G FT",
+        "Ch_LT_vz38": "LT vz. 38",
+        "Chi_Ha": "Type 97 Chi-Ha",
+        "Chi_He": "Type 1 Chi-He",
+        "Chi_Ni": "Chi-Ni",
+        "Chi_Nu": "Type 3 Chi-Nu",
+        "Chi_Nu_Kai": "Type 3 Chi-Nu Kai",
+        "Chi_Ri": "Type 5 Chi-Ri",
+        "Chi_To": "Type 4 Chi-To",
+        "Churchill_LL": "Churchill III",
+        "D1": "D1",
+        "D2": "D2",
+        "DW_II": "Durchbruchswagen 2",
+        "DickerMax": "Dicker Max",
+        "E-100": "E 100",
+        "E-25": "E 25",
+        "E-50": "E 50",
+        "E-75": "E 75",
+        "E50_Ausf_M": "E 50 Ausf. M",
+        "ELC_AMX": "AMX ELC bis",
+        "F19_Lorraine40t": "Lorraine 40 t",
+        "F68_AMX_Chasseur_de_char_46": "AMX Chasseur de chars",
+        "F69_AMX_13_57GF": "AMX 13 57",
+        "F71_AMX_30_prototype": "AMX 30 1er prototype",
+        "F72_AMX_30": "AMX 30 B",
+        "F73_M4A1_Revalorise": "M4A1 Revalorisé",
+        "F74_AMX_M4_1949": "AMX M4 mle. 49",
+        "F75_Char_de_25t": "Bat.-Châtillon 25 t AP",
+        "FCM_36Pak40": "FCM 36 Pak 40",
+        "FCM_50t": "FCM 50 t",
+        "Ferdinand": "Ferdinand",
+        "G100_Gtraktor_Krupp": "Großtraktor - Krupp",
+        "G103_RU_251": "Spähpanzer Ru 251",
+        "G106_PzKpfwPanther_AusfF": "Panther mit 8,8 cm L/71",
+        "G110_Mauschen": "Mäuschen",
+        "G113_SP_I_C": "Spähpanzer SP I C",
+        "G114_Rheinmetall_Scorpion": "Rheinmetall Skorpion G",
+        "G115_VK10001P": "VK 100.01 (P)",
+        "G118_VK4503": "VK 45.03",
+        "G119_Pz58_Mutz": "Panzer 58",
+        "G120_M41_90": "leKpz M 41 90 mm",
+        "G121_Grille_15_L63": "Grille 15",
+        "G20_Marder_II": "Marder II",
+        "GAZ-74b": "SU-85B",
+        "GB01_Medium_Mark_I": "Vickers Medium Mk. I",
+        "GB03_Cruiser_Mk_I": "Cruiser Mk. I",
+        "GB04_Valentine": "Valentine Mk. IX",
+        "GB05_Vickers_Medium_Mk_II": "Vickers Medium Mk. II",
+        "GB06_Vickers_Medium_Mk_III": "Vickers Medium Mk. III",
+        "GB07_Matilda": "Matilda",
+        "GB08_Churchill_I": "Churchill I",
+        "GB09_Churchill_VII": "Churchill VII",
+        "GB10_Black_Prince": "Black Prince",
+        "GB11_Caernarvon": "Caernarvon",
+        "GB12_Conqueror": "Conqueror",
+        "GB13_FV215b": "FV215b",
+        "GB19_Sherman_Firefly": "Sherman Firefly",
+        "GB20_Crusader": "Crusader",
+        "GB21_Cromwell": "Cromwell",
+        "GB22_Comet": "Comet",
+        "GB23_Centurion": "Centurion Mk. I",
+        "GB24_Centurion_Mk3": "Centurion Mk. 7/1",
+        "GB32_Tortoise": "Tortoise",
+        "GB35_Sentinel_AC_IV": "AC IV Sentinel",
+        "GB39_Universal_CarrierQF2": "Universal Carrier 2-pdr",
+        "GB40_Gun_Carrier_Churchill": "Churchill Gun Carrier",
+        "GB42_Valentine_AT": "Valentine AT",
+        "GB44_Archer_Custom": "Angry Connor",
+        "GB48_FV215b_183": "FV215b (183)",
+        "GB51_Excelsior": "Excelsior",
+        "GB52_FV201_A45": "FV201 (A45)",
+        "GB57_Alecto": "Alecto",
+        "GB58_Cruiser_Mk_III": "Cruiser Mk. III",
+        "GB59_Cruiser_Mk_IV": "Cruiser Mk. IV",
+        "GB60_Covenanter": "Covenanter",
+        "GB63_TOG_II": "TOG II*",
+        "GB68_Matilda_Black_Prince": "Matilda Black Prince",
+        "GB69_Cruiser_Mk_II": "Cruiser Mk. II",
+        "GB70_FV4202_105": "FV4202",
+        "GB71_AT_15A": "AT 15A",
+        "GB72_AT15": "AT 15",
+        "GB73_AT2": "AT 2",
+        "GB74_AT8": "AT 8",
+        "GB75_AT7": "AT 7",
+        "GB76_Mk_VIC": "Light Mk. VIC",
+        "GB84_Chieftain_Mk6": "Chieftain Mk.6",
+        "GB85_Cromwell_Berlin": "Cromwell B",
+        "GB87_Chieftain_T95_turret": "Chieftain/T95",
+        "GB_Churchill_MkVI": "Churchill Mk. VI",
+        "GB_Mark_I": "Mk I* Heavy Tank",
+        "GB_Sherman_V": "Sherman V",
+        "G_KpfPz_70": "KpfPz 70",
+        "H39_captured": "Pz.Kpfw. 38H 735 (f)",
+        "Ha_Go": "Type 95 Ha-Go",
+        "Hetzer": "Hetzer",
+        "Hetzer_GuP": "Hetzer Kame SP",
+        "IS": "IS",
+        "IS-2Sh": "IS-2Sh",
+        "IS-3": "IS-3",
+        "IS-4": "IS-4",
+        "IS-6": "IS-6",
+        "IS-6_Fearless": "IS-6 Fearless",
+        "IS-7": "IS-7",
+        "IS8": "IS-8",
+        "ISU-152": "ISU-152",
+        "Indien_Panzer": "Indien-Panzer",
+        "JagdPanther": "Jagdpanther",
+        "JagdPantherII": "Jagdpanther II",
+        "JagdPzIV": "Jagdpanzer IV",
+        "JagdPz_E100": "Jagdpanzer E 100",
+        "JagdTiger": "Jagdtiger",
+        "JagdTiger_SdKfz_185": "8,8 cm Pak 43 Jagdtiger",
+        "JagdTiger_SdKfz_185_Snowstorm": "Snowstorm Jagdtiger 8.8",
+        "K-91": "K-91",
+        "KV-13": "KV-13",
+        "KV-1s": "KV-1S",
+        "KV-220_test": "KV-220 Beta-Test",
+        "KV-3": "KV-3",
+        "KV-5": "KV-5",
+        "KV1": "KV-1",
+        "KV2": "KV-2",
+        "KV4": "KV-4",
+        "Ke_Ho": "Type 5 Ke-Ho",
+        "Ke_Ni": "Type 98 Ke-Ni",
+        "Ke_Ni_B": "Type 98 Ke-Ni Otsu",
+        "Krupp-38D": "Krupp-38(D)",
+        "LTP": "LTP",
+        "Leopard1": "Leopard 1",
+        "Lowe": "Löwe",
+        "Ltraktor": "Leichttraktor",
+        "M103": "M103",
+        "M10_Wolverine": "M10 Wolverine",
+        "M18_Hellcat": "M18 Hellcat",
+        "M22_Locust": "M22 Locust",
+        "M24_Chaffee": "M24 Chaffee",
+        "M2_lt": "M2 Light Tank",
+        "M2_med": "M2 Medium Tank",
+        "M36_Slagger": "M36 Jackson",
+        "M3_Grant": "M3 Lee",
+        "M3_Stuart": "M3 Stuart",
+        "M3_Stuart_LL": "M3 Light",
+        "M41_Bulldog": "M41 Walker Bulldog",
+        "M46_Patton": "M46 Patton",
+        "M48A1": "M48 Patton",
+        "M4A2E4": "M4A2E4 Sherman",
+        "M4A3E8_Sherman": "M4A3E8 Sherman",
+        "M4_Sherman": "M4 Sherman",
+        "M5_Stuart": "M5 Stuart",
+        "M6": "M6",
+        "M60": "M60",
+        "M6A2E1": "M6A2E1",
+        "M6A2E1_exp": "M6A2E1 EXP",
+        "M7_med": "M7",
+        "M8A1": "M8A1",
+        "MS-1": "MS-1",
+        "MT25": "MT-25",
+        "Matilda_II_LL": "Matilda IV",
+        "Maus": "Maus",
+        "NC27": "Renault Otsu",
+        "Nashorn": "Nashorn",
+        "Object263": "Object 263",
+        "Object268": "Object 268",
+        "Object_140": "Object 140",
+        "Object_704": "Object 704",
+        "Oth08_WH_Vindicator": "Vindicator Ultramarines",
+        "Oth09_WH_Predator": "Predator Ultramarines",
+        "Oth10_WarDuck": "WarDuck",
+        "Oth11_T-55A": "T 55A",
+        "Oth12_Sega_Hafen": "Hafen",
+        "Oth14_MdM_AshKnight": "Gravedigger",
+        "Oth15_RustCrab": "Scavenger",
+        "Panther_II": "Panther II",
+        "Panther_M10": "Panther/M10",
+        "PanzerJager_I": "Panzerjäger I",
+        "Pershing": "M26 Pershing",
+        "Pro_Ag_A": "Leopard Prototyp A",
+        "Pz35t": "Pz.Kpfw. 35 (t)",
+        "Pz38_NA": "Pz.Kpfw. 38 (t) n.A.",
+        "Pz38t": "Pz.Kpfw. 38 (t)",
+        "PzII": "Pz.Kpfw. II",
+        "PzIII": "Pz.Kpfw. III",
+        "PzIII_A": "Pz.Kpfw. III Ausf. A",
+        "PzIII_IV": "Pz.Kpfw. III/IV",
+        "PzII_J": "Pz.Kpfw. II Ausf. J",
+        "PzII_Luchs": "Pz.Kpfw. II Luchs",
+        "PzIV": "Pz.Kpfw. IV Ausf. G",
+        "PzIV_Hydro": "Pz.Kpfw. IV hydrostat.",
+        "PzIV_schmalturm": "Pz.Kpfw. IV Schmalturm",
+        "PzV": "Panther I",
+        "PzVI": "Tiger I",
+        "PzVIB_Tiger_II": "Tiger II",
+        "PzVI_GuP": "Kuro Mori Mine",
+        "PzVI_Tiger_P": "Tiger (P)",
+        "PzV_PzIV": "Pz.Kpfw. V/IV",
+        "Pz_II_AusfG": "Pz.Kpfw. II Ausf. G",
+        "Pz_IV_AusfA": "Pz.Kpfw. IV Ausf. A",
+        "Pz_IV_AusfD": "Pz.Kpfw. IV Ausf. D",
+        "Pz_IV_AusfH": "Panzer IV Anko Special",
+        "Pz_Sfl_IVc": "Pz.Sfl. IVc",
+        "R105_BT_7A": "BT-7 artillery",
+        "R107_LTB": "LTTB",
+        "R109_T54S": "T-54 ltwt.",
+        "R111_ISU130": "ISU-130",
+        "R112_T54_45": "T-54 first prototype",
+        "R113_Object_730": "IS-5 (Object 730)",
+        "R115_IS-3_auto": "IS-3 Defender",
+        "R116_ISU122C_Berlin": "ISU-122S",
+        "R120_T22SR": "T-22 medium",
+        "R127_T44_100_P": "T-44-100",
+        "R140_M4A2_Loza": "Loza's M4-A2 Sherman",
+        "R43_T-70_57": "T-70/57",
+        "R71_IS_2B": "IS-2 (1945)",
+        "Ram-II": "Ram II",
+        "RenaultFT": "Renault FT",
+        "RenaultFT_AC": "Renault FT AC",
+        "RenaultR35": "Renault R35",
+        "RenaultUE57": "Renault UE 57",
+        "RhB_Waffentrager": "Rhm.-Borsig Waffenträger",
+        "S01_Frankentank": "Tankenstein",
+        "S35_captured": "Pz.Kpfw. S35 739 (f)",
+        "STA_1": "STA-1",
+        "ST_B1": "STB-1",
+        "ST_I": "ST-I",
+        "SU-100": "SU-100",
+        "SU-101": "SU-101",
+        "SU-152": "SU-152",
+        "SU-76": "SU-76",
+        "SU-85": "SU-85",
+        "SU100M1": "SU-100M1",
+        "SU100Y": "SU-100Y",
+        "SU122_44": "SU-122-44",
+        "SU122_54": "SU-122-54",
+        "SU76I": "SU-76I",
+        "SU_85I": "SU-85I",
+        "S_35CA": "S35 CA",
+        "Sega_Edelweiss": "Edelweiss",
+        "Sega_Lupus": "Lupus",
+        "Sega_Nameless": "Nameless",
+        "Sentinel_AC1": "AC 1 Sentinel",
+        "Sherman_Jumbo": "M4A3E2 Sherman Jumbo",
+        "Somua_Sau_40": "Somua SAu 40",
+        "Strv_74A2": "Stridsvagn 74A2",
+        "StuGIII": "StuG III Ausf. G",
+        "Sturer_Emil": "Sturer Emil",
+        "T-127": "T-127",
+        "T-15": "T-15",
+        "T-25": "T-25",
+        "T-26": "T-26",
+        "T-28": "T-28 mod. 1940",
+        "T-34": "T-34",
+        "T-34-85": "T-34-85",
+        "T-34-85_Rudy": "T-34-85 Rudy",
+        "T-34-85_Victory": "T-34-85 Victory",
+        "T-43": "T-43",
+        "T-44": "T-44",
+        "T-46": "T-46",
+        "T-54": "T-54",
+        "T110": "T110E5",
+        "T110E3": "T110E3",
+        "T110E4": "T110E4",
+        "T14": "T14",
+        "T150": "T-150",
+        "T18": "T18",
+        "T1_Cunningham": "T1 Cunningham",
+        "T1_E6": "T1E6",
+        "T1_hvy": "T1 Heavy Tank",
+        "T20": "T20",
+        "T21": "T21",
+        "T23E3": "T23E3",
+        "T25_2": "T25/2",
+        "T25_AT": "T25 AT",
+        "T26_E4_SuperPershing": "T26E4 SuperPershing",
+        "T28": "T28",
+        "T28_Prototype": "T28 Prototype",
+        "T29": "T29",
+        "T2_lt": "T2 Light Tank",
+        "T2_med": "T2 Medium Tank",
+        "T30": "T30",
+        "T32": "T32",
+        "T34_hvy": "T34",
+        "T34_hvy_Freedom": "T34 Independence",
+        "T37": "T37",
+        "T40": "T40",
+        "T49": "T67",
+        "T49_Rocket": "T49 ATM",
+        "T54E1": "T54E1",
+        "T57_58": "T57 Heavy Tank",
+        "T62A": "T-62A",
+        "T69": "T69",
+        "T71": "T71",
+        "T7_Combat_Car": "T7 Combat Car",
+        "T82": "T82",
+        "T95": "T95",
+        "T95E2": "T95E2",
+        "Tetrarch_LL": "Tetrarch",
+        "Type_61": "Type 61",
+        "VK1602": "VK 16.02 Leopard",
+        "VK2801": "VK 28.01",
+        "VK3001H": "VK 30.01 (H)",
+        "VK3001P": "VK 30.01 (P)",
+        "VK3002DB": "VK 30.02 (D)",
+        "VK3002DB_V1": "VK 30.01 (D)",
+        "VK3002M": "VK 30.02 (M)",
+        "VK3601H": "VK 36.01 (H)",
+        "VK4502A": "VK 45.02 (P) Ausf. A",
+        "VK4502P": "VK 45.02 (P) Ausf. B",
+        "VK7201": "VK 72.01 (K)",
+        "Valentine_LL": "Valentine II",
+        "Van_Helsing": "Helsing H0",
+        "WZ-135G_FT": "WZ 135G FT Blaze",
+        "Waffentrager_IV": "Waffenträger auf Pz. IV",
+        "Object252": "IS-6",
+        "A94_T37": "T37",
+        "A115_Chrysler_K": "Chrysler K",
+        "Ch_WZ-112v2": "WZ-112-2",
+        "Oth16_KV_TG": "Smasher",
+        "A68_T28D": "T28 Defender",
+        "Ch34_WZ-131G_FT": "WZ-131G FT",
+        "Ch35_T-34-2G_FT": "T-34-2G FT",
+        "Ch36_WZ-111-1G_FT": "WZ-111-1G FT",
+        "Ch37_WZ-111G_FT": "WZ-111G FT",
+        "GB83_4005": "FV4005",
+        "GB92_FV217": "FV217 Badger",
+        "Oth20_M4FL10": "M4/FL10",
+        "R134_Object_252U": "Object 252U",
+        "A117_T26E5": "T26E5",
+        "G136_Tiger_131": "Tiger 131",
+        "G138_VK16801P": "VK 168.01 (P)",
+        "GB41_Challenger": "Challenger",
+        "GB80_Charioteer": "Charioteer",
+        "GB81_FV4004": "FV4004 Conway",
+        "Oth17_BDT-5A": "Y5 T-34",
+        "Oth18_BDT-5B": "Y5 Firefly",
+        "Oth19_BDT-5C": "Y5 ELC bis",
+        "It08_Progetto_M40_mod65": "Progetto M40 mod. 65"
+    }
+}
