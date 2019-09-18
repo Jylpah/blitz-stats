@@ -169,7 +169,9 @@ async def qBStankStats(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDataba
 
 async def qWGtankStats(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, periodQ: asyncio.Queue, filename: str, tier=None):
     """Async Worker to fetch player stats"""
+    global STATS_EXPORTED
     dbc = db[DB_C_WG_TANK_STATS]
+    
     tanks = await getDBtanksTier(db, tier)
     bu.debug('[' + str(workerID) + '] ' + str(len(tanks))  + ' tanks in DB')
 
@@ -203,9 +205,8 @@ async def qWGtankStats(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDataba
                         if i == 0:
                             bu.printWaiter()
                         await fp.write(json.dumps(doc, ensure_ascii=False) + '\n')
-
-                #bu.debug('[' + str(workerID) + '] write iteration complete. Account IDs ' + str(id) + ' - ' + str(id + id_step))
-        
+                        STATS_EXPORTED += 1
+                        
         except Exception as err:
             bu.error('[' + str(workerID) + '] Unexpected Exception: ' + str(type(err)) + ' : ' + str(err))
         finally:
@@ -217,8 +218,9 @@ async def qWGtankStats(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDataba
 
 async def qBSplayerStats(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, periodQ: asyncio.Queue, filename: str):
     """Async Worker to fetch player stats"""
-    
+    global STATS_EXPORTED
     dbc = db[DB_C_BS_PLAYER_STATS]
+
     while True:
         item = await periodQ.get()
         bu.debug('[' + str(workerID) + '] ' + str(periodQ.qsize())  + ' periods to process')
@@ -252,6 +254,7 @@ async def qBSplayerStats(workerID: int, db: motor.motor_asyncio.AsyncIOMotorData
                         if i == 0:
                             bu.printWaiter()
                         await fp.write(json.dumps(doc, ensure_ascii=False) + '\n')
+                        STATS_EXPORTED += 1
 
                     bu.debug('[' + str(workerID) + '] write iteration complete')
                 bu.debug('[' + str(workerID) + '] File write complete')
@@ -268,10 +271,8 @@ async def qBSplayerStats(workerID: int, db: motor.motor_asyncio.AsyncIOMotorData
 async def getDBtanks(db: motor.motor_asyncio.AsyncIOMotorDatabase):
     """Get tank_ids of tanks in the DB"""
     dbc = db[DB_C_WG_TANK_STATS]
-    tanks = await dbc.distinct('tank_id')
-        
-    return tanks
-
+    return await dbc.distinct('tank_id')
+    
 
 async def getDBtanksTier(db: motor.motor_asyncio.AsyncIOMotorDatabase, tier: int):
     """Get tank_ids of tanks in a particular tier"""
