@@ -1,3 +1,5 @@
 tmp/
 export/
 blitzstats.ini
+__pycache__/
+getBlitzStats.code-workspace
