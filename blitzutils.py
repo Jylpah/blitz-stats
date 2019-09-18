@@ -44,10 +44,13 @@ def setSilent(silent: bool):
         VERBOSE = False
         DEBUG   = False
 
-def verbose(msg = ""):
+def verbose(msg = "", n = None):
     """Print a message"""
     if VERBOSE:
-        print(msg)
+        if n == None:
+            print(msg)
+        else:
+            print('[' + str(n) + ']: ' + msg)
     return None
 
 def verbose_std(msg = "", n = None):
@@ -83,12 +86,15 @@ def debug(msg = "", n = None):
     return None
 
 
-def error(msg = ""):
+def error(msg = "", n = None):
     """Print an error message"""
     curframe = inspect.currentframe()
     calframe = inspect.getouterframes(curframe, 2)
     caller = calframe[1][3]
-    print('ERROR: ' + caller + '(): ' + msg)
+    if n == None:
+        print('ERROR: ' + caller + '(): ' + msg)
+    else:
+        print('ERROR: ' + caller + '()' + '[' + str(n) + ']: ' + msg)
     return None
 
 def NOW() -> int:
