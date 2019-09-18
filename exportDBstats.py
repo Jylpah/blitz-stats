@@ -28,6 +28,7 @@ bs = None
 TODAY = datetime.datetime.utcnow().date()
 DEFAULT_DAYS_DELTA = datetime.timedelta(days=30)
 DATE_DELTA = datetime.timedelta(days=7)
+STATS_EXPORTED = 0
 
 # main() -------------------------------------------------------------
 
@@ -60,15 +61,15 @@ async def main(argv):
 		## Read config
         config = configparser.ConfigParser()
         config.read(FILE_CONFIG)
-        configDB = config['DATABASE']
-        DB_SERVER = configDB.get('db_server', 'localhost')
-        DB_PORT = configDB.getint('db_port', 27017)
-        DB_SSL = configDB.getboolean('db_ssl', False)
+        configDB    = config['DATABASE']
+        DB_SERVER   = configDB.get('db_server', 'localhost')
+        DB_PORT     = configDB.getint('db_port', 27017)
+        DB_SSL      = configDB.getboolean('db_ssl', False)
         DB_CERT_REQ = configDB.getint('db_ssl_req', ssl.CERT_NONE)
-        DB_AUTH = configDB.get('db_auth', 'admin')
-        DB_NAME = configDB.get('db_name', 'BlitzStats')
-        DB_USER = configDB.get('db_user', 'mongouser')
-        DB_PASSWD = configDB.get('db_password', "PASSWORD")
+        DB_AUTH     = configDB.get('db_auth', 'admin')
+        DB_NAME     = configDB.get('db_name', 'BlitzStats')
+        DB_USER     = configDB.get('db_user', 'mongouser')
+        DB_PASSWD   = configDB.get('db_password', "PASSWORD")
 
 		#### Connect to MongoDB
         client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, username=DB_USER, password=DB_PASSWD, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ)
@@ -100,7 +101,7 @@ async def main(argv):
         bu.debug('Waiting for workers to cancel')
         if len(tasks) > 0:
             await asyncio.gather(*tasks, return_exceptions=True)
-
+        printStats(args.mode)
     except asyncio.CancelledError as err:
         bu.error('Queue gets cancelled while still working.')
     except Exception as err:
@@ -108,6 +109,8 @@ async def main(argv):
 
     return None
 
+def printStats(mode = ""):
+    bu.verbose_std(str(STATS_EXPORTED) + ' stats exported (' + mode + ')')
 
 def valid_date(s):
     try:
@@ -124,10 +127,12 @@ def NOW() -> int:
 async def qBStankStats(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, periodQ: asyncio.Queue, filename: str, tier=None):
     """Async Worker to fetch tank stats"""
     
+    global STATS_EXPORTED
     dbc = db[DB_C_BS_TANK_STATS]
+
     while True:
         item = await periodQ.get()
-        bu.debug('[' + str(workerID) + '] ' + str(periodQ.qsize())  + ' periods to process')
+        bu.debug( str(periodQ.qsize())  + ' periods to process', workerID)
         try:
             
             dayA = item[0]
@@ -137,12 +142,12 @@ async def qBStankStats(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDataba
             datestr = dayB.isoformat()
             fn = filename + '_' + datestr + (('_tier_' + str(tier)) if tier != None else '') + '.jsonl'
 
-            bu.debug('[' + str(workerID) + '] Start: ' + str(timeA) + ' End: ' + str(timeB))
+            bu.debug('Start: ' + str(timeA) + ' End: ' + str(timeB), workerID)
 
             async with aiofiles.open(fn, 'w', encoding="utf8") as fp:
                 tanks = await getDBtanksTier(db, tier)
                 for tank_id in tanks:
-                    bu.debug('Exporting stats for tier ' + str(tier) + ' tanks: ' + ', '.join(list(map(str, tanks))))
+                    bu.debug('Exporting stats for tier ' + str(tier) + ' tanks: ' + ', '.join(list(map(str, tanks))), workerID)
                     findQ = {'$and': [{'last_battle_time': {'$lte': timeB}}, { 'last_battle_time': {'$gt': timeA}}, {'tank_id': tank_id}]}
                     cursor = dbc.find(findQ, {'_id': 0})
                     i = 0
@@ -151,11 +156,12 @@ async def qBStankStats(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDataba
                         if i == 0:
                             bu.printWaiter()
                         await fp.write(json.dumps(doc, ensure_ascii=False) + '\n')
+                        STATS_EXPORTED += 1
 
         except Exception as err:
-            bu.error('[' + str(workerID) + '] Unexpected Exception: ' + str(type(err)) + ' : ' + str(err))
+            bu.error('Unexpected Exception: ' + str(type(err)) + ' : ' + str(err), workerID)
         finally:
-            bu.debug('[' + str(workerID) + '] File write complete')
+            bu.debug('File write complete', workerID)
             periodQ.task_done()
             
     return None
