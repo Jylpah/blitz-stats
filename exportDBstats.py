@@ -26,7 +26,7 @@ CACHE_VALID = 24*3600*7   # 7 days
 bs = None
 
 TODAY = datetime.datetime.utcnow().date()
-DEFAULT_DAYS_DELTA = datetime.timedelta(days=30)
+DEFAULT_DAYS_DELTA = datetime.timedelta(days=90)
 DATE_DELTA = datetime.timedelta(days=7)
 STATS_EXPORTED = 0
 
@@ -53,8 +53,9 @@ async def main(argv):
     try:
 
         dates = sorted(args.dates)
-        start_date = dates[0] - DEFAULT_DAYS_DELTA
-        dates.insert(0, start_date)
+        if len(dates) == 1:
+            start_date = dates[0] - DEFAULT_DAYS_DELTA
+            dates.insert(0, start_date)
         bu.debug(str(dates))
 
 
