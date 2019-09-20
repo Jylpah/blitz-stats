@@ -202,7 +202,7 @@ async def qWGtankStats(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDataba
                     #cursor = dbc.aggregate(pipeline)
                     i = 0
                     async for doc in cursor:
-                        i = (i+1) % 1000
+                        i = (i+1) % 10000
                         if i == 0:
                             bu.printWaiter()
                         await fp.write(json.dumps(doc, ensure_ascii=False) + '\n')
