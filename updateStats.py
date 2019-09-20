@@ -27,6 +27,8 @@ DB_C_BS_PLAYER_STATS   	= 'BS_PlayerStats'
 DB_C_BS_TANK_STATS     	= 'BS_PlayerTankStats'
 DB_C_TANKS     			= 'Tankopedia'
 DB_C_ERROR_LOG			= 'ErrorLog'
+DB_C_UPDATE_LOG			= 'UpdateLog'
+
 
 UPDATE_FIELD = { 'tankstats'	: 'updated_WGtankstats',
 				'playerstats'	: 'updated_WGplayerstats',
@@ -143,7 +145,6 @@ async def main(argv):
 			await asyncio.wait([ tanklist_task])
 			bu.debug('Waiting for tank list workers to finish')
 			await tankListQ.join()
-			printUpdateStats()
 		
 		bu.debug('Cancelling workers')
 		for task in tasks:
@@ -152,9 +153,11 @@ async def main(argv):
 		if len(tasks) > 0:
 			await asyncio.gather(*tasks, return_exceptions=True)
 
-		
+		logStatUpdated(db, args.mode)
+		printUpdateStats(args.mode)
+
 	except asyncio.CancelledError as err:
-		bu.error('Queue gets cancelled while still working.')
+		bu.error('Queue got cancelled while still working.')
 	except Exception as err:
 		bu.error('Unexpected Exception: ' + str(type(err)) + ' : '+ str(err))
 	finally:
@@ -163,7 +166,17 @@ async def main(argv):
 		await wg.close()
 
 	return None
-			
+
+def logStatUpdated(db : motor.motor_asyncio.AsyncIOMotorDatabase, mode : str):
+	"""Log successfully finished status update"""
+	dbc = db[DB_C_UPDATE_LOG]
+	try:
+		dbc.insert_one( { 'mode': mode, 'updated': NOW() } )
+	except Exception as err:
+		bu.error('Unexpected error: ' + str(type(err)) + ' : ' + str(err))
+		return False
+	return True
+
 async def getActivePlayersDB(db : motor.motor_asyncio.AsyncIOMotorDatabase, update: str, force = False):
 	"""Get list of active accounts from the database"""
 	dbc = db[DB_C_ACCOUNTS]
@@ -462,9 +475,12 @@ async def hasFreshStats(db, account_id : int, stat_type: str ) -> bool:
 		bu.error('Unexpected error: ' + str(type(err)) + ' : ' + str(err))
 		return False
 
-def printUpdateStats():
-	bu.verbose_std('Total ' + str(STATS_ADDED) + ' stats updated')
-	return True
+def printUpdateStats(mode: str):
+	if mode in [ 'tankstats', 'playerstats', 'playerstatsBS', 'tankstatsBS']:
+		bu.verbose_std('Total ' + str(STATS_ADDED) + ' stats updated')
+		return True
+	else:
+		return False
 
 async def updateStatsUpdated(db, account_id, field, last_battle_time = None) -> bool:
 	dbc = db[DB_C_ACCOUNTS]
