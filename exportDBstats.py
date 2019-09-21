@@ -28,6 +28,8 @@ bs = None
 TODAY = datetime.datetime.utcnow().date()
 DEFAULT_DAYS_DELTA = datetime.timedelta(days=90)
 DATE_DELTA = datetime.timedelta(days=7)
+STATS_START_DATE = datetime.datetime(2014,1,1)
+
 STATS_EXPORTED = 0
 
 # main() -------------------------------------------------------------
@@ -36,7 +38,8 @@ STATS_EXPORTED = 0
 async def main(argv):
     parser = argparse.ArgumentParser(description='Retrieve player stats from the DB')
     parser.add_argument('-f', '--filename', type=str, default=None, help='Filename to write stats into')
-    parser.add_argument('--mode', default='help', choices=['players', 'tankstats'], help='Select action')
+    parser.add_argument('--stats', default='help', choices=['players', 'tankstats'], help='Select type of stats to export')
+    parser.add_argument('--type', default='period', choices=['period', 'cumulative', 'auto'], help='Select export type. \'auto\' exports periodic stats, but cumulative for the oldest one')
     parser.add_argument('--tier', type=int, default=None, help='Fiter tanks based on tier')
     parser.add_argument('--date_delta', type=int, default=DATE_DELTA, help='Date delta from the date')
     arggroup = parser.add_mutually_exclusive_group()
@@ -51,14 +54,6 @@ async def main(argv):
     bu.setDebug(args.debug)
 
     try:
-
-        dates = sorted(args.dates)
-        if len(dates) == 1:
-            start_date = dates[0] - DEFAULT_DAYS_DELTA
-            dates.insert(0, start_date)
-        bu.debug(str(dates))
-
-
 		## Read config
         config = configparser.ConfigParser()
         config.read(FILE_CONFIG)
@@ -78,16 +73,17 @@ async def main(argv):
         db = client[DB_NAME]
         bu.debug(str(type(db)))
         tasks = []
-
-        periodQ = asyncio.Queue()
-        for i in range(1, len(dates)):
-            await periodQ.put([dates[i-1], dates[i]])
         
-        if args.mode == 'players':
+        periodQ = await mkPeriodQ(args.dates, args.type)
+        if periodQ == None:
+            bu.error('Export type (--type) is not cumulative, but only one date given. Exiting...')
+            sys.exit(1)
+        
+        if args.stats == 'players':
             filename = 'playerstats' if args.filename == None else args.filename
             for i in range(N_WORKERS):
                 tasks.append(asyncio.create_task(qBSplayerStats(i, db, periodQ, filename)))
-        elif args.mode == 'tankstats':
+        elif args.stats == 'tankstats':
             filename = 'tankstats' if args.filename == None else args.filename                
             for i in range(N_WORKERS):
                 tasks.append(asyncio.create_task(qWGtankStats(i, db, periodQ, filename, args.tier)))
@@ -102,7 +98,7 @@ async def main(argv):
         bu.debug('Waiting for workers to cancel')
         if len(tasks) > 0:
             await asyncio.gather(*tasks, return_exceptions=True)
-        printStats(args.mode)
+        printStats(args.stats)
     except asyncio.CancelledError as err:
         bu.error('Queue gets cancelled while still working.')
     except Exception as err:
@@ -110,10 +106,30 @@ async def main(argv):
 
     return None
 
-def printStats(mode = ""):
-    bu.verbose_std(str(STATS_EXPORTED) + ' stats exported (' + mode + ')')
+async def mkPeriodQ(dates : list, export_type: str) -> asyncio.Queue:
+    """Create period queue for database queries"""
+    dates = sorted(dates)
+    bu.debug(str(dates))
+    
+    periodQ = asyncio.Queue()
+
+    if (len(dates) == 1) and (export_type != 'cumulative'):
+        return None
+            
+    for i in range(0, len(dates)):
+        if ( (export_type == 'auto') and (i==0)) or (export_type == 'cumulative'):
+            await periodQ.put([STATS_START_DATE, dates[i]])
+        elif (i > 0):
+            await periodQ.put([dates[i-1], dates[i]])
+    return periodQ
+
+
+def printStats(stats_type = ""):
+    bu.verbose_std(str(STATS_EXPORTED) + ' stats exported (' + stats_type + ')')
+
 
 def valid_date(s):
+    """Validate and return datetime objects for date(str) paramenters"""
     try:
         return date.fromisoformat(s)
     except ValueError:
