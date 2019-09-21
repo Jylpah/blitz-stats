@@ -81,7 +81,7 @@ async def main(argv):
 
         periodQ = asyncio.Queue()
         for i in range(1, len(dates)):
-            await periodQ.put([dates[i-1]+args.date_delta, dates[i]+args.date_delta])
+            await periodQ.put([dates[i-1], dates[i]])
         
         if args.mode == 'players':
             filename = 'playerstats' if args.filename == None else args.filename
