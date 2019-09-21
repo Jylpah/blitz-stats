@@ -67,7 +67,15 @@ def printWaiter(force = False):
     if not DEBUG and (not SILENT or force):
         print('.', end='', flush=True)
 
-    
+
+def wait(sec : int):
+    for i in range(0, sec): 
+       i=i   ## to get rid of the warning... 
+       time.sleep(1)
+       printWaiter()
+    print('', flush=True)  
+
+
 def printNewline(force = False):
     if not DEBUG and (not SILENT  or force):
         print('', flush=True)
