@@ -4,3 +4,4 @@ blitzstats.ini
 __pycache__/
 getBlitzStats.code-workspace
 *.jsonl
+*.7z
