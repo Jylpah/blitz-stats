@@ -29,7 +29,6 @@ DB_C_TANKS     			= 'Tankopedia'
 DB_C_ERROR_LOG			= 'ErrorLog'
 DB_C_UPDATE_LOG			= 'UpdateLog'
 
-
 UPDATE_FIELD = { 'tankstats'	: 'updated_WGtankstats',
 				'playerstats'	: 'updated_WGplayerstats',
 				'playerstatsBS' : 'updated_BSplayerstats',
@@ -46,7 +45,7 @@ async def main(argv):
 	global bs, wg
 
 	parser = argparse.ArgumentParser(description='Analyze Blitz replay JSONs from WoTinspector.com')
-	parser.add_argument('--update', default='help', choices=[ 'tankstats', 'playerstats', 'playerstatsBS', 'tankstatsBS', 'tankopedia', 'all' ], help='Choose what to update')
+	parser.add_argument('--mode', default='help', choices=[ 'tankstats', 'playerstats', 'playerstatsBS', 'tankstatsBS', 'tankopedia', 'all' ], help='Choose what to update')
 	parser.add_argument('--file', default=None, help='JSON file to read')
 	parser.add_argument('--force', action='store_true', default=False, help='Force refreshing the active player list')
 	parser.add_argument('--workers', type=int, default=N_WORKERS, help='Number of asynchronous workers')
@@ -96,20 +95,20 @@ async def main(argv):
 		await db[DB_C_ERROR_LOG].create_index([('account_id', pymongo.ASCENDING), ('time', pymongo.DESCENDING), ('type', pymongo.ASCENDING) ], background=True)	
 		
 		## get active player list ------------------------------
-		if args.update == 'tankopedia':
+		if args.mode == 'tankopedia':
 			await updateTankopedia(db, args.file, args.force)
 		else:
 			if args.nodb :
 				active_players = await getActivePlayersBS(args.force)
 			else:
 				if args.runErrorLog:
-					active_players = await getPrevErrors(db, args.update)
+					active_players = await getPrevErrors(db, args.mode)
 				else:
-					active_players = await getActivePlayersDB(db, args.update, args.force)
+					active_players = await getActivePlayersDB(db, args.mode, args.force)
 			bu.verbose_std(str(len(active_players)) + ' players\' stats to be updated.')	
 
 		tasks = []
-		if args.update == 'playerstatsBS' or args.update == 'all':
+		if args.mode == 'playerstatsBS' or args.mode == 'all':
 			playerQ  = asyncio.Queue(1000)
 			playerlist_task = asyncio.create_task(mkPlayerQ(playerQ, active_players))
 			for i in range(args.workers):
@@ -117,7 +116,7 @@ async def main(argv):
 				bu.debug('Player stat Task ' + str(i) + ' started')
 				await asyncio.sleep(SLEEP)
         
-		if args.update == 'tankstats' or args.update == 'all':
+		if args.mode == 'tankstats' or args.mode == 'all':
 			tankListQ  = asyncio.Queue(1000)
 			tanklist_task = asyncio.create_task(mkPlayerQ(tankListQ, active_players))
 			for i in range(args.workers):
@@ -125,7 +124,7 @@ async def main(argv):
 				bu.debug('Tank list Task ' + str(i) + ' started')	
 				await asyncio.sleep(SLEEP)		
 		
-		if args.update == 'tankstatsBS' or args.update == 'all':
+		if args.mode == 'tankstatsBS' or args.mode == 'all':
 			tankListQ  = asyncio.Queue(1000)
 			tanklist_task = asyncio.create_task(mkPlayerQ(tankListQ, active_players))
 			for i in range(args.workers):
@@ -134,13 +133,13 @@ async def main(argv):
 				await asyncio.sleep(SLEEP)		
 		
 		## wait queues to finish --------------------------------------
-		if args.update == 'playerstatsBS' or args.update == 'all':
+		if args.mode == 'playerstatsBS' or args.mode == 'all':
 			bu.debug('Waiting for the player queue maker to finish')
 			await asyncio.wait([playerlist_task])
 			bu.debug('All active players added to the queue. Waiting for player stat workers to finish')
 			await playerQ.join()
 		
-		if args.update == 'tankstats' or args.update == 'tankstatsBS' or args.update == 'all':
+		if args.mode == 'tankstats' or args.mode == 'tankstatsBS' or args.mode == 'all':
 			bu.debug('Waiting for the tanklist queue maker to finish')
 			await asyncio.wait([ tanklist_task])
 			bu.debug('Waiting for tank list workers to finish')
@@ -463,7 +462,7 @@ async def hasFreshStats(db, account_id : int, stat_type: str ) -> bool:
 		if res == None:
 			return False
 		if (UPDATE_FIELD[stat_type] in res) and ('latest_battle_time' in res):
-			if (res[UPDATE_FIELD[stat_type]] == None) or (res['latest_battle_time'] == None):
+			if (res[UPDATE_FIELD[stat_type]] == None) or (res['latest_battle_time'] == None) or (res['latest_battle_time'] > NOW()):
 				return False
 			elif (NOW() - res[UPDATE_FIELD[stat_type]])  > min(MAX_UPDATE_INTERVAL, (res[UPDATE_FIELD[stat_type]] - res['latest_battle_time'])/2):
 				return False
