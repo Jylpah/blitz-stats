@@ -176,7 +176,7 @@ def logStatUpdated(db : motor.motor_asyncio.AsyncIOMotorDatabase, mode : str):
 		return False
 	return True
 
-async def getActivePlayersDB(db : motor.motor_asyncio.AsyncIOMotorDatabase, update: str, force = False):
+async def getActivePlayersDB(db : motor.motor_asyncio.AsyncIOMotorDatabase, mode: str, force = False):
 	"""Get list of active accounts from the database"""
 	dbc = db[DB_C_ACCOUNTS]
 	players = list()
@@ -184,7 +184,7 @@ async def getActivePlayersDB(db : motor.motor_asyncio.AsyncIOMotorDatabase, upda
 	if force:
 		cursor = dbc.find()
 	else:
-		cursor = dbc.find(  { '$or': [ { UPDATE_FIELD[update]: None }, { UPDATE_FIELD[update] : { '$lt': NOW() - CACHE_VALID } } ] }, { '_id' : 1} )
+		cursor = dbc.find(  { '$or': [ { UPDATE_FIELD[mode]: None }, { UPDATE_FIELD[mode] : { '$lt': NOW() - CACHE_VALID } } ] }, { '_id' : 1} )
 	
 	async for player in cursor:
 		i += 1
@@ -233,6 +233,52 @@ async def getPrevErrors(db, stat_type: str):
 		except Exception as err:
 			bu.error('Unexpected error: ' + str(type(err)) + ' : ' + str(err))
 	return list(account_ids)
+
+
+async def clearErrors(db, account_id, stat_type: str):
+	"""Delete ErrorLog entry for account_id, stat_type"""
+	dbc = db[DB_C_ERROR_LOG]
+	await dbc.delete_many({ 'account_id': account_id, 'type': stat_type })
+
+
+async def hasFreshStats(db, account_id : int, stat_type: str ) -> bool:
+	"""Check whether the DB has fresh enough stats for the account_id & stat_type"""
+	dbc = db[DB_C_ACCOUNTS]
+	#res = await dbc.find_one( { 'account_id' : account_id, '$or' : [ { UPDATE_FIELD['tankstats'] : { '$exists' : False }}, { UPDATE_FIELD['tankstats'] : None } , { UPDATE_FIELD['tankstats'] : { '$lt' : (NOW() - CACHE_VALID) } } ]  } )
+	try:
+		res = await dbc.find_one( { '_id' : account_id })
+		if res == None:
+			return False
+		if (UPDATE_FIELD[stat_type] in res) and ('latest_battle_time' in res):
+			if (res[UPDATE_FIELD[stat_type]] == None) or (res['latest_battle_time'] == None) or (res['latest_battle_time'] > NOW()):
+				return False
+			elif (NOW() - res[UPDATE_FIELD[stat_type]])  > min(MAX_UPDATE_INTERVAL, (res[UPDATE_FIELD[stat_type]] - res['latest_battle_time'])/2):
+				return False
+			
+			return True
+		else:
+			return False
+	except Exception as err:
+		bu.error('Unexpected error: ' + str(type(err)) + ' : ' + str(err))
+		return False
+
+
+def printUpdateStats(mode: str):
+	if mode in [ 'tankstats', 'playerstats', 'playerstatsBS', 'tankstatsBS']:
+		bu.verbose_std('Total ' + str(STATS_ADDED) + ' stats updated')
+		return True
+	else:
+		return False
+
+
+async def updateStatsUpdated(db, account_id, field, last_battle_time = None) -> bool:
+	dbc = db[DB_C_ACCOUNTS]
+	try:
+		await dbc.update_one( { '_id' : account_id }, { '$set': { 'last_battle_time': last_battle_time, UPDATE_FIELD[field] : NOW() }} )
+		return True
+	except Exception as err:
+		bu.error('Unexpected Exception: ' + str(type(err)) + ' : '+ str(err) )
+		return False	
 
 
 async def updateTankopedia( db: motor.motor_asyncio.AsyncIOMotorDatabase, filename: str, force: bool):
@@ -437,6 +483,7 @@ async def tankStatWorker(playerQ : asyncio.Queue, workerID : int, db : motor.mot
 			await asyncio.sleep(SLEEP)
 	return None
 
+
 async def logError(db, account_id: int, stat_type: str, clrErrorLog = False):
 	dbc = db[DB_C_ERROR_LOG]
 	try:
@@ -448,47 +495,6 @@ async def logError(db, account_id: int, stat_type: str, clrErrorLog = False):
 	except Exception as err:
 		bu.error('Unexpected Exception: ' + str(type(err)) + ' : '+ str(err))
 
-async def clearErrors(db, account_id, stat_type: str):
-	"""Delete ErrorLog entry for account_id, stat_type"""
-	dbc = db[DB_C_ERROR_LOG]
-	await dbc.delete_many({ 'account_id': account_id, 'type': stat_type })
-
-async def hasFreshStats(db, account_id : int, stat_type: str ) -> bool:
-	"""Check whether the DB has fresh enough stats for the account_id & stat_type"""
-	dbc = db[DB_C_ACCOUNTS]
-	#res = await dbc.find_one( { 'account_id' : account_id, '$or' : [ { UPDATE_FIELD['tankstats'] : { '$exists' : False }}, { UPDATE_FIELD['tankstats'] : None } , { UPDATE_FIELD['tankstats'] : { '$lt' : (NOW() - CACHE_VALID) } } ]  } )
-	try:
-		res = await dbc.find_one( { '_id' : account_id })
-		if res == None:
-			return False
-		if (UPDATE_FIELD[stat_type] in res) and ('latest_battle_time' in res):
-			if (res[UPDATE_FIELD[stat_type]] == None) or (res['latest_battle_time'] == None) or (res['latest_battle_time'] > NOW()):
-				return False
-			elif (NOW() - res[UPDATE_FIELD[stat_type]])  > min(MAX_UPDATE_INTERVAL, (res[UPDATE_FIELD[stat_type]] - res['latest_battle_time'])/2):
-				return False
-			
-			return True
-		else:
-			return False
-	except Exception as err:
-		bu.error('Unexpected error: ' + str(type(err)) + ' : ' + str(err))
-		return False
-
-def printUpdateStats(mode: str):
-	if mode in [ 'tankstats', 'playerstats', 'playerstatsBS', 'tankstatsBS']:
-		bu.verbose_std('Total ' + str(STATS_ADDED) + ' stats updated')
-		return True
-	else:
-		return False
-
-async def updateStatsUpdated(db, account_id, field, last_battle_time = None) -> bool:
-	dbc = db[DB_C_ACCOUNTS]
-	try:
-		await dbc.update_one( { '_id' : account_id }, { '$set': { 'last_battle_time': last_battle_time, UPDATE_FIELD[field] : NOW() }} )
-		return True
-	except Exception as err:
-		bu.error('Unexpected Exception: ' + str(type(err)) + ' : '+ str(err) )
-		return False	
 
 def mkID(accountID: int, tankID: int, last_battle_time: int) -> str:
 	return hex(accountID)[2:].zfill(10) + hex(tankID)[2:].zfill(6) + hex(last_battle_time)[2:].zfill(8)
