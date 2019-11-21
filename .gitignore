@@ -1,5 +1,6 @@
 tmp/
 export/
+ssl/
 blitzstats.ini
 __pycache__/
 getBlitzStats.code-workspace
