@@ -74,7 +74,9 @@ async def main(argv):
 		DB_NAME 	= configDB.get('db_name', 'BlitzStats')
 		DB_USER		= configDB.get('db_user', 'mongouser')
 		DB_PASSWD 	= configDB.get('db_password', "PASSWORD")
-
+		DB_CERT		= configDB.get('db_ssl_cert_file', None)
+		DB_CA		= configDB.get('db_ssl_ca_file', None)
+		
 		bu.debug('DB_SERVER: ' + DB_SERVER)
 		bu.debug('DB_PORT: ' + str(DB_PORT))
 		bu.debug('DB_SSL: ' + "True" if DB_SSL else "False")
@@ -82,7 +84,7 @@ async def main(argv):
 		bu.debug('DB_NAME: ' + DB_NAME)
 
 		#### Connect to MongoDB
-		client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, username=DB_USER, password=DB_PASSWD, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ)
+		client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, username=DB_USER, password=DB_PASSWD, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
 
 		db = client[DB_NAME]
 		await db[DB_C_ACCOUNTS].create_index([ ('last_battle_time', pymongo.DESCENDING) ], background=True)	

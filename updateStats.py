@@ -67,20 +67,22 @@ async def main(argv):
 		wg = WG(WG_appID)
 
 		## Read config
-		config = configparser.ConfigParser()
+		config 	= configparser.ConfigParser()
 		config.read(FILE_CONFIG)
-		configDB = config['DATABASE']
-		DB_SERVER = configDB.get('db_server', 'localhost')
-		DB_PORT = configDB.getint('db_port', 27017)
-		DB_SSL = configDB.getboolean('db_ssl', False)
+		configDB 		= config['DATABASE']
+		DB_SERVER 	= configDB.get('db_server', 'localhost')
+		DB_PORT 	= configDB.getint('db_port', 27017)
+		DB_SSL 		= configDB.getboolean('db_ssl', False)
 		DB_CERT_REQ = configDB.getint('db_ssl_req', ssl.CERT_NONE)
-		DB_AUTH = configDB.get('db_auth', 'admin')
-		DB_NAME = configDB.get('db_name', 'BlitzStats')
-		DB_USER = configDB.get('db_user', 'mongouser')
-		DB_PASSWD = configDB.get('db_password', "PASSWORD")
-
+		DB_AUTH 	= configDB.get('db_auth', 'admin')
+		DB_NAME 	= configDB.get('db_name', 'BlitzStats')
+		DB_USER 	= configDB.get('db_user', 'mongouser')
+		DB_PASSWD 	= configDB.get('db_password', "PASSWORD")
+		DB_CERT		= configDB.get('db_ssl_cert_file', None)
+		DB_CA		= configDB.get('db_ssl_ca_file', None)
+		
 		#### Connect to MongoDB
-		client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, username=DB_USER, password=DB_PASSWD, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ)
+		client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, username=DB_USER, password=DB_PASSWD, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
 
 		db = client[DB_NAME]
 		bu.debug(str(type(db)))	
