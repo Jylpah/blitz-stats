@@ -369,10 +369,13 @@ async def WIreplayFetcher(db : motor.motor_asyncio.AsyncIOMotorDatabase, queue :
 	players = set()
 	dbc = db[DB_C_REPLAYS]
 	msg_str = 'Replay Fetcher[' + str(workerID) + ']: '
+	i = 0
 	try:
 		while True:
 			replay_link = await queue.get()
-			bu.printWaiter()
+			i = (i+1) % 10
+			if i == 0 : 
+				bu.printWaiter()
 			replay_id = wi.getReplayID(replay_link)
 			res = await dbc.find_one({'_id': replay_id})
 			if res != None:
