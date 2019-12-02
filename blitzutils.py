@@ -78,7 +78,7 @@ def printWaiter(force = False):
 def setWaiter(n: int):
     global WAITER_N 
     if n > -1:
-        WAITER_N = n
+        WAITER_N = n        
     return
 
 def wait(sec : int):

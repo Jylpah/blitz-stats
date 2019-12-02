@@ -57,6 +57,7 @@ async def main(argv):
 	bu.setSilent(args.silent)
 	bu.setVerbose(args.verbose)
 	bu.setDebug(args.debug)
+	bu.setWaiter(10)
 	
 	players = set()
 	try:
@@ -190,13 +191,10 @@ async def getPlayersDB(db, args):
 	dbc = db[DB_C_REPLAYS]
 	players = set()
 
-	i = 0
 	cursor = dbc.find({}, { 'data.summary.allies' : 1, 'data.summary.enemies' : 1, '_id' : 0 } )
 	async for replay in cursor:
-		i += 1
-		if (i % 100) == 0 : 
-			bu.printWaiter()
-			bu.debug('Replays read from DB: ' + str(i))
+		bu.printWaiter()
+		
 		try:
 			players.update(replay['data']['summary']['allies'])
 			players.update(replay['data']['summary']['enemies'])			
@@ -369,13 +367,11 @@ async def WIreplayFetcher(db : motor.motor_asyncio.AsyncIOMotorDatabase, queue :
 	players = set()
 	dbc = db[DB_C_REPLAYS]
 	msg_str = 'Replay Fetcher[' + str(workerID) + ']: '
-	i = 0
+	
 	try:
 		while True:
 			replay_link = await queue.get()
-			i = (i+1) % 10
-			if i == 0 : 
-				bu.printWaiter()
+			bu.printWaiter()
 			replay_id = wi.getReplayID(replay_link)
 			res = await dbc.find_one({'_id': replay_id})
 			if res != None:
