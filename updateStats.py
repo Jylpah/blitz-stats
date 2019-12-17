@@ -43,6 +43,8 @@ STATS_ADDED = 0
 
 async def main(argv):
 	global bs, wg
+	# set the directory for the script
+	os.chdir(os.path.dirname(sys.argv[0]))
 
 	parser = argparse.ArgumentParser(description='Analyze Blitz replay JSONs from WoTinspector.com')
 	parser.add_argument('--mode', default='help', choices=[ 'tankstats', 'playerstats', 'playerstatsBS', 'tankstatsBS', 'tankopedia', 'all' ], help='Choose what to update')

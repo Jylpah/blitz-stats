@@ -36,6 +36,9 @@ STATS_EXPORTED = 0
 
 
 async def main(argv):
+    # set the directory for the script
+    os.chdir(os.path.dirname(sys.argv[0]))
+
     parser = argparse.ArgumentParser(description='Retrieve player stats from the DB')
     parser.add_argument('-f', '--filename', type=str, default=None, help='Filename to write stats into')
     parser.add_argument('--stats', default='help', choices=['players', 'tankstats'], help='Select type of stats to export')
