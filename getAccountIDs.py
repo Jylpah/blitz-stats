@@ -35,6 +35,9 @@ WIoldReplayLimit = 30
 ## main() -------------------------------------------------------------
 
 async def main(argv):
+	# set the directory for the script
+	os.chdir(os.path.dirname(sys.argv[0]))
+
 	global wi, bs
 
 	parser = argparse.ArgumentParser(description='Fetch WG account_ids')
