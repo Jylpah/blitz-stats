@@ -164,8 +164,10 @@ async def main(argv):
 				await asyncio.sleep(SLEEP)
         		
 		## wait queues to finish --------------------------------------
-		bu.debug('Waiting for the work queue makers to finish')
-		await asyncio.wait(Qcreator_tasks)
+		
+		if len(Qcreator_tasks) > 0: 
+			bu.debug('Waiting for the work queue makers to finish')
+			await asyncio.wait(Qcreator_tasks)
 
 		bu.debug('All active players added to the queue. Waiting for stat workers to finish')
 		for mode in UPDATE_FIELD:
@@ -178,7 +180,9 @@ async def main(argv):
 		if len(worker_tasks) > 0:
 			await asyncio.gather(*worker_tasks, return_exceptions=True)
 
-		log_update_time(db, args.mode)
+		if (args.sample == 0) and (not args.run_error_log):
+			# only for full stats
+			log_update_time(db, args.mode)
 		print_update_stats(args.mode)
 
 	except asyncio.CancelledError as err:
@@ -342,6 +346,9 @@ async def update_tankopedia( db: motor.motor_asyncio.AsyncIOMotorDatabase, filen
 				try:
 					tank = tanks['data'][tank_id]
 					tank['_id'] = int(tank_id)
+					if not all(field in tank for field in ['tank_id', 'name','nation', 'tier','type' ,'is_premium']):
+						bu.error('Missing fields in: ' + str(tank))
+						continue
 					if force:
 						await dbc.replace_one( { 'tank_id' : int(tank_id) } , tank, upsert=force)
 						updated += 1
