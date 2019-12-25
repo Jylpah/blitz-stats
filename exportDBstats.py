@@ -52,9 +52,8 @@ async def main(argv):
     parser.add_argument('dates', metavar='DATE1 DATE2 [DATE3 ...]', type=valid_date, default=TODAY, nargs='+', help='Stats cut-off date(s) - format YYYY-MM-DD')
 
     args = parser.parse_args()
-    bu.setSilent(args.silent)
-    bu.setVerbose(args.verbose)
-    bu.setDebug(args.debug)
+    bu.set_log_level(args.silent, args.verbose, args.debug)
+    bu.set_progress_step(1000)
 
     try:
 		## Read config
@@ -176,7 +175,7 @@ async def qBStankStats(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDataba
                     async for doc in cursor:
                         i = (i+1) % 10000
                         if i == 0:
-                            bu.printWaiter()
+                            bu.print_progress()
                         await fp.write(json.dumps(doc, ensure_ascii=False) + '\n')
                         STATS_EXPORTED += 1
 
@@ -219,13 +218,13 @@ async def qWGtankStats(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDataba
                                             'doc': {'$first': '$$ROOT'}}},
                                 {'$replaceRoot': {'newRoot': '$doc'}}, 
                                 {'$project': {'_id': False}} ]
-                    cursor = dbc.aggregate(pipeline, allowDiskUse=True)
+                    cursor = dbc.aggregate(pipeline, allowDiskUse=False)
                     #cursor = dbc.aggregate(pipeline)
                     i = 0
                     async for doc in cursor:
                         i = (i+1) % 10000
                         if i == 0:
-                            bu.printWaiter()
+                            bu.print_progress()
                         await fp.write(json.dumps(doc, ensure_ascii=False) + '\n')
                         STATS_EXPORTED += 1
                         
@@ -274,7 +273,7 @@ async def qBSplayerStats(workerID: int, db: motor.motor_asyncio.AsyncIOMotorData
                     async for doc in cursor:
                         i = (i+1) % 1000
                         if i == 0:
-                            bu.printWaiter()
+                            bu.print_progress()
                         await fp.write(json.dumps(doc, ensure_ascii=False) + '\n')
                         STATS_EXPORTED += 1
 
