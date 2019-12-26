@@ -88,8 +88,11 @@ async def main(argv):
 		#### Connect to MongoDB
 		client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, username=DB_USER, password=DB_PASSWD, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
 
+
 		db = client[DB_NAME]
 		await db[DB_C_ACCOUNTS].create_index([ ('last_battle_time', pymongo.DESCENDING) ], background=True)	
+		await db[DB_C_REPLAYS].create_index([('data.summary.battle_start_timestamp', pymongo.ASCENDING)], background=True)	
+		await db[DB_C_REPLAYS].create_index([('data.summary.battle_start_timestamp', pymongo.ASCENDING), ('data.summary.vehicle_tier', pymongo.ASCENDING)], background=True)	
 
 		if not args.remove:
 			if args.blitzstars:
