@@ -58,7 +58,7 @@ async def main(argv):
 
 	args = parser.parse_args()
 	bu.set_log_level(args.silent, args.verbose, args.debug)
-	bu.set_progress_step(1000)
+	bu.set_progress_step(100)
 	
 	players = set()
 	try:
