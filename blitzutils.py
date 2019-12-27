@@ -140,7 +140,7 @@ def set_progress_bar(heading: str, max_value: int, step: int = None):
     if max_value > 10e6:
         _progress_bar = IncrementalBar(heading, max=max_value, suffix='%(percent)d%% ETA %(remaining_hours)d hours')
     else:
-        _progress_bar = IncrementalBar(heading, max=max_value, suffix='%(progress)% %(percent)d%%')
+        _progress_bar = IncrementalBar(heading, max=max_value, suffix='%(index)d/%(max)d %(percent)d%%')
     _progress_i = 0
 
     return
