@@ -138,9 +138,9 @@ def set_progress_bar(heading: str, max_value: int, step: int = None):
     if _progress_bar != None:
         finish_progress_bar()
     if max_value > 10e6:
-        _progress_bar = SlowBar(heading, max=max_value/_progress_N)
+        _progress_bar = IncrementalBar(heading, max=max_value, suffix='%(percent)d%% ETA %(remaining_hours)d hours')
     else:
-        _progress_bar = IncrementalBar(heading, max=max_value/_progress_N)
+        _progress_bar = IncrementalBar(heading, max=max_value, suffix='%(progress)% %(percent)d%%')
     _progress_i = 0
 
     return
@@ -153,7 +153,7 @@ def print_progress(force = False) -> bool:
         _progress_i +=  1 
         if ((_progress_i % _progress_N) == 1):
             if _progress_bar != None:
-                _progress_bar.next()
+                _progress_bar.next(_progress_N)
                 return True
             else:
                 print('.', end='', flush=True)
