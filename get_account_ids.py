@@ -88,7 +88,6 @@ async def main(argv):
 		#### Connect to MongoDB
 		client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, username=DB_USER, password=DB_PASSWD, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
 
-
 		db = client[DB_NAME]
 		await db[DB_C_ACCOUNTS].create_index([ ('last_battle_time', pymongo.DESCENDING) ], background=True)	
 		await db[DB_C_REPLAYS].create_index([('data.summary.battle_start_timestamp', pymongo.ASCENDING)], background=True)	
@@ -321,10 +320,13 @@ async def getPlayersWI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: argp
 	
 	# Start tasks to process the Queue
 	tasks = []
+
 	for i in range(workers):
 		tasks.append(asyncio.create_task(WIreplayFetcher(db, replayQ, i, force)))
 		bu.debug('Replay Fetcher ' + str(i) + ' started')
-			
+
+	bu.set_progress_bar('Spidering replays', max_pages, 2)		
+
 	for page in range(start_page,(start_page + max_pages)):
 		if WI_STOP_SPIDER: 
 			bu.debug('Stopping spidering WoTispector.com')
@@ -347,9 +349,14 @@ async def getPlayersWI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: argp
 		except aiohttp.ClientError as err:
 			bu.error("Could not retrieve URL: " + url)
 			bu.error(str(err))
+	
+	n_replays = replayQ.qsize()
+	bu.set_progress_bar('Fetching replays', n_replays)
+
 
 	bu.debug('Replay links read. Replay Fetchers to finish')
 	await replayQ.join()
+	bu.finish_progress_bar()
 	bu.debug('Replays fetched. Cancelling fetcher workers')
 	for task in tasks:
 		task.cancel()	

@@ -1,9 +1,10 @@
 #!/usr/bin/python3.7
 
 import sys, os, json, time,  base64, urllib, inspect, hashlib, re
-import asyncio, aiofiles, aiohttp, aiosqlite, lxml, progress_bar
+import asyncio, aiofiles, aiohttp, aiosqlite, lxml
 from pathlib import Path
 from bs4 import BeautifulSoup
+from progress.bar import IncrementalBar
 
 MAX_RETRIES= 3
 SLEEP = 3
@@ -113,20 +114,6 @@ def _print_log_msg(prefix = 'LOG', msg = '', exception = None, id = None):
     return None
 
 
-def print_progress(force = False) -> bool:
-    """Print progress dots. Returns True if the dot is being printed."""
-    global _progress_N, _progress_i
-    if (_log_level > SILENT) and ( force or (_log_level < DEBUG ) ):
-        _progress_i +=  1 
-        if ((_progress_i % _progress_N) == 1):
-            if _progress_bar != None:
-                _progress_bar.updateAmount(_progress_i)
-            else:
-                print('.', end='', flush=True)
-                return True
-    return False    
-
-
 def set_progress_step(n: int):
     """Set the frequency of the progress dots. The bigger 'n', the fewer dots"""
     global _progress_N 
@@ -142,13 +129,40 @@ def get_progress_step():
     return _progress_N
 
 
-def set_progress_bar(heading: str, max: int):
+def set_progress_bar(heading: str, max_value: int, step: int = None):
     global _progress_bar, _progress_N, _progress_i
-    _progress_bar = progress_bar.InitBar(heading, size=max, stream=sys.stdout)
+    if step == None:
+        _progress_N = int(max_value / 1000) if (max_value > 1000) else 2
+    else:
+        _progress_N = step
+    if _progress_bar != None:
+        _progress_bar.finish()
+    if max_value > 10e6:
+        _progress_bar = SlowBar(heading, max=max_value/_progress_N)
+    else:
+        _progress_bar = IncrementalBar(heading, max=max_value/_progress_N)
     _progress_i = 0
-    _progress_N = int(max / 100) if (max > 0) else 2
+
     return
 
+
+def print_progress(force = False) -> bool:
+    """Print progress dots. Returns True if the dot is being printed."""
+    global _progress_N, _progress_i
+    if (_log_level > SILENT) and ( force or (_log_level < DEBUG ) ):
+        _progress_i +=  1 
+        if ((_progress_i % _progress_N) == 1):
+            if _progress_bar != None:
+                _progress_bar.next()
+                return True
+            else:
+                print('.', end='', flush=True)
+                return True
+    return False    
+
+def finish_progress_bar():
+    _progress_bar.finish()
+    return None
 
 def wait(sec : int):
     for i in range(0, sec): 
@@ -272,7 +286,15 @@ def bld_dict_hierarcy(d : dict, key : str, value) -> dict:
         error('Unexpected Exception', err)
     return None
 
+## -----------------------------------------------------------
+#### Class SlowBar 
+## -----------------------------------------------------------
 
+class SlowBar(IncrementalBar):
+    suffix = '%(remaining_hours)d hours remaining'
+    @property
+    def remaining_hours(self):
+        return self.eta // 3600
 
 
 ## -----------------------------------------------------------
@@ -577,16 +599,16 @@ class WG:
     @classmethod
     def chk_JSON_status(cls, json_resp: dict) -> bool:
         try:
-            if json_resp == None:
+            if (json_resp == None) or ('status' not in json_resp) or (json_resp['status'] == None):
                 return False
-            if ('status' in json_resp) and (json_resp['status'] == 'ok') and ('data' in json_resp):
+            elif (json_resp['status'] == 'ok') and ('data' in json_resp):
                 return True
             elif json_resp['status'] == 'error':
                 if ('error' in json_resp):
                     error_msg = 'Received an error'
-                    if ('message' in json_resp['error']):
+                    if ('message' in json_resp['error']) and (json_resp['error']['message'] != None):
                         error_msg = error_msg + ': ' +  json_resp['error']['message']
-                    if ('value' in json_resp['error']):
+                    if ('value' in json_resp['error']) and (json_resp['error']['value'] != None):
                         error_msg = error_msg + ' Value: ' + json_resp['error']['value']
                     debug(error_msg)
                 return False

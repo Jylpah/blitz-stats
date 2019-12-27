@@ -4,7 +4,6 @@
 
 import sys, argparse, json, os, inspect, pprint, aiohttp, asyncio, aiofiles, aioconsole, re, logging, time, xmltodict, collections, pymongo
 import motor.motor_asyncio, ssl, configparser, random
-from progress_bar import ProgressBar
 import blitzutils as bu
 from blitzutils import BlitzStars
 from blitzutils import WG
@@ -37,14 +36,13 @@ UPDATE_FIELD = { 'tank_stats'		: 'updated_WGtankstats',
 				}
 bs = None
 wg = None
-progress_bar = None
 stats_added = 0
 
 ## main() -------------------------------------------------------------
 
 
 async def main(argv):
-	global bs, wg, progress_bar
+	global bs, wg
 	# set the directory for the script
 	os.chdir(os.path.dirname(sys.argv[0]))
 
@@ -67,7 +65,6 @@ async def main(argv):
 	bu.set_log_level(args.silent, args.verbose, args.debug)
 	bu.set_progress_step(1000)
 		
-	active_players = None
 	try:
 		bs = BlitzStars()
 		wg = WG(WG_APP_ID)
@@ -103,40 +100,48 @@ async def main(argv):
 		await db[DB_C_ERROR_LOG].create_index([('account_id', pymongo.ASCENDING), ('time', pymongo.DESCENDING), ('type', pymongo.ASCENDING) ], background=True)	
 		
 		## get active player list ------------------------------
+		active_players = {}
 		if 'tankopedia' in args.mode:
 			await update_tankopedia(db, args.file, args.force)
 		else:
-			active_players = {}
+			
 			if args.run_error_log:
-				active_players = await get_prev_errors(db, args.mode)
+				for mode in get_stat_modes(args.mode):
+					active_players[mode] = await get_prev_errors(db, mode)
 			elif args.player_src == 'blitzstars':
 				bu.debug('src BS')
 				tmp_players = await get_active_players_BS(args)
-				for mode in set(args.mode) & set(UPDATE_FIELD.keys()): 
+				if args.sample > 0:
+					tmp_players = random.sample(tmp_players, args.sample)
+				for mode in get_stat_modes(args.mode): 
 					active_players[mode] = tmp_players 
 			elif args.player_src == 'db':
 				bu.debug('src DB')
-				for mode in set(args.mode) & set([ 'tank_stats', 'player_stats' ]):
+				for mode in get_stat_modes_WG(args.mode):
 					bu.debug('Getting players from DB: ' + mode)
 					active_players[mode] = await get_active_players_DB(db, mode, args)
-				if (len(set(args.mode) & set([ 'tank_stats_BS', 'player_stats_BS' ])) > 0):
+				if (len(get_stat_modes_BS(args.mode)) > 0):
 					tmp_players = await get_active_players_BS(args)
-					for mode in set(args.mode)  & set([ 'tank_stats_BS', 'player_stats_BS' ]):
+					if args.sample > 0:
+						tmp_players = random.sample(tmp_players, args.sample)
+					for mode in get_stat_modes_BS(args.mode):
 						bu.debug('Getting players from BS: ' + mode)
 						active_players[mode] = tmp_players
-			
-			if (args.sample > 0):
-				bu.debug('Sample size set to: ' + str(args.sample))
-				for mode in set(args.mode) & set([ 'tank_stats_BS', 'player_stats_BS' ]):    # DB stats are sampled in fetching phase
-					active_players[mode] = random.sample(active_players[mode], args.sample)
 			
 		Qcreator_tasks 	= []
 		worker_tasks 	= []
 		Q = {}
 
+		## set progress bar
+		bu.debug('progress bar')
+		tmp_progress_max = 0
+		for mode in set(args.mode) & set(UPDATE_FIELD.keys()):
+			bu.debug('Mode: ' + str(mode))
+			tmp_progress_max += len(active_players[mode])
 		bu.print_new_line()
-		bu.set_progress_bar('Fetching stats', len(active_players[mode]))
-		
+		bu.debug('progress bar 2')
+		bu.set_progress_bar('Fetching stats', tmp_progress_max)
+		bu.debug('progress bar 3')
 		for mode in UPDATE_FIELD:
 			Q[mode] = asyncio.Queue()
 		
@@ -200,6 +205,21 @@ async def main(argv):
 		await wg.close()
 
 	return None
+
+
+def get_stat_modes(mode_list: list) -> list:
+	"""Return modes of fetching stats (i.e. NOT tankopedia)"""
+	return list(set(mode_list) & set(UPDATE_FIELD.keys()))
+
+
+def get_stat_modes_WG(mode_list: list) -> list:
+	"""Return modes of fetching stats from WG API"""
+	return list(set(mode_list) & set( [ 'tank_stats', 'player_stats'] ))
+
+
+def get_stat_modes_BS(mode_list: list) -> list:
+	"""Return modes of fetching stats from BlitzStars"""
+	return list(set(mode_list) & set( [ 'tank_stats_BS', 'player_stats_BS' ] ))
 
 
 def log_update_time(db : motor.motor_asyncio.AsyncIOMotorDatabase, mode : list):
@@ -280,13 +300,12 @@ async def get_active_players_BS(args : argparse.Namespace):
 	return active_players
 				
 
-async def get_prev_errors(db : motor.motor_asyncio.AsyncIOMotorDatabase, stat_type: str):
+async def get_prev_errors(db : motor.motor_asyncio.AsyncIOMotorDatabase, mode :str):
 	"""Get list of acccount_ids of the previous failed requests"""
 	dbc = db[DB_C_ERROR_LOG]
 	account_ids =  set()
 	
-	cursor = dbc.find({'type': stat_type}, { 'account_id': 1, '_id': 0 } )
-	
+	cursor = dbc.find({'type': mode}, { 'account_id': 1, '_id': 0 } )
 	async for stat in cursor:
 		try:
 			account_ids.add(stat['account_id'])
