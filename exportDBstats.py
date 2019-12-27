@@ -55,8 +55,7 @@ async def main(argv):
     args = parser.parse_args()
     bu.set_log_level(args.silent, args.verbose, args.debug)
     bu.set_progress_step(1000)
-    bu.set_counter('Stats exported: ')
-
+    
     try:
 		## Read config
         config = configparser.ConfigParser()
@@ -85,6 +84,8 @@ async def main(argv):
             bu.error('Export type (--type) is not cumulative, but only one date given. Exiting...')
             sys.exit(1)
         
+        bu.set_counter('Stats exported: ')
+        
         if args.stats == 'player_stats':
             filename = 'player_stats' if args.filename == None else args.filename
             for i in range(N_WORKERS):
@@ -98,6 +99,8 @@ async def main(argv):
         bu.debug('Waiting for statsworkers to finish')
         await periodQ.join()
 		
+        bu.finish_progress_bar()
+
         bu.debug('Cancelling workers')
         for task in tasks:
             task.cancel()
