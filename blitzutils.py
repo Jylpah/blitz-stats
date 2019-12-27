@@ -117,7 +117,7 @@ def print_progress(force = False) -> bool:
     global _progress_N, _progress_i
     if (_log_level > SILENT) and ( force or (_log_level < DEBUG ) ):
         _progress_i = (_progress_i + 1) % _progress_N
-        if _progress_i == 0:
+        if _progress_i == 1:
             print('.', end='', flush=True)
             return True
     return False    
