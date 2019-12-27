@@ -179,6 +179,8 @@ async def main(argv):
 		for mode in UPDATE_FIELD:
 			await Q[mode].join()		
 
+		bu.finish_progress_bar()
+		
 		bu.debug('All work queues empty. Cancelling workers')
 		for task in worker_tasks:
 			task.cancel()
