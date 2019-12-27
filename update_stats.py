@@ -134,7 +134,7 @@ async def main(argv):
 		worker_tasks 	= []
 		Q = {}
 
-		bu.set_progress_step(None)
+		bu.set_progress_bar('Fetching stats', len(active_players[mode]))
 		
 		for mode in UPDATE_FIELD:
 			Q[mode] = asyncio.Queue()
