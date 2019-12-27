@@ -560,7 +560,9 @@ class WG:
     @classmethod
     def chk_JSON_status(cls, json_resp: dict) -> bool:
         try:
-            if (json_resp['status'] == 'ok') and ('data' in json_resp):
+            if json_resp == None:
+                return False
+            if ('status' in json_resp) and (json_resp['status'] == 'ok') and ('data' in json_resp):
                 return True
             elif json_resp['status'] == 'error':
                 if ('error' in json_resp):
