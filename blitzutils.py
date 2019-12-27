@@ -115,7 +115,7 @@ def _print_log_msg(prefix = 'LOG', msg = '', exception = None, id = None):
 def print_progress(force = False) -> bool:
     """Print progress dots. Returns True if the dot is being printed."""
     global _progress_N, _progress_i
-    if (_log_level > SILENT) and ( force or (_log_level < DEBUG ) ):
+    if (_log_level > SILENT) and ( force or (_log_level < DEBUG ) ) and (_progress_N != None):
         _progress_i = (_progress_i + 1) % _progress_N
         if _progress_i == 1:
             print('.', end='', flush=True)
@@ -125,6 +125,8 @@ def print_progress(force = False) -> bool:
 def set_progress_step(n: int):
     """Set the frequency of the progress dots. The bigger 'n', the fewer dots"""
     global _progress_N 
+    if n == None:
+        _progress_N = None
     if n > 0:
         _progress_N = n        
     return
