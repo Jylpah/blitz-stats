@@ -180,7 +180,7 @@ async def main(argv):
 			await Q[mode].join()		
 
 		bu.finish_progress_bar()
-		
+
 		bu.debug('All work queues empty. Cancelling workers')
 		for task in worker_tasks:
 			task.cancel()
@@ -341,7 +341,7 @@ async def has_fresh_stats(db : motor.motor_asyncio.AsyncIOMotorDatabase, account
 
 
 def print_update_stats(mode: list):
-	if len(set(mode) & set(UPDATE_FIELD.keys())) > 0:
+	if len(get_stat_modes(mode)) > 0:
 		bu.verbose_std('Total ' + str(stats_added) + ' stats updated')
 		return True
 	else:
