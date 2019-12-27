@@ -136,7 +136,7 @@ def set_progress_bar(heading: str, max_value: int, step: int = None):
     else:
         _progress_N = step
     if _progress_bar != None:
-        _progress_bar.finish()
+        finish_progress_bar()
     if max_value > 10e6:
         _progress_bar = SlowBar(heading, max=max_value/_progress_N)
     else:
@@ -162,6 +162,7 @@ def print_progress(force = False) -> bool:
 
 def finish_progress_bar():
     _progress_bar.finish()
+    print_new_line()
     return None
 
 def wait(sec : int):
