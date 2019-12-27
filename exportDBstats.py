@@ -15,11 +15,11 @@ logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
 FILE_CONFIG = 'blitzstats.ini'
 
-DB_C_ACCOUNTS = 'WG_Accounts'
-DB_C_WG_TANK_STATS = 'WG_TankStats'
-DB_C_BS_TANK_STATS = 'BS_PlayerTankStats'
+DB_C_ACCOUNTS       = 'WG_Accounts'
+DB_C_WG_TANK_STATS  = 'WG_TankStats'
+DB_C_BS_TANK_STATS  = 'BS_PlayerTankStats'
 DB_C_BS_PLAYER_STATS = 'BS_PlayerStats'
-DB_C_TANKS = 'Tankopedia'
+DB_C_TANKS          = 'Tankopedia'
 
 CACHE_VALID = 24*3600*7   # 7 days
 
@@ -42,11 +42,12 @@ async def main(argv):
     parser = argparse.ArgumentParser(description='Retrieve player stats from the DB')
     parser.add_argument('-f', '--filename', type=str, default=None, help='Filename to write stats into')
     parser.add_argument('--stats', default='help', choices=['players', 'tankstats'], help='Select type of stats to export')
-    parser.add_argument('--type', default='period', choices=['period', 'cumulative', 'auto'], help='Select export type. \'auto\' exports periodic stats, but cumulative for the oldest one')
+    parser.add_argument('--type', default='period', choices=['period', 'cumulative', 'newer', 'auto'], help='Select export type. \'auto\' exports periodic stats, but cumulative for the oldest one')
+    parser.add_argument( '-a', '--all', 	action='store_true', default=False, help='Export all the stats instead of the latest per period')
     parser.add_argument('--tier', type=int, default=None, help='Fiter tanks based on tier')
     parser.add_argument('--date_delta', type=int, default=DATE_DELTA, help='Date delta from the date')
     arggroup = parser.add_mutually_exclusive_group()
-    arggroup.add_argument( '-d', '--debug', 		action='store_true', default=False, help='Debug mode')
+    arggroup.add_argument( '-d', '--debug', 	action='store_true', default=False, help='Debug mode')
     arggroup.add_argument( '-v', '--verbose', 	action='store_true', default=False, help='Verbose mode')
     arggroup.add_argument( '-s', '--silent', 	action='store_true', default=False, help='Silent mode')
     parser.add_argument('dates', metavar='DATE1 DATE2 [DATE3 ...]', type=valid_date, default=TODAY, nargs='+', help='Stats cut-off date(s) - format YYYY-MM-DD')
@@ -78,7 +79,7 @@ async def main(argv):
         bu.debug(str(type(db)))
         tasks = []
         
-        periodQ = await mkPeriodQ(args.dates, args.type)
+        periodQ = await mk_periodQ(args.dates, args.type)
         if periodQ == None:
             bu.error('Export type (--type) is not cumulative, but only one date given. Exiting...')
             sys.exit(1)
@@ -86,11 +87,11 @@ async def main(argv):
         if args.stats == 'players':
             filename = 'playerstats' if args.filename == None else args.filename
             for i in range(N_WORKERS):
-                tasks.append(asyncio.create_task(qBSplayerStats(i, db, periodQ, filename)))
+                tasks.append(asyncio.create_task(q_player_stats_BS(i, db, periodQ, filename, args.all)))
         elif args.stats == 'tankstats':
             filename = 'tankstats' if args.filename == None else args.filename                
             for i in range(N_WORKERS):
-                tasks.append(asyncio.create_task(qWGtankStats(i, db, periodQ, filename, args.tier)))
+                tasks.append(asyncio.create_task(q_tank_stats_WG(i, db, periodQ, filename, args.all, args.tier)))
                 bu.debug('Task ' + str(i) + ' started')
 
         bu.debug('Waiting for statsworkers to finish')
@@ -110,21 +111,24 @@ async def main(argv):
 
     return None
 
-async def mkPeriodQ(dates : list, export_type: str) -> asyncio.Queue:
+async def mk_periodQ(dates : list, export_type: str) -> asyncio.Queue:
     """Create period queue for database queries"""
     dates = sorted(dates)
     bu.debug(str(dates))
     
     periodQ = asyncio.Queue()
 
-    if (len(dates) == 1) and (export_type != 'cumulative'):
+    if (len(dates) == 1) and (export_type not in [ 'cumulative', 'newer']):
         return None
-            
+
+    tomorrow = (datetime.datetime.utcnow() + datetime.timedelta(days=2) ).date()   
     for i in range(0, len(dates)):
         if ( (export_type == 'auto') and (i==0)) or (export_type == 'cumulative'):
             await periodQ.put([STATS_START_DATE, dates[i]])
-        elif (i > 0):
+        elif (export_type == 'period') and (i > 0):
             await periodQ.put([dates[i-1], dates[i]])
+        elif export_type == 'newer':
+            await periodQ.put([dates[i], tomorrow])
     return periodQ
 
 
@@ -145,7 +149,7 @@ def NOW() -> int:
     return int(time.time())
 
 
-async def qBStankStats(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, periodQ: asyncio.Queue, filename: str, tier=None):
+async def q_tank_stats_BS(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, periodQ: asyncio.Queue, filename: str, tier=None):
     """Async Worker to fetch tank stats"""
     
     global STATS_EXPORTED
@@ -188,7 +192,7 @@ async def qBStankStats(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDataba
     return None
 
 
-async def qWGtankStats(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, periodQ: asyncio.Queue, filename: str, tier=None):
+async def q_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, periodQ: asyncio.Queue, filename: str, all: bool = False, tier: int =None):
     """Async Worker to fetch player stats"""
     global STATS_EXPORTED
     dbc = db[DB_C_WG_TANK_STATS]
@@ -212,19 +216,19 @@ async def qWGtankStats(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDataba
 
             async with aiofiles.open(fn, 'w', encoding="utf8") as fp:
                 for tank_id in tanks:
-                    pipeline = [ {'$match': { '$and': [{'last_battle_time': {'$lte': timeB}}, {'last_battle_time': {'$gt': timeA}}, {'tank_id': tank_id } ] }},
+                    if all:
+                        cursor = dbc.find_all({ '$and': [{'last_battle_time': {'$lte': timeB}}, {'last_battle_time': {'$gt': timeA}}, {'tank_id': tank_id } ] })
+                    else:
+                        pipeline = [ {'$match': { '$and': [{'last_battle_time': {'$lte': timeB}}, {'last_battle_time': {'$gt': timeA}}, {'tank_id': tank_id } ] }},
                                 {'$sort': {'last_battle_time': -1}},
                                 {'$group': { '_id': '$account_id',
                                             'doc': {'$first': '$$ROOT'}}},
                                 {'$replaceRoot': {'newRoot': '$doc'}}, 
                                 {'$project': {'_id': False}} ]
-                    cursor = dbc.aggregate(pipeline, allowDiskUse=False)
-                    #cursor = dbc.aggregate(pipeline)
-                    i = 0
+                        cursor = dbc.aggregate(pipeline, allowDiskUse=False)
+                    
                     async for doc in cursor:
-                        i = (i+1) % 10000
-                        if i == 0:
-                            bu.print_progress()
+                        bu.print_progress()
                         await fp.write(json.dumps(doc, ensure_ascii=False) + '\n')
                         STATS_EXPORTED += 1
                         
@@ -237,7 +241,7 @@ async def qWGtankStats(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDataba
     return None
 
 
-async def qBSplayerStats(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, periodQ: asyncio.Queue, filename: str):
+async def q_player_stats_BS(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, periodQ: asyncio.Queue, filename: str, all: bool = False):
     """Async Worker to fetch player stats"""
     global STATS_EXPORTED
     dbc = db[DB_C_BS_PLAYER_STATS]
