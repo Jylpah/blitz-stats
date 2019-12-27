@@ -223,7 +223,6 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 	if sample > 0:
 		if force:
 			pipeline = [   	{'$sample': {'size' : sample} } ]
-
 		else:
 			pipeline = [ 	{'$match': { '$or': [ { UPDATE_FIELD[mode]: None }, { UPDATE_FIELD[mode] : { '$lt': bu.NOW() - cache_valid } } ] }},
                          	{'$sample': {'size' : sample} } ]
@@ -235,8 +234,9 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 		else:
 			cursor = dbc.find(  { '$or': [ { UPDATE_FIELD[mode]: None }, { UPDATE_FIELD[mode] : { '$lt': bu.NOW() - cache_valid } } ] }, { '_id' : 1} )
 	
-	
 	i = 0
+	tmp_steps = bu.get_progress_step()
+	bu.set_progress_step(50000)
 	async for player in cursor:
 		i += 1
 		if bu.print_progress():
@@ -245,6 +245,8 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 			players.append(player['_id'])
 		except Exception as err:
 			bu.error('Unexpected error', err)
+	
+	bu.set_progress_step(tmp_steps)
 	bu.debug(str(len(players)) + ' read from the DB')
 	return players
 
