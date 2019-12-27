@@ -134,6 +134,7 @@ async def main(argv):
 		worker_tasks 	= []
 		Q = {}
 
+		bu.print_new_line()
 		bu.set_progress_bar('Fetching stats', len(active_players[mode]))
 		
 		for mode in UPDATE_FIELD:

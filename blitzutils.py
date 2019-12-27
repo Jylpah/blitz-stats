@@ -150,7 +150,6 @@ def set_progress_bar(heading: str, max: int):
     return
 
 
-
 def wait(sec : int):
     for i in range(0, sec): 
        i=i   ## to get rid of the warning... 
