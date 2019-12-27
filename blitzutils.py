@@ -230,13 +230,13 @@ async def open_JSON(filename: str, chk_JSON_func = None) -> dict:
 
 async def get_url_JSON(session: aiohttp.ClientSession, url: str, chk_JSON_func = None, max_tries = MAX_RETRIES) -> dict:
         """Retrieve (GET) an URL and return JSON object"""
-        try:
-            if session == None:
-                error('Session must be initialized first')
-                sys.exit(1)
-            #debug(url)
+        if session == None:
+            error('Session must be initialized first')
+            sys.exit(1)
+
             ## To avoid excessive use of servers            
-            for retry in range(1,max_tries+1):
+        for retry in range(1,max_tries+1):
+            try:
                 async with session.get(url) as resp:
                     if resp.status == 200:
                         debug('HTTP request OK')
@@ -244,26 +244,20 @@ async def get_url_JSON(session: aiohttp.ClientSession, url: str, chk_JSON_func =
                         if (chk_JSON_func == None) or chk_JSON_func(json_resp):
                             # debug("Received valid JSON: " + str(json_resp))
                             return json_resp
-                        # else:
-                        #     debug('Received JSON error. URL: ' + url)
-                        #     # Sometimes WG API returns JSON error even a retry gives valid JSON
-                        #     # return None                            
+                        # Sometimes WG API returns JSON error even a retry gives valid JSON
                     if retry == max_tries:                        
-                        if json_resp != None:
-                            str_json = str(json_resp)
-                        else:
-                            str_json = 'None'   ## Change to None ??
-                        raise aiohttp.ClientError('Request failed: ' + str(resp.status) + ' JSON Response: ' + str_json )
+                        break
                     debug('Retrying URL [' + str(retry) + '/' +  str(max_tries) + ']: ' + url )
                     await asyncio.sleep(SLEEP)
 
-        except aiohttp.ClientError as err:
-            error("Could not retrieve URL: " + url)
-            error(str(err))
-        except asyncio.CancelledError as err:
-            error('Queue gets cancelled while still working.')        
-        except Exception as err:
-            error('Unexpected Exception', err)
+            except aiohttp.ClientError as err:
+                debug("Could not retrieve URL: " + url)
+                debug(str(err))
+            except asyncio.CancelledError as err:
+                debug('Queue gets cancelled while still working.')        
+            except Exception as err:
+                debug('Unexpected Exception', err)
+        debug("Could not retrieve URL: " + url)
         return None
 
 
