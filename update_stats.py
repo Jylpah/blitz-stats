@@ -4,6 +4,7 @@
 
 import sys, argparse, json, os, inspect, pprint, aiohttp, asyncio, aiofiles, aioconsole, re, logging, time, xmltodict, collections, pymongo
 import motor.motor_asyncio, ssl, configparser, random
+from progress_bar import ProgressBar
 import blitzutils as bu
 from blitzutils import BlitzStars
 from blitzutils import WG
@@ -36,13 +37,14 @@ UPDATE_FIELD = { 'tank_stats'		: 'updated_WGtankstats',
 				}
 bs = None
 wg = None
+progress_bar = None
 stats_added = 0
 
 ## main() -------------------------------------------------------------
 
 
 async def main(argv):
-	global bs, wg
+	global bs, wg, progress_bar
 	# set the directory for the script
 	os.chdir(os.path.dirname(sys.argv[0]))
 
@@ -132,6 +134,8 @@ async def main(argv):
 		worker_tasks 	= []
 		Q = {}
 
+		bu.set_progress_step(None)
+		
 		for mode in UPDATE_FIELD:
 			Q[mode] = asyncio.Queue()
 		
