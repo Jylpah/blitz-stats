@@ -55,6 +55,7 @@ async def main(argv):
     args = parser.parse_args()
     bu.set_log_level(args.silent, args.verbose, args.debug)
     bu.set_progress_step(1000)
+    bu.set_counter('Stats exported: ')
 
     try:
 		## Read config
@@ -217,7 +218,7 @@ async def q_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDat
             async with aiofiles.open(fn, 'w', encoding="utf8") as fp:
                 for tank_id in tanks:
                     if all:
-                        cursor = dbc.find_all({ '$and': [{'last_battle_time': {'$lte': timeB}}, {'last_battle_time': {'$gt': timeA}}, {'tank_id': tank_id } ] })
+                        cursor = dbc.find_all({ '$and': [{'last_battle_time': {'$lt': timeB}}, {'last_battle_time': {'$gte': timeA}}, {'tank_id': tank_id } ] })
                     else:
                         pipeline = [ {'$match': { '$and': [{'last_battle_time': {'$lte': timeB}}, {'last_battle_time': {'$gt': timeA}}, {'tank_id': tank_id } ] }},
                                 {'$sort': {'last_battle_time': -1}},
