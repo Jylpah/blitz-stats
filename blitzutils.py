@@ -5,6 +5,7 @@ import asyncio, aiofiles, aiohttp, aiosqlite, lxml
 from pathlib import Path
 from bs4 import BeautifulSoup
 from progress.bar import IncrementalBar
+from progress.counter import Counter
 
 MAX_RETRIES= 3
 SLEEP = 3
@@ -19,7 +20,7 @@ _log_level = NORMAL
 ## Progress display
 _progress_N = 100
 _progress_i = 0
-_progress_bar = None
+_progress_obj = None
 
 UMASK= os.umask(0)
 os.umask(UMASK)
@@ -120,7 +121,6 @@ def set_progress_step(n: int):
     if n > 0:
         _progress_N = n
         _progress_i = 0
-        _progress_bar = None
     return
 
 
@@ -130,20 +130,29 @@ def get_progress_step():
 
 
 def set_progress_bar(heading: str, max_value: int, step: int = None):
-    global _progress_bar, _progress_N, _progress_i
+    global _progress_obj, _progress_N, _progress_i
     if step == None:
         _progress_N = int(max_value / 1000) if (max_value > 1000) else 2
     else:
         _progress_N = step
-    if _progress_bar != None:
+    if _progress_obj != None:
         finish_progress_bar()
     if max_value > 10e6:
-        _progress_bar = IncrementalBar(heading, max=max_value, suffix='%(percent)d%% ETA %(remaining_hours)d hours')
+        _progress_obj = IncrementalBar(heading, max=max_value, suffix='%(percent)d%% ETA %(remaining_hours)d hours')
     else:
-        _progress_bar = IncrementalBar(heading, max=max_value, suffix='%(index)d/%(max)d %(percent)d%%')
+        _progress_obj = IncrementalBar(heading, max=max_value, suffix='%(index)d/%(max)d %(percent)d%%')
     _progress_i = 0
 
     return
+
+
+def set_counter(heading: str):
+    global _progress_obj, _progress_i
+    _progress_i = 0
+    if _progress_obj != None:
+        finish_progress_bar()
+    _progress_obj = Counter(heading)
+    return 
 
 
 def print_progress(force = False) -> bool:
@@ -152,18 +161,25 @@ def print_progress(force = False) -> bool:
     if (_log_level > SILENT) and ( force or (_log_level < DEBUG ) ):
         _progress_i +=  1 
         if ((_progress_i % _progress_N) == 1):
-            if _progress_bar != None:
-                _progress_bar.next(_progress_N)
+            if _progress_obj != None:
+                _progress_obj.next(_progress_N)
                 return True
             else:
                 print('.', end='', flush=True)
                 return True
     return False    
 
+
 def finish_progress_bar():
-    _progress_bar.finish()
+    """Finish and close progress bar object"""
+    global _progress_obj
+
+    _progress_obj.finish()
+    _progress_obj = None
     print_new_line()
+
     return None
+
 
 def wait(sec : int):
     for i in range(0, sec): 
