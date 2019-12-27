@@ -1,7 +1,7 @@
 #!/usr/bin/python3.7
 
 import sys, os, json, time,  base64, urllib, inspect, hashlib, re
-import asyncio, aiofiles, aiohttp, aiosqlite, lxml
+import asyncio, aiofiles, aiohttp, aiosqlite, lxml, progress_bar
 from pathlib import Path
 from bs4 import BeautifulSoup
 
@@ -15,9 +15,10 @@ VERBOSE = 2
 DEBUG   = 3
 _log_level = NORMAL
 
-## Progress dots
+## Progress display
 _progress_N = 100
 _progress_i = 0
+_progress_bar = None
 
 UMASK= os.umask(0)
 os.umask(UMASK)
@@ -115,26 +116,39 @@ def _print_log_msg(prefix = 'LOG', msg = '', exception = None, id = None):
 def print_progress(force = False) -> bool:
     """Print progress dots. Returns True if the dot is being printed."""
     global _progress_N, _progress_i
-    if (_log_level > SILENT) and ( force or (_log_level < DEBUG ) ) and (_progress_N != None):
-        _progress_i = (_progress_i + 1) % _progress_N
-        if _progress_i == 1:
-            print('.', end='', flush=True)
-            return True
+    if (_log_level > SILENT) and ( force or (_log_level < DEBUG ) ):
+        _progress_i +=  1 
+        if ((_progress_i % _progress_N) == 1):
+            if _progress_bar != None:
+                _progress_bar.updateAmount(_progress_i)
+            else:
+                print('.', end='', flush=True)
+                return True
     return False    
-        
+
+
 def set_progress_step(n: int):
     """Set the frequency of the progress dots. The bigger 'n', the fewer dots"""
     global _progress_N 
-    if n == None:
-        _progress_N = None
     if n > 0:
-        _progress_N = n        
+        _progress_N = n
+        _progress_i = 0
+        _progress_bar = None
     return
 
 
 def get_progress_step():
     """Get the frequency of the progress dots. The bigger 'n', the fewer dots"""
     return _progress_N
+
+
+def set_progress_bar(heading: str, max: int):
+    global _progress_bar, _progress_N, _progress_i
+    _progress_bar = progress_bar.InitBar(heading, size=max)
+    _progress_i = 0
+    _progress_N = int(max / 100) if (max > 0) else 2
+    return
+
 
 
 def wait(sec : int):
@@ -258,6 +272,8 @@ def bld_dict_hierarcy(d : dict, key : str, value) -> dict:
     except Exception as err:
         error('Unexpected Exception', err)
     return None
+
+
 
 
 ## -----------------------------------------------------------
