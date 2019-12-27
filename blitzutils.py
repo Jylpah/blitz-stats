@@ -144,7 +144,7 @@ def get_progress_step():
 
 def set_progress_bar(heading: str, max: int):
     global _progress_bar, _progress_N, _progress_i
-    _progress_bar = progress_bar.InitBar(heading, size=max)
+    _progress_bar = progress_bar.InitBar(heading, size=max, stream=sys.stdout)
     _progress_i = 0
     _progress_N = int(max / 100) if (max > 0) else 2
     return
