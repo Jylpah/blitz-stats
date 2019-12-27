@@ -41,7 +41,7 @@ async def main(argv):
 
     parser = argparse.ArgumentParser(description='Retrieve player stats from the DB')
     parser.add_argument('-f', '--filename', type=str, default=None, help='Filename to write stats into')
-    parser.add_argument('--stats', default='help', choices=['players', 'tankstats'], help='Select type of stats to export')
+    parser.add_argument('--stats', default='help', choices=['player_stats', 'tank_stats'], help='Select type of stats to export')
     parser.add_argument('--type', default='period', choices=['period', 'cumulative', 'newer', 'auto'], help='Select export type. \'auto\' exports periodic stats, but cumulative for the oldest one')
     parser.add_argument( '-a', '--all', 	action='store_true', default=False, help='Export all the stats instead of the latest per period')
     parser.add_argument('--tier', type=int, default=None, help='Fiter tanks based on tier')
@@ -84,12 +84,12 @@ async def main(argv):
             bu.error('Export type (--type) is not cumulative, but only one date given. Exiting...')
             sys.exit(1)
         
-        if args.stats == 'players':
-            filename = 'playerstats' if args.filename == None else args.filename
+        if args.stats == 'player_stats':
+            filename = 'player_stats' if args.filename == None else args.filename
             for i in range(N_WORKERS):
                 tasks.append(asyncio.create_task(q_player_stats_BS(i, db, periodQ, filename, args.all)))
-        elif args.stats == 'tankstats':
-            filename = 'tankstats' if args.filename == None else args.filename                
+        elif args.stats == 'tank_stats':
+            filename = 'tank_stats' if args.filename == None else args.filename                
             for i in range(N_WORKERS):
                 tasks.append(asyncio.create_task(q_tank_stats_WG(i, db, periodQ, filename, args.all, args.tier)))
                 bu.debug('Task ' + str(i) + ' started')
