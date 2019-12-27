@@ -85,7 +85,7 @@ async def main(argv):
             sys.exit(1)
         
         bu.set_counter('Stats exported: ')
-        
+
         if args.stats == 'player_stats':
             filename = 'player_stats' if args.filename == None else args.filename
             for i in range(N_WORKERS):
@@ -221,7 +221,7 @@ async def q_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDat
             async with aiofiles.open(fn, 'w', encoding="utf8") as fp:
                 for tank_id in tanks:
                     if all:
-                        cursor = dbc.find_all({ '$and': [{'last_battle_time': {'$lt': timeB}}, {'last_battle_time': {'$gte': timeA}}, {'tank_id': tank_id } ] })
+                        cursor = dbc.find({ '$and': [{'last_battle_time': {'$lt': timeB}}, {'last_battle_time': {'$gte': timeA}}, {'tank_id': tank_id } ] })
                     else:
                         pipeline = [ {'$match': { '$and': [{'last_battle_time': {'$lte': timeB}}, {'last_battle_time': {'$gt': timeA}}, {'tank_id': tank_id } ] }},
                                 {'$sort': {'last_battle_time': -1}},
