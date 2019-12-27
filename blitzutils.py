@@ -123,11 +123,16 @@ def print_progress(force = False) -> bool:
     return False    
         
 def set_progress_step(n: int):
-    """Set the frquency of the progress dots. The bigger 'n', the fewer dots"""
+    """Set the frequency of the progress dots. The bigger 'n', the fewer dots"""
     global _progress_N 
     if n > 0:
         _progress_N = n        
     return
+
+
+def get_progress_step():
+    """Get the frequency of the progress dots. The bigger 'n', the fewer dots"""
+    return _progress_N
 
 
 def wait(sec : int):
