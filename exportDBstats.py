@@ -127,7 +127,7 @@ async def mk_periodQ(dates : list, export_type: str) -> asyncio.Queue:
     if (len(dates) == 1) and (export_type not in [ 'cumulative', 'newer']):
         return None
 
-    tomorrow = (datetime.datetime.utcnow() + datetime.timedelta(days=2) ).date()   
+    tomorrow = (datetime.datetime.utcnow() + datetime.timedelta(days=2) ).date()  # to be on the safe side   
     for i in range(0, len(dates)):
         if ( (export_type == 'auto') and (i==0)) or (export_type == 'cumulative'):
             await periodQ.put([STATS_START_DATE, dates[i]])
