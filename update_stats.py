@@ -137,7 +137,7 @@ async def main(argv):
 		for mode in set(args.mode) & set(UPDATE_FIELD.keys()):
 			tmp_progress_max += len(active_players[mode])
 		bu.print_new_line()
-		bu.set_progress_bar('Fetching stats', tmp_progress_max, 100)
+		bu.set_progress_bar('Fetching stats', tmp_progress_max, 10)
 
 		for mode in UPDATE_FIELD:
 			Q[mode] = asyncio.Queue()
@@ -500,7 +500,6 @@ async def BS_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 						stats_added += tmp								
 					finally:
 						await update_stats_update_time(db, account_id, field, last_battle_time)
-						bu.print_progress()
 						bu.debug('Added stats for account_id=' + str(account_id), worker_id)	
 
 		except Exception as err:
