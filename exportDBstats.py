@@ -87,13 +87,15 @@ async def main(argv):
         bu.set_counter('Stats exported: ')
 
         if args.stats == 'player_stats':
-            filename = 'player_stats' if args.filename == None else args.filename
+            if args.filename == None: 
+                args.filename = 'player_stats'
             for i in range(N_WORKERS):
-                tasks.append(asyncio.create_task(q_player_stats_BS(i, db, periodQ, filename, args.all)))
+                tasks.append(asyncio.create_task(q_player_stats_BS(i, db, periodQ, args)))
         elif args.stats == 'tank_stats':
-            filename = 'tank_stats' if args.filename == None else args.filename                
+            if args.filename == None: 
+                args.filename = 'tank_stats'                  
             for i in range(N_WORKERS):
-                tasks.append(asyncio.create_task(q_tank_stats_WG(i, db, periodQ, filename, args.all, args.tier)))
+                tasks.append(asyncio.create_task(q_tank_stats_WG(i, db, periodQ, args)))
                 bu.debug('Task ' + str(i) + ' started')
 
         bu.debug('Waiting for statsworkers to finish')
@@ -196,11 +198,16 @@ async def q_tank_stats_BS(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDat
     return None
 
 
-async def q_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, periodQ: asyncio.Queue, filename: str, all: bool = False, tier: int =None):
+async def q_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, periodQ: asyncio.Queue, args : argparse.Namespace):
     """Async Worker to fetch player stats"""
     global STATS_EXPORTED
     dbc = db[DB_C_WG_TANK_STATS]
     
+    filename = args.filename
+    tier = args.tier
+    all_data = args.all
+    export_type = args.type
+
     tanks = await getDBtanksTier(db, tier)
     bu.debug('[' + str(workerID) + '] ' + str(len(tanks))  + ' tanks in DB')
 
@@ -213,14 +220,17 @@ async def q_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDat
             dayB = item[1]
             timeA = int(time.mktime(dayA.timetuple()))
             timeB = int(time.mktime(dayB.timetuple()))
-            datestr = dayB.isoformat()
+            if export_type == 'newer':
+                datestr = dayA.isoformat()
+            else:
+                datestr = dayB.isoformat()
             fn = filename + '_' + datestr + '.jsonl'
 
             bu.debug('[' + str(workerID) + '] Start: ' + str(timeA) + ' End: ' + str(timeB))
 
             async with aiofiles.open(fn, 'w', encoding="utf8") as fp:
                 for tank_id in tanks:
-                    if all:
+                    if all_data:
                         cursor = dbc.find({ '$and': [{'last_battle_time': {'$lt': timeB}}, {'last_battle_time': {'$gte': timeA}}, {'tank_id': tank_id } ] })
                     else:
                         pipeline = [ {'$match': { '$and': [{'last_battle_time': {'$lte': timeB}}, {'last_battle_time': {'$gt': timeA}}, {'tank_id': tank_id } ] }},
@@ -245,10 +255,12 @@ async def q_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDat
     return None
 
 
-async def q_player_stats_BS(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, periodQ: asyncio.Queue, filename: str, all: bool = False):
+async def q_player_stats_BS(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, periodQ: asyncio.Queue, args : argparse.Namespace):
     """Async Worker to fetch player stats"""
     global STATS_EXPORTED
     dbc = db[DB_C_BS_PLAYER_STATS]
+    filename = args.filename
+    all_data = args.all
 
     while True:
         item = await periodQ.get()
@@ -267,21 +279,23 @@ async def q_player_stats_BS(workerID: int, db: motor.motor_asyncio.AsyncIOMotorD
             async with aiofiles.open(fn, 'w', encoding="utf8") as fp:
                 id_step = int(5e7)
                 for id in range(0, int(4e9), id_step):
-                    pipeline = [{'$match': {
-                        '$and': [{'last_battle_time': {'$lte': timeB}}, {'last_battle_time': {'$gt': timeA}},
+                    if all_data:
+                        cursor = dbc.find({ '$and': 
+                            [{'last_battle_time': {'$lte': timeB}}, {'last_battle_time': {'$gt': timeA}},
+                             {'account_id': {'$lte': id + id_step}}, {'account_id': {'$gt': id}}]})
+                    else:
+                        pipeline = [{'$match': {
+                            '$and': [{'last_battle_time': {'$lte': timeB}}, {'last_battle_time': {'$gt': timeA}},
                                 {'account_id': {'$lte': id + id_step}}, {'account_id': {'$gt': id}}]}},
                                 {'$sort': {'last_battle_time': -1}},
                                 {'$group': {'_id': '$account_id',
                                             'doc': {'$first': '$$ROOT'}}},
                                 {'$replaceRoot': {'newRoot': '$doc'}},
                                 {'$project': {'achievements': False, 'clan': False}}]
+                        cursor = dbc.aggregate(pipeline, allowDiskUse=False)
 
-                    cursor = dbc.aggregate(pipeline, allowDiskUse=True)
-                    i = 0
                     async for doc in cursor:
-                        i = (i+1) % 1000
-                        if i == 0:
-                            bu.print_progress()
+                        bu.print_progress()
                         await fp.write(json.dumps(doc, ensure_ascii=False) + '\n')
                         STATS_EXPORTED += 1
 
