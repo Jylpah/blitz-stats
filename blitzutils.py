@@ -138,7 +138,7 @@ def set_progress_bar(heading: str, max_value: int, step: int = None, slow: bool 
     if _progress_obj != None:
         finish_progress_bar()
     if slow:
-        _progress_obj = IncrementalBar(heading, max=max_value, suffix='%(percent)d%% ETA %(remaining_hours)d hours')
+        _progress_obj = SlowBar(heading, max=max_value)
     else:
         _progress_obj = IncrementalBar(heading, max=max_value, suffix='%(index)d/%(max)d %(percent)d%%')
     _progress_i = 0
@@ -302,7 +302,7 @@ def bld_dict_hierarcy(d : dict, key : str, value) -> dict:
 ## -----------------------------------------------------------
 
 class SlowBar(IncrementalBar):
-    suffix = '%(remaining_hours)d hours remaining'
+    suffix = '%(percent)d%% ETA %(remaining_hours)d hours'
     @property
     def remaining_hours(self):
         return self.eta // 3600
