@@ -109,7 +109,7 @@ async def main(argv):
         bu.debug('Waiting for workers to cancel')
         if len(tasks) > 0:
             await asyncio.gather(*tasks, return_exceptions=True)
-        printStats(args.stats)
+        print_stats(args.stats)
     except asyncio.CancelledError as err:
         bu.error('Queue gets cancelled while still working.')
     except Exception as err:
@@ -138,7 +138,7 @@ async def mk_periodQ(dates : list, export_type: str) -> asyncio.Queue:
     return periodQ
 
 
-def printStats(stats_type = ""):
+def print_stats(stats_type = ""):
     bu.verbose_std(str(STATS_EXPORTED) + ' stats exported (' + stats_type + ')')
 
 
