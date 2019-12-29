@@ -1,5 +1,5 @@
 # BlitzAnalysiz Dockerfile
-FROM python:buster-slim
+FROM python:slim-buster
 
 ENV PATH /app/getBlitzStats:/usr/local/bin:$PATH
 # extra dependencies (over what buildpack-deps already includes)
