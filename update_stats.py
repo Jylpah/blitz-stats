@@ -137,7 +137,8 @@ async def main(argv):
 		for mode in set(args.mode) & set(UPDATE_FIELD.keys()):
 			tmp_progress_max += len(active_players[mode])
 		bu.print_new_line()
-		bu.set_progress_bar('Fetching stats', tmp_progress_max)
+		bu.set_progress_bar('Fetching stats', tmp_progress_max, 25, True)
+
 		for mode in UPDATE_FIELD:
 			Q[mode] = asyncio.Queue()
 		

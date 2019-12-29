@@ -129,7 +129,7 @@ def get_progress_step():
     return _progress_N
 
 
-def set_progress_bar(heading: str, max_value: int, step: int = None):
+def set_progress_bar(heading: str, max_value: int, step: int = None, slow: bool = False):
     global _progress_obj, _progress_N, _progress_i
     if step == None:
         _progress_N = int(max_value / 1000) if (max_value > 1000) else 2
@@ -137,8 +137,8 @@ def set_progress_bar(heading: str, max_value: int, step: int = None):
         _progress_N = step
     if _progress_obj != None:
         finish_progress_bar()
-    if max_value > 10e6:
-        _progress_obj = IncrementalBar(heading, max=max_value, suffix='%(percent)d%% ETA %(remaining_hours)d hours')
+    if slow:
+        _progress_obj = SlowBar(heading, max=max_value)
     else:
         _progress_obj = IncrementalBar(heading, max=max_value, suffix='%(index)d/%(max)d %(percent)d%%')
     _progress_i = 0
@@ -160,7 +160,7 @@ def print_progress(force = False) -> bool:
     global _progress_N, _progress_i
     if (_log_level > SILENT) and ( force or (_log_level < DEBUG ) ):
         _progress_i +=  1 
-        if ((_progress_i % _progress_N) == 1):
+        if ((_progress_i % _progress_N) == 0):
             if _progress_obj != None:
                 _progress_obj.next(_progress_N)
                 return True
@@ -302,7 +302,7 @@ def bld_dict_hierarcy(d : dict, key : str, value) -> dict:
 ## -----------------------------------------------------------
 
 class SlowBar(IncrementalBar):
-    suffix = '%(remaining_hours)d hours remaining'
+    suffix = '%(index)d/%(max)d %(percent)d%% ETA %(remaining_hours)d hours'
     @property
     def remaining_hours(self):
         return self.eta // 3600
