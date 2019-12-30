@@ -7,6 +7,8 @@ ENV PATH /app/getBlitzStats:/usr/local/bin:$PATH
 WORKDIR /app/getBlitzStats
 COPY requirements.txt ./
 RUN python3.8 -m pip install --no-cache-dir -U pip
-RUN python3.8 -m pip install --no-cache-dir -r requirements.txt 
+RUN python3.8 -m pip install --no-cache-dir -r requirements.txt
+RUN ln -s ../local/bin/python /usr/bin/
+RUN ln -s ../local/bin/python3.8 /usr/bin/
 COPY *.py ./
 CMD ["/bin/bash"]
