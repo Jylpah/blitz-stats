@@ -86,7 +86,10 @@ async def main(argv):
 		bu.debug('DB_NAME: ' + DB_NAME)
 
 		#### Connect to MongoDB
-		client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, username=DB_USER, password=DB_PASSWD, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
+		if any(DB_USER==None) or (DB_PASSWD==None):
+			client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
+		else:
+			client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, username=DB_USER, password=DB_PASSWD, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
 
 		db = client[DB_NAME]
 		await db[DB_C_ACCOUNTS].create_index([ ('last_battle_time', pymongo.DESCENDING) ], background=True)	
