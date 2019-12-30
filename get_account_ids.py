@@ -74,8 +74,8 @@ async def main(argv):
 		DB_CERT_REQ = configDB.getint('db_ssl_req', ssl.CERT_NONE)
 		DB_AUTH 	= configDB.get('db_auth', 'admin')
 		DB_NAME 	= configDB.get('db_name', 'BlitzStats')
-		DB_USER		= configDB.get('db_user', 'mongouser')
-		DB_PASSWD 	= configDB.get('db_password', "PASSWORD")
+		DB_USER		= configDB.get('db_user', None)
+		DB_PASSWD 	= configDB.get('db_password', None)
 		DB_CERT		= configDB.get('db_ssl_cert_file', None)
 		DB_CA		= configDB.get('db_ssl_ca_file', None)
 		
