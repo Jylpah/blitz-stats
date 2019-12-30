@@ -1,4 +1,4 @@
-#!/usr/bin/python3.7
+#!/usr/bin/python3.8
 
 # Script fetch Blitz player stats and tank stats
 

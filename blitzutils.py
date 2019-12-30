@@ -1,4 +1,4 @@
-#!/usr/bin/python3.7
+#!/usr/bin/python3.8
 
 import sys, os, json, time,  base64, urllib, inspect, hashlib, re
 import asyncio, aiofiles, aiohttp, aiosqlite, lxml
