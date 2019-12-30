@@ -9,4 +9,3 @@ COPY requirements.txt ./
 RUN python3.8 -m pip install --no-cache-dir -U pip
 RUN python3.8 -m pip install --no-cache-dir -r requirements.txt 
 COPY *.py ./
-RUN /bin/bash
