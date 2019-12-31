@@ -26,6 +26,7 @@ DB_C_TANK_STATS     	= 'WG_TankStats'
 DB_C_BS_PLAYER_STATS   	= 'BS_PlayerStats'
 DB_C_BS_TANK_STATS     	= 'BS_PlayerTankStats'
 DB_C_TANKS     			= 'Tankopedia'
+DB_C_TANK_STR			= 'WG_TankStrs'
 DB_C_ERROR_LOG			= 'ErrorLog'
 DB_C_UPDATE_LOG			= 'UpdateLog'
 
@@ -102,6 +103,7 @@ async def main(argv):
 		await db[DB_C_TANKS].create_index([ ('name', pymongo.TEXT)], background=True)	
 		await db[DB_C_ERROR_LOG].create_index([('account_id', pymongo.ASCENDING), ('time', pymongo.DESCENDING), ('type', pymongo.ASCENDING) ], background=True)	
 		
+
 		## get active player list ------------------------------
 		active_players = {}
 		if 'tankopedia' in args.mode:
@@ -131,71 +133,71 @@ async def main(argv):
 						bu.debug('Getting players from BS: ' + mode)
 						active_players[mode] = tmp_players
 			
-		Qcreator_tasks 	= []
-		worker_tasks 	= []
-		Q = {}
+			Qcreator_tasks 	= []
+			worker_tasks 	= []
+			Q = {}
 
-		## set progress bar
-		tmp_progress_max = 0
-		for mode in set(args.mode) & set(UPDATE_FIELD.keys()):
-			tmp_progress_max += len(active_players[mode])
-		bu.print_new_line()
-		bu.set_progress_bar('Fetching stats', tmp_progress_max, 25, True)
+			## set progress bar
+			tmp_progress_max = 0
+			for mode in set(args.mode) & set(UPDATE_FIELD.keys()):
+				tmp_progress_max += len(active_players[mode])
+			bu.print_new_line()
+			bu.set_progress_bar('Fetching stats', tmp_progress_max, 25, True)
 
-		for mode in UPDATE_FIELD:
-			Q[mode] = asyncio.Queue()
+			for mode in UPDATE_FIELD:
+				Q[mode] = asyncio.Queue()
+			
+			if 'tank_stats' in args.mode:
+				mode = 'tank_stats'
+				Qcreator_tasks.append(asyncio.create_task(mk_playerQ(Q[mode], active_players[mode])))
+				for i in range(args.workers):
+					worker_tasks.append(asyncio.create_task(WG_tank_stat_worker( db, Q[mode], i, args )))
+					bu.debug('Tank list Task ' + str(i) + ' started')	
+					await asyncio.sleep(SLEEP)	
 		
-		if 'tank_stats' in args.mode:
-			mode = 'tank_stats'
-			Qcreator_tasks.append(asyncio.create_task(mk_playerQ(Q[mode], active_players[mode])))
-			for i in range(args.workers):
-				worker_tasks.append(asyncio.create_task(WG_tank_stat_worker( db, Q[mode], i, args )))
-				bu.debug('Tank list Task ' + str(i) + ' started')	
-				await asyncio.sleep(SLEEP)	
-	
-		if 'tank_stats_BS' in args.mode:
-			mode = 'tank_stats_BS'
-			Qcreator_tasks.append(asyncio.create_task(mk_playerQ(Q[mode], active_players[mode])))
-			for i in range(args.workers):
-				worker_tasks.append(asyncio.create_task(BS_tank_stat_worker(db, Q[mode], i, args )))
-				bu.debug('Tank stat Task ' + str(i) + ' started')	
-				await asyncio.sleep(SLEEP)
+			if 'tank_stats_BS' in args.mode:
+				mode = 'tank_stats_BS'
+				Qcreator_tasks.append(asyncio.create_task(mk_playerQ(Q[mode], active_players[mode])))
+				for i in range(args.workers):
+					worker_tasks.append(asyncio.create_task(BS_tank_stat_worker(db, Q[mode], i, args )))
+					bu.debug('Tank stat Task ' + str(i) + ' started')	
+					await asyncio.sleep(SLEEP)
 
-		if 'player_stats' in args.mode:
-			mode = 'player_stats'
-			bu.error('Fetching WG player stats NOT IMPLEMENTED YET')
+			if 'player_stats' in args.mode:
+				mode = 'player_stats'
+				bu.error('Fetching WG player stats NOT IMPLEMENTED YET')
 
-		if 'player_stats_BS' in args.mode:
-			mode = 'player_stats_BS'
-			Qcreator_tasks.append(asyncio.create_task(mk_playerQ(Q[mode], active_players[mode])))
-			for i in range(args.workers):
-				worker_tasks.append(asyncio.create_task(BS_player_stat_worker(db, Q[mode], i, args )))
-				bu.debug('Player stat Task ' + str(i) + ' started')
-				await asyncio.sleep(SLEEP)
-        		
-		## wait queues to finish --------------------------------------
-		
-		if len(Qcreator_tasks) > 0: 
-			bu.debug('Waiting for the work queue makers to finish')
-			await asyncio.wait(Qcreator_tasks)
+			if 'player_stats_BS' in args.mode:
+				mode = 'player_stats_BS'
+				Qcreator_tasks.append(asyncio.create_task(mk_playerQ(Q[mode], active_players[mode])))
+				for i in range(args.workers):
+					worker_tasks.append(asyncio.create_task(BS_player_stat_worker(db, Q[mode], i, args )))
+					bu.debug('Player stat Task ' + str(i) + ' started')
+					await asyncio.sleep(SLEEP)
+					
+			## wait queues to finish --------------------------------------
+			
+			if len(Qcreator_tasks) > 0: 
+				bu.debug('Waiting for the work queue makers to finish')
+				await asyncio.wait(Qcreator_tasks)
 
-		bu.debug('All active players added to the queue. Waiting for stat workers to finish')
-		for mode in UPDATE_FIELD:
-			await Q[mode].join()		
+			bu.debug('All active players added to the queue. Waiting for stat workers to finish')
+			for mode in UPDATE_FIELD:
+				await Q[mode].join()		
 
-		bu.finish_progress_bar()
+			bu.finish_progress_bar()
 
-		bu.debug('All work queues empty. Cancelling workers')
-		for task in worker_tasks:
-			task.cancel()
-		bu.debug('Waiting for workers to cancel')
-		if len(worker_tasks) > 0:
-			await asyncio.gather(*worker_tasks, return_exceptions=True)
+			bu.debug('All work queues empty. Cancelling workers')
+			for task in worker_tasks:
+				task.cancel()
+			bu.debug('Waiting for workers to cancel')
+			if len(worker_tasks) > 0:
+				await asyncio.gather(*worker_tasks, return_exceptions=True)
 
-		if (args.sample == 0) and (not args.run_error_log):
-			# only for full stats
-			log_update_time(db, args.mode)
-		print_update_stats(args.mode)
+			if (args.sample == 0) and (not args.run_error_log):
+				# only for full stats
+				log_update_time(db, args.mode)
+			print_update_stats(args.mode)
 
 	except asyncio.CancelledError as err:
 		bu.error('Queue got cancelled while still working.')
@@ -367,6 +369,7 @@ async def update_tankopedia( db: motor.motor_asyncio.AsyncIOMotorDatabase, filen
 	dbc = db[DB_C_TANKS]
 	if filename != None:
 		async with aiofiles.open(filename, 'rt', encoding="utf8") as fp:
+			# Update Tankopedia
 			tanks = json.loads(await fp.read())
 			inserted = 0
 			updated = 0
@@ -388,6 +391,20 @@ async def update_tankopedia( db: motor.motor_asyncio.AsyncIOMotorDatabase, filen
 				except Exception as err:
 					bu.error('Unexpected error', err)
 			bu.verbose_std('Added ' + str(inserted) + ' tanks, updated ' + str(updated) + ' tanks')
+			## update tank strings
+			dbc = db[DB_C_TANK_STR]
+			counter_tank_str = 0
+			for tank_str in tanks['userStr'].keys():
+				try:
+					key = tank_str
+					value = tanks['userStr'][key]
+					res = await dbc.find_one({'_id': key, 'value': value})
+					if res == None:
+						await dbc.update_one({ '_id': key}, { '$set' : { 'value': value}},  upsert=True)
+						counter_tank_str += 1
+				except Exception as err:
+					bu.error('Unexpected error', err)
+			bu.verbose_std('Added/updated ' + str(counter_tank_str) + ' tank strings')	
 			return True			
 	else:
 		bu.error('--file argument not set')
