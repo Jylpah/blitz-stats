@@ -370,7 +370,7 @@ async def get_tanks_DB(db: motor.motor_asyncio.AsyncIOMotorDatabase):
 
 async def get_tanks_DB_tier(db: motor.motor_asyncio.AsyncIOMotorDatabase, tier: int):
     """Get tank_ids of tanks in a particular tier"""
-    dbc = db[DB_C_TANKS]
+    dbc = db[DB_C_TANKOPEDIA]
     tanks = list()
     
     if (tier == None):
