@@ -1,4 +1,4 @@
-#!/usr/bin/python3.7
+#!/usr/bin/env python3.8
 
 # Script fetch Blitz player stats and tank stats
 
@@ -29,8 +29,8 @@ DB_C_REPLAYS   = 'Replays'
 wi = None
 bs = None
 WI_STOP_SPIDER = False
-WIoldReplayN = 0
-WIoldReplayLimit = 30
+WI_old_replay_N = 0
+WI_old_replay_limit = 30
 
 ## main() -------------------------------------------------------------
 
@@ -74,8 +74,8 @@ async def main(argv):
 		DB_CERT_REQ = configDB.getint('db_ssl_req', ssl.CERT_NONE)
 		DB_AUTH 	= configDB.get('db_auth', 'admin')
 		DB_NAME 	= configDB.get('db_name', 'BlitzStats')
-		DB_USER		= configDB.get('db_user', 'mongouser')
-		DB_PASSWD 	= configDB.get('db_password', "PASSWORD")
+		DB_USER		= configDB.get('db_user', None)
+		DB_PASSWD 	= configDB.get('db_password', None)
 		DB_CERT		= configDB.get('db_ssl_cert_file', None)
 		DB_CA		= configDB.get('db_ssl_ca_file', None)
 		
@@ -86,7 +86,10 @@ async def main(argv):
 		bu.debug('DB_NAME: ' + DB_NAME)
 
 		#### Connect to MongoDB
-		client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, username=DB_USER, password=DB_PASSWD, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
+		if (DB_USER==None) or (DB_PASSWD==None):
+			client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
+		else:
+			client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, username=DB_USER, password=DB_PASSWD, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
 
 		db = client[DB_NAME]
 		await db[DB_C_ACCOUNTS].create_index([ ('last_battle_time', pymongo.DESCENDING) ], background=True)	
@@ -95,22 +98,22 @@ async def main(argv):
 
 		if not args.remove:
 			if args.blitzstars:
-				players.update(await getPlayersBS(args.force))
+				players.update(await get_players_BS(args.force))
 		
 			if args.wotinspector:
-				players.update(await getPlayersWI(db, args))
+				players.update(await get_players_WI(db, args))
 
 			if args.db:
-				players.update(await getPlayersDB(db, args))
+				players.update(await get_players_DB(db, args))
 			
 			if len(args.files) > 0:
 				bu.debug(str(args.files))
-				players.update(await getPlayersReplays(args.files, args.workers))
+				players.update(await get_players_replays(args.files, args.workers))
 
-			await updateAccountIDs(db, players)
+			await update_account_ids(db, players)
 		
 		else:
-			await removeAccountIDs(db, args.files)
+			await remove_account_ids(db, args.files)
 
 	except asyncio.CancelledError as err:
 		bu.error('Queue gets cancelled while still working.')
@@ -122,7 +125,7 @@ async def main(argv):
 	return None
 
 
-async def removeAccountIDs(db: motor.motor_asyncio.AsyncIOMotorDatabase, files: list):
+async def remove_account_ids(db: motor.motor_asyncio.AsyncIOMotorDatabase, files: list):
 	"""Remove account_ids from the DB"""
 	dbc = db[DB_C_ACCOUNTS]
 
@@ -130,36 +133,36 @@ async def removeAccountIDs(db: motor.motor_asyncio.AsyncIOMotorDatabase, files: 
 	for file in files:
 		account_ids.update(await bu.read_int_list(file))
 	
-	accountID_list = list(account_ids)
-	bu.verbose_std('Deleting ' + str(len(accountID_list)) + ' account_ids')
+	account_id_list = list(account_ids)
+	bu.verbose_std('Deleting ' + str(len(account_id_list)) + ' account_ids')
 
 	deleted_count = 0
 	BATCH = 500
-	while len(accountID_list) > 0:
-		if len(accountID_list) >= BATCH:
+	while len(account_id_list) > 0:
+		if len(account_id_list) >= BATCH:
 			end = BATCH
 		else:
-			end = len(accountID_list)
+			end = len(account_id_list)
 		try: 
-			res = await dbc.delete_many({ '_id': { '$in': accountID_list[:end] } } )
+			res = await dbc.delete_many({ '_id': { '$in': account_id_list[:end] } } )
 			deleted_count += res.deleted_count
 		except Exception as err:
 			bu.error('Unexpected Exception: ' + str(type(err)) + ' : '+ str(err))
-		del(accountID_list[:end])
+		del(account_id_list[:end])
 	
 	bu.verbose_std(str(deleted_count) + ' account_ids deleted from the database')
 
 	return None
 
 
-async def updateAccountIDs(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_ids: set):
+async def update_account_ids(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_ids: set):
 		"""Update / add account_ids to the database"""
 
 		dbc = db[DB_C_ACCOUNTS]
 				
 		player_list = list()
 		for account_id in account_ids:
-			player_list.append(mkPlayerJSON(account_id))
+			player_list.append(mk_player_JSON(account_id))
 		
 		count_old = await dbc.count_documents({})
 		BATCH = 500
@@ -183,14 +186,14 @@ async def updateAccountIDs(db: motor.motor_asyncio.AsyncIOMotorDatabase, account
 		bu.verbose_std(str(count - count_old) + ' new account_ids added to the database')
 		bu.verbose_std(str(count) + ' account_ids in the database')
 
-def mkPlayerJSON(account_id: int): 
+def mk_player_JSON(account_id: int): 
 	player = {}
 	player['_id'] = account_id
 	player['updated'] = NOW()
 	player['last_battle_time'] = None
 	return player
 
-async def getPlayersDB(db, args):
+async def get_players_DB(db, args):
 	dbc = db[DB_C_REPLAYS]
 	players = set()
 
@@ -205,15 +208,15 @@ async def getPlayersDB(db, args):
 			bu.error('Unexpected error: ' + str(type(err)) + ' : ' + str(err))
 	return players
 
-async def getPlayersReplays(files : list, workers: int):
+async def get_players_replays(files : list, workers: int):
 	replayQ  = asyncio.Queue()	
 	reader_tasks = []
 	# Make replay Queue
-	scanner_task = asyncio.create_task(mkReplayQ(replayQ, files))
+	scanner_task = asyncio.create_task(mk_replayQ(replayQ, files))
 
 	# Start tasks to process the Queue
 	for i in range(workers):
-		reader_tasks.append(asyncio.create_task(replayReader(replayQ, i)))
+		reader_tasks.append(asyncio.create_task(replay_reader(replayQ, i)))
 		bu.debug('Task ' + str(i) + ' started')
 
 	bu.debug('Waiting for the replay scanner to finish')
@@ -229,7 +232,7 @@ async def getPlayersReplays(files : list, workers: int):
 	
 	return players
 
-async def replayReader(queue: asyncio.Queue, readerID: int):
+async def replay_reader(queue: asyncio.Queue, readerID: int):
 	"""Async Worker to process the replay queue"""
 
 	players = set()
@@ -243,7 +246,7 @@ async def replayReader(queue: asyncio.Queue, readerID: int):
 				if os.path.exists(filename) and os.path.isfile(filename):
 					async with aiofiles.open(filename) as fp:
 						replay_json = json.loads(await fp.read())
-						tmp = await parseAccountIDs(replay_json)
+						tmp = await parse_account_ids(replay_json)
 						if tmp != None:
 							players.update(tmp)
 						else:
@@ -256,7 +259,7 @@ async def replayReader(queue: asyncio.Queue, readerID: int):
 		return players
 	return None
 
-async def parseAccountIDs(json_resp: dict): 
+async def parse_account_ids(json_resp: dict): 
 	players = set()
 	try:
 		if json_resp.get('status', 'error') != 'ok':
@@ -268,7 +271,7 @@ async def parseAccountIDs(json_resp: dict):
 		return None
 	return players
 
-async def mkReplayQ(queue : asyncio.Queue, files : list):
+async def mk_replayQ(queue : asyncio.Queue, files : list):
 	"""Create queue of replays to post"""
 	p_replayfile = re.compile('.*\\.wotbreplay\\.json$')
 
@@ -281,31 +284,31 @@ async def mkReplayQ(queue : asyncio.Queue, files : list):
 				break
 			else:
 				if (p_replayfile.match(line) != None):
-					await queue.put(await mkReaderQitem(line))
+					await queue.put(await mk_replayQ_item(line))
 	else:
 		for fn in files:
 			if fn.endswith('"'):
 				fn = fn[:-1]  
 			if os.path.isfile(fn) and (p_replayfile.match(fn) != None):
-				await queue.put(await mkReaderQitem(fn))
+				await queue.put(await mk_replayQ_item(fn))
 			elif os.path.isdir(fn):
 				with os.scandir(fn) as dirEntry:
 					for entry in dirEntry:
 						if entry.is_file() and (p_replayfile.match(entry.name) != None): 
 							bu.debug(entry.name)
-							await queue.put(await mkReaderQitem(entry.path))
+							await queue.put(await mk_replayQ_item(entry.path))
 			bu.debug('File added to queue: ' + fn)
 	bu.debug('Finished')
 	return None
 
-async def mkReaderQitem(filename : str) -> list:
+async def mk_replayQ_item(filename : str) -> list:
 	"""Make an item to replay queue"""
 	global REPLAY_N
 	REPLAY_N +=1
 	bu.print_progress()
 	return [filename, REPLAY_N]
 
-async def getPlayersWI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace):
+async def get_players_WI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace):
 	"""Get active players from wotinspector.com replays"""
 	global wi
 
@@ -322,7 +325,7 @@ async def getPlayersWI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: argp
 	tasks = []
 
 	for i in range(workers):
-		tasks.append(asyncio.create_task(WIreplayFetcher(db, replayQ, i, force)))
+		tasks.append(asyncio.create_task(WI_replay_fetcher(db, replayQ, i, force)))
 		bu.debug('Replay Fetcher ' + str(i) + ' started')
 
 	bu.set_progress_bar('Spidering replays', max_pages, 2)		
@@ -366,15 +369,15 @@ async def getPlayersWI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: argp
 
 	return players
 
-async def WIoldReplayFound(queue : asyncio.Queue):
-	global WIoldReplayN
-	WIoldReplayN +=1
-	if WIoldReplayN == WIoldReplayLimit:
-		bu.verbose_std(str(WIoldReplayLimit) + ' old replays spidered. Stopping')
-		await emptyQueue(queue, 'Replay Queue') 
+async def WI_old_replay_found(queue : asyncio.Queue):
+	global WI_old_replay_N
+	WI_old_replay_N +=1
+	if WI_old_replay_N == WI_old_replay_limit:
+		bu.verbose_std(str(WI_old_replay_limit) + ' old replays spidered. Stopping')
+		await empty_queue(queue, 'Replay Queue') 
 	return True
 
-async def WIreplayFetcher(db : motor.motor_asyncio.AsyncIOMotorDatabase, queue : asyncio.Queue, workerID : int, force : bool):
+async def WI_replay_fetcher(db : motor.motor_asyncio.AsyncIOMotorDatabase, queue : asyncio.Queue, workerID : int, force : bool):
 	players = set()
 	dbc = db[DB_C_REPLAYS]
 	msg_str = 'Replay Fetcher[' + str(workerID) + ']: '
@@ -391,7 +394,7 @@ async def WIreplayFetcher(db : motor.motor_asyncio.AsyncIOMotorDatabase, queue :
 				if force:
 					continue
 				else: 
-					await WIoldReplayFound(queue)					
+					await WI_old_replay_found(queue)					
 					continue
 			url = wi.URL_WI + replay_link
 			json_resp = await wi.get_replay_JSON(replay_id)
@@ -406,7 +409,7 @@ async def WIreplayFetcher(db : motor.motor_asyncio.AsyncIOMotorDatabase, queue :
 				bu.debug(msg_str + 'Replay added to database')
 			except Exception as err:
 				bu.error(msg_str + 'Unexpected Exception: ' + str(type(err)) + ' : ' + str(err)) 
-			players.update(await parseAccountIDs(json_resp))
+			players.update(await parse_account_ids(json_resp))
 			bu.debug(msg_str + 'Processed replay: ' + url )
 			queue.task_done()
 			await asyncio.sleep(SLEEP)
@@ -416,7 +419,7 @@ async def WIreplayFetcher(db : motor.motor_asyncio.AsyncIOMotorDatabase, queue :
 	except Exception as err:
 		bu.error('Replay Fetcher[' + str(workerID) + ']: Unexpected Exception: ' + str(type(err)) + ' : ' + str(err)) 
 
-async def emptyQueue(queue : asyncio.Queue, Qname = ''):
+async def empty_queue(queue : asyncio.Queue, Qname = ''):
 	"""Empty the task queue"""
 	global WI_STOP_SPIDER
 	try:
@@ -429,7 +432,7 @@ async def emptyQueue(queue : asyncio.Queue, Qname = ''):
 		bu.debug('Queue empty: ' + Qname)
 	return None
 
-async def getPlayersBS(force = False):
+async def get_players_BS(force = False):
 	"""Get active player list from BlitzStars.com"""
 	active_players = set()
 	if force or not (os.path.exists(FILE_ACTIVE_PLAYERS) and os.path.isfile(FILE_ACTIVE_PLAYERS)) or (NOW() - os.path.getmtime(FILE_ACTIVE_PLAYERS) > CACHE_VALID):
@@ -443,19 +446,19 @@ async def getPlayersBS(force = False):
 			active_players.update(json.loads(await f.read()))
 	return active_players
 
-async def mkPlayerQ(queue : asyncio.Queue, accountID_list : list):
+async def mk_playerQ(queue : asyncio.Queue, account_id_list : list):
 	"""Create queue of replays to post"""
-	for accountID in accountID_list:
-		bu.debug('Adding account_id: ' + str(accountID) + ' to the queue')
-		await queue.put(accountID)
+	for account_id in account_id_list:
+		bu.debug('Adding account_id: ' + str(account_id) + ' to the queue')
+		await queue.put(account_id)
 
 	return None
 
 def NOW() -> int:
 	return int(time.time())
 
-def mkID(accountID: int, tankID: int, last_battle_time: int):
-	return hex(accountID)[2:].zfill(10) + hex(tankID)[2:].zfill(6) + hex(last_battle_time)[2:].zfill(8)
+def mk_id(account_id: int, tank_id: int, last_battle_time: int):
+	return hex(account_id)[2:].zfill(10) + hex(tank_id)[2:].zfill(6) + hex(last_battle_time)[2:].zfill(8)
 
     ### main()
 if __name__ == "__main__":
