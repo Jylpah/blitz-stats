@@ -15,11 +15,12 @@ logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
 FILE_CONFIG = 'blitzstats.ini'
 
-DB_C_ACCOUNTS       = 'WG_Accounts'
-DB_C_WG_TANK_STATS  = 'WG_TankStats'
-DB_C_BS_TANK_STATS  = 'BS_PlayerTankStats'
-DB_C_BS_PLAYER_STATS = 'BS_PlayerStats'
-DB_C_TANKS          = 'Tankopedia'
+DB_C_ACCOUNTS           = 'WG_Accounts'
+DB_C_WG_TANK_STATS      = 'WG_TankStats'
+DB_C_BS_TANK_STATS      = 'BS_PlayerTankStats'
+DB_C_BS_PLAYER_STATS    = 'BS_PlayerStats'
+DB_C_TANKOPEDIA         = 'Tankopedia'
+DB_C_TANK_STR			= 'WG_TankStrs'
 
 CACHE_VALID = 24*3600*7   # 7 days
 
@@ -41,7 +42,7 @@ async def main(argv):
 
     parser = argparse.ArgumentParser(description='Retrieve player stats from the DB')
     parser.add_argument('-f', '--filename', type=str, default=None, help='Filename to write stats into')
-    parser.add_argument('--stats', default='help', choices=['player_stats', 'tank_stats'], help='Select type of stats to export')
+    parser.add_argument('--mode', default='help', choices=['player_stats', 'tank_stats', 'tankopedia'], help='Select type of stats to export')
     parser.add_argument('--type', default='period', choices=['period', 'cumulative', 'newer', 'auto'], help='Select export type. \'auto\' exports periodic stats, but cumulative for the oldest one')
     parser.add_argument( '-a', '--all', 	action='store_true', default=False, help='Export all the stats instead of the latest per period')
     parser.add_argument('--tier', type=int, default=None, help='Fiter tanks based on tier')
@@ -50,7 +51,7 @@ async def main(argv):
     arggroup.add_argument( '-d', '--debug', 	action='store_true', default=False, help='Debug mode')
     arggroup.add_argument( '-v', '--verbose', 	action='store_true', default=False, help='Verbose mode')
     arggroup.add_argument( '-s', '--silent', 	action='store_true', default=False, help='Silent mode')
-    parser.add_argument('dates', metavar='DATE1 DATE2 [DATE3 ...]', type=valid_date, default=TODAY, nargs='+', help='Stats cut-off date(s) - format YYYY-MM-DD')
+    parser.add_argument('dates', metavar='DATE1 DATE2 [DATE3 ...]', type=valid_date, default=TODAY, nargs='*', help='Stats cut-off date(s) - format YYYY-MM-DD')
 
     args = parser.parse_args()
     bu.set_log_level(args.silent, args.verbose, args.debug)
@@ -83,37 +84,45 @@ async def main(argv):
         bu.debug(str(type(db)))
         tasks = []
         
-        periodQ = await mk_periodQ(args.dates, args.type)
-        if periodQ == None:
-            bu.error('Export type (--type) is not cumulative, but only one date given. Exiting...')
-            sys.exit(1)
+        if args.mode == 'tankopedia':
+            if args.filename == None:
+                args.filename = 'tanks'
+            await export_tankopedia(db, args)
+        else:
+
+            periodQ = await mk_periodQ(args.dates, args.type)
+            if periodQ == None:
+                bu.error('Export type (--type) is not cumulative, but only one date given. Exiting...')
+                sys.exit(1)
+            
+            bu.set_counter('Stats exported: ')
+
+            if args.mode == 'player_stats':
+                if args.filename == None: 
+                    args.filename = 'player_stats'
+                for i in range(N_WORKERS):
+                    tasks.append(asyncio.create_task(q_player_stats_BS(i, db, periodQ, args)))
+            elif args.mode == 'tank_stats':
+                if args.filename == None: 
+                    args.filename = 'tank_stats'                  
+                for i in range(N_WORKERS):
+                    tasks.append(asyncio.create_task(q_tank_stats_WG(i, db, periodQ, args)))
+                    bu.debug('Task ' + str(i) + ' started')
+            
+            bu.debug('Waiting for statsworkers to finish')
+            await periodQ.join()
+            
+            bu.finish_progress_bar()
+
+            bu.debug('Cancelling workers')
+            for task in tasks:
+                task.cancel()
+            bu.debug('Waiting for workers to cancel')
+            if len(tasks) > 0:
+                await asyncio.gather(*tasks, return_exceptions=True)
         
-        bu.set_counter('Stats exported: ')
-
-        if args.stats == 'player_stats':
-            if args.filename == None: 
-                args.filename = 'player_stats'
-            for i in range(N_WORKERS):
-                tasks.append(asyncio.create_task(q_player_stats_BS(i, db, periodQ, args)))
-        elif args.stats == 'tank_stats':
-            if args.filename == None: 
-                args.filename = 'tank_stats'                  
-            for i in range(N_WORKERS):
-                tasks.append(asyncio.create_task(q_tank_stats_WG(i, db, periodQ, args)))
-                bu.debug('Task ' + str(i) + ' started')
-
-        bu.debug('Waiting for statsworkers to finish')
-        await periodQ.join()
-		
-        bu.finish_progress_bar()
-
-        bu.debug('Cancelling workers')
-        for task in tasks:
-            task.cancel()
-        bu.debug('Waiting for workers to cancel')
-        if len(tasks) > 0:
-            await asyncio.gather(*tasks, return_exceptions=True)
-        print_stats(args.stats)
+        print_stats(args.mode)
+            
     except asyncio.CancelledError as err:
         bu.error('Queue gets cancelled while still working.')
     except Exception as err:
@@ -128,6 +137,8 @@ async def mk_periodQ(dates : list, export_type: str) -> asyncio.Queue:
     
     periodQ = asyncio.Queue()
 
+    if (len(dates) == 0):
+        return None
     if (len(dates) == 1) and (export_type not in [ 'cumulative', 'newer']):
         return None
 
@@ -159,6 +170,42 @@ def NOW() -> int:
     return int(time.time())
 
 
+async def export_tankopedia(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace):
+    """Export Tankopedia from the DB in WG API format"""
+    global STATS_EXPORTED
+    filename = args.filename
+    try:
+        dbc = db[DB_C_TANKOPEDIA]
+        tank_count = await dbc.count_documents({})
+        tank_cursor = dbc.find()
+        export = {}
+        export['status'] = 'ok'
+        export['meta'] = { 'count': tank_count }
+        data = {}
+        async for tank in tank_cursor:
+            del tank['_id']
+            data[str(tank['tank_id'])] = tank
+            STATS_EXPORTED += 1
+        export['data'] = data
+
+        ## tank strs
+        dbc = db[DB_C_TANK_STR]
+        cursor = dbc.find()
+        tank_strs = {}
+        async for tank_str in cursor:
+            tank_strs[tank_str['_id']] = tank_str['value']
+        export['userStr'] = tank_strs
+
+    except Exception as err:
+        bu.error(exception=err)
+    
+    try:
+        async with aiofiles.open(filename, 'w', encoding="utf8") as fp:
+            await fp.write(json.dumps(export, indent=4, ensure_ascii=False))
+    except Exception as err:
+        bu.error(exception=err)
+    return
+
 async def q_tank_stats_BS(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, periodQ: asyncio.Queue, filename: str, tier=None):
     """Async Worker to fetch tank stats"""
     
@@ -180,7 +227,7 @@ async def q_tank_stats_BS(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDat
             bu.debug('Start: ' + str(timeA) + ' End: ' + str(timeB), workerID)
 
             async with aiofiles.open(fn, 'w', encoding="utf8") as fp:
-                tanks = await getDBtanksTier(db, tier)
+                tanks = await get_tanks_DB_tier(db, tier)
                 for tank_id in tanks:
                     bu.debug('Exporting stats for tier ' + str(tier) + ' tanks: ' + ', '.join(list(map(str, tanks))), workerID)
                     findQ = {'$and': [{'last_battle_time': {'$lte': timeB}}, { 'last_battle_time': {'$gt': timeA}}, {'tank_id': tank_id}]}
@@ -212,7 +259,7 @@ async def q_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDat
     all_data = args.all
     export_type = args.type
 
-    tanks = await getDBtanksTier(db, tier)
+    tanks = await get_tanks_DB_tier(db, tier)
     bu.debug('[' + str(workerID) + '] ' + str(len(tanks))  + ' tanks in DB')
 
     while True:
@@ -315,19 +362,19 @@ async def q_player_stats_BS(workerID: int, db: motor.motor_asyncio.AsyncIOMotorD
     return None
 
 
-async def getDBtanks(db: motor.motor_asyncio.AsyncIOMotorDatabase):
+async def get_tanks_DB(db: motor.motor_asyncio.AsyncIOMotorDatabase):
     """Get tank_ids of tanks in the DB"""
     dbc = db[DB_C_WG_TANK_STATS]
     return await dbc.distinct('tank_id')
     
 
-async def getDBtanksTier(db: motor.motor_asyncio.AsyncIOMotorDatabase, tier: int):
+async def get_tanks_DB_tier(db: motor.motor_asyncio.AsyncIOMotorDatabase, tier: int):
     """Get tank_ids of tanks in a particular tier"""
     dbc = db[DB_C_TANKS]
     tanks = list()
     
     if (tier == None):
-        tanks = await getDBtanks(db)
+        tanks = await get_tanks_DB(db)
         
     elif (tier <= 10) and (tier > 0):
         cursor = dbc.find({'tier': tier}, {'_id': 1})
