@@ -113,7 +113,7 @@ async def main(argv):
 			await update_account_ids(db, players)
 		
 		else:
-			await remove_account_IDs(db, args.files)
+			await remove_account_ids(db, args.files)
 
 	except asyncio.CancelledError as err:
 		bu.error('Queue gets cancelled while still working.')
@@ -125,7 +125,7 @@ async def main(argv):
 	return None
 
 
-async def remove_account_IDs(db: motor.motor_asyncio.AsyncIOMotorDatabase, files: list):
+async def remove_account_ids(db: motor.motor_asyncio.AsyncIOMotorDatabase, files: list):
 	"""Remove account_ids from the DB"""
 	dbc = db[DB_C_ACCOUNTS]
 
