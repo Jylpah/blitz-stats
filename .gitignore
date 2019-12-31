@@ -1,7 +1,8 @@
 tmp/
 export/
 ssl/
-blitzstats.ini
+.gitignore
+#blitzstats.ini
 __pycache__/
 getBlitzStats.code-workspace
 *.jsonl

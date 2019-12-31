@@ -1,4 +1,4 @@
-#!/usr/bin/python3.8
+#!/usr/bin/env python3.8
 
 # Script Analyze WoT Blitz replays
 
@@ -67,13 +67,17 @@ async def main(argv):
         DB_CERT_REQ = configDB.getint('db_ssl_req', ssl.CERT_NONE)
         DB_AUTH     = configDB.get('db_auth', 'admin')
         DB_NAME     = configDB.get('db_name', 'BlitzStats')
-        DB_USER     = configDB.get('db_user', 'mongouser')
-        DB_PASSWD   = configDB.get('db_password', "PASSWORD")
+        DB_USER     = configDB.get('db_user', None)
+        DB_PASSWD   = configDB.get('db_password', None)
         DB_CERT		= configDB.get('db_ssl_cert_file', None)
         DB_CA		= configDB.get('db_ssl_ca_file', None)
 
 		#### Connect to MongoDB
-        client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, username=DB_USER, password=DB_PASSWD, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
+        #### Connect to MongoDB
+        if (DB_USER==None) or (DB_PASSWD==None):
+            client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
+        else:
+            client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, username=DB_USER, password=DB_PASSWD, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
 
         db = client[DB_NAME]
         bu.debug(str(type(db)))
