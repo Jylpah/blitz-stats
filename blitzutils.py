@@ -6,6 +6,7 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 from progress.bar import IncrementalBar
 from progress.counter import Counter
+from decimal import Decimal
 
 MAX_RETRIES= 3
 SLEEP = 3
@@ -310,7 +311,7 @@ class SlowBar(IncrementalBar):
     suffix = '%(index)d/%(max)d %(percent)d%% ETA %(remaining_hours)d hours'
     @property
     def remaining_hours(self):
-        return self.eta // 3600
+        return Decimal(self.eta / 3600).quantize(Decimal('1.0')) 
 
 
 ## -----------------------------------------------------------
