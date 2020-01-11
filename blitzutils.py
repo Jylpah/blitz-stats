@@ -20,6 +20,7 @@ _log_level = NORMAL
 ## Progress display
 _progress_N = 100
 _progress_i = 0
+_progress_id = None
 _progress_obj = None
 
 UMASK= os.umask(0)
@@ -129,8 +130,9 @@ def get_progress_step():
     return _progress_N
 
 
-def set_progress_bar(heading: str, max_value: int, step: int = None, slow: bool = False):
-    global _progress_obj, _progress_N, _progress_i
+def set_progress_bar(heading: str, max_value: int, step: int = None, slow: bool = False, id: str = None):
+    global _progress_obj, _progress_N, _progress_i, _progress_id
+    _progress_id = id
     if step == None:
         _progress_N = int(max_value / 1000) if (max_value > 1000) else 2
     else:
@@ -155,15 +157,18 @@ def set_counter(heading: str):
     return 
 
 
-def print_progress(force = False) -> bool:
+def print_progress(force = False, id : str = None) -> bool:
     """Print progress dots. Returns True if the dot is being printed."""
     global _progress_N, _progress_i
     if (_log_level > SILENT) and ( force or (_log_level < DEBUG ) ):
         _progress_i +=  1 
         if ((_progress_i % _progress_N) == 0):
-            if _progress_obj != None:
-                _progress_obj.next(_progress_N)
-                return True
+            if (_progress_obj != None):
+                if (_progress_id == id):
+                    _progress_obj.next(_progress_N)
+                    return True
+                else:
+                    return False
             else:
                 print('.', end='', flush=True)
                 return True
