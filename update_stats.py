@@ -266,6 +266,7 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 	i = 0
 	tmp_steps = bu.get_progress_step()
 	bu.set_progress_step(50000)
+	bu.set_counter('Fetching players:')
 	async for player in cursor:
 		i += 1
 		if bu.print_progress():
@@ -274,7 +275,7 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 			players.append(player['_id'])
 		except Exception as err:
 			bu.error('Unexpected error', err)
-	
+	bu.finish_progress_bar()
 	bu.set_progress_step(tmp_steps)
 	bu.debug(str(len(players)) + ' read from the DB')
 	return players
