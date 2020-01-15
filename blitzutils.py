@@ -159,11 +159,12 @@ def set_counter(heading: str):
 
 
 def print_progress(force = False, id : str = None) -> bool:
-    """Print progress dots. Returns True if the dot is being printed."""
-    global _progress_N, _progress_i
-    if (_log_level > SILENT) and ( force or (_log_level < DEBUG ) ):
-        _progress_i +=  1 
-        if ((_progress_i % _progress_N) == 0):
+    """Print progress bar/dots. Returns True if the dot is being printed."""
+    global _progress_i
+    
+    _progress_i +=  1 
+    if ((_progress_i % _progress_N) == 0):
+        if (_log_level > SILENT) and ( force or (_log_level < DEBUG ) ):
             if (_progress_obj != None):
                 if (_progress_id == id):
                     _progress_obj.next(_progress_N)
