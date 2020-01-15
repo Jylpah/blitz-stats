@@ -142,7 +142,7 @@ async def main(argv):
 			tmp_progress_max = 0
 			for mode in set(args.mode) & set(UPDATE_FIELD.keys()):
 				tmp_progress_max += len(active_players[mode])
-			bu.print_new_line()
+			# bu.print_new_line()
 			bu.set_progress_bar('Fetching stats', tmp_progress_max, 25, True)
 
 			for mode in UPDATE_FIELD:
@@ -200,13 +200,12 @@ async def main(argv):
 				log_update_time(db, args.mode)
 			print_update_stats(args.mode)
 			print_date('DB update ended', start_time)
-
+			bu.print_new_line(True)
 	except asyncio.CancelledError as err:
 		bu.error('Queue got cancelled while still working.')
 	except Exception as err:
 		bu.error('Unexpected Exception', err)
-	finally:
-		bu.print_new_line(True)
+	finally:		
 		await bs.close()
 		await wg.close()
 
@@ -214,13 +213,13 @@ async def main(argv):
 
 def print_date(msg : str = '', start_time : datetime.datetime = None ) -> datetime.datetime:
 	timenow = datetime.datetime.now()
-	print(msg + ': ' + timenow)
+	print(msg + ': ' + timenow.replace(microsecond=0).isoformat(sep=' '))
 	if start_time != None:
 		delta = timenow - start_time
 		secs = delta.total_seconds()
-		hours = secs // 3600
-		minutes = secs // 60
-		print('The processing took ' + str(hours) + 'h ' + str(minutes))
+		hours = int(secs // 3600)
+		minutes = int(secs // 60)
+		print('The processing took ' + str(hours) + 'h ' + str(minutes) + 'min')
 	return timenow
 
 
