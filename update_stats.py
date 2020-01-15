@@ -3,7 +3,7 @@
 # Script fetch Blitz player stats and tank stats
 
 import sys, argparse, json, os, inspect, pprint, aiohttp, asyncio, aiofiles, aioconsole, re, logging, time, xmltodict, collections, pymongo
-import motor.motor_asyncio, ssl, configparser, random
+import motor.motor_asyncio, ssl, configparser, random, datetime
 import blitzutils as bu
 from blitzutils import BlitzStars
 from blitzutils import WG
@@ -106,10 +106,11 @@ async def main(argv):
 
 		## get active player list ------------------------------
 		active_players = {}
+		start_time = 0
 		if 'tankopedia' in args.mode:
 			await update_tankopedia(db, args.file, args.force)
 		else:
-			
+			start_time = print_date('DB update started')
 			if args.run_error_log:
 				for mode in get_stat_modes(args.mode):
 					active_players[mode] = await get_prev_errors(db, mode)
@@ -198,6 +199,7 @@ async def main(argv):
 				# only for full stats
 				log_update_time(db, args.mode)
 			print_update_stats(args.mode)
+			print_date('DB update ended', start_time)
 
 	except asyncio.CancelledError as err:
 		bu.error('Queue got cancelled while still working.')
@@ -209,6 +211,17 @@ async def main(argv):
 		await wg.close()
 
 	return None
+
+def print_date(msg : str = '', start_time : datetime.datetime = None ) -> datetime.datetime:
+	timenow = datetime.datetime.now()
+	print(msg + ': ' + timenow)
+	if start_time != None:
+		delta = timenow - start_time
+		secs = delta.total_seconds()
+		hours = secs // 3600
+		minutes = secs // 60
+		print('The processing took ' + str(hours) + 'h ' + str(minutes))
+	return timenow
 
 
 def get_stat_modes(mode_list: list) -> list:
