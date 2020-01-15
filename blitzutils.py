@@ -308,7 +308,7 @@ def bld_dict_hierarcy(d : dict, key : str, value) -> dict:
 ## -----------------------------------------------------------
 
 class SlowBar(IncrementalBar):
-    suffix = '%(index)d/%(max)d %(percent)d%% ETA %(remaining_hours)d hours'
+    suffix = '%(index)d/%(max)d %(percent)d%% ETA %(remaining_hours).1f hours'
     @property
     def remaining_hours(self):
         return Decimal(self.eta / 3600).quantize(Decimal('1.0')) 
