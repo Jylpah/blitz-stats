@@ -86,7 +86,7 @@ async def main(argv):
         
         if args.mode == 'tankopedia':
             if args.filename == None:
-                args.filename = 'tanks'
+                args.filename = 'tanks.json'
             await export_tankopedia(db, args)
         else:
 
