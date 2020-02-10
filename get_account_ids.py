@@ -30,7 +30,7 @@ wi = None
 bs = None
 WI_STOP_SPIDER = False
 WI_old_replay_N = 0
-WI_old_replay_limit = 30
+WI_old_replay_limit = 50
 
 ## main() -------------------------------------------------------------
 
