@@ -433,7 +433,10 @@ async def mk_playerQ(queue : asyncio.Queue, account_ids : list):
 	"""Create queue of replays to post"""
 	for account_id in account_ids:
 		bu.debug('Adding account_id: ' + str(account_id) + ' to the queue')
-		await queue.put(account_id)
+		if account_id < 3e9:
+			await queue.put(account_id)
+		else:
+			bu.debug('Chinese account_id. Cannot retrieve stats, skipping.')
 
 	return None
 
@@ -502,12 +505,7 @@ async def BS_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 	field = 'tank_stats_BS'
 
 	blitz_releases = await get_blitz_releases(db)
-	releases = list()
-	for rel in blitz_releases:
-		rel = rel
-		releases.append(blitz_releases[0])
-	
-	
+		
 	clr_error_log 	= args.run_error_log
 	force 			= args.force
 
@@ -645,10 +643,10 @@ async def get_blitz_releases(db : motor.motor_asyncio.AsyncIOMotorDatabase) -> d
 	dbc = db[DB_C_RELEASES]
 	try:
 		cursor = dbc.find()
-		releases = list()
+		releases = dict()
 
 		async for rel in cursor:
-			releases.append(rel)
+			releases
 		return releases
 
 	except Exception as err:
