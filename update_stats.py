@@ -68,7 +68,7 @@ async def main(argv):
 		
 	try:
 		bs = BlitzStars()
-		wg = WG(WG_APP_ID)
+		wg = WG(WG_APP_ID, rate_limit=20)
 
 		## Read config
 		config 	= configparser.ConfigParser()
@@ -369,7 +369,7 @@ def print_update_stats(mode: list):
 		return False
 
 
-async def update_stats_update_time(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id, field, last_battle_time = None) -> bool:
+async def update_stats_update_time(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id, field, last_battle_time: bool = None) -> bool:
 	dbc = db[DB_C_ACCOUNTS]
 	try:
 		await dbc.update_one( { '_id' : account_id }, { '$set': { 'last_battle_time': last_battle_time, UPDATE_FIELD[field] : bu.NOW() }} )
@@ -612,7 +612,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 	return None
 
 
-async def log_error(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int, stat_type: str, clr_error_log = False):
+async def log_error(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int, stat_type: str, clr_error_log: bool = False):
 	dbc = db[DB_C_ERROR_LOG]
 	try:
 		if clr_error_log:
