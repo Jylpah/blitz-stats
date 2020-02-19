@@ -3,7 +3,7 @@
 # Script fetch Blitz player stats and tank stats
 
 import sys, argparse, json, os, inspect, pprint, aiohttp, asyncio, aiofiles, aioconsole, re, logging, time, xmltodict, collections, pymongo
-import motor.motor_asyncio, ssl, configparser, random
+import motor.motor_asyncio, ssl, configparser, random, datetime
 import blitzutils as bu
 from blitzutils import BlitzStars
 from blitzutils import WG
@@ -53,7 +53,7 @@ async def main(argv):
 	parser.add_argument('--force', action='store_true', default=False, help='Force refreshing the active player list')
 	parser.add_argument('--workers', type=int, default=N_WORKERS, help='Number of asynchronous workers')
 	parser.add_argument('--cache-valid', type=int, dest='cache_valid', default=CACHE_VALID, help='Do not update stats newer than N Days')
-	parser.add_argument('--player-src', dest='player_src', default='db', choices=[ 'db', 'blitzstars' ], help='Do NOT use DB for active players')
+	parser.add_argument('--player-src', dest='player_src', default='db', choices=[ 'db', 'blitzstars' ], help='Source for the account list. Default: db')
 	parser.add_argument('--sample', type=int, default=0, help='Sample size of accounts to update')
 	parser.add_argument('--run-error-log', dest='run_error_log', action='store_true', default=False, help='Re-try previously failed requests')
 	arggroup = parser.add_mutually_exclusive_group()
@@ -94,22 +94,24 @@ async def main(argv):
 		db = client[DB_NAME]
 		bu.debug(str(type(db)))	
 
-		await db[DB_C_BS_PLAYER_STATS].create_index([('account_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ], background=True)	
-		await db[DB_C_BS_TANK_STATS].create_index([('account_id', pymongo.ASCENDING), ('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ], background=True)	
-		await db[DB_C_BS_TANK_STATS].create_index([('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ], background=True)	
-		await db[DB_C_TANK_STATS].create_index([('account_id', pymongo.ASCENDING), ('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ], background=True)	
-		await db[DB_C_TANK_STATS].create_index([('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ], background=True)	
-		await db[DB_C_TANKS].create_index([('tank_id', pymongo.ASCENDING), ('tier', pymongo.DESCENDING) ], background=True)	
-		await db[DB_C_TANKS].create_index([ ('name', pymongo.TEXT)], background=True)	
-		await db[DB_C_ERROR_LOG].create_index([('account_id', pymongo.ASCENDING), ('time', pymongo.DESCENDING), ('type', pymongo.ASCENDING) ], background=True)	
+		await db[DB_C_BS_PLAYER_STATS].create_index([('account_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
+		await db[DB_C_BS_TANK_STATS].create_index([('account_id', pymongo.ASCENDING), ('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
+		await db[DB_C_BS_TANK_STATS].create_index([('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
+		await db[DB_C_TANK_STATS].create_index([('account_id', pymongo.ASCENDING), ('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
+		await db[DB_C_TANK_STATS].create_index([('account_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
+		await db[DB_C_TANK_STATS].create_index([('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
+		await db[DB_C_TANKS].create_index([('tank_id', pymongo.ASCENDING), ('tier', pymongo.DESCENDING) ])	
+		await db[DB_C_TANKS].create_index([ ('name', pymongo.TEXT)])	
+		await db[DB_C_ERROR_LOG].create_index([('account_id', pymongo.ASCENDING), ('time', pymongo.DESCENDING), ('type', pymongo.ASCENDING) ])	
 		
 
 		## get active player list ------------------------------
 		active_players = {}
+		start_time = 0
 		if 'tankopedia' in args.mode:
 			await update_tankopedia(db, args.file, args.force)
 		else:
-			
+			start_time = print_date('DB update started')
 			if args.run_error_log:
 				for mode in get_stat_modes(args.mode):
 					active_players[mode] = await get_prev_errors(db, mode)
@@ -141,7 +143,7 @@ async def main(argv):
 			tmp_progress_max = 0
 			for mode in set(args.mode) & set(UPDATE_FIELD.keys()):
 				tmp_progress_max += len(active_players[mode])
-			bu.print_new_line()
+			# bu.print_new_line()
 			bu.set_progress_bar('Fetching stats', tmp_progress_max, 25, True)
 
 			for mode in UPDATE_FIELD:
@@ -198,17 +200,28 @@ async def main(argv):
 				# only for full stats
 				log_update_time(db, args.mode)
 			print_update_stats(args.mode)
-
+			print_date('DB update ended', start_time)
+			bu.print_new_line(True)
 	except asyncio.CancelledError as err:
 		bu.error('Queue got cancelled while still working.')
 	except Exception as err:
 		bu.error('Unexpected Exception', err)
-	finally:
-		bu.print_new_line(True)
+	finally:		
 		await bs.close()
 		await wg.close()
 
 	return None
+
+def print_date(msg : str = '', start_time : datetime.datetime = None ) -> datetime.datetime:
+	timenow = datetime.datetime.now()
+	print(msg + ': ' + timenow.replace(microsecond=0).isoformat(sep=' '))
+	if start_time != None:
+		delta = timenow - start_time
+		secs = delta.total_seconds()
+		hours = int(secs // 3600)
+		minutes = int(secs // 60)
+		print('The processing took ' + str(hours) + 'h ' + str(minutes) + 'min')
+	return timenow
 
 
 def get_stat_modes(mode_list: list) -> list:
@@ -266,6 +279,7 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 	i = 0
 	tmp_steps = bu.get_progress_step()
 	bu.set_progress_step(50000)
+	bu.set_counter('Fetching players:')
 	async for player in cursor:
 		i += 1
 		if bu.print_progress():
@@ -274,7 +288,7 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 			players.append(player['_id'])
 		except Exception as err:
 			bu.error('Unexpected error', err)
-	
+	bu.finish_progress_bar()
 	bu.set_progress_step(tmp_steps)
 	bu.debug(str(len(players)) + ' read from the DB')
 	return players

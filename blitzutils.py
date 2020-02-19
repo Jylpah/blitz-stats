@@ -6,6 +6,7 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 from progress.bar import IncrementalBar
 from progress.counter import Counter
+from decimal import Decimal
 
 MAX_RETRIES= 3
 SLEEP = 3
@@ -20,6 +21,7 @@ _log_level = NORMAL
 ## Progress display
 _progress_N = 100
 _progress_i = 0
+_progress_id = None
 _progress_obj = None
 
 UMASK= os.umask(0)
@@ -129,8 +131,9 @@ def get_progress_step():
     return _progress_N
 
 
-def set_progress_bar(heading: str, max_value: int, step: int = None, slow: bool = False):
-    global _progress_obj, _progress_N, _progress_i
+def set_progress_bar(heading: str, max_value: int, step: int = None, slow: bool = False, id: str = None):
+    global _progress_obj, _progress_N, _progress_i, _progress_id
+    _progress_id = id
     if step == None:
         _progress_N = int(max_value / 1000) if (max_value > 1000) else 2
     else:
@@ -155,15 +158,19 @@ def set_counter(heading: str):
     return 
 
 
-def print_progress(force = False) -> bool:
-    """Print progress dots. Returns True if the dot is being printed."""
-    global _progress_N, _progress_i
-    if (_log_level > SILENT) and ( force or (_log_level < DEBUG ) ):
-        _progress_i +=  1 
-        if ((_progress_i % _progress_N) == 0):
-            if _progress_obj != None:
-                _progress_obj.next(_progress_N)
-                return True
+def print_progress(force = False, id : str = None) -> bool:
+    """Print progress bar/dots. Returns True if the dot is being printed."""
+    global _progress_i
+    
+    _progress_i +=  1 
+    if ((_progress_i % _progress_N) == 0):
+        if (_log_level > SILENT) and ( force or (_log_level < DEBUG ) ):
+            if (_progress_obj != None):
+                if (_progress_id == id):
+                    _progress_obj.next(_progress_N)
+                    return True
+                else:
+                    return False
             else:
                 print('.', end='', flush=True)
                 return True
@@ -250,8 +257,10 @@ async def get_url_JSON(session: aiohttp.ClientSession, url: str, chk_JSON_func =
         if session == None:
             error('Session must be initialized first')
             sys.exit(1)
-
-            ## To avoid excessive use of servers            
+        if url == None:
+            return None
+        
+        ## To avoid excessive use of servers            
         for retry in range(1,max_tries+1):
             try:
                 async with session.get(url) as resp:
@@ -265,7 +274,7 @@ async def get_url_JSON(session: aiohttp.ClientSession, url: str, chk_JSON_func =
                     if retry == max_tries:                        
                         break
                     debug('Retrying URL [' + str(retry) + '/' +  str(max_tries) + ']: ' + url )
-                    await asyncio.sleep(SLEEP)
+                await asyncio.sleep(SLEEP)    
 
             except aiohttp.ClientError as err:
                 debug("Could not retrieve URL: " + url)
@@ -302,10 +311,15 @@ def bld_dict_hierarcy(d : dict, key : str, value) -> dict:
 ## -----------------------------------------------------------
 
 class SlowBar(IncrementalBar):
-    suffix = '%(index)d/%(max)d %(percent)d%% ETA %(remaining_hours)d hours'
+    suffix = '%(index)d/%(max)d %(percent)d%% ETA %(remaining_hours).0f h %(remaining_mins).0f mins'
     @property
     def remaining_hours(self):
         return self.eta // 3600
+
+    @property
+    def remaining_mins(self):
+        return (self.eta - (self.eta // 3600)*3600) // 60
+ 
 
 
 ## -----------------------------------------------------------
@@ -442,17 +456,19 @@ class WG:
         }
 
     URL_WG_SERVER = {
-        'eu' : 'https://api.wotblitz.eu/wotb/',
-        'ru' : 'https://api.wotblitz.ru/wotb/',
-        'na' : 'https://api.wotblitz.com/wotb/',
-        'asia' : 'https://api.wotblitz.asia/wotb/'
+        'eu'    : 'https://api.wotblitz.eu/wotb/',
+        'ru'    : 'https://api.wotblitz.ru/wotb/',
+        'na'    : 'https://api.wotblitz.com/wotb/',
+        'asia'  : 'https://api.wotblitz.asia/wotb/',
+        'china' : None
         }
 
     ACCOUNT_ID_SERVER= {
         'ru'    : range(0, int(5e8)),
         'eu'    : range(int(5e8), int(10e8)),
         'na'    : range(int(1e9),int(2e9)),
-        'asia'  : range(int(2e9),int(4e9))
+        'asia'  : range(int(2e9),int(3e9)),
+        'china' : range(int(3e9),int(4e9))
         }
 
     def __init__(self, WG_app_id = None, tankopedia_fn =  None, maps_fn = None, stats_cache = False):
@@ -534,8 +550,11 @@ class WG:
     @classmethod
     def get_server(cls, account_id: int) -> str:
         """Get Realm/server of an account based on account ID"""
-        if account_id > 1e9:
-            if account_id > 2e9:
+        if account_id >= 1e9:
+            if account_id >= 3e9:
+                debug('Chinese account/server: not stats available')
+                return None
+            if account_id >= 2e9:
                 return 'asia'
             return 'na'
         else:
@@ -729,7 +748,9 @@ class WG:
     
     def get_url_clan_info(self, server: str, clan_id: int) -> str:
         try:
-           return self.URL_WG_SERVER[server] + self.URL_WG_CLAN_INFO + self.WG_app_id + '&clan_id=' + str(clan_id)
+            if server == None:
+                return None 
+            return self.URL_WG_SERVER[server] + self.URL_WG_CLAN_INFO + self.WG_app_id + '&clan_id=' + str(clan_id)
         except Exception as err:
             if (server == None) or (server.lower() not in WG.ACCOUNT_ID_SERVER.keys()):
                 error('No server name or invalid server name given: ' + server if (server !=  None) else '')
@@ -744,7 +765,8 @@ class WG:
 
     def get_url_player_tanks_stats(self, account_id: int, tank_ids = [], fields = []) -> str: 
         server = self.get_server(account_id)
-        
+        if server == None:
+            return None        
         if (tank_ids != None) and (len(tank_ids) > 0):
             tank_id_str= '&tank_id=' + '%2C'.join([ str(x) for x in tank_ids])
         else:
@@ -763,6 +785,8 @@ class WG:
     def get_url_player_stats(self, account_id,  fields) -> str: 
         try:
             server = self.get_server(account_id)
+            if server == None:
+                return None 
             if (fields != None) and (len(fields) > 0):
                 field_str =  '&fields=' + '%2C'.join(fields)
             else:
@@ -814,10 +838,7 @@ class WG:
 
     async def get_player_tank_stats(self, account_id: int, tank_ids = [], fields = [], cache=True) -> dict:
         """Get player's stats (WR, # of battles) in a tank or all tanks (empty tank_ids[])"""
-        # debug('Started')        
-        
         try:
-            #debug('account_id: ' + str(account_id) + ' TankID: ' + ','.join([ str(id) for id in tank_ids]))
             stats = None
 
             # try cached stats first:

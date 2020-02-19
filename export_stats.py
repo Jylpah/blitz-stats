@@ -86,7 +86,7 @@ async def main(argv):
         
         if args.mode == 'tankopedia':
             if args.filename == None:
-                args.filename = 'tanks'
+                args.filename = 'tanks.json'
             await export_tankopedia(db, args)
         else:
 
@@ -290,7 +290,7 @@ async def q_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDat
                                             'doc': {'$first': '$$ROOT'}}},
                                 {'$replaceRoot': {'newRoot': '$doc'}}, 
                                 {'$project': {'_id': False}} ]
-                        cursor = dbc.aggregate(pipeline, allowDiskUse=False)
+                        cursor = dbc.aggregate(pipeline, allowDiskUse=True)
                     
                     async for doc in cursor:
                         bu.print_progress()

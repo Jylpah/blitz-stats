@@ -328,14 +328,14 @@ async def get_players_WI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: ar
 		tasks.append(asyncio.create_task(WI_replay_fetcher(db, replayQ, i, force)))
 		bu.debug('Replay Fetcher ' + str(i) + ' started')
 
-	bu.set_progress_bar('Spidering replays', max_pages, 2)		
+	bu.set_progress_bar('Spidering replays', max_pages, step = 1, id = "spider")		
 
 	for page in range(start_page,(start_page + max_pages)):
 		if WI_STOP_SPIDER: 
 			bu.debug('Stopping spidering WoTispector.com')
 			break
 		url = wi.get_url_replay_listing(page)
-		bu.print_progress()
+		bu.print_progress(id = "spider")
 		try:
 			async with session.get(url) as resp:
 				if resp.status != 200:
@@ -348,13 +348,13 @@ async def get_players_WI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: ar
 					break
 				for link in links:
 					await replayQ.put(link)
-				await asyncio.sleep(2*SLEEP)
+				await asyncio.sleep(SLEEP)
 		except aiohttp.ClientError as err:
 			bu.error("Could not retrieve URL: " + url)
 			bu.error(str(err))
 	
 	n_replays = replayQ.qsize()
-	bu.set_progress_bar('Fetching replays', n_replays)
+	bu.set_progress_bar('Fetching replays', n_replays, step = 5, id = 'replays')
 
 
 	bu.debug('Replay links read. Replay Fetchers to finish')
@@ -385,7 +385,7 @@ async def WI_replay_fetcher(db : motor.motor_asyncio.AsyncIOMotorDatabase, queue
 	try:
 		while True:
 			replay_link = await queue.get()
-			bu.print_progress()
+			bu.print_progress(id = 'replays')
 			replay_id = wi.get_replay_id(replay_link)
 			res = await dbc.find_one({'_id': replay_id})
 			if res != None:
