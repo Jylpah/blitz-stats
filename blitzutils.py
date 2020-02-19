@@ -868,7 +868,8 @@ class WG:
             if nick == None or server == None:
                 raise ValueError('Invalid nickname given: ' + nickname)
             url = self.get_url_account_id(nick, server)
-            json_data = await get_url_JSON(self.session, url, self.chk_JSON_status)
+
+            json_data = await get_url_JSON(self.session, url, self.chk_JSON_status, rate_limiter=self.rate_limiter)
             for res in json_data['data']:
                 if res['nickname'].lower() == nick.lower(): 
                     return res['account_id']
@@ -892,7 +893,7 @@ class WG:
 
             # Cached stats not found, fetching new ones
             url = self.get_url_player_tanks_stats(account_id, tank_ids, fields)
-            json_data = await get_url_JSON(self.session, url, self.chk_JSON_status)
+            json_data = await get_url_JSON(self.session, url, self.chk_JSON_status, rate_limiter=self.rate_limiter)
             if json_data != None:
                 #debug('JSON Response received: ' + str(json_data))
                 stats = json_data['data'][str(account_id)]
@@ -924,7 +925,7 @@ class WG:
         try:
             # Cached stats not found, fetching new ones
             url = self.get_url_player_stats(account_id, fields)
-            json_data = await get_url_JSON(self.session, url, self.chk_JSON_status)
+            json_data = await get_url_JSON(self.session, url, self.chk_JSON_status, rate_limiter=self.rate_limiter)
             if json_data != None:
                 #debug('JSON Response received: ' + str(json_data))
                 stats = json_data['data'][str(account_id)]
