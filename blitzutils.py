@@ -456,17 +456,19 @@ class WG:
         }
 
     URL_WG_SERVER = {
-        'eu' : 'https://api.wotblitz.eu/wotb/',
-        'ru' : 'https://api.wotblitz.ru/wotb/',
-        'na' : 'https://api.wotblitz.com/wotb/',
-        'asia' : 'https://api.wotblitz.asia/wotb/'
+        'eu'    : 'https://api.wotblitz.eu/wotb/',
+        'ru'    : 'https://api.wotblitz.ru/wotb/',
+        'na'    : 'https://api.wotblitz.com/wotb/',
+        'asia'  : 'https://api.wotblitz.asia/wotb/',
+        'china' : None
         }
 
     ACCOUNT_ID_SERVER= {
         'ru'    : range(0, int(5e8)),
         'eu'    : range(int(5e8), int(10e8)),
         'na'    : range(int(1e9),int(2e9)),
-        'asia'  : range(int(2e9),int(4e9))
+        'asia'  : range(int(2e9),int(3e9)),
+        'china' : range(int(3e9),int(4e9))
         }
 
     def __init__(self, WG_app_id = None, tankopedia_fn =  None, maps_fn = None, stats_cache = False):
