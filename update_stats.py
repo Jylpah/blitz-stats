@@ -264,17 +264,18 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 	
 	if sample > 0:
 		if force:
-			pipeline = [   	{'$sample': {'size' : sample} } ]
+			pipeline = [   	{ '$match': { 'account_id': { '$lt': 3e9 } }}, 
+							{'$sample': {'size' : sample} } ]
 		else:
-			pipeline = [ 	{'$match': { '$or': [ { UPDATE_FIELD[mode]: None }, { UPDATE_FIELD[mode] : { '$lt': bu.NOW() - cache_valid } } ] }},
+			pipeline = [ 	{'$match': {  '$and' : [ { 'account_id': { '$lt': 3e9 } },  { '$or': [ { UPDATE_FIELD[mode]: None }, { UPDATE_FIELD[mode] : { '$lt': bu.NOW() - cache_valid } } ] } ] } },
                          	{'$sample': {'size' : sample} } ]
 		
 		cursor = dbc.aggregate(pipeline, allowDiskUse=False)
 	else:
 		if force:
-			cursor = dbc.find()
+			cursor = dbc.find({ 'account_id': { '$lt': 3e9 } })
 		else:
-			cursor = dbc.find(  { '$or': [ { UPDATE_FIELD[mode]: None }, { UPDATE_FIELD[mode] : { '$lt': bu.NOW() - cache_valid } } ] }, { '_id' : 1} )
+			cursor = dbc.find(  { '$and': [ {'account_id': { '$lt': 3e9 }}, { '$or': [ { UPDATE_FIELD[mode]: None }, { UPDATE_FIELD[mode] : { '$lt': bu.NOW() - cache_valid } } ] } ] }, { '_id' : 1} )
 	
 	i = 0
 	tmp_steps = bu.get_progress_step()
