@@ -337,18 +337,18 @@ async def get_players_WI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: ar
 		# url = wi.get_url_replay_listing(page)
 		bu.print_progress(id = "spider")
 		try:
-			async with wi.get_replay_listing(page) as resp:
-				if resp.status != 200:
-					bu.error('Could not retrieve wotinspector.com')
-					continue	
-				bu.debug('HTTP request OK')
-				html = await resp.text()
-				links = wi.get_replay_links(html)
-				if len(links) == 0: 
-					break
-				for link in links:
-					await replayQ.put(link)
-				await asyncio.sleep(SLEEP)
+			resp = await wi.get_replay_listing(page)
+			if resp.status != 200:
+				bu.error('Could not retrieve wotinspector.com')
+				continue	
+			bu.debug('HTTP request OK')
+			html = await resp.text()
+			links = wi.get_replay_links(html)
+			if len(links) == 0: 
+				break
+			for link in links:
+				await replayQ.put(link)
+			# await asyncio.sleep(SLEEP)
 		except aiohttp.ClientError as err:
 			bu.error("Could not retrieve replays.WoTinspector.com page " + str(page))
 			bu.error(str(err))
