@@ -47,7 +47,10 @@ class asyncThrottle:
             duration = time.time() - self.start_time
             debug('Average rate: ' + '{:.1f}'.format(str(self.count / duration)) + ' / sec', force=True)
         self.fillerTask.cancel()
-        await asyncio.gather(*self.fillerTask)
+        try:
+            await asyncio.wait_for(self.fillerTask, timeout= 3)
+        except asyncio.TimeoutError as err:
+            error(exception=err)
 
 
     async def filler(self):
