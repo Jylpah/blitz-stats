@@ -1278,7 +1278,7 @@ class WoTinspector:
 
     async def get_replay_listing(self, page: int = 0) -> aiohttp.ClientResponse:
         url = self.get_url_replay_listing(page)
-        self.rate_limiter.allow()
+        await self.rate_limiter.allow()
         return await self.session.get(url)
 
     @classmethod
