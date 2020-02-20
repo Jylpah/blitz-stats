@@ -38,14 +38,14 @@ class asyncThrottle:
         self.rate = rate
         self.queue = asyncio.Queue(rate)
         self.fillerTask = asyncio.create_task(self.filler())
-        self.start_time = None
+        self.start_time = time.time()
         self.count = 0
 
 
     async def close(self):
         if self.start_time != None:
             duration = time.time() - self.start_time
-            debug('Average rate: ' + '{:.1f}'.format(self.count / duration) + ' / sec', force=True)
+            debug('Average WG API request rate: ' + '{:.1f}'.format(self.count / duration) + ' / sec', force=True)
         self.fillerTask.cancel()
         try:
             await asyncio.wait_for(self.fillerTask, timeout= 3)
@@ -54,7 +54,6 @@ class asyncThrottle:
 
 
     async def filler(self):
-        # debug('bucket filler started', force=True)
         try:
             while True:
                 if not self.queue.full():
@@ -67,12 +66,8 @@ class asyncThrottle:
             debug('Cancelled')
 
     async def allow(self) -> None:
-        # debug('Request received', force=True)
         await self.queue.get()
         self.queue.task_done()
-        ## DEBUG
-        if self.start_time == None:
-            self.start_time = time.time()
         return None
 
 
@@ -1159,7 +1154,7 @@ class WoTinspector:
 
     REPLAY_N = 1
 
-    def __init__(self, rate_limit: int = 50):
+    def __init__(self, rate_limit: int = 30):
         self.session = aiohttp.ClientSession()
         self.rate_limiter = asyncThrottle(rate_limit)
 
@@ -1211,7 +1206,7 @@ class WoTinspector:
 
 
     async def get_replay_JSON(self, replay_id: str):
-        json_resp = await get_url_JSON(self.session, self.URL_REPLAY_INFO + replay_id, None)
+        json_resp = await get_url_JSON(self.session, self.URL_REPLAY_INFO + replay_id, chk_JSON_func=None, rate_limiter=self.rate_limiter)
         try:
             if self.chk_JSON_replay(json_resp):
                 return json_resp
@@ -1279,6 +1274,12 @@ class WoTinspector:
             
         error(msg_str + ' Could not post replay: ' + title)
         return None
+
+
+    async def get_replay_listing(self, page: int = 0) -> aiohttp.ClientResponse:
+        url = self.get_url_replay_listing(page)
+        self.rate_limiter.allow()
+        return await self.session.get(url)
 
     @classmethod
     def get_url_replay_listing(cls, page : int):
