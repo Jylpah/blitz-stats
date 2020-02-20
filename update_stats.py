@@ -5,8 +5,7 @@
 import sys, argparse, json, os, inspect, pprint, aiohttp, asyncio, aiofiles, aioconsole, re, logging, time, xmltodict, collections, pymongo
 import motor.motor_asyncio, ssl, configparser, random, datetime
 import blitzutils as bu
-from blitzutils import BlitzStars
-from blitzutils import WG
+from blitzutils import BlitzStars, WG, asyncThrottle
 
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
