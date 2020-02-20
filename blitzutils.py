@@ -87,9 +87,9 @@ def verbose_std(msg = "", id = None):
     return None
 
 
-def debug(msg = "", id = None, exception = None):
+def debug(msg = "", id = None, exception = None, force: bool = False):
     """print a conditional debug message"""
-    if _log_level >= DEBUG:
+    if (_log_level >= DEBUG) or force:
         _print_log_msg('DEBUG', msg, exception, id)
     return None
 
@@ -252,7 +252,7 @@ async def open_JSON(filename: str, chk_JSON_func = None) -> dict:
     return None
 
 
-async def get_url_JSON(session: aiohttp.ClientSession, url: str, chk_JSON_func = None, max_tries = MAX_RETRIES) -> dict:
+async def get_url_JSON(session: aiohttp.ClientSession, url: str, chk_JSON_func = None, max_tries = MAX_RETRIES, rate_limiter: asyncThrottle.asyncThrottle = None) -> dict:
         """Retrieve (GET) an URL and return JSON object"""
         if session == None:
             error('Session must be initialized first')
@@ -263,6 +263,8 @@ async def get_url_JSON(session: aiohttp.ClientSession, url: str, chk_JSON_func =
         ## To avoid excessive use of servers            
         for retry in range(1,max_tries+1):
             try:
+                if rate_limiter != None:
+                    await rate_limiter.allow()
                 async with session.get(url) as resp:
                     if resp.status == 200:
                         debug('HTTP request OK')
@@ -324,13 +326,54 @@ class SlowBar(IncrementalBar):
         return (self.eta - (self.eta // 3600)*3600) // 60
  
 
-
 ## -----------------------------------------------------------
 #### Class StatsNotFound 
 ## -----------------------------------------------------------
 
 class StatsNotFound(Exception):
     pass
+
+
+## -----------------------------------------------------------
+#### Class asyncThrottle 
+## -----------------------------------------------------------
+
+class asyncThrottle:
+    def __init__(self, rate: int = 20):
+        if rate < 1:
+            error('Rate must be positive integer')    
+        self.rate = rate
+        self.queue = asyncio.Queue(rate)
+        self.fillerTask = asyncio.create_task(self.filler())
+        self.start_time = None
+        self.count = 0
+
+
+    async def close(self):
+        duration = time.time() - self.start_time
+        debug('Average rate: ' + '{:.1f}'.format(str(self.count / duration)) + ' / sec', force=True)
+        self.fillerTask.cancel()
+        await asyncio.gather(*self.fillerTask)
+
+
+    async def filler(self):
+        while True:
+            if not self.queue.full():
+                items_2_add = self.rate - self.queue.qsize()
+                for i in range(0,items_2_add):
+                    self.queue.put_nowait(i)
+                    self.count += 1
+            await asyncio.sleep(1)
+    
+
+    async def allow(self) -> None:
+        await self.queue.get()
+        self.queue.task_done()
+        ## DEBUG
+        if self.start_time == None:
+            self.start_time = time.time()
+        return None
+
 
 ## -----------------------------------------------------------
 #### Class WG 
@@ -474,12 +517,12 @@ class WG:
         'china' : range(int(3e9),int(4e9))
         }
 
-    def __init__(self, WG_app_id = None, tankopedia_fn =  None, maps_fn = None, stats_cache = False):
+    def __init__(self, WG_app_id : str = None, tankopedia_fn : str =  None, maps_fn : str = None, stats_cache: bool = False, rate_limit: int = 10):
         
         self.WG_app_id = WG_app_id
         self.load_tanks(tankopedia_fn)
         WG.tanks = self.tanks
-
+        
         if (maps_fn != None):
             if os.path.exists(maps_fn) and os.path.isfile(maps_fn):
                 try:
@@ -489,9 +532,11 @@ class WG:
                     error('Could not read maps file: ' + maps_fn + '\n' + str(err))  
             else:
                 verbose('Could not find maps file: ' + maps_fn)    
+        self.rate_limiter = None
         if self.WG_app_id != None:
             self.session = aiohttp.ClientSession()
             debug('WG aiohttp session initiated')
+            self.rate_limiter = asyncThrottle(rate_limit)
         else:
             self.session = None
             debug('WG aiohttp session NOT initiated')
@@ -534,9 +579,7 @@ class WG:
             self.stat_saver_task.cancel()
             debug('statsCacheTask cancelled')
             await self.stat_saver_task 
-        
-
-        
+                
         # close cacheDB
         if self.cache != None:
             # prune old cache records
@@ -545,7 +588,10 @@ class WG:
             await self.cache.close()
         
         if self.session != None:
-            await self.session.close()        
+            await self.session.close()   
+
+        if self.rate_limiter != None:
+            await self.rate_limiter.close()     
         return
 
     ## Class methods  ----------------------------------------------------------
@@ -654,6 +700,7 @@ class WG:
             error("JSON format error", err)
         return False
 
+
     @classmethod
     def chk_JSON_get_account_id(cls, json_resp: dict) -> bool:
         try:
@@ -706,6 +753,7 @@ class WG:
         except:
             debug("JSON check failed")
         return False
+
 
     @classmethod
     def chk_JSON_tank_stats(cls, json_resp: dict) -> bool:
@@ -766,7 +814,7 @@ class WG:
         return self.get_url_player_tanks_stats(account_id, fields='tank_id')
 
 
-    def get_url_player_tanks_stats(self, account_id: int, tank_ids = [], fields = []) -> str: 
+    def get_url_player_tanks_stats(self, account_id: int, tank_ids: list = [], fields: list = []) -> str: 
         server = self.get_server(account_id)
         if server == None:
             return None        
@@ -828,7 +876,8 @@ class WG:
             if nick == None or server == None:
                 raise ValueError('Invalid nickname given: ' + nickname)
             url = self.get_url_account_id(nick, server)
-            json_data = await get_url_JSON(self.session, url, self.chk_JSON_status)
+
+            json_data = await get_url_JSON(self.session, url, self.chk_JSON_status, rate_limiter=self.rate_limiter)
             for res in json_data['data']:
                 if res['nickname'].lower() == nick.lower(): 
                     return res['account_id']
@@ -852,7 +901,7 @@ class WG:
 
             # Cached stats not found, fetching new ones
             url = self.get_url_player_tanks_stats(account_id, tank_ids, fields)
-            json_data = await get_url_JSON(self.session, url, self.chk_JSON_status)
+            json_data = await get_url_JSON(self.session, url, self.chk_JSON_status, rate_limiter=self.rate_limiter)
             if json_data != None:
                 #debug('JSON Response received: ' + str(json_data))
                 stats = json_data['data'][str(account_id)]
@@ -884,7 +933,7 @@ class WG:
         try:
             # Cached stats not found, fetching new ones
             url = self.get_url_player_stats(account_id, fields)
-            json_data = await get_url_JSON(self.session, url, self.chk_JSON_status)
+            json_data = await get_url_JSON(self.session, url, self.chk_JSON_status, rate_limiter=self.rate_limiter)
             if json_data != None:
                 #debug('JSON Response received: ' + str(json_data))
                 stats = json_data['data'][str(account_id)]
@@ -1101,13 +1150,18 @@ class WoTinspector:
 
     REPLAY_N = 1
 
-    def __init__(self):
+    def __init__(self, rate_limit: int = 50):
         self.session = aiohttp.ClientSession()
+        self.rate_limiter = asyncThrottle(rate_limit)
+
 
     async def close(self):
         if self.session != None:
             debug('Closing aiohttp session')
-            await self.session.close()        
+            await self.session.close()
+        if self.rate_limiter != None:
+            await self.rate_limiter.close()       
+
 
     async def get_tankopedia(self, filename = 'tanks.json'):
         """Retrieve Tankpedia from WoTinspector.com"""

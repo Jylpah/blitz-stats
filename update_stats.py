@@ -10,7 +10,7 @@ from blitzutils import WG
 
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
-N_WORKERS = 10
+N_WORKERS = 40
 MAX_RETRIES = 3
 CACHE_VALID = 5   # 5 days
 MAX_UPDATE_INTERVAL = 365*24*3600 # 1 year
@@ -68,7 +68,7 @@ async def main(argv):
 		
 	try:
 		bs = BlitzStars()
-		wg = WG(WG_APP_ID)
+		wg = WG(WG_APP_ID, rate_limit=20)
 
 		## Read config
 		config 	= configparser.ConfigParser()
@@ -264,17 +264,18 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 	
 	if sample > 0:
 		if force:
-			pipeline = [   	{'$sample': {'size' : sample} } ]
+			pipeline = [   	{ '$match': { 'account_id': { '$lt': 3e9 } }}, 
+							{'$sample': {'size' : sample} } ]
 		else:
-			pipeline = [ 	{'$match': { '$or': [ { UPDATE_FIELD[mode]: None }, { UPDATE_FIELD[mode] : { '$lt': bu.NOW() - cache_valid } } ] }},
+			pipeline = [ 	{'$match': {  '$and' : [ { 'account_id': { '$lt': 3e9 } },  { '$or': [ { UPDATE_FIELD[mode]: None }, { UPDATE_FIELD[mode] : { '$lt': bu.NOW() - cache_valid } } ] } ] } },
                          	{'$sample': {'size' : sample} } ]
 		
 		cursor = dbc.aggregate(pipeline, allowDiskUse=False)
 	else:
 		if force:
-			cursor = dbc.find()
+			cursor = dbc.find({ 'account_id': { '$lt': 3e9 } })
 		else:
-			cursor = dbc.find(  { '$or': [ { UPDATE_FIELD[mode]: None }, { UPDATE_FIELD[mode] : { '$lt': bu.NOW() - cache_valid } } ] }, { '_id' : 1} )
+			cursor = dbc.find(  { '$and': [ {'account_id': { '$lt': 3e9 }}, { '$or': [ { UPDATE_FIELD[mode]: None }, { UPDATE_FIELD[mode] : { '$lt': bu.NOW() - cache_valid } } ] } ] }, { '_id' : 1} )
 	
 	i = 0
 	tmp_steps = bu.get_progress_step()
@@ -368,7 +369,7 @@ def print_update_stats(mode: list):
 		return False
 
 
-async def update_stats_update_time(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id, field, last_battle_time = None) -> bool:
+async def update_stats_update_time(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id, field, last_battle_time: bool = None) -> bool:
 	dbc = db[DB_C_ACCOUNTS]
 	try:
 		await dbc.update_one( { '_id' : account_id }, { '$set': { 'last_battle_time': last_battle_time, UPDATE_FIELD[field] : bu.NOW() }} )
@@ -607,11 +608,11 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 			if clr_error_log:
 				await clear_error_log(db, account_id, field)
 			playerQ.task_done()	
-			await asyncio.sleep(SLEEP)
+			# await asyncio.sleep(SLEEP)
 	return None
 
 
-async def log_error(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int, stat_type: str, clr_error_log = False):
+async def log_error(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int, stat_type: str, clr_error_log: bool = False):
 	dbc = db[DB_C_ERROR_LOG]
 	try:
 		if clr_error_log:

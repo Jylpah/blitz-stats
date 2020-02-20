@@ -162,7 +162,8 @@ async def update_account_ids(db: motor.motor_asyncio.AsyncIOMotorDatabase, accou
 				
 		player_list = list()
 		for account_id in account_ids:
-			player_list.append(mk_player_JSON(account_id))
+			if account_id < 3e9:
+				player_list.append(mk_player_JSON(account_id))
 		
 		count_old = await dbc.count_documents({})
 		BATCH = 500
