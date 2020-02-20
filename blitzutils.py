@@ -27,6 +27,46 @@ _progress_obj = None
 UMASK= os.umask(0)
 os.umask(UMASK)
 
+## -----------------------------------------------------------
+#### Class asyncThrottle 
+## -----------------------------------------------------------
+
+class asyncThrottle:
+    def __init__(self, rate: int = 20):
+        if rate < 1:
+            error('Rate must be positive integer')    
+        self.rate = rate
+        self.queue = asyncio.Queue(rate)
+        self.fillerTask = asyncio.create_task(self.filler())
+        self.start_time = None
+        self.count = 0
+
+
+    async def close(self):
+        duration = time.time() - self.start_time
+        debug('Average rate: ' + '{:.1f}'.format(str(self.count / duration)) + ' / sec', force=True)
+        self.fillerTask.cancel()
+        await asyncio.gather(*self.fillerTask)
+
+
+    async def filler(self):
+        while True:
+            if not self.queue.full():
+                items_2_add = self.rate - self.queue.qsize()
+                for i in range(0,items_2_add):
+                    self.queue.put_nowait(i)
+                    self.count += 1
+            await asyncio.sleep(1)
+    
+
+    async def allow(self) -> None:
+        await self.queue.get()
+        self.queue.task_done()
+        ## DEBUG
+        if self.start_time == None:
+            self.start_time = time.time()
+        return None
+
 
 def set_debug(debug: bool):
     global _log_level
@@ -252,7 +292,7 @@ async def open_JSON(filename: str, chk_JSON_func = None) -> dict:
     return None
 
 
-async def get_url_JSON(session: aiohttp.ClientSession, url: str, chk_JSON_func = None, max_tries = MAX_RETRIES, rate_limiter: asyncThrottle.asyncThrottle = None) -> dict:
+async def get_url_JSON(session: aiohttp.ClientSession, url: str, chk_JSON_func = None, max_tries = MAX_RETRIES, rate_limiter: asyncThrottle = None) -> dict:
         """Retrieve (GET) an URL and return JSON object"""
         if session == None:
             error('Session must be initialized first')
@@ -334,45 +374,6 @@ class StatsNotFound(Exception):
     pass
 
 
-## -----------------------------------------------------------
-#### Class asyncThrottle 
-## -----------------------------------------------------------
-
-class asyncThrottle:
-    def __init__(self, rate: int = 20):
-        if rate < 1:
-            error('Rate must be positive integer')    
-        self.rate = rate
-        self.queue = asyncio.Queue(rate)
-        self.fillerTask = asyncio.create_task(self.filler())
-        self.start_time = None
-        self.count = 0
-
-
-    async def close(self):
-        duration = time.time() - self.start_time
-        debug('Average rate: ' + '{:.1f}'.format(str(self.count / duration)) + ' / sec', force=True)
-        self.fillerTask.cancel()
-        await asyncio.gather(*self.fillerTask)
-
-
-    async def filler(self):
-        while True:
-            if not self.queue.full():
-                items_2_add = self.rate - self.queue.qsize()
-                for i in range(0,items_2_add):
-                    self.queue.put_nowait(i)
-                    self.count += 1
-            await asyncio.sleep(1)
-    
-
-    async def allow(self) -> None:
-        await self.queue.get()
-        self.queue.task_done()
-        ## DEBUG
-        if self.start_time == None:
-            self.start_time = time.time()
-        return None
 
 
 ## -----------------------------------------------------------
