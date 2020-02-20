@@ -10,7 +10,7 @@ from blitzutils import WG
 
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
-N_WORKERS = 10
+N_WORKERS = 40
 MAX_RETRIES = 3
 CACHE_VALID = 5   # 5 days
 MAX_UPDATE_INTERVAL = 365*24*3600 # 1 year
@@ -608,7 +608,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 			if clr_error_log:
 				await clear_error_log(db, account_id, field)
 			playerQ.task_done()	
-			await asyncio.sleep(SLEEP)
+			# await asyncio.sleep(SLEEP)
 	return None
 
 
