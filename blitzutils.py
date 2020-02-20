@@ -87,9 +87,9 @@ def verbose_std(msg = "", id = None):
     return None
 
 
-def debug(msg = "", id = None, exception = None):
+def debug(msg = "", id = None, exception = None, force: bool = False):
     """print a conditional debug message"""
-    if _log_level >= DEBUG:
+    if (_log_level >= DEBUG) or force:
         _print_log_msg('DEBUG', msg, exception, id)
     return None
 
@@ -345,9 +345,13 @@ class asyncThrottle:
         self.rate = rate
         self.queue = asyncio.Queue(rate)
         self.fillerTask = asyncio.create_task(self.filler())
+        self.start_time = None
+        self.count = 0
 
 
     async def close(self):
+        duration = time.time() - self.start_time
+        debug('Average rate: ' + '{:.1f}'.format(str(self.count / duration)) + ' / sec', force=True)
         self.fillerTask.cancel()
         await asyncio.gather(*self.fillerTask)
 
@@ -358,12 +362,16 @@ class asyncThrottle:
                 items_2_add = self.rate - self.queue.qsize()
                 for i in range(0,items_2_add):
                     self.queue.put_nowait(i)
+                    self.count += 1
             await asyncio.sleep(1)
     
 
     async def allow(self) -> None:
         await self.queue.get()
         self.queue.task_done()
+        ## DEBUG
+        if self.start_time == None:
+            self.start_time = time.time()
         return None
 
 
@@ -806,7 +814,7 @@ class WG:
         return self.get_url_player_tanks_stats(account_id, fields='tank_id')
 
 
-    def get_url_player_tanks_stats(self, account_id: int, tank_ids = [], fields = []) -> str: 
+    def get_url_player_tanks_stats(self, account_id: int, tank_ids: list = [], fields: list = []) -> str: 
         server = self.get_server(account_id)
         if server == None:
             return None        
@@ -1142,13 +1150,18 @@ class WoTinspector:
 
     REPLAY_N = 1
 
-    def __init__(self):
+    def __init__(self, rate_limit: int = 50):
         self.session = aiohttp.ClientSession()
+        self.rate_limiter = asyncThrottle(rate_limit)
+
 
     async def close(self):
         if self.session != None:
             debug('Closing aiohttp session')
-            await self.session.close()        
+            await self.session.close()
+        if self.rate_limiter != None:
+            await self.rate_limiter.close()       
+
 
     async def get_tankopedia(self, filename = 'tanks.json'):
         """Retrieve Tankpedia from WoTinspector.com"""
