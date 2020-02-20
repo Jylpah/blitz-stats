@@ -312,7 +312,10 @@ async def get_url_JSON(session: aiohttp.ClientSession, url: str, chk_JSON_func =
         for retry in range(1,max_tries+1):
             try:
                 if rate_limiter != None:
+                    debug('Calling rate_limiter', force=True)
                     await rate_limiter.allow()
+                else:
+                    debug('NOT calling rate limiter', force=True)
                 async with session.get(url) as resp:
                     if resp.status == 200:
                         debug('HTTP request OK')
