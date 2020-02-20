@@ -45,7 +45,7 @@ class asyncThrottle:
     async def close(self):
         if self.start_time != None:
             duration = time.time() - self.start_time
-            debug('Average rate: ' + '{:.1f}'.format(str(self.count / duration)) + ' / sec', force=True)
+            debug('Average rate: ' + '{:.1f}'.format(self.count / duration) + ' / sec', force=True)
         self.fillerTask.cancel()
         try:
             await asyncio.wait_for(self.fillerTask, timeout= 3)
@@ -54,7 +54,7 @@ class asyncThrottle:
 
 
     async def filler(self):
-        debug('bucket filler started', force=True)
+        # debug('bucket filler started', force=True)
         try:
             while True:
                 if not self.queue.full():
@@ -67,7 +67,7 @@ class asyncThrottle:
             debug('Cancelled')
 
     async def allow(self) -> None:
-        debug('Request received', force=True)
+        # debug('Request received', force=True)
         await self.queue.get()
         self.queue.task_done()
         ## DEBUG
@@ -312,10 +312,7 @@ async def get_url_JSON(session: aiohttp.ClientSession, url: str, chk_JSON_func =
         for retry in range(1,max_tries+1):
             try:
                 if rate_limiter != None:
-                    debug('Calling rate_limiter', force=True)
-                    await rate_limiter.allow()
-                else:
-                    debug('NOT calling rate limiter', force=True)
+                    await rate_limiter.allow()                
                 async with session.get(url) as resp:
                     if resp.status == 200:
                         debug('HTTP request OK')
