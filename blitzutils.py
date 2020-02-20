@@ -43,13 +43,15 @@ class asyncThrottle:
 
 
     async def close(self):
-        duration = time.time() - self.start_time
-        debug('Average rate: ' + '{:.1f}'.format(str(self.count / duration)) + ' / sec', force=True)
+        if self.start_time != None:
+            duration = time.time() - self.start_time
+            debug('Average rate: ' + '{:.1f}'.format(str(self.count / duration)) + ' / sec', force=True)
         self.fillerTask.cancel()
         await asyncio.gather(*self.fillerTask)
 
 
     async def filler(self):
+        debug('bucket filler started', force=True)
         while True:
             if not self.queue.full():
                 items_2_add = self.rate - self.queue.qsize()
@@ -60,6 +62,7 @@ class asyncThrottle:
     
 
     async def allow(self) -> None:
+        debug('Request received', force=True)
         await self.queue.get()
         self.queue.task_done()
         ## DEBUG
