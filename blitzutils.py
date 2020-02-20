@@ -55,14 +55,16 @@ class asyncThrottle:
 
     async def filler(self):
         debug('bucket filler started', force=True)
-        while True:
-            if not self.queue.full():
-                items_2_add = self.rate - self.queue.qsize()
-                for i in range(0,items_2_add):
-                    self.queue.put_nowait(i)
-                    self.count += 1
-            await asyncio.sleep(1)
-    
+        try:
+            while True:
+                if not self.queue.full():
+                    items_2_add = self.rate - self.queue.qsize()
+                    for i in range(0,items_2_add):
+                        self.queue.put_nowait(i)
+                        self.count += 1
+                await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            debug('Cancelled')
 
     async def allow(self) -> None:
         debug('Request received', force=True)
