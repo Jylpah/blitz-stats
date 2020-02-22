@@ -1403,8 +1403,8 @@ class BlitzStars:
     URL_ACTIVE_PLAYERS      = URL_BLITZSTARS +  '/api/playerstats/activeinlast30days'
 
 
-    def __init__(self):
-        self.session = ThrottledClientSession(rate_limit=30)
+    def __init__(self, rate_limit=30):
+        self.session = ThrottledClientSession(rate_limit=rate_limit)
 
 
     async def close(self):
