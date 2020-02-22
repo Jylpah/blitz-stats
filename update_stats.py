@@ -400,6 +400,7 @@ async def update_tankopedia( db: motor.motor_asyncio.AsyncIOMotorDatabase, filen
 					else:
 						await dbc.insert_one(tank)
 						inserted += 1
+						bu.verbose_std('Added tank: ' + tank['name'])
 				except pymongo.errors.DuplicateKeyError:
 					pass
 				except Exception as err:
