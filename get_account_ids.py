@@ -13,6 +13,7 @@ logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
 N_WORKERS = 20
 MAX_PAGES = 10
+
 MAX_RETRIES = 3
 CACHE_VALID = 24*3600*5   # 5 days
 SLEEP = 1
@@ -30,7 +31,7 @@ wi = None
 bs = None
 WI_STOP_SPIDER = False
 WI_old_replay_N = 0
-WI_old_replay_limit = 30
+WI_old_replay_limit = 50
 
 ## main() -------------------------------------------------------------
 
