@@ -4,8 +4,6 @@
 
 import sys, argparse, json, os, inspect, pprint, aiohttp, asyncio, aiofiles, aioconsole, re, logging, time, xmltodict, collections, pymongo
 import motor.motor_asyncio, ssl, configparser, random, datetime
-import pandas as pd
-from pandas.io.json import json_normalize
 import blitzutils as bu
 from blitzutils import BlitzStars, WG
 
@@ -28,10 +26,8 @@ DB_C_BS_PLAYER_STATS   	= 'BS_PlayerStats'
 DB_C_BS_TANK_STATS     	= 'BS_PlayerTankStats'
 DB_C_TANKS     			= 'Tankopedia'
 DB_C_TANK_STR			= 'WG_TankStrs'
-DB_C_RELEASES			= 'WG_Releases'
 DB_C_ERROR_LOG			= 'ErrorLog'
 DB_C_UPDATE_LOG			= 'UpdateLog'
-
 
 UPDATE_FIELD = {'tank_stats'		: 'updated_WGtankstats',
 				'player_stats'		: 'updated_WGplayerstats',
@@ -503,8 +499,6 @@ async def BS_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 	dbc = db[DB_C_TANK_STATS]   # WG_TankStats
 	field = 'tank_stats_BS'
 
-	blitz_releases = await get_blitz_releases(db)
-		
 	clr_error_log 	= args.run_error_log
 	force 			= args.force
 
@@ -516,17 +510,13 @@ async def BS_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 			if (not force) and (await has_fresh_stats(db, account_id, field)):
 				bu.debug('Fresh-enough stats for account_id=' + str(account_id) + ' exists in the DB', worker_id)
 			else:
+					
 				stats = await bs.get_player_tank_stats(account_id, cache=False)				
 				if (stats == None) or (len(stats) == 0):
 					bu.debug('Did not receive stats for account_id=' + str(account_id))
 				else:
 					stats = await bs.tank_stats2WG(stats)  ## Stats conversion
 					tank_stats = []
-					db_stats = await get_player_tank_stat_DB(db, account_id, ['tank_id', 'last_battle_time'])
-					df_db_stats = json_normalize(db_stats)
-					df_db_stats['release'] = pd.cut(df_db_stats.last_battle_time, releases.sort())
-
-
 					for tank_stat in stats:
 						#bu.debug(str(tank_stat))
 						account_id 			= tank_stat['account_id'] 
@@ -636,35 +626,6 @@ async def log_error(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id: i
 def mk_id(account_id: int, tank_id: int, last_battle_time: int) -> str:
 	return hex(account_id)[2:].zfill(10) + hex(tank_id)[2:].zfill(6) + hex(last_battle_time)[2:].zfill(8)
 
-async def get_blitz_releases(db : motor.motor_asyncio.AsyncIOMotorDatabase) -> dict:
-	dbc = db[DB_C_RELEASES]
-	try:
-		cursor = dbc.find()
-		releases = dict()
-
-		async for rel in cursor:
-			releases
-		return releases
-
-	except Exception as err:
-		bu.error('Unexpected error', err)
-		return None
-
-async def get_player_tank_stat_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int, fields: list) -> dict:
-	dbc = db[DB_C_TANK_STATS]
-	try:
-		projection = {'_id': 0 }
-		for key in fields:
-			projection[key] = 1
-
-		cursor = dbc.find({'account_id': account_id}, projection)
-		res = list()
-		async for stat in cursor:
-			res.append(stat)
-		return stat
-	except Exception as err:
-		bu.error('Unexpected error', err)
-		return None
 
 ### main()
 if __name__ == "__main__":
