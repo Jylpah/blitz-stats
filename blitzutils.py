@@ -28,47 +28,130 @@ UMASK= os.umask(0)
 os.umask(UMASK)
 
 ## -----------------------------------------------------------
-#### Class asyncThrottle 
+#### Class ThrottledClientSession(aiohttp.ClientSession)
 ## -----------------------------------------------------------
 
-class asyncThrottle:
-    def __init__(self, rate: int = 20):
-        if rate < 1:
-            error('Rate must be positive integer')    
-        self.rate = rate
-        self.queue = asyncio.Queue(rate)
-        self.fillerTask = asyncio.create_task(self.filler())
-        self.start_time = time.time()
-        self.count = 0
 
+class ThrottledClientSession(aiohttp.ClientSession):
+    """Rate-throttled client session class inherited from aiohttp.ClientSession)""" 
+    MAX_STEPS = 10
 
-    async def close(self):
-        if self.start_time != None:
-            duration = time.time() - self.start_time
-            debug('Average WG API request rate: ' + '{:.1f}'.format(self.count / duration) + ' / sec', force=True)
-        self.fillerTask.cancel()
+    def __init__(self, rate_limit: int =None, *args,**kwargs) -> None: 
+        super().__init__(*args,**kwargs)
+        self.rate_limit = rate_limit
+        self._fillerTask = None
+        self._queue = None
+
+        if self.rate_limit != None:
+            if self.rate_limit < 1:
+                raise ValueError('rate_limit must be positive integer')
+            (increment, sleep) = self._get_rate_increment()            
+            self._queue = asyncio.Queue(rate_limit)
+            self._fillerTask = asyncio.create_task(self._filler(increment, sleep))
+        self._start_time = None
+        self._count = 0
+     
+    def _get_rate_increment(self) -> list:
+        if self.rate_limit <= self.MAX_STEPS:
+            return (1, 1/self.rate_limit)
+        else:
+            return (self.rate_limit // self.MAX_STEPS, 1/self.MAX_STEPS)
+
+    async def close(self) -> None:
+        """Close rate-limiter's "bucket filler" task"""
+        # DEBUG 
+        if self._start_time != None:
+            duration = time.time() - self._start_time
+            debug('Average WG API request rate: ' + '{:.1f}'.format(self._count / duration) + ' / sec')
+        self._fillerTask.cancel()
         try:
-            await asyncio.wait_for(self.fillerTask, timeout= 3)
+            await asyncio.wait_for(self._fillerTask, timeout= 3)
         except asyncio.TimeoutError as err:
             error(exception=err)
+        await super().close()
 
 
-    async def filler(self):
+    async def _filler(self, increment: int = 1, sleep: float = 1):
+        """Filler task to fill the leaky bucket algo"""
         try:
+            if self._queue == None:
+                return 
+            fraction = 0
+            extra_increment = 0
             while True:
-                if not self.queue.full():
-                    items_2_add = self.rate - self.queue.qsize()
+                if not self._queue.full():
+                    if self.rate_limit > self.MAX_STEPS:
+                        fraction += (self.rate_limit - increment / sleep) / self.MAX_STEPS
+                        extra_increment = fraction // 1
+                        fraction -= extra_increment
+                    items_2_add = int(min(self.rate_limit - self._queue.qsize(), increment + extra_increment))
                     for i in range(0,items_2_add):
-                        self.queue.put_nowait(i)
-                        self.count += 1
-                await asyncio.sleep(1)
+                        self._queue.put_nowait(i)                        
+                await asyncio.sleep(sleep)
         except asyncio.CancelledError:
             debug('Cancelled')
 
-    async def allow(self) -> None:
-        await self.queue.get()
-        self.queue.task_done()
+
+    async def _allow(self) -> None:
+        if self._queue != None:
+            # debug 
+            if self._start_time == None:
+                self._start_time = time.time()
+            await self._queue.get()
+            self._queue.task_done()
+            # DEBUG 
+            self._count += 1
         return None
+
+
+    async def _request(self, *args,**kwargs):
+        """Throttled _request()"""
+        await self._allow()
+        return await super()._request(*args,**kwargs)
+
+
+## -----------------------------------------------------------
+#### Class asyncThrottle 
+## -----------------------------------------------------------
+
+# class asyncThrottle:
+#     def __init__(self, rate: int = 20):
+#         if rate < 1:
+#             error('Rate must be positive integer')    
+#         self.rate = rate
+#         self.queue = asyncio.Queue(rate)
+#         self.fillerTask = asyncio.create_task(self.filler())
+#         self.start_time = time.time()
+#         self.count = 0
+
+
+#     async def close(self):
+#         if self.start_time != None:
+#             duration = time.time() - self.start_time
+#             debug('Average WG API request rate: ' + '{:.1f}'.format(self.count / duration) + ' / sec', force=True)
+#         self.fillerTask.cancel()
+#         try:
+#             await asyncio.wait_for(self.fillerTask, timeout= 3)
+#         except asyncio.TimeoutError as err:
+#             error(exception=err)
+
+
+#     async def filler(self):
+#         try:
+#             while True:
+#                 if not self.queue.full():
+#                     items_2_add = self.rate - self.queue.qsize()
+#                     for i in range(0,items_2_add):
+#                         self.queue.put_nowait(i)
+#                         self.count += 1
+#                 await asyncio.sleep(1)
+#         except asyncio.CancelledError:
+#             debug('Cancelled')
+
+#     async def allow(self) -> None:
+#         await self.queue.get()
+#         self.queue.task_done()
+#         return None
 
 
 def set_debug(debug: bool):
@@ -295,7 +378,7 @@ async def open_JSON(filename: str, chk_JSON_func = None) -> dict:
     return None
 
 
-async def get_url_JSON(session: aiohttp.ClientSession, url: str, chk_JSON_func = None, max_tries = MAX_RETRIES, rate_limiter: asyncThrottle = None) -> dict:
+async def get_url_JSON(session: aiohttp.ClientSession, url: str, chk_JSON_func = None, max_tries = MAX_RETRIES) -> dict:
         """Retrieve (GET) an URL and return JSON object"""
         if session == None:
             error('Session must be initialized first')
@@ -306,8 +389,6 @@ async def get_url_JSON(session: aiohttp.ClientSession, url: str, chk_JSON_func =
         ## To avoid excessive use of servers            
         for retry in range(1,max_tries+1):
             try:
-                if rate_limiter != None:
-                    await rate_limiter.allow()                
                 async with session.get(url) as resp:
                     if resp.status == 200:
                         debug('HTTP request OK')
@@ -538,9 +619,8 @@ class WG:
                 verbose('Could not find maps file: ' + maps_fn)    
         self.rate_limiter = None
         if self.WG_app_id != None:
-            self.session = aiohttp.ClientSession()
-            debug('WG aiohttp session initiated')
-            self.rate_limiter = asyncThrottle(rate_limit)
+            self.session = ThrottledClientSession(rate_limit=rate_limit)
+            debug('WG aiohttp session initiated')            
         else:
             self.session = None
             debug('WG aiohttp session NOT initiated')
@@ -594,8 +674,8 @@ class WG:
         if self.session != None:
             await self.session.close()   
 
-        if self.rate_limiter != None:
-            await self.rate_limiter.close()     
+        # if self.rate_limiter != None:
+        #     await self.rate_limiter.close()     
         return
 
     ## Class methods  ----------------------------------------------------------
@@ -881,7 +961,7 @@ class WG:
                 raise ValueError('Invalid nickname given: ' + nickname)
             url = self.get_url_account_id(nick, server)
 
-            json_data = await get_url_JSON(self.session, url, self.chk_JSON_status, rate_limiter=self.rate_limiter)
+            json_data = await get_url_JSON(self.session, url, self.chk_JSON_status)
             for res in json_data['data']:
                 if res['nickname'].lower() == nick.lower(): 
                     return res['account_id']
@@ -905,7 +985,7 @@ class WG:
 
             # Cached stats not found, fetching new ones
             url = self.get_url_player_tanks_stats(account_id, tank_ids, fields)
-            json_data = await get_url_JSON(self.session, url, self.chk_JSON_status, rate_limiter=self.rate_limiter)
+            json_data = await get_url_JSON(self.session, url, self.chk_JSON_status)
             if json_data != None:
                 #debug('JSON Response received: ' + str(json_data))
                 stats = json_data['data'][str(account_id)]
@@ -937,7 +1017,7 @@ class WG:
         try:
             # Cached stats not found, fetching new ones
             url = self.get_url_player_stats(account_id, fields)
-            json_data = await get_url_JSON(self.session, url, self.chk_JSON_status, rate_limiter=self.rate_limiter)
+            json_data = await get_url_JSON(self.session, url, self.chk_JSON_status)
             if json_data != None:
                 #debug('JSON Response received: ' + str(json_data))
                 stats = json_data['data'][str(account_id)]
@@ -1155,17 +1235,14 @@ class WoTinspector:
     REPLAY_N = 1
 
     def __init__(self, rate_limit: int = 30):
-        self.session = aiohttp.ClientSession()
-        self.rate_limiter = asyncThrottle(rate_limit)
-
+        self.session = ThrottledClientSession(rate_limit=rate_limit)
+        
 
     async def close(self):
         if self.session != None:
             debug('Closing aiohttp session')
             await self.session.close()
-        if self.rate_limiter != None:
-            await self.rate_limiter.close()       
-
+        
 
     async def get_tankopedia(self, filename = 'tanks.json'):
         """Retrieve Tankpedia from WoTinspector.com"""
@@ -1206,7 +1283,7 @@ class WoTinspector:
 
 
     async def get_replay_JSON(self, replay_id: str):
-        json_resp = await get_url_JSON(self.session, self.URL_REPLAY_INFO + replay_id, chk_JSON_func=None, rate_limiter=self.rate_limiter)
+        json_resp = await get_url_JSON(self.session, self.URL_REPLAY_INFO + replay_id, chk_JSON_func=None)
         try:
             if self.chk_JSON_replay(json_resp):
                 return json_resp
@@ -1278,7 +1355,6 @@ class WoTinspector:
 
     async def get_replay_listing(self, page: int = 0) -> aiohttp.ClientResponse:
         url = self.get_url_replay_listing(page)
-        await self.rate_limiter.allow()
         return await self.session.get(url)
 
     @classmethod
@@ -1328,7 +1404,7 @@ class BlitzStars:
 
 
     def __init__(self):
-        self.session = aiohttp.ClientSession()
+        self.session = ThrottledClientSession(rate_limit=30)
 
 
     async def close(self):
