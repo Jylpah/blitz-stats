@@ -5,15 +5,15 @@
 import sys, argparse, json, os, inspect, pprint, aiohttp, asyncio, aiofiles, aioconsole, re, logging, time, xmltodict, collections, pymongo
 import motor.motor_asyncio, ssl, configparser, random, datetime
 import blitzutils as bu
-from blitzutils import BlitzStars, WG, asyncThrottle
+from blitzutils import BlitzStars, WG
 
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
-N_WORKERS = 40
+N_WORKERS = 30
 MAX_RETRIES = 3
 CACHE_VALID = 5   # 5 days
 MAX_UPDATE_INTERVAL = 365*24*3600 # 1 year
-SLEEP = 0.5
+SLEEP = 0.1
 WG_APP_ID = 'cd770f38988839d7ab858d1cbe54bdd0'
 
 FILE_CONFIG = 'blitzstats.ini'
@@ -154,7 +154,7 @@ async def main(argv):
 				for i in range(args.workers):
 					worker_tasks.append(asyncio.create_task(WG_tank_stat_worker( db, Q[mode], i, args )))
 					bu.debug('Tank list Task ' + str(i) + ' started')	
-					await asyncio.sleep(SLEEP)	
+					#await asyncio.sleep(SLEEP)	
 		
 			if 'tank_stats_BS' in args.mode:
 				mode = 'tank_stats_BS'
@@ -162,7 +162,7 @@ async def main(argv):
 				for i in range(args.workers):
 					worker_tasks.append(asyncio.create_task(BS_tank_stat_worker(db, Q[mode], i, args )))
 					bu.debug('Tank stat Task ' + str(i) + ' started')	
-					await asyncio.sleep(SLEEP)
+					#await asyncio.sleep(SLEEP)
 
 			if 'player_stats' in args.mode:
 				mode = 'player_stats'
@@ -174,7 +174,7 @@ async def main(argv):
 				for i in range(args.workers):
 					worker_tasks.append(asyncio.create_task(BS_player_stat_worker(db, Q[mode], i, args )))
 					bu.debug('Player stat Task ' + str(i) + ' started')
-					await asyncio.sleep(SLEEP)
+					#await asyncio.sleep(SLEEP)
 					
 			## wait queues to finish --------------------------------------
 			
@@ -485,8 +485,7 @@ async def BS_player_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, p
 		finally:
 			if clr_error_log:
 				await clear_error_log(db, account_id, field)
-			playerQ.task_done()		
-			await asyncio.sleep(SLEEP)
+			playerQ.task_done()	
 	return None
 
 
@@ -542,8 +541,7 @@ async def BS_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 		finally:
 			if clr_error_log:
 				await clear_error_log(db, account_id, field)
-			playerQ.task_done()	
-			await asyncio.sleep(SLEEP)
+			playerQ.task_done()				
 	return None
 
 
@@ -607,7 +605,6 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 			if clr_error_log:
 				await clear_error_log(db, account_id, field)
 			playerQ.task_done()	
-			# await asyncio.sleep(SLEEP)
 	return None
 
 
