@@ -11,8 +11,9 @@ from blitzutils import BlitzStars, WG, WoTinspector
 
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
-N_WORKERS = 5
-MAX_PAGES = 500
+N_WORKERS = 20
+MAX_PAGES = 10
+
 MAX_RETRIES = 3
 CACHE_VALID = 24*3600*5   # 5 days
 SLEEP = 1
@@ -162,7 +163,8 @@ async def update_account_ids(db: motor.motor_asyncio.AsyncIOMotorDatabase, accou
 				
 		player_list = list()
 		for account_id in account_ids:
-			player_list.append(mk_player_JSON(account_id))
+			if account_id < 3e9:
+				player_list.append(mk_player_JSON(account_id))
 		
 		count_old = await dbc.count_documents({})
 		BATCH = 500
@@ -318,8 +320,7 @@ async def get_players_WI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: ar
 	force 		= args.force
 	players 	= set()
 	replayQ 	= asyncio.Queue()
-	wi 			= WoTinspector()
-	session 	= wi.session
+	wi 			= WoTinspector(rate_limit=15)
 	
 	# Start tasks to process the Queue
 	tasks = []
@@ -334,23 +335,23 @@ async def get_players_WI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: ar
 		if WI_STOP_SPIDER: 
 			bu.debug('Stopping spidering WoTispector.com')
 			break
-		url = wi.get_url_replay_listing(page)
+		# url = wi.get_url_replay_listing(page)
 		bu.print_progress(id = "spider")
 		try:
-			async with session.get(url) as resp:
-				if resp.status != 200:
-					bu.error('Could not retrieve wotinspector.com')
-					continue	
-				bu.debug('HTTP request OK')
-				html = await resp.text()
-				links = wi.get_replay_links(html)
-				if len(links) == 0: 
-					break
-				for link in links:
-					await replayQ.put(link)
-				await asyncio.sleep(SLEEP)
+			resp = await wi.get_replay_listing(page)
+			if resp.status != 200:
+				bu.error('Could not retrieve wotinspector.com')
+				continue	
+			bu.debug('HTTP request OK')
+			html = await resp.text()
+			links = wi.get_replay_links(html)
+			if len(links) == 0: 
+				break
+			for link in links:
+				await replayQ.put(link)
+			# await asyncio.sleep(SLEEP)
 		except aiohttp.ClientError as err:
-			bu.error("Could not retrieve URL: " + url)
+			bu.error("Could not retrieve replays.WoTinspector.com page " + str(page))
 			bu.error(str(err))
 	
 	n_replays = replayQ.qsize()
