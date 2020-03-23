@@ -374,7 +374,7 @@ async def WI_old_replay_found(queue : asyncio.Queue):
 	global WI_old_replay_N
 	WI_old_replay_N +=1
 	if WI_old_replay_N == WI_old_replay_limit:
-		bu.verbose_std(str(WI_old_replay_limit) + ' old replays spidered. Stopping')
+		bu.verbose_std('\n' + str(WI_old_replay_limit) + ' old replays spidered. Stopping')
 		await empty_queue(queue, 'Replay Queue') 
 	return True
 
