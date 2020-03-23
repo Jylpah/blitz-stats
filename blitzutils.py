@@ -111,47 +111,8 @@ class ThrottledClientSession(aiohttp.ClientSession):
 
 
 ## -----------------------------------------------------------
-#### Class asyncThrottle 
+#### Utils
 ## -----------------------------------------------------------
-
-# class asyncThrottle:
-#     def __init__(self, rate: int = 20):
-#         if rate < 1:
-#             error('Rate must be positive integer')    
-#         self.rate = rate
-#         self.queue = asyncio.Queue(rate)
-#         self.fillerTask = asyncio.create_task(self.filler())
-#         self.start_time = time.time()
-#         self.count = 0
-
-
-#     async def close(self):
-#         if self.start_time != None:
-#             duration = time.time() - self.start_time
-#             debug('Average WG API request rate: ' + '{:.1f}'.format(self.count / duration) + ' / sec', force=True)
-#         self.fillerTask.cancel()
-#         try:
-#             await asyncio.wait_for(self.fillerTask, timeout= 3)
-#         except asyncio.TimeoutError as err:
-#             error(exception=err)
-
-
-#     async def filler(self):
-#         try:
-#             while True:
-#                 if not self.queue.full():
-#                     items_2_add = self.rate - self.queue.qsize()
-#                     for i in range(0,items_2_add):
-#                         self.queue.put_nowait(i)
-#                         self.count += 1
-#                 await asyncio.sleep(1)
-#         except asyncio.CancelledError:
-#             debug('Cancelled')
-
-#     async def allow(self) -> None:
-#         await self.queue.get()
-#         self.queue.task_done()
-#         return None
 
 
 def set_debug(debug: bool):
