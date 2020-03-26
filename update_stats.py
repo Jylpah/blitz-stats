@@ -42,9 +42,29 @@ stats_added = 0
 
 
 async def main(argv):
-	global bs, wg
+	global bs, wg, WG_APP_ID
 	# set the directory for the script
 	os.chdir(os.path.dirname(sys.argv[0]))
+
+	## Read config
+	config 	= configparser.ConfigParser()
+	config.read(FILE_CONFIG)
+	
+	configWG 		= config['WG']
+	WG_APP_ID		= configWG.get('wg_app_id', WG_APP_ID)
+	WG_RATE_LIMIT	= configWG.getint('wg_rate_limit', 10)
+
+	configDB 	= config['DATABASE']
+	DB_SERVER 	= configDB.get('db_server', 'localhost')
+	DB_PORT 	= configDB.getint('db_port', 27017)
+	DB_SSL 		= configDB.getboolean('db_ssl', False)
+	DB_CERT_REQ = configDB.getint('db_ssl_req', ssl.CERT_NONE)
+	DB_AUTH 	= configDB.get('db_auth', 'admin')
+	DB_NAME 	= configDB.get('db_name', 'BlitzStats')
+	DB_USER 	= configDB.get('db_user', None)
+	DB_PASSWD 	= configDB.get('db_password', None)
+	DB_CERT		= configDB.get('db_ssl_cert_file', None)
+	DB_CA		= configDB.get('db_ssl_ca_file', None)
 
 	parser = argparse.ArgumentParser(description='Analyze Blitz replay JSONs from WoTinspector.com')
 	parser.add_argument('--mode', default='help', nargs='+', choices=list(UPDATE_FIELD.keys()) + [ 'tankopedia' ], help='Choose what to update')
@@ -65,25 +85,10 @@ async def main(argv):
 	bu.set_log_level(args.silent, args.verbose, args.debug)
 	bu.set_progress_step(1000)
 		
-	try:
+	try:		
 		bs = BlitzStars()
-		wg = WG(WG_APP_ID, rate_limit=20)
+		wg = WG(WG_APP_ID, rate_limit=WG_RATE_LIMIT)
 
-		## Read config
-		config 	= configparser.ConfigParser()
-		config.read(FILE_CONFIG)
-		configDB 	= config['DATABASE']
-		DB_SERVER 	= configDB.get('db_server', 'localhost')
-		DB_PORT 	= configDB.getint('db_port', 27017)
-		DB_SSL 		= configDB.getboolean('db_ssl', False)
-		DB_CERT_REQ = configDB.getint('db_ssl_req', ssl.CERT_NONE)
-		DB_AUTH 	= configDB.get('db_auth', 'admin')
-		DB_NAME 	= configDB.get('db_name', 'BlitzStats')
-		DB_USER 	= configDB.get('db_user', None)
-		DB_PASSWD 	= configDB.get('db_password', None)
-		DB_CERT		= configDB.get('db_ssl_cert_file', None)
-		DB_CA		= configDB.get('db_ssl_ca_file', None)
-		
 		#### Connect to MongoDB
 		if (DB_USER==None) or (DB_PASSWD==None):
 			client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
