@@ -114,6 +114,8 @@ async def main(argv):
 			await update_account_ids(db, players)
 		
 		else:
+			bu.verbose_std('REMOVING ACCOUNT_IDs FROM THE DATABASE * * * * * * * * * * * ')
+			await asyncio.sleep(5)
 			await remove_account_ids(db, args.files)
 
 	except asyncio.CancelledError as err:
@@ -438,7 +440,7 @@ async def get_players_BS(force = False):
 	active_players = set()
 	if force or not (os.path.exists(FILE_ACTIVE_PLAYERS) and os.path.isfile(FILE_ACTIVE_PLAYERS)) or (NOW() - os.path.getmtime(FILE_ACTIVE_PLAYERS) > CACHE_VALID):
 		url = bs.get_url_active_players()
-		bu.verbose('Retrieving active players file from BlitzStars.com')
+		bu.verbose_std('Retrieving active players file from BlitzStars.com')
 		player_list = await bu.get_url_JSON(bs.session, url)
 		await bu.save_JSON(FILE_ACTIVE_PLAYERS, player_list)
 		active_players.update(player_list)
