@@ -523,6 +523,12 @@ async def BS_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 				else:
 					stats = await bs.tank_stats2WG(stats)  ## Stats conversion
 					tank_stats = []
+
+# UNDER DEVELOPMENT          
+#					db_stats = await get_player_tank_stat_DB(db, account_id, ['tank_id', 'last_battle_time'])
+#					df_db_stats = json_normalize(db_stats)
+#					df_db_stats['release'] = pd.cut(df_db_stats.last_battle_time, blitz_releases.sort())
+
 					for tank_stat in stats:
 						#bu.debug(str(tank_stat))
 						account_id 			= tank_stat['account_id'] 

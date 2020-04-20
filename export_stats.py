@@ -45,7 +45,7 @@ async def main(argv):
     parser.add_argument('--mode', default='help', choices=['player_stats', 'tank_stats', 'tankopedia'], help='Select type of stats to export')
     parser.add_argument('--type', default='period', choices=['period', 'cumulative', 'newer', 'auto'], help='Select export type. \'auto\' exports periodic stats, but cumulative for the oldest one')
     parser.add_argument( '-a', '--all', 	action='store_true', default=False, help='Export all the stats instead of the latest per period')
-    parser.add_argument('--tier', type=int, default=None, help='Fiter tanks based on tier')
+    parser.add_argument('--tier', type=int, default=None, help='Filter tanks based on tier')
     parser.add_argument('--date_delta', type=int, default=DATE_DELTA, help='Date delta from the date')
     arggroup = parser.add_mutually_exclusive_group()
     arggroup.add_argument( '-d', '--debug', 	action='store_true', default=False, help='Debug mode')
