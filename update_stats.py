@@ -4,8 +4,6 @@
 
 import sys, argparse, json, os, inspect, pprint, aiohttp, asyncio, aiofiles, aioconsole, re, logging, time, xmltodict, collections, pymongo
 import motor.motor_asyncio, ssl, configparser, random, datetime
-import pandas as pd
-from pandas.io.json import json_normalize
 import blitzutils as bu
 from blitzutils import BlitzStars, WG
 
@@ -28,10 +26,8 @@ DB_C_BS_PLAYER_STATS   	= 'BS_PlayerStats'
 DB_C_BS_TANK_STATS     	= 'BS_PlayerTankStats'
 DB_C_TANKS     			= 'Tankopedia'
 DB_C_TANK_STR			= 'WG_TankStrs'
-DB_C_RELEASES			= 'WG_Releases'
 DB_C_ERROR_LOG			= 'ErrorLog'
 DB_C_UPDATE_LOG			= 'UpdateLog'
-
 
 UPDATE_FIELD = {'tank_stats'		: 'updated_WGtankstats',
 				'player_stats'		: 'updated_WGplayerstats',
@@ -46,9 +42,29 @@ stats_added = 0
 
 
 async def main(argv):
-	global bs, wg
+	global bs, wg, WG_APP_ID
 	# set the directory for the script
 	os.chdir(os.path.dirname(sys.argv[0]))
+
+	## Read config
+	config 	= configparser.ConfigParser()
+	config.read(FILE_CONFIG)
+	
+	configWG 		= config['WG']
+	WG_APP_ID		= configWG.get('wg_app_id', WG_APP_ID)
+	WG_RATE_LIMIT	= configWG.getint('wg_rate_limit', 10)
+
+	configDB 	= config['DATABASE']
+	DB_SERVER 	= configDB.get('db_server', 'localhost')
+	DB_PORT 	= configDB.getint('db_port', 27017)
+	DB_SSL 		= configDB.getboolean('db_ssl', False)
+	DB_CERT_REQ = configDB.getint('db_ssl_req', ssl.CERT_NONE)
+	DB_AUTH 	= configDB.get('db_auth', 'admin')
+	DB_NAME 	= configDB.get('db_name', 'BlitzStats')
+	DB_USER 	= configDB.get('db_user', None)
+	DB_PASSWD 	= configDB.get('db_password', None)
+	DB_CERT		= configDB.get('db_ssl_cert_file', None)
+	DB_CA		= configDB.get('db_ssl_ca_file', None)
 
 	parser = argparse.ArgumentParser(description='Analyze Blitz replay JSONs from WoTinspector.com')
 	parser.add_argument('--mode', default='help', nargs='+', choices=list(UPDATE_FIELD.keys()) + [ 'tankopedia' ], help='Choose what to update')
@@ -69,25 +85,10 @@ async def main(argv):
 	bu.set_log_level(args.silent, args.verbose, args.debug)
 	bu.set_progress_step(1000)
 		
-	try:
+	try:		
 		bs = BlitzStars()
-		wg = WG(WG_APP_ID, rate_limit=20)
+		wg = WG(WG_APP_ID, rate_limit=WG_RATE_LIMIT)
 
-		## Read config
-		config 	= configparser.ConfigParser()
-		config.read(FILE_CONFIG)
-		configDB 	= config['DATABASE']
-		DB_SERVER 	= configDB.get('db_server', 'localhost')
-		DB_PORT 	= configDB.getint('db_port', 27017)
-		DB_SSL 		= configDB.getboolean('db_ssl', False)
-		DB_CERT_REQ = configDB.getint('db_ssl_req', ssl.CERT_NONE)
-		DB_AUTH 	= configDB.get('db_auth', 'admin')
-		DB_NAME 	= configDB.get('db_name', 'BlitzStats')
-		DB_USER 	= configDB.get('db_user', None)
-		DB_PASSWD 	= configDB.get('db_password', None)
-		DB_CERT		= configDB.get('db_ssl_cert_file', None)
-		DB_CA		= configDB.get('db_ssl_ca_file', None)
-		
 		#### Connect to MongoDB
 		if (DB_USER==None) or (DB_PASSWD==None):
 			client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
@@ -404,6 +405,7 @@ async def update_tankopedia( db: motor.motor_asyncio.AsyncIOMotorDatabase, filen
 					else:
 						await dbc.insert_one(tank)
 						inserted += 1
+						bu.verbose_std('Added tank: ' + tank['name'])
 				except pymongo.errors.DuplicateKeyError:
 					pass
 				except Exception as err:
@@ -503,8 +505,6 @@ async def BS_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 	dbc = db[DB_C_TANK_STATS]   # WG_TankStats
 	field = 'tank_stats_BS'
 
-	blitz_releases = await get_blitz_releases(db)
-		
 	clr_error_log 	= args.run_error_log
 	force 			= args.force
 
@@ -516,16 +516,18 @@ async def BS_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 			if (not force) and (await has_fresh_stats(db, account_id, field)):
 				bu.debug('Fresh-enough stats for account_id=' + str(account_id) + ' exists in the DB', worker_id)
 			else:
+					
 				stats = await bs.get_player_tank_stats(account_id, cache=False)				
 				if (stats == None) or (len(stats) == 0):
 					bu.debug('Did not receive stats for account_id=' + str(account_id))
 				else:
 					stats = await bs.tank_stats2WG(stats)  ## Stats conversion
 					tank_stats = []
-					db_stats = await get_player_tank_stat_DB(db, account_id, ['tank_id', 'last_battle_time'])
-					df_db_stats = json_normalize(db_stats)
-					df_db_stats['release'] = pd.cut(df_db_stats.last_battle_time, blitz_releases.sort())
 
+# UNDER DEVELOPMENT          
+#					db_stats = await get_player_tank_stat_DB(db, account_id, ['tank_id', 'last_battle_time'])
+#					df_db_stats = json_normalize(db_stats)
+#					df_db_stats['release'] = pd.cut(df_db_stats.last_battle_time, blitz_releases.sort())
 
 					for tank_stat in stats:
 						#bu.debug(str(tank_stat))
@@ -636,35 +638,6 @@ async def log_error(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id: i
 def mk_id(account_id: int, tank_id: int, last_battle_time: int) -> str:
 	return hex(account_id)[2:].zfill(10) + hex(tank_id)[2:].zfill(6) + hex(last_battle_time)[2:].zfill(8)
 
-async def get_blitz_releases(db : motor.motor_asyncio.AsyncIOMotorDatabase) -> dict:
-	dbc = db[DB_C_RELEASES]
-	try:
-		cursor = dbc.find()
-		releases = dict()
-
-		async for rel in cursor:
-			releases
-		return releases
-
-	except Exception as err:
-		bu.error('Unexpected error', err)
-		return None
-
-async def get_player_tank_stat_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int, fields: list) -> dict:
-	dbc = db[DB_C_TANK_STATS]
-	try:
-		projection = {'_id': 0 }
-		for key in fields:
-			projection[key] = 1
-
-		cursor = dbc.find({'account_id': account_id}, projection)
-		res = list()
-		async for stat in cursor:
-			res.append(stat)
-		return stat
-	except Exception as err:
-		bu.error('Unexpected error', err)
-		return None
 
 ### main()
 if __name__ == "__main__":

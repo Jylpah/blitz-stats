@@ -12,7 +12,7 @@ from blitzutils import BlitzStars, WG, WoTinspector
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
 N_WORKERS = 20
-MAX_PAGES = 10
+MAX_PAGES = 500
 
 MAX_RETRIES = 3
 CACHE_VALID = 24*3600*5   # 5 days
@@ -39,7 +39,30 @@ async def main(argv):
 	# set the directory for the script
 	os.chdir(os.path.dirname(sys.argv[0]))
 
-	global wi, bs
+	global wi, bs, MAX_PAGES
+
+	## Read config
+	config = configparser.ConfigParser()
+	config.read(FILE_CONFIG)
+	configOpts	= config['OPTIONS']
+	MAX_PAGES   = configOpts.getint('opt_get_account_ids_max_pages', MAX_PAGES)
+	configDB 	= config['DATABASE']
+	DB_SERVER 	= configDB.get('db_server', 'localhost')
+	DB_PORT 	= configDB.getint('db_port', 27017)
+	DB_SSL		= configDB.getboolean('db_ssl', False)
+	DB_CERT_REQ = configDB.getint('db_ssl_req', ssl.CERT_NONE)
+	DB_AUTH 	= configDB.get('db_auth', 'admin')
+	DB_NAME 	= configDB.get('db_name', 'BlitzStats')
+	DB_USER		= configDB.get('db_user', None)
+	DB_PASSWD 	= configDB.get('db_password', None)
+	DB_CERT		= configDB.get('db_ssl_cert_file', None)
+	DB_CA		= configDB.get('db_ssl_ca_file', None)
+	
+	bu.debug('DB_SERVER: ' + DB_SERVER)
+	bu.debug('DB_PORT: ' + str(DB_PORT))
+	bu.debug('DB_SSL: ' + "True" if DB_SSL else "False")
+	bu.debug('DB_AUTH: ' + DB_AUTH)
+	bu.debug('DB_NAME: ' + DB_NAME)
 
 	parser = argparse.ArgumentParser(description='Fetch WG account_ids')
 	parser.add_argument('--force', action='store_true', default=False, help='Force refreshing the active player list')
@@ -64,27 +87,6 @@ async def main(argv):
 	players = set()
 	try:
 		bs = BlitzStars()
-
-		## Read config
-		config = configparser.ConfigParser()
-		config.read(FILE_CONFIG)
-		configDB 	= config['DATABASE']
-		DB_SERVER 	= configDB.get('db_server', 'localhost')
-		DB_PORT 	= configDB.getint('db_port', 27017)
-		DB_SSL		= configDB.getboolean('db_ssl', False)
-		DB_CERT_REQ = configDB.getint('db_ssl_req', ssl.CERT_NONE)
-		DB_AUTH 	= configDB.get('db_auth', 'admin')
-		DB_NAME 	= configDB.get('db_name', 'BlitzStats')
-		DB_USER		= configDB.get('db_user', None)
-		DB_PASSWD 	= configDB.get('db_password', None)
-		DB_CERT		= configDB.get('db_ssl_cert_file', None)
-		DB_CA		= configDB.get('db_ssl_ca_file', None)
-		
-		bu.debug('DB_SERVER: ' + DB_SERVER)
-		bu.debug('DB_PORT: ' + str(DB_PORT))
-		bu.debug('DB_SSL: ' + "True" if DB_SSL else "False")
-		bu.debug('DB_AUTH: ' + DB_AUTH)
-		bu.debug('DB_NAME: ' + DB_NAME)
 
 		#### Connect to MongoDB
 		if (DB_USER==None) or (DB_PASSWD==None):
@@ -376,8 +378,8 @@ async def WI_old_replay_found(queue : asyncio.Queue):
 	global WI_old_replay_N
 	WI_old_replay_N +=1
 	if WI_old_replay_N == WI_old_replay_limit:
-		bu.verbose_std("\n" + str(WI_old_replay_limit) + ' old replays spidered. Stopping')
-		await empty_queue(queue, 'Replay Queue') 
+	bu.verbose_std("\n" + str(WI_old_replay_limit) + ' old replays spidered. Stopping')
+	await empty_queue(queue, 'Replay Queue') 
 	return True
 
 async def WI_replay_fetcher(db : motor.motor_asyncio.AsyncIOMotorDatabase, queue : asyncio.Queue, workerID : int, force : bool):
