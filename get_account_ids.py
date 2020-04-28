@@ -377,9 +377,9 @@ async def get_players_WI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: ar
 async def WI_old_replay_found(queue : asyncio.Queue):
 	global WI_old_replay_N
 	WI_old_replay_N +=1
-	if WI_old_replay_N == WI_old_replay_limit:
-	bu.verbose_std("\n" + str(WI_old_replay_limit) + ' old replays spidered. Stopping')
-	await empty_queue(queue, 'Replay Queue') 
+	if WI_old_replay_N >= WI_old_replay_limit:
+		bu.verbose_std("\n" + str(WI_old_replay_limit) + ' old replays spidered. Stopping')
+		await empty_queue(queue, 'Replay Queue') 
 	return True
 
 async def WI_replay_fetcher(db : motor.motor_asyncio.AsyncIOMotorDatabase, queue : asyncio.Queue, workerID : int, force : bool):
