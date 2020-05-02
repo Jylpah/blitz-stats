@@ -1,9 +1,19 @@
-[GENERAL]
-## Find your WG account_id :  https://developers.wargaming.net/reference/all/wotb/account/list/
-#wg_id		= 0
+[OPTIONS]
+opt_DB          = False
+#opt_analyzer_extended    = False
+opt_analyzer_hist        = True
+#opt_analyzer_stat_func   = player
+opt_analyzer_workers = 20
+opt_uploader_workers = 5
+opt_get_account_ids_max_pages = 10
 
-# you are unlikely have MongoDB set up so just ignore these
-#[DATABASE]
+[WG]
+## Find your WG account_id :  https://developers.wargaming.net/reference/all/wotb/account/list/
+#wg_id		    = 0
+wg_rate_limit   = 10
+
+[DATABASE]
+# You are unlikey to have MongoDB support...
 #db_server       = localhost
 #db_port         = 27017
 #db_auth         = admin
@@ -14,3 +24,6 @@
 #db_cert_req		= 2
 #db_ssl_cert_file= cert.pem
 #db_ssl_ca_file  = ca.pem
+
+[EXTRACT_TANKOPEDIA]
+blitz_app_dir   =  "./BlitzApp/"
