@@ -29,7 +29,7 @@ DB_C_TANK_STR			= 'WG_TankStrs'
 DB_C_ERROR_LOG			= 'ErrorLog'
 DB_C_UPDATE_LOG			= 'UpdateLog'
 
-UPDATE_FIELD = { 'tank_stats'		: 'updated_WGtankstats',
+UPDATE_FIELD = {'tank_stats'		: 'updated_WGtankstats',
 				'player_stats'		: 'updated_WGplayerstats',
 				'player_stats_BS' 	: 'updated_BSplayerstats',
 				'tank_stats_BS'		: 'updated_BStankstats'
@@ -42,9 +42,29 @@ stats_added = 0
 
 
 async def main(argv):
-	global bs, wg
+	global bs, wg, WG_APP_ID
 	# set the directory for the script
 	os.chdir(os.path.dirname(sys.argv[0]))
+
+	## Read config
+	config 	= configparser.ConfigParser()
+	config.read(FILE_CONFIG)
+	
+	configWG 		= config['WG']
+	WG_APP_ID		= configWG.get('wg_app_id', WG_APP_ID)
+	WG_RATE_LIMIT	= configWG.getint('wg_rate_limit', 10)
+
+	configDB 	= config['DATABASE']
+	DB_SERVER 	= configDB.get('db_server', 'localhost')
+	DB_PORT 	= configDB.getint('db_port', 27017)
+	DB_SSL 		= configDB.getboolean('db_ssl', False)
+	DB_CERT_REQ = configDB.getint('db_ssl_req', ssl.CERT_NONE)
+	DB_AUTH 	= configDB.get('db_auth', 'admin')
+	DB_NAME 	= configDB.get('db_name', 'BlitzStats')
+	DB_USER 	= configDB.get('db_user', None)
+	DB_PASSWD 	= configDB.get('db_password', None)
+	DB_CERT		= configDB.get('db_ssl_cert_file', None)
+	DB_CA		= configDB.get('db_ssl_ca_file', None)
 
 	parser = argparse.ArgumentParser(description='Analyze Blitz replay JSONs from WoTinspector.com')
 	parser.add_argument('--mode', default='help', nargs='+', choices=list(UPDATE_FIELD.keys()) + [ 'tankopedia' ], help='Choose what to update')
@@ -65,25 +85,10 @@ async def main(argv):
 	bu.set_log_level(args.silent, args.verbose, args.debug)
 	bu.set_progress_step(1000)
 		
-	try:
+	try:		
 		bs = BlitzStars()
-		wg = WG(WG_APP_ID, rate_limit=20)
+		wg = WG(WG_APP_ID, rate_limit=WG_RATE_LIMIT)
 
-		## Read config
-		config 	= configparser.ConfigParser()
-		config.read(FILE_CONFIG)
-		configDB 	= config['DATABASE']
-		DB_SERVER 	= configDB.get('db_server', 'localhost')
-		DB_PORT 	= configDB.getint('db_port', 27017)
-		DB_SSL 		= configDB.getboolean('db_ssl', False)
-		DB_CERT_REQ = configDB.getint('db_ssl_req', ssl.CERT_NONE)
-		DB_AUTH 	= configDB.get('db_auth', 'admin')
-		DB_NAME 	= configDB.get('db_name', 'BlitzStats')
-		DB_USER 	= configDB.get('db_user', None)
-		DB_PASSWD 	= configDB.get('db_password', None)
-		DB_CERT		= configDB.get('db_ssl_cert_file', None)
-		DB_CA		= configDB.get('db_ssl_ca_file', None)
-		
 		#### Connect to MongoDB
 		if (DB_USER==None) or (DB_PASSWD==None):
 			client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
@@ -400,6 +405,7 @@ async def update_tankopedia( db: motor.motor_asyncio.AsyncIOMotorDatabase, filen
 					else:
 						await dbc.insert_one(tank)
 						inserted += 1
+						bu.verbose_std('Added tank: ' + tank['name'])
 				except pymongo.errors.DuplicateKeyError:
 					pass
 				except Exception as err:
@@ -429,7 +435,10 @@ async def mk_playerQ(queue : asyncio.Queue, account_ids : list):
 	"""Create queue of replays to post"""
 	for account_id in account_ids:
 		bu.debug('Adding account_id: ' + str(account_id) + ' to the queue')
-		await queue.put(account_id)
+		if account_id < 3e9:
+			await queue.put(account_id)
+		else:
+			bu.debug('Chinese account_id. Cannot retrieve stats, skipping.')
 
 	return None
 
@@ -514,6 +523,12 @@ async def BS_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 				else:
 					stats = await bs.tank_stats2WG(stats)  ## Stats conversion
 					tank_stats = []
+
+# UNDER DEVELOPMENT          
+#					db_stats = await get_player_tank_stat_DB(db, account_id, ['tank_id', 'last_battle_time'])
+#					df_db_stats = json_normalize(db_stats)
+#					df_db_stats['release'] = pd.cut(df_db_stats.last_battle_time, blitz_releases.sort())
+
 					for tank_stat in stats:
 						#bu.debug(str(tank_stat))
 						account_id 			= tank_stat['account_id'] 
