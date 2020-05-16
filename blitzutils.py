@@ -589,7 +589,8 @@ class WG:
                 verbose('Could not find maps file: ' + maps_fn)    
         self.rate_limiter = None
         if self.WG_app_id != None:
-            self.session = ThrottledClientSession(rate_limit=rate_limit)
+            headers = {'Accept-Encoding': 'gzip, deflate'} 	
+            self.session = ThrottledClientSession(rate_limit=rate_limit, headers=headers)
             debug('WG aiohttp session initiated')            
         else:
             self.session = None
@@ -1371,8 +1372,8 @@ class BlitzStars:
 
 
     def __init__(self, rate_limit=30):
-        self.session = ThrottledClientSession(rate_limit=rate_limit)
-
+        headers = {'Accept-Encoding': 'gzip, deflate'} 	
+        self.session = ThrottledClientSession(rate_limit=rate_limit, headers=headers)
 
     async def close(self):
         if self.session != None:
