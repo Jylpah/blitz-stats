@@ -50,9 +50,11 @@ class ThrottledClientSession(aiohttp.ClientSession):
         self._start_time = None
         self._count = 0
      
+
     def _get_sleep(self) -> list:
         return max(1/self.rate_limit, self.MIN_SLEEP)
-        
+
+
     async def close(self) -> None:
         """Close rate-limiter's "bucket filler" task"""
         # DEBUG 
@@ -442,6 +444,7 @@ class WG:
     URL_WG_PLAYER_TANK_STATS  = 'tanks/stats/?application_id='
     URL_WG_ACCOUNT_ID        = 'account/list/?fields=account_id%2Cnickname&application_id='
     URL_WG_PLAYER_STATS      = 'account/info/?application_id='
+    URL_WG_PLAYER_ACHIEVEMENTS = 'account/achievements/?application_id='
     CACHE_DB_FILE           = '.blitzutils_cache.sqlite3' 
     CACHE_GRACE_TIME        =  30*24*3600  # 30 days cache
 
@@ -491,7 +494,20 @@ class WG:
 
     SQL_PLAYER_STATS_CACHED     = 'SELECT * FROM ' +  SQL_PLAYER_STATS_TBL + ' WHERE account_id = ? AND update_time > ?'
 
-    SQL_TABLES                  = [ SQL_PLAYER_STATS_TBL, SQL_TANK_STATS_TBL ]
+    SQL_PLAYER_ACHIEVEMENTS_TBL  = 'player_achievements'
+
+    SQL_PLAYER_ACHIEVEMENTS_CREATE_TBL = 'CREATE TABLE IF NOT EXISTS ' + SQL_PLAYER_ACHIEVEMENTS_TBL + \
+                                    """ ( account_id INTEGER PRIMARY KEY, 
+                                    update_time INTEGER NOT NULL, 
+                                    stats TEXT)"""
+
+    SQL_PLAYER_ACHIEVEMENTS_CACHED     = 'SELECT * FROM ' +  SQL_PLAYER_ACHIEVEMENTS_TBL + ' WHERE account_id = ? AND update_time > ?'
+
+    SQL_PLAYER_ACHIEVEMENTS_UPDATE     = 'REPLACE INTO ' + SQL_PLAYER_ACHIEVEMENTS_TBL + '(account_id, update_time, stats) VALUES(?,?,?)'
+
+    SQL_PLAYER_ACHIEVEMENTS_COUNT      = 'SELECT COUNT(*) FROM ' + SQL_PLAYER_ACHIEVEMENTS_TBL
+
+    SQL_TABLES                  = [ SQL_PLAYER_STATS_TBL, SQL_TANK_STATS_TBL, SQL_PLAYER_ACHIEVEMENTS_TBL ]
 
     SQL_CHECK_TABLE_EXITS       = """SELECT name FROM sqlite_master WHERE type='table' AND name=?"""
 
@@ -638,7 +654,7 @@ class WG:
         """Get Realm/server of an account based on account ID"""
         if account_id >= 1e9:
             if account_id >= 31e8:
-                debug('Chinese account/server: not stats available')
+                debug('Chinese account/server: no stats available')
                 return None
             if account_id >= 2e9:
                 return 'asia'
@@ -890,6 +906,28 @@ class WG:
         return None
 
 
+    def get_url_player_achievements(self, account_ids: list,  fields : str = 'max_series') -> str: 
+        try:
+            # assumming that all account_ids are from the same server. This has to be taken care. 
+            server = self.get_server(account_ids[0])
+
+            if server == None:
+                return None 
+            account_ids_str = '%2C'.join(str(id) for id in account_ids)
+            if (fields != None) and (len(fields) > 0):
+                field_str =  '&fields=' + '%2C'.join(fields)
+            else:
+                # return all the fields
+                field_str = ''
+
+            return self.URL_WG_SERVER[server] + self.URL_WG_PLAYER_ACHIEVEMENTS + self.WG_app_id + '&account_id=' + account_ids_str + field_str
+        except Exception as err:
+            if (server == None):
+                error('Invalid account_id')
+            error(exception=err)
+        return None
+
+
     def get_url_account_id(self, nickname, server) -> int:
         try:
             return self.URL_WG_SERVER[server] + self.URL_WG_ACCOUNT_ID + self.WG_app_id + '&search=' + urllib.parse.quote(nickname)
@@ -983,6 +1021,40 @@ class WG:
         return None
 
 
+    async def get_player_achievements(self, account_ids: list, fields = [], cache=True) -> dict:
+        """Get player's achievements stats """
+        try:
+            account_ids = set(account_ids)
+            stats = dict()
+
+            # try cached stats first:
+            if cache:
+                debug('Checking for cached stats')
+                account_ids_cached = set()
+                for account_id in account_ids:
+                    try:
+                        stats[str(account_id)] = await self.get_cached_player_achievements(account_id,fields)
+                        account_ids_cached.add(account_id)
+                    except StatsNotFound as err:
+                        # No cached stats found, need to retrieve
+                        debug(exception=err)                
+                account_ids = account_ids.difference(account_ids_cached)
+            debug('fetching new stats')
+            # Cached stats not found, fetching new ones
+            url = self.get_url_player_achievements(list(account_ids), fields)
+            json_data = await get_url_JSON(self.session, url, self.chk_JSON_status)
+            if (json_data != None) and ('data' in json_data):
+                #debug('JSON Response received: ' + str(json_data))
+                for account_id in json_data['data'].keys():
+                    stats[account_id] = json_data['data'][account_id]
+                    if cache:
+                        await self.put_2_statsQ('player_achievements', [int(account_id)], json_data['data'][account_id])
+                return stats
+        except Exception as err:
+            error(exception=err)
+        return None
+
+
     def merge_player_stats(self, stats1: dict, stats2: dict) -> dict:
         try:
             if stats2 == None: return stats1								
@@ -1032,6 +1104,8 @@ class WG:
             ## Create cache tables table
             await self.cache.execute(WG.SQL_TANK_STATS_CREATE_TBL)
             await self.cache.execute(WG.SQL_PLAYER_STATS_CREATE_TBL)
+            await self.cache.execute(WG.SQL_PLAYER_ACHIEVEMENTS_CREATE_TBL)
+            
             await self.cache.commit()
             
             async with self.cache.execute(WG.SQL_TANK_STATS_COUNT) as cursor:
@@ -1117,6 +1191,22 @@ class WG:
             return False
 
 
+    async def store_player_achivements(self, key: list , stats_data: list, update_time: int):
+        """Save player stats into cache"""
+        try:
+            account_id  = key[0]
+            if stats_data != None:
+                await self.cache.execute(WG.SQL_PLAYER_ACHIEVEMENTS_UPDATE, (account_id, update_time, json.dumps(stats_data)))
+            else:
+                await self.cache.execute(WG.SQL_PLAYER_ACHIEVEMENTS_UPDATE, (account_id, update_time, None))
+            await self.cache.commit()
+            debug('Cached player achivements saved for account_id: ' + str(account_id) )
+            return True
+        except Exception as err:
+            error(exception=err)
+            return False
+
+
     async def get_cached_tank_stats(self, account_id: int, tank_ids: list, fields: list ):
         try:
             # test for cacheDB existence
@@ -1187,6 +1277,37 @@ class WG:
             error('Error trying to look for cached stats', exception=err)
         return None
 
+
+    async def get_cached_player_achievements(self, account_id, fields):
+        try:
+            # test for cacheDB existence
+            debug('Trying cached stats first')
+            if self.cache == None:
+                #debug('No cache DB')
+                raise StatsNotFound('No cache DB in use')
+                      
+            async with self.cache.execute(WG.SQL_PLAYER_ACHIEVEMENTS_CACHED, [account_id, NOW() - WG.CACHE_GRACE_TIME] ) as cursor:
+                row = await cursor.fetchone()
+                #debug('account_id: ' + str(account_id) + ': 1')
+                if row == None:
+                    # no cached stats found, marked with an empty array
+                    #debug('No cached stats found')
+                    raise StatsNotFound('No cached stats found')
+                
+                debug('Cached stats found')    
+                if row[2] == None:
+                    # None/null stats found in cache 
+                    # i.e. stats have been requested, but not returned from WG API
+                    return None
+                else:
+                    # Return proper stats 
+                    return json.loads(row[2])
+        except StatsNotFound as err:
+            debug(exception=err)
+            raise
+        except Exception as err:
+            error('Error trying to look for cached stats', exception=err)
+        return None
 
 
 ## -----------------------------------------------------------
