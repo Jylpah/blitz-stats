@@ -31,11 +31,11 @@ DB_C_TANK_STR			= 'WG_TankStrs'
 DB_C_ERROR_LOG			= 'ErrorLog'
 DB_C_UPDATE_LOG			= 'UpdateLog'
 
-UPDATE_FIELD = {'tank_stats'		: 'updated_WGtankstats',
-				'player_stats'		: 'updated_WGplayerstats',
-				'player_achievements': 'updated_WGplayerachievements',
-				'player_stats_BS' 	: 'updated_BSplayerstats',
-				'tank_stats_BS'		: 'updated_BStankstats'
+UPDATE_FIELD = {'tank_stats'			: 'updated_WGtankstats',
+				'player_stats'			: 'updated_WGplayerstats',
+				'player_achievements'	: 'updated_WGplayerachievements',
+				'player_stats_BS' 		: 'updated_BSplayerstats',
+				'tank_stats_BS'			: 'updated_BStankstats'
 				}
 bs = None
 wg = None
@@ -78,6 +78,7 @@ async def main(argv):
 	parser.add_argument('--player-src', dest='player_src', default='db', choices=[ 'db', 'blitzstars' ], help='Source for the account list. Default: db')
 	parser.add_argument('--sample', type=int, default=0, help='Sample size of accounts to update')
 	parser.add_argument('--run-error-log', dest='run_error_log', action='store_true', default=False, help='Re-try previously failed requests')
+	parser.add_argument('-l', '--log', action='store_true', default=False, help='Enable file logging')
 	arggroup = parser.add_mutually_exclusive_group()
 	arggroup.add_argument('-d', '--debug', 		action='store_true', default=False, help='Debug mode')
 	arggroup.add_argument('-v', '--verbose', 	action='store_true', default=False, help='Verbose mode')
@@ -87,6 +88,9 @@ async def main(argv):
 	args.cache_valid = args.cache_valid*24*3600  # from days to secs	
 	bu.set_log_level(args.silent, args.verbose, args.debug)
 	bu.set_progress_step(1000)
+	if args.log:
+		datestr = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+		bu.set_file_logging(True, 'update_stats_' + datestr + '.log')
 		
 	try:		
 		bs = BlitzStars()
@@ -224,18 +228,21 @@ async def main(argv):
 	finally:		
 		await bs.close()
 		await wg.close()
+		if args.log:
+			bu.close_file_logging()
 
 	return None
 
+
 def print_date(msg : str = '', start_time : datetime.datetime = None ) -> datetime.datetime:
 	timenow = datetime.datetime.now()
-	print(msg + ': ' + timenow.replace(microsecond=0).isoformat(sep=' '))
+	bu.verbose_std(msg + ': ' + timenow.replace(microsecond=0).isoformat(sep=' '))
 	if start_time != None:
 		delta = timenow - start_time
 		secs = delta.total_seconds()
 		hours = int(secs // 3600)
 		minutes = int(secs // 60)
-		print('The processing took ' + str(hours) + 'h ' + str(minutes) + 'min')
+		bu.verbose_std('The processing took ' + str(hours) + 'h ' + str(minutes) + 'min')
 	return timenow
 
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3.8
 
-import sys, os, json, time,  base64, urllib, inspect, hashlib, re
+import sys, os, json, time,  base64, urllib, inspect, hashlib, re, string, random
 import asyncio, aiofiles, aiohttp, aiosqlite, lxml
 from pathlib import Path
 from bs4 import BeautifulSoup
@@ -16,7 +16,9 @@ SILENT  = 0
 NORMAL  = 1 
 VERBOSE = 2
 DEBUG   = 3
-_log_level = NORMAL
+_log_level  = NORMAL
+LOG         = False
+LOG_FILE    = None
 
 ## Progress display
 _progress_N = 100
@@ -118,8 +120,6 @@ class ThrottledClientSession(aiohttp.ClientSession):
         await self._allow()
         return await super()._request(*args,**kwargs)
 
-
-
 ## -----------------------------------------------------------
 #### Utils
 ## -----------------------------------------------------------
@@ -163,13 +163,41 @@ def get_log_level_str() -> str:
     error('Unknown log level: ' + str(_log_level))
 
 
+def set_file_logging(log2file: bool, logfn = None):
+    """Set logging to file"""
+    global LOG, LOG_FILE
+    LOG = log2file
+    if log2file:
+        if logfn == None:
+            logfn = 'LOG_' + _randomword(6) + '.log'
+        try:
+            LOG_FILE = open(logfn, mode='a')
+        except Exception as err:
+            error('Error opening file: ' + logfn, err)
+            LOG = False
+            return None
+    return LOG
+
+
+def close_file_logging():
+    global LOG_FILE
+    if LOG_FILE != None:
+        try:
+            LOG_FILE.close()
+        except Exception as err:
+           error('Error closing log file', err)
+           return False 
+    return True
+
+def _randomword(length):
+   letters = string.ascii_lowercase
+   return ''.join(random.choice(letters) for i in range(length))
+
+
 def verbose(msg = "", id = None) -> bool:
     """Print a message"""
     if _log_level >= VERBOSE:
-        if id == None:
-            print(msg)
-        else:
-            print('[' + str(id) + ']: ' + msg)
+        _print_log_msg('', msg, None, id)  
         return True
     return False
 
@@ -177,10 +205,7 @@ def verbose(msg = "", id = None) -> bool:
 def verbose_std(msg = "", id = None) -> bool:
     """Print a message"""
     if _log_level >= NORMAL:
-        if id == None:
-            print(msg)
-        else:
-            print('[' + str(id) + ']: ' + msg)            
+        _print_log_msg('', msg, None, id)        
         return True
     return False
 
@@ -199,11 +224,13 @@ def error(msg = "", exception = None, id = None) -> bool:
 
 
 def _print_log_msg(prefix = 'LOG', msg = '', exception = None, id = None):
-    curframe = inspect.currentframe()
-    calframe = inspect.getouterframes(curframe)
-    caller = calframe[2].function
-    
-    prefix = prefix + ': ' + caller + '(): '
+    # Use empty prefix to determine standard verbose messages
+    if prefix != '':
+        curframe = inspect.currentframe()
+        calframe = inspect.getouterframes(curframe)
+        caller = calframe[2].function
+        prefix = prefix + ': ' + caller + '(): '
+
     if id != None:
         prefix = prefix + '[' + str(id) + ']: '
 
@@ -211,9 +238,16 @@ def _print_log_msg(prefix = 'LOG', msg = '', exception = None, id = None):
     if (exception != None) and isinstance(exception, Exception):
         exception_msg = ' : Exception: ' + str(type(exception)) + ' : ' + str(exception)
 
-    print(prefix + msg + exception_msg)
+    msg = prefix + msg + exception_msg
+    print(msg)
+    _log_msg(msg)
     return None
 
+
+def _log_msg(msg =''):
+    if LOG_FILE != None:
+        LOG_FILE.write(msg + '\n')
+    return None
 
 def set_progress_step(n: int):
     """Set the frequency of the progress dots. The bigger 'n', the fewer dots"""
@@ -244,6 +278,7 @@ def set_progress_bar(heading: str, max_value: int, step: int = None, slow: bool 
         _progress_obj = IncrementalBar(heading, max=max_value, suffix='%(index)d/%(max)d %(percent)d%%')
     _progress_i = 0
 
+    _log_msg(heading + str(max_value))
     return
 
 
@@ -297,6 +332,7 @@ def wait(sec : int):
 def print_new_line(force = False):
     if (_log_level > SILENT) and ( force or (_log_level < DEBUG ) ):
         print('', flush=True)
+        _log_msg('')
 
 
 def NOW() -> int:
