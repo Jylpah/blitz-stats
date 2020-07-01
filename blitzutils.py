@@ -120,6 +120,7 @@ class ThrottledClientSession(aiohttp.ClientSession):
         await self._allow()
         return await super()._request(*args,**kwargs)
 
+
 ## -----------------------------------------------------------
 #### Utils
 ## -----------------------------------------------------------
@@ -230,7 +231,7 @@ def _print_log_msg(prefix = 'LOG', msg = '', exception = None, id = None):
         calframe = inspect.getouterframes(curframe)
         caller = calframe[2].function
         prefix = prefix + ': ' + caller + '(): '
-
+    
     if id != None:
         prefix = prefix + '[' + str(id) + ']: '
 
@@ -248,6 +249,7 @@ def _log_msg(msg =''):
     if LOG_FILE != None:
         LOG_FILE.write(msg + '\n')
     return None
+
 
 def set_progress_step(n: int):
     """Set the frequency of the progress dots. The bigger 'n', the fewer dots"""
@@ -1000,7 +1002,7 @@ class WG:
         return None
       
 
-    async def get_player_tank_stats(self, account_id: int, tank_ids = [], fields = [], cache=True) -> dict:
+    async def get_player_tank_stats(self, account_id: int, tank_ids = [], fields = [], cache=True, cache_only = False) -> dict:
         """Get player's stats (WR, # of battles) in a tank or all tanks (empty tank_ids[])"""
         try:
             stats = None
@@ -1010,6 +1012,8 @@ class WG:
                 stats = await self.get_cached_tank_stats(account_id, tank_ids, fields)
                 if stats != None:
                     return stats
+                if cache_only: 
+                    return None
 
             # Cached stats not found, fetching new ones
             url = self.get_url_player_tanks_stats(account_id, tank_ids, fields)
@@ -1025,7 +1029,7 @@ class WG:
         return None
 
    
-    async def get_player_stats(self, account_id: int, fields = [], cache=True) -> dict:
+    async def get_player_stats(self, account_id: int, fields = [], cache=True, cache_only = False) -> dict:
         """Get player's global stats """
         try:
             #debug('account_id: ' + str(account_id) )
@@ -1038,6 +1042,9 @@ class WG:
                 return stats
 
         except StatsNotFound as err:
+            if cache_only: 
+               return None
+            
             # No cached stats found, need to retrieve
             debug(exception=err)
             pass
@@ -1075,6 +1082,8 @@ class WG:
                         # No cached stats found, need to retrieve
                         debug(exception=err)                
                 account_ids = account_ids.difference(account_ids_cached)
+                if len(account_ids) == 0:
+                    return stats
             debug('fetching new stats')
             # Cached stats not found, fetching new ones
             url = self.get_url_player_achievements(list(account_ids), fields)
@@ -1141,7 +1150,7 @@ class WG:
             await self.cache.execute(WG.SQL_TANK_STATS_CREATE_TBL)
             await self.cache.execute(WG.SQL_PLAYER_STATS_CREATE_TBL)
             await self.cache.execute(WG.SQL_PLAYER_ACHIEVEMENTS_CREATE_TBL)
-            
+
             await self.cache.commit()
             
             async with self.cache.execute(WG.SQL_TANK_STATS_COUNT) as cursor:
@@ -1163,6 +1172,8 @@ class WG:
                     await self.store_tank_stats(key, stats_data, update_time)
                 elif stats_type == 'player_stats':
                     await self.store_player_stats(key, stats_data, update_time)
+                elif stats_type == 'player_achievements':
+                    await self.store_player_achievements(key, stats_data, update_time)
                 else: 
                     error('Function to saves stats type \'' + stats_type + '\' is not implemented yet')
             
@@ -1227,7 +1238,7 @@ class WG:
             return False
 
 
-    async def store_player_achivements(self, key: list , stats_data: list, update_time: int):
+    async def store_player_achievements(self, key: list , stats_data: list, update_time: int):
         """Save player stats into cache"""
         try:
             account_id  = key[0]
@@ -1236,7 +1247,7 @@ class WG:
             else:
                 await self.cache.execute(WG.SQL_PLAYER_ACHIEVEMENTS_UPDATE, (account_id, update_time, None))
             await self.cache.commit()
-            debug('Cached player achivements saved for account_id: ' + str(account_id) )
+            debug('Cached player achievements saved for account_id: ' + str(account_id) )
             return True
         except Exception as err:
             error(exception=err)
