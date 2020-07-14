@@ -286,19 +286,21 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 	
 	if sample > 0:
 		if force:
-			pipeline = [   	{'$match': { '_id': { '$lt': 31e8 } }}, 
+			pipeline = [   	{'$match': { '$and': [ { '_id': { '$lt': 31e8 } }, { 'invalid': { '$not': { '$eq': True} } }] } }, 
 							{'$sample': {'size' : sample} } ]
 		else:
-			pipeline = [ 	{'$match': {  '$and' : [ { '_id': { '$lt': 31e8 } },  { '$or': [ { UPDATE_FIELD[mode]: None }, \
-																							{ UPDATE_FIELD[mode] : { '$lt': bu.NOW() - cache_valid } } ] } ] } }, \
+			pipeline = [ 	{'$match': {  '$and' : [ { '_id': { '$lt': 31e8 } }, { 'invalid': { '$not': { '$eq': True} } }, \
+													 { '$or': [ { UPDATE_FIELD[mode]: None }, \
+																{ UPDATE_FIELD[mode] : { '$lt': bu.NOW() - cache_valid } } ] } ] } }, \
 							{'$sample': {'size' : sample} } ]
 		
 		cursor = dbc.aggregate(pipeline, allowDiskUse=False)
 	else:
 		if force:
-			cursor = dbc.find({ '_id': { '$lt': 31e8 } })
+			cursor = dbc.find( { '$and': [ { '_id': { '$lt': 31e8 } }, { 'invalid': { '$not': { '$eq': True } } } ] } )
 		else:
-			cursor = dbc.find(  { '$and': [ {'_id': { '$lt': 31e8 }}, { '$or': [ { UPDATE_FIELD[mode]: None }, { UPDATE_FIELD[mode] : { '$lt': bu.NOW() - cache_valid } } ] } ] }, { '_id' : 1} )
+			cursor = dbc.find(  { '$and': [ {'_id': { '$lt': 31e8 }}, { 'invalid': { '$not': { '$eq': True }}}, \
+									 { '$or': [ { UPDATE_FIELD[mode]: None }, { UPDATE_FIELD[mode] : { '$lt': bu.NOW() - cache_valid } } ] } ] }, { '_id' : 1} )
 	
 	i = 0
 	tmp_steps = bu.get_progress_step()
@@ -507,6 +509,18 @@ async def del_account_id(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_i
 		bu.error('Unexpected error', err)
 	finally:
 		bu.debug('Removed account_id: ' + str(account_id))
+	return None
+
+
+async def set_account_invalid(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int):
+	"""Set account_id invalid"""
+	dbc = db[DB_C_ACCOUNTS]
+	try: 
+		await dbc.update_one({ '_id': account_id }, {'invalid': True })		
+	except Exception as err:
+		bu.error('Unexpected error', err)
+	finally:
+		bu.debug('Marked account_id as invalid: ' + str(account_id))
 	return None
 
 
@@ -792,41 +806,38 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 				account_ids = await check_accounts_2_update(db, account_ids, field)
 			NOW = bu.NOW()	
 			stats = await wg.get_player_achievements(account_ids, cache=False)
-			if stats == None:
-				raise bu.StatsNotFound('WG API return NULL stats')
-
-			players_achivements = []			
-			for account_id in stats.keys():
-				bu.print_progress()
-				if stats[account_id] == None:
-					await log_error(db, int(account_id), field, clr_error_log)
-					continue
-				
-				stat 				= stats[account_id]
-				stat['account_id'] 	= int(account_id)
-				stat['updated'] 	= NOW
-				stat['_id'] 		= mk_id(int(account_id), 0, NOW)
-				players_achivements.append(stat)
-			
-			try: 
-				# RECOMMENDATION TO USE SINGLE INSERTS OVER MANY
-				res = await dbc.insert_many(players_achivements, ordered=False)
-				tmp = len(res.inserted_ids)
-				bu.debug(str(tmp) + ' stats added (insert_many() result)', worker_id)
-				stats_added += tmp
-				#stats_added += len(res.inserted_ids)					
-			except pymongo.errors.BulkWriteError as err:
-				tmp = err.details['nInserted']
-				bu.debug(str(tmp) + ' stats added', worker_id)
-				stats_added += tmp										
-			finally:
+			if stats != None:
+				# players_achivements = []			
 				for account_id in account_ids:
-					await update_stats_update_time(db, account_id, field, NOW)
-					bu.debug('Added stats for account_id=' + str(account_id), worker_id)	
-	
-		except bu.StatsNotFound as err:
-			bu.debug(str(err))
-			await log_error(db, account_ids, field, clr_error_log)
+					try:
+						bu.print_progress()
+						if (account_ids not in stats) or (stats[account_id] == None):
+							raise bu.StatsNotFound("No stats found for account_id = " + str(account_id))
+						
+						stat 				= stats[account_id]
+						stat['account_id'] 	= int(account_id)
+						stat['updated'] 	= NOW
+						stat['_id'] 		= mk_id(int(account_id), 0, NOW)
+						
+						# players_achivements.append(stat)
+					
+						# RECOMMENDATION TO USE SINGLE INSERTS OVER MANY
+						await dbc.insert_one(stat)
+						# res = await dbc.insert_many(players_achivements, ordered=False)
+						# tmp = len(res.inserted_ids)
+						# bu.debug(str(tmp) + ' stats added (insert_many() result)', worker_id)
+						# stats_added += tmp
+						# #stats_added += len(res.inserted_ids)					
+					except Exception as err:
+						bu.debug(exception=err)
+						bu.debug('Failed to store stats for account_id = ' + str(account_id))
+						await log_error(db, int(account_id), field, clr_error_log)
+					finally:
+						await update_stats_update_time(db, account_id, field, NOW)
+						bu.debug('Added stats for account_id=' + str(account_id), worker_id)	
+			else:
+				bu.debug('WG API return NULL stats')
+				await log_errors(db, account_ids, field, clr_error_log)
 		except Exception as err:
 			bu.error('Unexpected error in fetching: ', err, worker_id)
 			await log_errors(db, account_ids, field, clr_error_log)
@@ -844,7 +855,7 @@ async def log_error(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id: i
 	dbc = db[DB_C_ERROR_LOG]
 	try:
 		if clr_error_log:
-			await del_account_id(db, account_id)
+			await set_account_invalid(db, account_id)
 		else:
 			await dbc.insert_one( {'account_id': account_id, 'type': stat_type, 'time': bu.NOW() } )
 			#bu.debug('Logging Error: account_id=' + str(account_id) + ' stat_type=' + stat_type)
@@ -858,7 +869,7 @@ async def log_errors(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_ids:
 		NOW = bu.NOW()
 		for account_id in account_ids:
 			if clr_error_log:
-				await del_account_id(db, account_id)
+				await set_account_invalid(db, account_id)
 			else:
 				await dbc.insert_one( {'account_id': account_id, 'type': stat_type, 'time': NOW } )
 				#bu.debug('Logging Error: account_id=' + str(account_id) + ' stat_type=' + stat_type)
