@@ -790,7 +790,6 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 			N_account_ids = len(account_ids)  # needed to keep count on finished tasks
 			if not force:
 				account_ids = await check_accounts_2_update(db, account_ids, field)
-			bu.print_progress()	
 			NOW = bu.NOW()	
 			stats = await wg.get_player_achievements(account_ids, cache=False)
 			if stats == None:
@@ -798,6 +797,7 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 
 			players_achivements = []			
 			for account_id in stats.keys():
+				bu.print_progress()
 				if stats[account_id] == None:
 					await log_error(db, int(account_id), field, clr_error_log)
 					continue
