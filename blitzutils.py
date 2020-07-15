@@ -164,24 +164,24 @@ def get_log_level_str() -> str:
     error('Unknown log level: ' + str(_log_level))
 
 
-def set_file_logging(log2file: bool, logfn = None):
+def set_file_logging(logfn = None):
     """Set logging to file"""
     global LOG, LOG_FILE
-    LOG = log2file
-    if log2file:
-        if logfn == None:
-            logfn = 'LOG_' + _randomword(6) + '.log'
-        try:
-            LOG_FILE = open(logfn, mode='a')
-        except Exception as err:
-            error('Error opening file: ' + logfn, err)
-            LOG = False
-            return None
-    return LOG
+    LOG = True
+    if logfn == None:
+        logfn = 'LOG_' + _randomword(6) + '.log'
+    try:
+        LOG_FILE = open(logfn, mode='a')
+    except Exception as err:
+        error('Error opening file: ' + logfn, err)
+        LOG = False
+        return False
+    return True
 
 
 def close_file_logging():
-    global LOG_FILE
+    global LOG_FILE, LOG
+    LOG=False
     if LOG_FILE != None:
         try:
             LOG_FILE.close()
@@ -197,42 +197,39 @@ def _randomword(length):
 
 def verbose(msg = "", id = None) -> bool:
     """Print a message"""
-    if _log_level >= VERBOSE:
-        _print_log_msg('', msg, None, id)  
-        return True
-    return False
+    return _print_log_msg('', msg, exception=None, id=id, print_msg= (_log_level >= VERBOSE) )  
 
 
 def verbose_std(msg = "", id = None) -> bool:
     """Print a message"""
-    if _log_level >= NORMAL:
-        _print_log_msg('', msg, None, id)        
-        return True
-    return False
+    return _print_log_msg('', msg, exception=None, id=id, print_msg= (_log_level >= NORMAL) )  
 
-def warning(msg = "", id = None) -> bool:
+
+def warning(msg = "", id = None, force: bool = False) -> bool:
     """Print a warning message"""
-    if _log_level >= NORMAL:
-        _print_log_msg('', 'Warning: ' + msg, None, id)        
-        return True
-    return False
+    return _print_log_msg('', 'Warning: ' + msg, None, id, print_msg= (force or (_log_level >= NORMAL)) )        
+
 
 def debug(msg = "", id = None, exception = None, force: bool = False) -> bool:
     """print a conditional debug message"""
-    if (_log_level >= DEBUG) or force:
-        _print_log_msg('DEBUG', msg, exception, id)
-        return True
-    return False
+    return _print_log_msg('DEBUG', msg, exception, id, print_msg=((_log_level >= DEBUG) or force))
 
 
 def error(msg = "", exception = None, id = None) -> bool:
     """Print an error message"""
-    _print_log_msg('ERROR', msg, exception, id)
-    return True
+    return _print_log_msg('ERROR', msg, exception, id)
 
 
-def _print_log_msg(prefix = 'LOG', msg = '', exception = None, id = None):
+def log(msg = "", id = None, exception = None) -> bool:
+    """print a conditional debug message"""
+    return _print_log_msg('LOG', msg=msg, exception=exception, id=id, print_msg=False)
+
+
+def _print_log_msg(prefix = 'LOG', msg = '', exception = None, id = None, print_msg : bool = True):
     # Use empty prefix to determine standard verbose messages
+    if not (print_msg or LOG):
+        return False
+    retval = False
     if prefix != '':
         curframe = inspect.currentframe()
         calframe = inspect.getouterframes(curframe)
@@ -247,15 +244,19 @@ def _print_log_msg(prefix = 'LOG', msg = '', exception = None, id = None):
         exception_msg = ' : Exception: ' + str(type(exception)) + ' : ' + str(exception)
 
     msg = prefix + msg + exception_msg
-    print(msg)
-    _log_msg(msg)
-    return None
+    if print_msg: 
+        print(msg)
+        retval = True
+    if _log_msg(msg):
+        retval = True
+    return retval
 
 
 def _log_msg(msg =''):
-    if LOG_FILE != None:
+    if LOG and (LOG_FILE != None):
         LOG_FILE.write(msg + '\n')
-    return None
+        return True
+    return False
 
 
 def set_progress_step(n: int):
