@@ -90,7 +90,7 @@ async def main(argv):
 	bu.set_progress_step(1000)
 	if args.log:
 		datestr = datetime.datetime.now().strftime("%Y%m%d_%H%M")
-		bu.set_file_logging('update_stats_' + datestr + '.log')
+		await bu.set_file_logging('update_stats_' + datestr + '.log')
 		
 	try:		
 		bs = BlitzStars()
@@ -229,7 +229,7 @@ async def main(argv):
 		await bs.close()
 		await wg.close()
 		if args.log:
-			bu.close_file_logging()
+			await bu.close_file_logging()
 
 	return None
 
