@@ -304,7 +304,7 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 	
 	i = 0
 	tmp_steps = bu.get_progress_step()
-	bu.set_progress_step(50000)
+	bu.set_progress_step(1000)
 	bu.set_counter('Fetching players:')
 	async for player in cursor:
 		i += 1
