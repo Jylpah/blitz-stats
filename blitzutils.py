@@ -18,7 +18,7 @@ VERBOSE = 2
 DEBUG   = 3
 _log_level  = NORMAL
 LOG         = False
-LOG_FILE    = None
+LOGGER      = None
 
 ## Progress display
 _progress_N = 100
@@ -121,6 +121,59 @@ class ThrottledClientSession(aiohttp.ClientSession):
         return await super()._request(*args,**kwargs)
 
 
+class AsyncLogger():
+    def __init__(self) -> None: 
+        self._queue = asyncio.Queue()
+        self._task = None
+        self._file = None
+
+
+    async def open(self, logfn: str = None):
+        """Set logging to file"""
+        if logfn == None:
+            logfn = 'LOG_' + _randomword(6) + '.log'
+        try:
+            self._file = await aiofiles.open(logfn, mode='a')
+            self._task = asyncio.create_task(self.logger())
+            return True
+        except Exception as err:
+            error('Error opening file: ' + logfn, err)
+            self._file = None
+        return False
+
+
+    async def logger(self):
+        """Async file logger"""
+        if self._file == None:
+            error('No log file defined')
+            return False 
+        while True:
+            try:
+                msg = await self._queue.get()
+                await self._file.write(msg + '\n')
+            except Exception as err:
+                error(exception=err)
+            finally:
+                self._queue.task_done()
+
+
+    def log(self, msg: str  = ''):
+        if self._queue != None:
+            self._queue.put_nowait(msg)
+        else:
+            error('Logger queue not set up')
+
+
+    async def close(self):
+        try:
+            ## empty queue & close
+            await self._queue.join()
+            self._task.cancel()
+            self._file.close()
+        except Exception as err:
+            error('Error closing log file', err)
+        return None 
+        
 ## -----------------------------------------------------------
 #### Utils
 ## -----------------------------------------------------------
@@ -164,31 +217,27 @@ def get_log_level_str() -> str:
     error('Unknown log level: ' + str(_log_level))
 
 
-def set_file_logging(logfn = None):
+async def set_file_logging(logfn = None):
     """Set logging to file"""
-    global LOG, LOG_FILE
+    global LOG, LOGGER
     LOG = True
     if logfn == None:
         logfn = 'LOG_' + _randomword(6) + '.log'
     try:
-        LOG_FILE = open(logfn, mode='a')
+        LOGGER = AsyncLogger()
+        await LOGGER.open(logfn)
     except Exception as err:
-        error('Error opening file: ' + logfn, err)
+        error('Error starting logger: ' + logfn, err)
         LOG = False
-        return False
-    return True
+        LOGGER = None
+    return LOG
 
 
-def close_file_logging():
-    global LOG_FILE, LOG
+async def close_file_logging():
+    global LOG, LOGGER
     LOG=False
-    if LOG_FILE != None:
-        try:
-            LOG_FILE.close()
-        except Exception as err:
-           error('Error closing log file', err)
-           return False 
-    return True
+    await LOGGER.close()
+    LOGGER = None
 
 def _randomword(length):
    letters = string.ascii_lowercase
@@ -253,8 +302,8 @@ def _print_log_msg(prefix = 'LOG', msg = '', exception = None, id = None, print_
 
 
 def _log_msg(msg =''):
-    if LOG and (LOG_FILE != None):
-        LOG_FILE.write(msg + '\n')
+    if LOG and (LOGGER != None):
+        LOGGER.log(msg)        
         return True
     return False
 
@@ -351,10 +400,13 @@ def NOW() -> int:
 
 def rebase_file_args(current_dir, files):
     """REbase file command line params after moving working dir to the script's dir""" 
-    if (files[0] == '-') or (files[0] == 'db:'):
-        return files
-    else:
-        return [ os.path.join(current_dir, fn) for fn in files ]
+    if isinstance(files, list):    
+        if (files[0] == '-') or (files[0] == 'db:'):
+            return files
+        else:
+            return [ os.path.join(current_dir, fn) for fn in files ]
+    elif isinstance(files, str):
+        return os.path.join(current_dir, files)
 
 async def read_int_list(filename: str) -> list():
     """Read file to a list and return list of integers in the input file"""
