@@ -408,6 +408,7 @@ def rebase_file_args(current_dir, files):
     elif isinstance(files, str):
         return os.path.join(current_dir, files)
 
+
 async def read_int_list(filename: str) -> list():
     """Read file to a list and return list of integers in the input file"""
     
