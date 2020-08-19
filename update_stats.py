@@ -393,6 +393,9 @@ async def clear_error_log(db : motor.motor_asyncio.AsyncIOMotorDatabase, account
 	await dbc.delete_many({ 'account_id': account_id, 'type': stat_type })
 
 
+
+ ## BROKEN
+ 
 async def check_accounts_2_update(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_ids : list, stat_type: str) -> list:
 	"""Check whether the DB has fresh enough stats for the account_id & stat_type"""
 	dbc = db[DB_C_ACCOUNTS]
@@ -857,7 +860,10 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 				finally:
 					await update_stats_update_time(db, account_id, field, NOW)
 					bu.debug('Added stats for account_id=' + str(account_id), worker_id)	
-			
+		except bu.StatsNotFound as err:	
+			bu.debug(exception=err, id=worker_id)
+			for account_id in account_ids:
+				await log_error(db, account_id, field, clr_error_log)
 		except Exception as err:
 			bu.error('Unexpected error in fetching: ', err, worker_id)
 			for account_id in account_ids:

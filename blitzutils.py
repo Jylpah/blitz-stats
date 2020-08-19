@@ -1171,6 +1171,9 @@ class WG:
         try:
             account_ids = set(account_ids)
             stats = dict()
+            if len(account_ids) == 0:
+                debug('Zero account_ids given')
+                return None
 
             # try cached stats first:
             if cache:
