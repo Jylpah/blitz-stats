@@ -390,12 +390,12 @@ async def get_prev_errors(db : motor.motor_asyncio.AsyncIOMotorDatabase, mode :s
 async def clear_error_log(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int, stat_type: str):
 	"""Delete ErrorLog entry for account_id, stat_type"""
 	dbc = db[DB_C_ERROR_LOG]
-	await dbc.delete_many({ 'account_id': account_id, 'type': stat_type })
+	await dbc.delete_many({ '$and': [ {'account_id': account_id}, {'type': stat_type }]})
 
 
 
  ## BROKEN
- 
+
 async def check_accounts_2_update(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_ids : list, stat_type: str) -> list:
 	"""Check whether the DB has fresh enough stats for the account_id & stat_type"""
 	dbc = db[DB_C_ACCOUNTS]
@@ -403,11 +403,13 @@ async def check_accounts_2_update(db : motor.motor_asyncio.AsyncIOMotorDatabase,
 		update_field = UPDATE_FIELD[stat_type]
 		NOW = bu.NOW()
 
-		cursor = dbc.find( { '$and' : [{ '_id' : { '$in': account_ids }}, { '$or': [ { 'last_battle_time' : { '$exists': False }}, \
-																					{ 'last_battle_time' : { '$gt': NOW }}, \
-																					{ update_field : { '$exists': False }}, \
-																					{ update_field : { '$lt': NOW - MIN_UPDATE_INTERVAL}}, \
-																					{ update_field : { '$gt': NOW}} ]}]}, \
+		cursor = dbc.find( { '$and' : [{ '_id' : { '$in': account_ids }}, \
+		                               { '$not' : { 'invalid': True }}, \
+									   { '$or': [ { 'last_battle_time' : { '$exists': False }}, \
+												{ 'last_battle_time' : { '$gt': NOW }}, \
+												{ update_field : { '$exists': False }}, \
+												{ update_field : { '$lt': NOW - MIN_UPDATE_INTERVAL}}, \
+												{ update_field : { '$gt': NOW}} ]}]}, \
 							{'last_battle_time' : 1, update_field : 1 } )
 		
 		stats_update_needed = list()
@@ -432,12 +434,14 @@ async def check_account_2_update(db : motor.motor_asyncio.AsyncIOMotorDatabase, 
 		res = await dbc.find_one( { '_id' : account_id })
 		if res == None:
 			return False
+		if ('invalid' in res) and (res['invalid'] == True):
+			return False
 		if (update_field in res) and ('latest_battle_time' in res):
 			if (res[update_field] == None) or (res['latest_battle_time'] == None) or (res['latest_battle_time'] > bu.NOW()):
 				return False
-			elif (bu.NOW() - res[update_field])  > min(MAX_UPDATE_INTERVAL, (res[update_field] - res['latest_battle_time'])/2):
+			elif (bu.NOW() - res[update_field])  < min(MAX_UPDATE_INTERVAL, (res[update_field] - res['latest_battle_time'])/2):
 				return False
-			
+			# Do update
 			return True
 		else:
 			return False
@@ -562,7 +566,7 @@ async def BS_player_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, p
 		try:
 			
 			url = None
-			if (not force) and (await check_account_2_update(db, account_id, field)):
+			if (not force) and (not await check_account_2_update(db, account_id, field)):
 				bu.debug('Fresh-enough stats for account_id=' + str(account_id) + ' exists in the DB', worker_id)
 			else:
 				stats = await bs.get_player_stats(account_id)
@@ -606,7 +610,7 @@ async def BS_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 		bu.print_progress()
 		try:
 			url = None
-			if (not force) and (await check_account_2_update(db, account_id, field)):
+			if (not force) and (not await check_account_2_update(db, account_id, field)):
 				bu.debug('Fresh-enough stats for account_id=' + str(account_id) + ' exists in the DB', worker_id)
 			else:
 					
@@ -732,7 +736,7 @@ async def WG_player_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, p
 		try:
 			#TBD: Check acccounts, fetch data, update accounts, even if not data fetched. 
 			url = None
-			if (not force) and (await check_account_2_update(db, account_id, field)):
+			if (not force) and (not await check_account_2_update(db, account_id, field)):
 				bu.debug(' account_id=' + str(account_id) + ' has Fresh-enough stats in the DB', worker_id)
 			else:	
 				bu.debug('account_id=' + str(account_id) + ' does not have Fresh-enough stats in the DB', worker_id)
@@ -826,7 +830,7 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 		
 		try:
 			N_account_ids = len(account_ids)  # needed to keep count on finished tasks
-			if not force:
+			if (not force) and (not clr_error_log):
 				account_ids = await check_accounts_2_update(db, account_ids, field)
 			NOW = bu.NOW()	
 			stats = await wg.get_player_achievements(account_ids, cache=False)
