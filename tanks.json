@@ -1,7 +1,7 @@
 {
     "status": "ok",
     "meta": {
-        "count": 445
+        "count": 449
     },
     "data": {
         "1": {
@@ -3563,6 +3563,38 @@
             "is_premium": true,
             "type": "heavyTank",
             "name": "T-2020"
+        },
+        "20305": {
+            "tank_id": 20305,
+            "nation": "uk",
+            "tier": 8,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "Centurion Mk. 5/1 RAAC"
+        },
+        "21505": {
+            "tank_id": 21505,
+            "nation": "ussr",
+            "tier": 7,
+            "is_premium": true,
+            "type": "mediumTank",
+            "name": "T-44-85"
+        },
+        "4417": {
+            "tank_id": 4417,
+            "nation": "france",
+            "tier": 10,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "AMX M4 mle. 54"
+        },
+        "17217": {
+            "tank_id": 17217,
+            "nation": "france",
+            "tier": 6,
+            "is_premium": true,
+            "type": "heavyTank",
+            "name": "Eraser BP44"
         }
     },
     "userStr": {
@@ -3996,6 +4028,10 @@
         "It10_P43_BD": "P.43/06 anniversario",
         "R63_ST_IBD": "T-2020",
         "S16_Kranvagn": "Kranvagn",
-        "S25_EMIL_51": "EMIL 1951"
+        "S25_EMIL_51": "EMIL 1951",
+        "GB94_Centurion_Mk5-1_RAAC": "Centurion Mk. 5/1 RAAC",
+        "R98_T44_85": "T-44-85",
+        "ARL_44BP": "Eraser BP44",
+        "F82_AMX_M4_Mle1949_Ter": "AMX M4 mle. 54"
     }
 }

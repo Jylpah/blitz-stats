@@ -96,14 +96,15 @@ async def main(argv):
         db = client[DB_NAME]
         bu.debug(str(type(db)))
         tasks = []
-        args.files = bu.rebase_file_args(current_dir, args.files)
+        
         
         if args.mode == 'tankopedia':
             if args.filename == None:
                 args.filename = 'tanks.json'
+            args.filename = bu.rebase_file_args(current_dir, args.filename)
             await export_tankopedia(db, args)
         else:
-
+            args.filename = bu.rebase_file_args(current_dir, args.filename)
             periodQ = await mk_periodQ(args.dates, args.type)
             if periodQ == None:
                 bu.error('Export type (--type) is not cumulative, but only one date given. Exiting...')
