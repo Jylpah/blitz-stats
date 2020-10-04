@@ -47,7 +47,7 @@ async def main(argv):
     os.chdir(os.path.dirname(sys.argv[0]))
 
     parser = argparse.ArgumentParser(description='Prune stats from the DB by update')
-    parser.add_argument('--analyze', default='tank_stats', choices=['player_stats', 'tank_stats', 'none'], help='Select type of stats to export')
+    parser.add_argument('--analyze', default='tank_stats', choices=['tank_stats', 'player_stats', 'player_achievements', 'none'], help='Select type of stats to export')
     parser.add_argument( '-f', '--force', 	action='store_true', default=False, help='Force changes i.e. DELETE DATA')
     parser.add_argument('updates', metavar='X.Y [Z.D ...]', type=str, nargs='+', help='List of updates to prune')
     arggroup = parser.add_mutually_exclusive_group()
@@ -90,31 +90,34 @@ async def main(argv):
         tasks = []
         updates = await mk_update_list(db, args.updates)
 
-        if args.analyze == 'player_stats':
-            pass
-        elif args.analyze == 'tank_stats':
-            for u in updates:
-                while True:
-                    update  = u['update']
-                    start   = u['start']
-                    end     = u['end']
-                    bu.verbose_std('Processing update ' + update)   
-                    tankQ   = mk_tankQ(db)
-                    for i in range(N_WORKERS):
+        for u in updates:
+            update  = u['update']
+            start   = u['start']
+            end     = u['end']
+            bu.verbose_std('Processing update ' + update)   
+            while True:
+                tankQ   = mk_tankQ(db)
+                for i in range(N_WORKERS):
+                    if args.analyze == 'player_stats':
+                        bu.error('NOT IMPLEMENTED YET')
+                        #tasks.append(asyncio.create_task(prune_player_stats_WG(i, db, tankQ, start, end)))
+                    elif args.analyze == 'tank_stats':
                         tasks.append(asyncio.create_task(prune_tank_stats_WG(i, db, tankQ, start, end)))
-                        bu.debug('Task ' + str(i) + ' started')
-            
-                    bu.debug('Waiting for workers to finish')
-                    await tankQ.join()            
-                    bu.debug('Cancelling workers')
-                    for task in tasks:
-                        task.cancel()
-                    bu.debug('Waiting for workers to cancel')
-                    if len(tasks) > 0:
-                        await asyncio.gather(*tasks, return_exceptions=True)
-                    if tankQ.empty():
-                        break
+                    elif args.analyze == 'player_achivements':
+                        tasks.append(asyncio.create_task(prune_tank_stats_WG(i, db, tankQ, start, end)))
+                    bu.debug('Task ' + str(i) + ' started')
         
+                bu.debug('Waiting for workers to finish')
+                await tankQ.join()            
+                bu.debug('Cancelling workers')
+                for task in tasks:
+                    task.cancel()
+                bu.debug('Waiting for workers to cancel')
+                if len(tasks) > 0:
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                if tankQ.empty():
+                    break
+    
         bu.finish_progress_bar()
         print_stats(args.mode)
             
@@ -277,25 +280,6 @@ async def get_tanks_DB(db: motor.motor_asyncio.AsyncIOMotorDatabase):
     dbc = db[DB_C_TANK_STATS]
     return await dbc.distinct('tank_id')
     
-
-async def get_tanks_DB_tier(db: motor.motor_asyncio.AsyncIOMotorDatabase, tier: int):
-    """Get tank_ids of tanks in a particular tier"""
-    dbc = db[DB_C_TANKOPEDIA]
-    tanks = list()
-    
-    if (tier == None):
-        tanks = await get_tanks_DB(db)
-        
-    elif (tier <= 10) and (tier > 0):
-        cursor = dbc.find({'tier': tier}, {'_id': 1})
-        async for tank in cursor:
-            try:
-                tanks.append(tank['_id'])
-            except Exception as err:
-                bu.error('Unexpected error: ' +
-                         str(type(err)) + ' : ' + str(err))
-    return tanks
-
 
 # main()
 if __name__ == "__main__":
