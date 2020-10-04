@@ -397,8 +397,7 @@ async def get_tanks_DB_tier(db: motor.motor_asyncio.AsyncIOMotorDatabase, tier: 
             try:
                 tanks.append(tank['_id'])
             except Exception as err:
-                bu.error('Unexpected error: ' +
-                         str(type(err)) + ' : ' + str(err))
+                bu.error('Unexpected error: ' + str(type(err)) + ' : ' + str(err))
     return tanks
 
 
