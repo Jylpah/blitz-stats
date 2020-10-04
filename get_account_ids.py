@@ -12,7 +12,7 @@ from blitzutils import BlitzStars, WG, WoTinspector
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
 N_WORKERS = 20
-MAX_PAGES = 500
+
 
 MAX_RETRIES = 3
 CACHE_VALID = 24*3600*5   # 5 days
@@ -41,23 +41,39 @@ async def main(argv):
 
 	global wi, bs, MAX_PAGES
 
+	# Default params
+	MAX_PAGES = 500
+	DB_SERVER 	= 'localhost'
+	DB_PORT 	= 27017
+	DB_SSL		= False
+	DB_CERT_REQ = ssl.CERT_NONE
+	DB_AUTH 	= 'admin'
+	DB_NAME 	= 'BlitzStats'
+	DB_USER		= 'mongouser'
+	DB_PASSWD 	= 'PASSWORD'
+	DB_CERT 	= None
+	DB_CA 		= None
+
 	## Read config
-	config = configparser.ConfigParser()
-	config.read(FILE_CONFIG)
-	configOpts	= config['OPTIONS']
-	MAX_PAGES   = configOpts.getint('opt_get_account_ids_max_pages', MAX_PAGES)
-	configDB 	= config['DATABASE']
-	DB_SERVER 	= configDB.get('db_server', 'localhost')
-	DB_PORT 	= configDB.getint('db_port', 27017)
-	DB_SSL		= configDB.getboolean('db_ssl', False)
-	DB_CERT_REQ = configDB.getint('db_ssl_req', ssl.CERT_NONE)
-	DB_AUTH 	= configDB.get('db_auth', 'admin')
-	DB_NAME 	= configDB.get('db_name', 'BlitzStats')
-	DB_USER		= configDB.get('db_user', None)
-	DB_PASSWD 	= configDB.get('db_password', None)
-	DB_CERT		= configDB.get('db_ssl_cert_file', None)
-	DB_CA		= configDB.get('db_ssl_ca_file', None)
-	
+	if os.path.isfile(FILE_CONFIG):
+		config = configparser.ConfigParser()
+		config.read(FILE_CONFIG)
+		if 'OPTIONS' in config.sections():
+			configOpts	= config['OPTIONS']
+			MAX_PAGES   = configOpts.getint('opt_get_account_ids_max_pages', MAX_PAGES)
+		if 'DATABASE' in config.sections():
+			configDB 	= config['DATABASE']
+			DB_SERVER 	= configDB.get('db_server', DB_SERVER)
+			DB_PORT 	= configDB.getint('db_port', DB_PORT)
+			DB_SSL		= configDB.getboolean('db_ssl', DB_SSL)
+			DB_CERT_REQ = configDB.getint('db_ssl_req', DB_CERT_REQ)
+			DB_AUTH 	= configDB.get('db_auth', DB_AUTH)
+			DB_NAME 	= configDB.get('db_name', DB_NAME)
+			DB_USER		= configDB.get('db_user', DB_USER)
+			DB_PASSWD 	= configDB.get('db_password', DB_PASSWD)
+			DB_CERT		= configDB.get('db_ssl_cert_file', DB_CERT)
+			DB_CA		= configDB.get('db_ssl_ca_file', DB_CA)
+		
 	bu.debug('DB_SERVER: ' + DB_SERVER)
 	bu.debug('DB_PORT: ' + str(DB_PORT))
 	bu.debug('DB_SSL: ' + "True" if DB_SSL else "False")
@@ -265,13 +281,13 @@ async def replay_reader(queue: asyncio.Queue, readerID: int):
 		return players
 	return None
 
-async def parse_account_ids(json_resp: dict): 
+async def parse_account_ids(replay_json: dict): 
 	players = set()
 	try:
-		if json_resp.get('status', 'error') != 'ok':
+		if not wi.chk_JSON_replay(replay_json):
 			raise Exception('Replay file is invalid')
-		players.update(json_resp['data']['summary']['allies'])
-		players.update(json_resp['data']['summary']['enemies'])	
+		players.update(replay_json['data']['summary']['allies'])
+		players.update(replay_json['data']['summary']['enemies'])	
 	except Exception as err:
 		bu.error(str(err))
 		return None
@@ -401,11 +417,11 @@ async def WI_replay_fetcher(db : motor.motor_asyncio.AsyncIOMotorDatabase, queue
 				else: 
 					await WI_old_replay_found(queue)					
 					continue
-			url = wi.URL_WI + replay_link
+			url = wi.get_url_replay_view(replay_id)
 			json_resp = await wi.get_replay_JSON(replay_id)
 			
 			if json_resp == None:
-				bu.error(msg_str + 'Could not fetch valid Replay JSON: ' + url)
+				bu.debug(msg_str + 'Could not fetch valid Replay JSON: ' + url)
 				queue.task_done()
 				continue
 			json_resp['_id'] = replay_id

@@ -9,7 +9,7 @@ from progress.counter import Counter
 from decimal import Decimal
 
 MAX_RETRIES= 3
-SLEEP = 3
+SLEEP = 1.5
 
 LOG_LEVELS = { 'silent': 0, 'normal': 1, 'verbose': 2, 'debug': 3 }
 SILENT  = 0
@@ -18,7 +18,7 @@ VERBOSE = 2
 DEBUG   = 3
 _log_level  = NORMAL
 LOG         = False
-LOG_FILE    = None
+LOGGER      = None
 
 ## Progress display
 _progress_N = 100
@@ -121,6 +121,59 @@ class ThrottledClientSession(aiohttp.ClientSession):
         return await super()._request(*args,**kwargs)
 
 
+class AsyncLogger():
+    def __init__(self) -> None: 
+        self._queue = asyncio.Queue()
+        self._task = None
+        self._file = None
+
+
+    async def open(self, logfn: str = None):
+        """Set logging to file"""
+        if logfn == None:
+            logfn = 'LOG_' + _randomword(6) + '.log'
+        try:
+            self._file = await aiofiles.open(logfn, mode='a')
+            self._task = asyncio.create_task(self.logger())
+            return True
+        except Exception as err:
+            error('Error opening file: ' + logfn, err)
+            self._file = None
+        return False
+
+
+    async def logger(self):
+        """Async file logger"""
+        if self._file == None:
+            error('No log file defined')
+            return False 
+        while True:
+            try:
+                msg = await self._queue.get()
+                await self._file.write(msg + '\n')
+            except Exception as err:
+                error(exception=err)
+            finally:
+                self._queue.task_done()
+
+
+    def log(self, msg: str  = ''):
+        if self._queue != None:
+            self._queue.put_nowait(msg)
+        else:
+            error('Logger queue not set up')
+
+
+    async def close(self):
+        try:
+            ## empty queue & close
+            await self._queue.join()
+            self._task.cancel()
+            self._file.close()
+        except Exception as err:
+            error('Error closing log file', err)
+        return None 
+        
 ## -----------------------------------------------------------
 #### Utils
 ## -----------------------------------------------------------
@@ -164,31 +217,27 @@ def get_log_level_str() -> str:
     error('Unknown log level: ' + str(_log_level))
 
 
-def set_file_logging(log2file: bool, logfn = None):
+async def set_file_logging(logfn = None):
     """Set logging to file"""
-    global LOG, LOG_FILE
-    LOG = log2file
-    if log2file:
-        if logfn == None:
-            logfn = 'LOG_' + _randomword(6) + '.log'
-        try:
-            LOG_FILE = open(logfn, mode='a')
-        except Exception as err:
-            error('Error opening file: ' + logfn, err)
-            LOG = False
-            return None
+    global LOG, LOGGER
+    LOG = True
+    if logfn == None:
+        logfn = 'LOG_' + _randomword(6) + '.log'
+    try:
+        LOGGER = AsyncLogger()
+        await LOGGER.open(logfn)
+    except Exception as err:
+        error('Error starting logger: ' + logfn, err)
+        LOG = False
+        LOGGER = None
     return LOG
 
 
-def close_file_logging():
-    global LOG_FILE
-    if LOG_FILE != None:
-        try:
-            LOG_FILE.close()
-        except Exception as err:
-           error('Error closing log file', err)
-           return False 
-    return True
+async def close_file_logging():
+    global LOG, LOGGER
+    LOG=False
+    await LOGGER.close()
+    LOGGER = None
 
 def _randomword(length):
    letters = string.ascii_lowercase
@@ -197,35 +246,39 @@ def _randomword(length):
 
 def verbose(msg = "", id = None) -> bool:
     """Print a message"""
-    if _log_level >= VERBOSE:
-        _print_log_msg('', msg, None, id)  
-        return True
-    return False
+    return _print_log_msg('', msg, exception=None, id=id, print_msg= (_log_level >= VERBOSE) )  
 
 
 def verbose_std(msg = "", id = None) -> bool:
     """Print a message"""
-    if _log_level >= NORMAL:
-        _print_log_msg('', msg, None, id)        
-        return True
-    return False
+    return _print_log_msg('', msg, exception=None, id=id, print_msg= (_log_level >= NORMAL) )  
+
+
+def warning(msg = "", id = None, force: bool = False) -> bool:
+    """Print a warning message"""
+    return _print_log_msg('', 'Warning: ' + msg, None, id, print_msg= (force or (_log_level >= NORMAL)) )        
+
 
 def debug(msg = "", id = None, exception = None, force: bool = False) -> bool:
     """print a conditional debug message"""
-    if (_log_level >= DEBUG) or force:
-        _print_log_msg('DEBUG', msg, exception, id)
-        return True
-    return False
+    return _print_log_msg('DEBUG', msg, exception, id, print_msg=((_log_level >= DEBUG) or force))
 
 
 def error(msg = "", exception = None, id = None) -> bool:
     """Print an error message"""
-    _print_log_msg('ERROR', msg, exception, id)
-    return True
+    return _print_log_msg('ERROR', msg, exception, id)
 
 
-def _print_log_msg(prefix = 'LOG', msg = '', exception = None, id = None):
+def log(msg = "", id = None, exception = None) -> bool:
+    """print a conditional debug message"""
+    return _print_log_msg('LOG', msg=msg, exception=exception, id=id, print_msg=False)
+
+
+def _print_log_msg(prefix = 'LOG', msg = '', exception = None, id = None, print_msg : bool = True):
     # Use empty prefix to determine standard verbose messages
+    if not (print_msg or LOG):
+        return False
+    retval = False
     if prefix != '':
         curframe = inspect.currentframe()
         calframe = inspect.getouterframes(curframe)
@@ -240,15 +293,19 @@ def _print_log_msg(prefix = 'LOG', msg = '', exception = None, id = None):
         exception_msg = ' : Exception: ' + str(type(exception)) + ' : ' + str(exception)
 
     msg = prefix + msg + exception_msg
-    print(msg)
-    _log_msg(msg)
-    return None
+    if print_msg: 
+        print(msg)
+        retval = True
+    if _log_msg(msg):
+        retval = True
+    return retval
 
 
 def _log_msg(msg =''):
-    if LOG_FILE != None:
-        LOG_FILE.write(msg + '\n')
-    return None
+    if LOG and (LOGGER != None):
+        LOGGER.log(msg)        
+        return True
+    return False
 
 
 def set_progress_step(n: int):
@@ -339,6 +396,17 @@ def print_new_line(force = False):
 
 def NOW() -> int:
     return int(time.time())
+
+
+def rebase_file_args(current_dir, files):
+    """REbase file command line params after moving working dir to the script's dir""" 
+    if isinstance(files, list):    
+        if (files[0] == '-') or (files[0] == 'db:'):
+            return files
+        else:
+            return [ os.path.join(current_dir, fn) for fn in files ]
+    elif isinstance(files, str):
+        return os.path.join(current_dir, files)
 
 
 async def read_int_list(filename: str) -> list():
@@ -444,6 +512,40 @@ def bld_dict_hierarcy(d : dict, key : str, value) -> dict:
     except Exception as err:
         error('Unexpected Exception', err)
     return None
+
+def  get_JSON_keypath(keypath: str, key: str):
+    if keypath == None:
+        return key
+    else:
+        return '.'.join([keypath, key])
+
+def get_JSON_value(json, key : str = None, keys : list = None, keypath = None):
+    if keys == None:
+        keys = key.split('.')   
+    
+    if len(keys) == 0:
+        return json
+
+    key = keys.pop(0)
+    if type(json) == dict:
+        if key in json:
+            return get_JSON_value(json[key], keys=keys, keypath=get_JSON_keypath(keypath, key))
+        else:
+            raise KeyError('Key: '+ get_JSON_keypath(keypath, key) + ' not found')
+    
+    if type(json) == list:
+        p = re.compile(r'^\[(\d+)\]$')
+        m = p.match(key)
+        if len(m.groups()) != 1:
+            raise KeyError('Invalid key given: ' + get_JSON_keypath(keypath, key))
+        ndx = m.group(1)
+        try:
+            return get_JSON_value(json[ndx], keys=keys, keypath=get_JSON_keypath(keypath, key))
+        except IndexError:
+            raise KeyError('JSON array index out of range: ' + get_JSON_keypath(keypath, key))
+    
+    raise KeyError('Key not found: ' + get_JSON_keypath(keypath, keys[0]))
+
 
 ## -----------------------------------------------------------
 #### Class SlowBar 
@@ -1069,6 +1171,9 @@ class WG:
         try:
             account_ids = set(account_ids)
             stats = dict()
+            if len(account_ids) == 0:
+                debug('Zero account_ids given')
+                return None
 
             # try cached stats first:
             if cache:
@@ -1365,9 +1470,11 @@ class WoTinspector:
     URL_WI          = 'https://replays.wotinspector.com'
     URL_REPLAY_LIST = URL_WI + '/en/sort/ut/page/'
     URL_REPLAY_DL   = URL_WI + '/en/download/'  
+    URL_REPLAY_VIEW = URL_WI +'/en/view/'
     URL_REPLAY_UL   = 'https://api.wotinspector.com/replay/upload?'
     URL_REPLAY_INFO = 'https://api.wotinspector.com/replay/upload?details=full&key='
-    URL_TANK_DB     ="https://wotinspector.com/static/armorinspector/tank_db_blitz.js"
+    
+    URL_TANK_DB     = "https://wotinspector.com/static/armorinspector/tank_db_blitz.js"
 
     REPLAY_N = 1
 
@@ -1462,40 +1569,43 @@ class WoTinspector:
             error(msg_str + 'Unexpected Exception', err)
             return None
 
+        json_resp  = None
         for retry in range(MAX_RETRIES):
             debug(msg_str + 'Posting: ' + title + ' Try #: ' + str(retry + 1) + '/' + str(MAX_RETRIES) )
             try:
                 async with self.session.post(url, headers=headers, data=payload) as resp:
                     debug(msg_str + 'HTTP response: '+ str(resp.status))
                     if resp.status == 200:								
-                        debug('HTTP POST 200 = Success. Reading response data')
+                        debug(msg_str + 'HTTP POST 200 = Success. Reading response data')
                         json_resp = await resp.json()
-                        if json_resp.get('status', None) == None:
-                            error(msg_str +' : ' + title + ' : Received invalid JSON')
-                        elif (json_resp['status'] == 'ok'): 
-                            debug('Response data read. Status OK')                            
+                        if self.chk_JSON_replay(json_resp):
+                            debug(msg_str + 'Response data read. Status OK')                            
                             return json_resp	
-                        elif (json_resp['status'] == 'error'):  
-                            error(msg_str + json_resp['error']['message'] + ' : ' + title)
-                        else:
-                            error(msg_str + ' Unspecified error: ' + title)											
+                        debug(msg_str +' : ' + title + ' : Receive invalid JSON')                        										
                     else:
                         debug(msg_str + 'Got HTTP/' + str(resp.status))
             except Exception as err:
-                error(exception=err)
+                debug(msg_str, exception=err)
             await asyncio.sleep(SLEEP)
             
-        error(msg_str + ' Could not post replay: ' + title)
-        return None
+        debug(msg_str + ' Could not post replay: ' + title)
+        return json_resp
 
 
     async def get_replay_listing(self, page: int = 0) -> aiohttp.ClientResponse:
         url = self.get_url_replay_listing(page)
         return await self.session.get(url)
 
+
     @classmethod
     def get_url_replay_listing(cls, page : int):
         return cls.URL_REPLAY_LIST + str(page) + '?vt=#filters'
+
+
+    @classmethod
+    def get_url_replay_view(cls, replay_id):
+        return cls.URL_REPLAY_VIEW + replay_id
+
 
     @classmethod
     def get_replay_links(cls, doc: str):
@@ -1513,22 +1623,26 @@ class WoTinspector:
             error(exception=err)
         return replay_links
     
+
     @classmethod
     def get_replay_id(cls, url):
         return url.rsplit('/', 1)[-1]
+
 
     @classmethod
     def chk_JSON_replay(cls, json_resp):
         """"Check String for being a valid JSON file"""
         try:
-            if ('status' in json_resp) and json_resp['status'] == 'ok' and ('data' in json_resp) and json_resp['data'] != None:
+            if ('status' in json_resp) and json_resp['status'] == 'ok' and \
+                (get_JSON_value(json_resp, key='data.summary.exp_base') != None) :
                 debug("JSON check OK")
                 return True 
         except KeyError as err:
-            error('Key not found', err)
+            debug('Replay JSON check failed', exception=err)
         except:
-            debug("JSON check failed: " + str(json_resp))
+            debug("Replay JSON check failed: " + str(json_resp))
         return False      
+
 
 class BlitzStars:
 

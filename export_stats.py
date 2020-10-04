@@ -38,7 +38,20 @@ STATS_EXPORTED = 0
 
 async def main(argv):
     # set the directory for the script
+    current_dir = os.getcwd()
     os.chdir(os.path.dirname(sys.argv[0]))
+
+    # Default params
+    DB_SERVER   = 'localhost'
+    DB_PORT     = 27017
+    DB_SSL      = False
+    DB_CERT_REQ = ssl.CERT_NONE
+    DB_AUTH     = 'admin'
+    DB_NAME     = 'BlitzStats'
+    DB_USER     = None
+    DB_PASSWD   = None
+    DB_CERT		= None
+    DB_CA		= None
 
     parser = argparse.ArgumentParser(description='Retrieve player stats from the DB')
     parser.add_argument('-f', '--filename', type=str, default=None, help='Filename to write stats into')
@@ -61,20 +74,20 @@ async def main(argv):
 		## Read config
         config = configparser.ConfigParser()
         config.read(FILE_CONFIG)
-        configDB    = config['DATABASE']
-        DB_SERVER   = configDB.get('db_server', 'localhost')
-        DB_PORT     = configDB.getint('db_port', 27017)
-        DB_SSL      = configDB.getboolean('db_ssl', False)
-        DB_CERT_REQ = configDB.getint('db_ssl_req', ssl.CERT_NONE)
-        DB_AUTH     = configDB.get('db_auth', 'admin')
-        DB_NAME     = configDB.get('db_name', 'BlitzStats')
-        DB_USER     = configDB.get('db_user', None)
-        DB_PASSWD   = configDB.get('db_password', None)
-        DB_CERT		= configDB.get('db_ssl_cert_file', None)
-        DB_CA		= configDB.get('db_ssl_ca_file', None)
+        if 'DATABASE' in config.sections():
+            configDB    = config['DATABASE']
+            DB_SERVER   = configDB.get('db_server', 'localhost')
+            DB_PORT     = configDB.getint('db_port', 27017)
+            DB_SSL      = configDB.getboolean('db_ssl', False)
+            DB_CERT_REQ = configDB.getint('db_ssl_req', ssl.CERT_NONE)
+            DB_AUTH     = configDB.get('db_auth', 'admin')
+            DB_NAME     = configDB.get('db_name', 'BlitzStats')
+            DB_USER     = configDB.get('db_user', None)
+            DB_PASSWD   = configDB.get('db_password', None)
+            DB_CERT		= configDB.get('db_ssl_cert_file', None)
+            DB_CA		= configDB.get('db_ssl_ca_file', None)
 
 		#### Connect to MongoDB
-        #### Connect to MongoDB
         if (DB_USER==None) or (DB_PASSWD==None):
             client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
         else:
@@ -84,12 +97,14 @@ async def main(argv):
         bu.debug(str(type(db)))
         tasks = []
         
+        
         if args.mode == 'tankopedia':
             if args.filename == None:
                 args.filename = 'tanks.json'
+            args.filename = bu.rebase_file_args(current_dir, args.filename)
             await export_tankopedia(db, args)
         else:
-
+            args.filename = bu.rebase_file_args(current_dir, args.filename)
             periodQ = await mk_periodQ(args.dates, args.type)
             if periodQ == None:
                 bu.error('Export type (--type) is not cumulative, but only one date given. Exiting...')
