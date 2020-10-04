@@ -20,7 +20,7 @@ DB_C_UPDATES            = 'WG_Releases'
 DB_C_PLAYER_STATS		= 'WG_PlayerStats'
 DB_C_PLAYER_ACHIVEMENTS	= 'WG_PlayerAchievements'
 DB_C_TANK_STATS     	= 'WG_TankStats'
-DB_C_TANK_STATS_DEL     = 'WG_TankStats_duplicates'
+DB_C_STATS_2_DEL        = 'Stats2delete'
 DB_C_BS_PLAYER_STATS   	= 'BS_PlayerStats'
 DB_C_BS_TANK_STATS     	= 'BS_PlayerTankStats'
 DB_C_TANKS     			= 'Tankopedia'
@@ -47,7 +47,7 @@ async def main(argv):
     os.chdir(os.path.dirname(sys.argv[0]))
 
     parser = argparse.ArgumentParser(description='Prune stats from the DB by update')
-    parser.add_argument('--mode', default='tank_stats', choices=['player_stats', 'tank_stats'], help='Select type of stats to export')
+    parser.add_argument('--analyze', default='tank_stats', choices=['player_stats', 'tank_stats', 'none'], help='Select type of stats to export')
     parser.add_argument( '-f', '--force', 	action='store_true', default=False, help='Force changes i.e. DELETE DATA')
     parser.add_argument('updates', metavar='X.Y [Z.D ...]', type=str, nargs='+', help='List of updates to prune')
     arggroup = parser.add_mutually_exclusive_group()
@@ -88,31 +88,34 @@ async def main(argv):
         bu.debug(str(type(db)))
 
         tasks = []
-        updateQ = await mk_updateQ(db, args.updates)
-        if args.mode == 'player_stats':
-            if args.filename == None: 
-                args.filename = 'player_stats'
-                for i in range(N_WORKERS):
-                    tasks.append(asyncio.create_task(prune_player_stats_BS(i, db, updateQ, args)))
-            elif args.mode == 'tank_stats':
-                if args.filename == None: 
-                    args.filename = 'tank_stats'                  
-                for i in range(N_WORKERS):
-                    tasks.append(asyncio.create_task(prune_tank_stats_WG(i, db, updateQ, args)))
-                    bu.debug('Task ' + str(i) + ' started')
-            
-            bu.debug('Waiting for statsworkers to finish')
-            await updateQ.join()
-            
-            bu.finish_progress_bar()
+        updates = await mk_update_list(db, args.updates)
 
-            bu.debug('Cancelling workers')
-            for task in tasks:
-                task.cancel()
-            bu.debug('Waiting for workers to cancel')
-            if len(tasks) > 0:
-                await asyncio.gather(*tasks, return_exceptions=True)
+        if args.analyze == 'player_stats':
+            pass
+        elif args.analyze == 'tank_stats':
+            for u in updates:
+                while True:
+                    update  = u['update']
+                    start   = u['start']
+                    end     = u['end']
+                    bu.verbose_std('Processing update ' + update)   
+                    tankQ   = mk_tankQ(db)
+                    for i in range(N_WORKERS):
+                        tasks.append(asyncio.create_task(prune_tank_stats_WG(i, db, tankQ, start, end)))
+                        bu.debug('Task ' + str(i) + ' started')
+            
+                    bu.debug('Waiting for workers to finish')
+                    await tankQ.join()            
+                    bu.debug('Cancelling workers')
+                    for task in tasks:
+                        task.cancel()
+                    bu.debug('Waiting for workers to cancel')
+                    if len(tasks) > 0:
+                        await asyncio.gather(*tasks, return_exceptions=True)
+                    if tankQ.empty():
+                        break
         
+        bu.finish_progress_bar()
         print_stats(args.mode)
             
     except asyncio.CancelledError as err:
@@ -122,14 +125,15 @@ async def main(argv):
 
     return None
 
-async def mk_updateQ(db : motor.motor_asyncio.AsyncIOMotorDatabase, updates2process : list) -> asyncio.Queue:
+
+async def mk_update_list(db : motor.motor_asyncio.AsyncIOMotorDatabase, updates2process : list) -> list:
     """Create update queue for database queries"""
 
     if (len(updates2process) == 0):
         return None
     bu.debug(str(updates2process))
     updates2process = set(updates2process)
-    updateQ = asyncio.Queue()
+    updates = list()
     try:
         dbc = db[DB_C_UPDATES]
         cursor = dbc.find( {} , { '_id' : 0 })
@@ -140,73 +144,61 @@ async def mk_updateQ(db : motor.motor_asyncio.AsyncIOMotorDatabase, updates2proc
             if update in updates2process:
                 if (cut_off == None) or (cut_off == 0):
                     cut_off = bu.NOW()
-                await updateQ.put([update, cut_off_prev, cut_off])
+                updates.append({'update': update, 'start': cut_off_prev, 'end': cut_off})
                 updates2process.remove(update)
             cut_off_prev = cut_off
     except Exception as err:
         bu.error(exception=err)
     if len(updates2process) > 0:
         bu.error('Unknown update values give: ' + ', '.join(updates2process))
-    return updateQ
+    return updates
+
+
+async def mk_tankQ(db : motor.motor_asyncio.AsyncIOMotorDatabase) -> asyncio.Queue:
+    """Create TANK queue for database queries"""
+
+    tankQ = asyncio.Queue()
+    try:
+        async for tank_id in get_tanks_DB(db):
+            await tankQ.put(tank_id)            
+    except Exception as err:
+        bu.error(exception=err)
+    bu.debug('Tank queue created: ' + tankQ.qsize())
+    return tankQ
 
 
 def print_stats(stats_type = ""):
     bu.verbose_std(str(STATS_EXPORTED) + ' stats exported (' + stats_type + ')')
 
 
-async def q_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, updateQ: asyncio.Queue, args : argparse.Namespace):
+async def prune_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, tankQ: asyncio.Queue, start: int, end: int):
     """Async Worker to fetch player stats"""
-    global STATS_EXPORTED
-    dbc = db[DB_C_WG_TANK_STATS]
-    
-    filename = args.filename
-    tier = args.tier
-    all_data = args.all
-    export_type = args.type
 
-    tanks = await get_tanks_DB_tier(db, tier)
-    bu.debug('[' + str(workerID) + '] ' + str(len(tanks))  + ' tanks in DB')
+    dbc = db[DB_C_TANK_STATS]
 
     while True:
-        item = await updateQ.get()
-        bu.debug('[' + str(workerID) + '] ' + str(updateQ.qsize())  + ' periods to process')
+        tank_id = await tankQ.get()
+        bu.debug(str(tankQ.qsize())  + ' tanks to process', id= workerID)
         
         try:
-            dayA = item[0]
-            dayB = item[1]
-            timeA = int(time.mktime(dayA.timetuple()))
-            timeB = int(time.mktime(dayB.timetuple()))
-            if export_type == 'newer':
-                datestr = dayA.isoformat()
-            else:
-                datestr = dayB.isoformat()
-            fn = filename + '_' + datestr + '.jsonl'
+            pipeline = [ {'$match': { '$and': [{'last_battle_time': {'$lte': end}}, {'last_battle_time': {'$gt': start}}, {'tank_id': tank_id } ] }},
+                            {'$sort': {'account_id': 1, 'last_battle_time': -1} } ]
+            cursor = dbc.aggregate(pipeline, allowDiskUse=True)
 
-            bu.debug('[' + str(workerID) + '] Start: ' + str(timeA) + ' End: ' + str(timeB))
+            account_id_prev = -1        
+            async for doc in cursor:
+                bu.print_progress()
+                account_id = doc['account_id']
+                if account_id == account_id_prev:
+                    # Older doc found!
+                    await add_stat2del(workerID, db, DB_C_TANK_STATS, doc['_id'])
+                account_id_prev = account_id 
 
-            async with aiofiles.open(fn, 'w', encoding="utf8") as fp:
-                for tank_id in tanks:
-                    if all_data:
-                        cursor = dbc.find({ '$and': [{'last_battle_time': {'$lt': timeB}}, {'last_battle_time': {'$gte': timeA}}, {'tank_id': tank_id } ] })
-                    else:
-                        pipeline = [ {'$match': { '$and': [{'last_battle_time': {'$lte': timeB}}, {'last_battle_time': {'$gt': timeA}}, {'tank_id': tank_id } ] }},
-                                {'$sort': {'last_battle_time': -1}},
-                                {'$group': { '_id': '$account_id',
-                                            'doc': {'$first': '$$ROOT'}}},
-                                {'$replaceRoot': {'newRoot': '$doc'}}, 
-                                {'$project': {'_id': False}} ]
-                        cursor = dbc.aggregate(pipeline, allowDiskUse=True)
-                    
-                    async for doc in cursor:
-                        bu.print_progress()
-                        await fp.write(json.dumps(doc, ensure_ascii=False) + '\n')
-                        STATS_EXPORTED += 1
-                        
         except Exception as err:
             bu.error('[' + str(workerID) + '] Unexpected Exception: ' + str(type(err)) + ' : ' + str(err))
         finally:
-            bu.verbose_std('\n[' + str(workerID) + '] File write complete: ' + fn)
-            updateQ.task_done()
+            bu.verbose_std('\nTank_id processed: ' + tank_id, id = workerID)
+            tankQ.task_done()
 
     return None
 
@@ -216,7 +208,7 @@ async def prune_player_stats_BS(workerID: int, db: motor.motor_asyncio.AsyncIOMo
     global STATS_EXPORTED
     bu.error('NOT IMPLEMENTED YET')
     sys.exit(1)
-    
+
     dbc = db[DB_C_BS_PLAYER_STATS]
     filename = args.filename
     all_data = args.all
@@ -270,9 +262,19 @@ async def prune_player_stats_BS(workerID: int, db: motor.motor_asyncio.AsyncIOMo
     return None
 
 
+async def add_stat2del(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, stats_type: str, id: str):
+    """Adds _id of the stat record to be deleted in into DB_C_STATS_2_DEL"""
+    dbc = db[DB_C_STATS_2_DEL]
+    try:
+        await dbc.insert_one({'type': stats_type, 'id': id})
+    except Exception as err:
+        bu.error(exception=err, id=workerID)
+    return None
+
+
 async def get_tanks_DB(db: motor.motor_asyncio.AsyncIOMotorDatabase):
     """Get tank_ids of tanks in the DB"""
-    dbc = db[DB_C_WG_TANK_STATS]
+    dbc = db[DB_C_TANK_STATS]
     return await dbc.distinct('tank_id')
     
 
