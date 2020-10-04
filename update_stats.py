@@ -152,29 +152,7 @@ async def main(argv):
 			await update_tankopedia(db, args.file, args.force)
 		else:
 			start_time = print_date('DB update started')
-			if args.run_error_log:
-				for mode in get_stat_modes(args.mode):
-					active_players[mode] = await get_prev_errors(db, mode)
-			elif args.player_src == 'blitzstars':
-				bu.debug('src BlitzStars')
-				tmp_players = await get_active_players_BS(args)
-				if args.sample > 0:
-					tmp_players = random.sample(tmp_players, args.sample)
-				for mode in get_stat_modes(args.mode): 
-					active_players[mode] = tmp_players 
-			elif args.player_src == 'db':
-				bu.debug('src DB')
-				for mode in get_stat_modes_WG(args.mode):
-					bu.debug('Getting players from DB: ' + mode)
-					active_players[mode] = await get_active_players_DB(db, mode, args)
-				if (len(get_stat_modes_BS(args.mode)) > 0):
-					tmp_players = await get_active_players_BS(args)
-					if args.sample > 0:
-						tmp_players = random.sample(tmp_players, args.sample)
-					for mode in get_stat_modes_BS(args.mode):
-						bu.debug('Getting players from BS: ' + mode)
-						active_players[mode] = tmp_players
-			
+			active_players  = get_active_players(db, args)			
 			Qcreator_tasks 	= []
 			worker_tasks 	= []
 			Q = {}
@@ -260,6 +238,34 @@ async def main(argv):
 			await bu.close_file_logging()
 
 	return None
+
+
+def get_active_players(db : motor.motor_asyncio.AsyncIOMotorDatabase, args : argparse.Namespace):
+	"""Get activbe player list from the sources (DB, BlitzStars)"""
+	active_players = {}
+	if args.run_error_log:
+		for mode in get_stat_modes(args.mode):
+			active_players[mode] = await get_prev_errors(db, mode)
+	elif args.player_src == 'blitzstars':
+		bu.debug('src BlitzStars')
+		tmp_players = await get_active_players_BS(args)
+		if args.sample > 0:
+			tmp_players = random.sample(tmp_players, args.sample)
+		for mode in get_stat_modes(args.mode): 
+			active_players[mode] = tmp_players 
+	elif args.player_src == 'db':
+		bu.debug('src DB')
+		for mode in get_stat_modes_WG(args.mode):
+			bu.debug('Getting players from DB: ' + mode)
+			active_players[mode] = await get_active_players_DB(db, mode, args)
+		if (len(get_stat_modes_BS(args.mode)) > 0):
+			tmp_players = await get_active_players_BS(args)
+			if args.sample > 0:
+				tmp_players = random.sample(tmp_players, args.sample)
+			for mode in get_stat_modes_BS(args.mode):
+				bu.debug('Getting players from BS: ' + mode)
+				active_players[mode] = tmp_players
+	return active_players
 
 
 def print_date(msg : str = '', start_time : datetime.datetime = None ) -> datetime.datetime:
