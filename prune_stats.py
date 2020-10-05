@@ -52,8 +52,8 @@ async def main(argv):
 
     parser = argparse.ArgumentParser(description='Prune stats from the DB by update')
     parser.add_argument('--mode', default='tank_stats', nargs='+', choices=MODES.keys(), help='Select type of stats to export')
-    parser.add_argument( '-s', '--skip_analyze', 	action='store_true', default=False, help='Actually Prune database i.e. DELETE DATA (default is just to analyze)')
-    parser.add_argument( '-p', '--prune', 	action='store_true', default=False, help='Actually Prune database i.e. DELETE DATA (default is just to analyze)')
+    parser.add_argument( '-s', '--skip_analyze', 	action='store_true', default=False, help='Skip analyzing the database (default FALSE: i.e. to analyze)')
+    parser.add_argument( '-p', '--prune', 	action='store_true', default=False, help='Actually Prune database i.e. DELETE DATA (default is FALSE)')
     parser.add_argument('updates', metavar='X.Y [Z.D ...]', type=str, nargs='+', help='List of updates to prune')
     arggroup = parser.add_mutually_exclusive_group()
     arggroup.add_argument( '-d', '--debug', 	action='store_true', default=False, help='Debug mode')
