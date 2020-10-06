@@ -719,7 +719,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 			try: 
 				res = await dbc.insert_many(tank_stats, ordered=False)
 				tmp = len(res.inserted_ids)
-				bu.debug(str(tmp) + ' stats added (insert_many() result)', worker_id)
+				# bu.debug(str(tmp) + ' stats added (insert_many() result)', worker_id)
 				stats_added += tmp					
 			except pymongo.errors.BulkWriteError as err:
 				tmp = err.details['nInserted']
