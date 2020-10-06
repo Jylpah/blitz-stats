@@ -152,7 +152,7 @@ async def main(argv):
 			await update_tankopedia(db, args.file, args.force)
 		else:
 			start_time = print_date('DB update started')
-			active_players  = get_active_players(db, args)			
+			active_players  = await get_active_players(db, args)			
 			Qcreator_tasks 	= []
 			worker_tasks 	= []
 			Q = {}
@@ -240,7 +240,7 @@ async def main(argv):
 	return None
 
 
-def get_active_players(db : motor.motor_asyncio.AsyncIOMotorDatabase, args : argparse.Namespace):
+async def get_active_players(db : motor.motor_asyncio.AsyncIOMotorDatabase, args : argparse.Namespace):
 	"""Get activbe player list from the sources (DB, BlitzStars)"""
 	active_players = {}
 	if args.run_error_log:
