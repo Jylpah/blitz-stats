@@ -859,10 +859,10 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 			for account_id in account_ids:
 				try:
 					bu.print_progress()
-					if (account_ids not in stats) or (stats[account_id] == None):
+					if (str(account_id) not in stats) or (stats[str(account_id)] == None):
 						raise bu.StatsNotFound("No stats found for account_id = " + str(account_id))
 					
-					stat 				= stats[account_id]
+					stat 				= stats[str(account_id)]
 					stat['account_id'] 	= int(account_id)
 					stat['updated'] 	= NOW
 					stat['_id'] 		= mk_id(int(account_id), 0, NOW)
