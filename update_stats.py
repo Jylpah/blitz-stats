@@ -439,7 +439,7 @@ async def check_account_2_update(db : motor.motor_asyncio.AsyncIOMotorDatabase, 
 		update_field = UPDATE_FIELD[stat_type]
 		res = await dbc.find_one( { '_id' : account_id })
 		if res == None:
-			bu.debug('account_id: ' + str(account_id) + ' not found fromn account DB)
+			bu.debug('account_id: ' + str(account_id) + ' not found fromn account DB')
 			return False
 		if ('invalid' in res):
 			bu.debug('account_id: ' + str(account_id) + ' is invalid')
