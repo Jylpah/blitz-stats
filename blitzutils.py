@@ -151,13 +151,12 @@ class AsyncLogger():
             try:
                 msg = await self._queue.get()
                 await self._file.write(msg + '\n')
+                self._queue.task_done()
             except asyncio.CancelledError as err:
                 return None
             except Exception as err:
                 error(exception=err)
-            finally:
-                self._queue.task_done()
-
+            
 
     def log(self, msg: str  = ''):
         if self._queue != None:
