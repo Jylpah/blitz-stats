@@ -320,10 +320,10 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 	
 	if sample > 0:
 		if force:
-			pipeline = [   	{'$match': { '$and': [ { '_id': { '$lt': 31e8 } }, { 'invalid': { '$not': { '$eq': True} } }] } }, 
+			pipeline = [   	{'$match': { '$and': [ { '_id': { '$lt': 31e8 } }, { 'invalid': { '$exists': False } }] } }, 
 							{'$sample': {'size' : sample} } ]
 		else:
-			pipeline = [ 	{'$match': {  '$and' : [ { '_id': { '$lt': 31e8 } }, { 'invalid': { '$not': { '$eq': True} } }, \
+			pipeline = [ 	{'$match': {  '$and' : [ { '_id': { '$lt': 31e8 } }, { 'invalid': { '$exists': False} }, \
 													 { '$or': [ { UPDATE_FIELD[mode]: None }, \
 																{ UPDATE_FIELD[mode] : { '$lt': bu.NOW() - cache_valid } } ] } ] } }, \
 							{'$sample': {'size' : sample} } ]
@@ -331,9 +331,9 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 		cursor = dbc.aggregate(pipeline, allowDiskUse=False)
 	else:
 		if force:
-			cursor = dbc.find( { '$and': [ { '_id': { '$lt': 31e8 } }, { 'invalid': { '$not': { '$eq': True } } } ] } )
+			cursor = dbc.find( { '$and': [ { '_id': { '$lt': 31e8 } }, { 'invalid': { '$exists': False } } ] } )
 		else:
-			cursor = dbc.find(  { '$and': [ {'_id': { '$lt': 31e8 }}, { 'invalid': { '$not': { '$eq': True }}}, \
+			cursor = dbc.find(  { '$and': [ {'_id': { '$lt': 31e8 }}, { 'invalid': { '$exists':  False }}, \
 									 { '$or': [ { UPDATE_FIELD[mode]: None }, { UPDATE_FIELD[mode] : { '$lt': bu.NOW() - cache_valid } } ] } ] }, { '_id' : 1} )
 	
 	i = 0
@@ -410,7 +410,7 @@ async def check_accounts_2_update(db : motor.motor_asyncio.AsyncIOMotorDatabase,
 		NOW = bu.NOW()
 
 		cursor = dbc.find( { '$and' : [{ '_id' : { '$in': account_ids }}, \
-		                               { '$not' : { 'invalid': True }}, \
+		                               { 'invalid' : { '$exists': False }}, \
 									   { '$or': [ { 'last_battle_time' : { '$exists': False }}, \
 												{ 'last_battle_time' : { '$gt': NOW }}, \
 												{ update_field : { '$exists': False }}, \
@@ -440,7 +440,7 @@ async def check_account_2_update(db : motor.motor_asyncio.AsyncIOMotorDatabase, 
 		res = await dbc.find_one( { '_id' : account_id })
 		if res == None:
 			return False
-		if ('invalid' in res) and (res['invalid'] == True):
+		if ('invalid' in res):
 			return False
 		if (update_field in res) and ('latest_battle_time' in res):
 			if (res[update_field] == None) or (res['latest_battle_time'] == None) or (res['latest_battle_time'] > bu.NOW()):
@@ -555,6 +555,18 @@ async def set_account_invalid(db: motor.motor_asyncio.AsyncIOMotorDatabase, acco
 		bu.error('Unexpected error', err)
 	finally:
 		bu.debug('Marked account_id as invalid: ' + str(account_id))
+	return None
+
+
+async def set_account_valid(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int):
+	"""Set account_id valid"""
+	dbc = db[DB_C_ACCOUNTS]
+	try: 
+		await dbc.update_one({ '_id': account_id }, { '$unset': {'invalid': "" }} )		
+	except Exception as err:
+		bu.error('Unexpected error', err)
+	finally:
+		bu.debug('Marked account_id as valid: ' + str(account_id))
 	return None
 
 
