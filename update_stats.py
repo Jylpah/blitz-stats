@@ -854,6 +854,7 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 			stats = await wg.get_player_achievements(account_ids, cache=False)
 			if stats == None:
 				raise bu.StatsNotFound('WG API returned NULL stats')
+			bu.debug(str(stats), id=worker_id)
 			# players_achivements = []			
 			for account_id in account_ids:
 				try:
@@ -874,14 +875,14 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 					# tmp = len(res.inserted_ids)
 					# bu.debug(str(tmp) + ' stats added (insert_many() result)', worker_id)
 					# stats_added += tmp
-					# #stats_added += len(res.inserted_ids)					
+					# #stats_added += len(res.inserted_ids)	
+					bu.debug('Added stats for account_id=' + str(account_id), id=worker_id)					
 				except Exception as err:
 					bu.debug(exception=err, id=worker_id)
 					bu.debug('Failed to store stats for account_id = ' + str(account_id), id=worker_id)
 					await log_error(db, int(account_id), field, clr_error_log)
 				finally:
-					await update_stats_update_time(db, account_id, field, NOW)
-					bu.debug('Added stats for account_id=' + str(account_id), id=worker_id)	
+					await update_stats_update_time(db, account_id, field, NOW)					
 		except bu.StatsNotFound as err:	
 			bu.debug(exception=err, id=worker_id)
 			for account_id in account_ids:
