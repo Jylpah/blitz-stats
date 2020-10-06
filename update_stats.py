@@ -525,7 +525,7 @@ async def update_tankopedia( db: motor.motor_asyncio.AsyncIOMotorDatabase, filen
 async def mk_playerQ(queue : asyncio.Queue, account_ids : list):
 	"""Create queue of replays to post"""
 	for account_id in account_ids:
-		bu.debug('Adding account_id: ' + str(account_id) + ' to the queue')
+		# bu.debug('Adding account_id: ' + str(account_id) + ' to the queue')
 		if account_id < 31e8:
 			await queue.put(account_id)
 		else:
