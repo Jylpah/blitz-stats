@@ -854,7 +854,7 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 			stats = await wg.get_player_achievements(account_ids, cache=False)
 			if stats == None:
 				raise bu.StatsNotFound('WG API returned NULL stats')
-			bu.debug(str(stats), id=worker_id)
+			#bu.debug(str(stats), id=worker_id)
 			# players_achivements = []			
 			for account_id in account_ids:
 				try:
