@@ -789,7 +789,7 @@ async def WG_player_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, p
 					bu.debug('Added stats for account_id=' + str(account_id), worker_id)	
 	
 		except bu.StatsNotFound as err:
-			bu.debug(str(err))
+			bu.debug(str(err), id=worker_id)
 			await log_error(db, account_id, field, clr_error_log)
 		except Exception as err:
 			bu.error('Unexpected error: ' + ((' URL: ' + url) if url!= None else ""), err, worker_id)
@@ -838,13 +838,13 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 						break # for
 			
 			if (account_ids == None) :
-				bu.debug('playerQ is empty')
+				bu.debug('playerQ is empty', id=worker_id)
 				break	# Nothing to do. Break from the outer while-loop
 			
-			bu.debug('Server: ' + server + ' account_ids: ' + str(len(account_ids)))
+			bu.debug('Server: ' + server + ' account_ids: ' + str(len(account_ids)), id=worker_id)
 
 		except Exception as err:
-			bu.error('Unexpected error in generation of account_id list: ', err)		
+			bu.error('Unexpected error in generation of account_id list: ', err, id=worker_id)		
 		
 		try:
 			N_account_ids = len(account_ids)  # needed to keep count on finished tasks
@@ -876,18 +876,18 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 					# stats_added += tmp
 					# #stats_added += len(res.inserted_ids)					
 				except Exception as err:
-					bu.debug(exception=err)
-					bu.debug('Failed to store stats for account_id = ' + str(account_id))
+					bu.debug(exception=err, id=worker_id)
+					bu.debug('Failed to store stats for account_id = ' + str(account_id), id=worker_id)
 					await log_error(db, int(account_id), field, clr_error_log)
 				finally:
 					await update_stats_update_time(db, account_id, field, NOW)
-					bu.debug('Added stats for account_id=' + str(account_id), worker_id)	
+					bu.debug('Added stats for account_id=' + str(account_id), id=worker_id)	
 		except bu.StatsNotFound as err:	
 			bu.debug(exception=err, id=worker_id)
 			for account_id in account_ids:
 				await log_error(db, account_id, field, clr_error_log)
 		except Exception as err:
-			bu.error('Unexpected error in fetching: ', err, worker_id)
+			bu.error('Unexpected error in fetching: ', err, id=worker_id)
 			for account_id in account_ids:
 				await log_error(db, account_id, field, clr_error_log)
 		finally:
