@@ -439,13 +439,16 @@ async def check_account_2_update(db : motor.motor_asyncio.AsyncIOMotorDatabase, 
 		update_field = UPDATE_FIELD[stat_type]
 		res = await dbc.find_one( { '_id' : account_id })
 		if res == None:
+			bu.debug('account_id: ' + str(account_id) + ' not found fromn account DB)
 			return False
 		if ('invalid' in res):
+			bu.debug('account_id: ' + str(account_id) + ' is invalid')
 			return False
 		if (update_field in res) and ('latest_battle_time' in res):
 			if (res[update_field] == None) or (res['latest_battle_time'] == None) or (res['latest_battle_time'] > bu.NOW()):
 				return False
 			elif (bu.NOW() - res[update_field])  < min(MAX_UPDATE_INTERVAL, (res[update_field] - res['latest_battle_time'])/2):
+				bu.debug('account_id: ' + str(account_id) + ' has been updated recently')
 				return False
 			# Do update
 			return True
