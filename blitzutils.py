@@ -159,11 +159,8 @@ class AsyncLogger():
             
 
     def log(self, msg: str  = ''):
-        if self._queue != None:
-            self._queue.put_nowait(msg)
-        else:
-            error('Logger queue not set up')
-
+        self._queue.put_nowait(msg)
+        
 
     async def close(self):
         try:
