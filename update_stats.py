@@ -250,14 +250,14 @@ async def get_active_players(db : motor.motor_asyncio.AsyncIOMotorDatabase, args
 		bu.debug('src BlitzStars')
 		tmp_players = await get_active_players_BS(args)
 		if args.sample > 0:
-			tmp_players = random.sample(tmp_players, args.sample)
+			tmp_players = random.sample(tmp_players, args.sample)		
 		for mode in get_stat_modes(args.mode): 
-			active_players[mode] = tmp_players 
+			active_players[mode] = tmp_players
 	elif args.player_src == 'db':
 		bu.debug('src DB')
 		for mode in get_stat_modes_WG(args.mode):
 			bu.debug('Getting players from DB: ' + mode)
-			active_players[mode] = await get_active_players_DB(db, mode, args)
+			active_players[mode] = await get_active_players_DB(db, mode, args)			
 		if (len(get_stat_modes_BS(args.mode)) > 0):
 			tmp_players = await get_active_players_BS(args)
 			if args.sample > 0:
@@ -265,6 +265,8 @@ async def get_active_players(db : motor.motor_asyncio.AsyncIOMotorDatabase, args
 			for mode in get_stat_modes_BS(args.mode):
 				bu.debug('Getting players from BS: ' + mode)
 				active_players[mode] = tmp_players
+		for mode in active_players.keys():
+			random.shuffle(active_players[mode])
 	return active_players
 
 
