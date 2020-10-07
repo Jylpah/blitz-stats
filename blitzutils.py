@@ -122,6 +122,7 @@ class ThrottledClientSession(aiohttp.ClientSession):
 
 
 class AsyncLogger():
+    """Async file logger"""
     def __init__(self) -> None: 
         self._queue = asyncio.Queue()
         self._task = None
