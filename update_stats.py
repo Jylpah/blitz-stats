@@ -437,10 +437,11 @@ async def chk_accounts2update(db : motor.motor_asyncio.AsyncIOMotorDatabase, acc
 	bu.debug('Stats to update: ' + str(len(stats_update_needed)))
 	return stats_update_needed
 
-
+## DEPRECIATED
 async def chk_account2update(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id : int, stat_type: str) -> bool:
 	"""Check whether the DB has fresh enough stats for the account_id & stat_type"""
 	dbc = db[DB_C_ACCOUNTS]
+	bu.error('DEPRECIATED function')
 	try:
 		update_field = UPDATE_FIELD[stat_type]
 		res = await dbc.find_one( { '_id' : account_id })
@@ -559,7 +560,7 @@ async def set_account_invalid(db: motor.motor_asyncio.AsyncIOMotorDatabase, acco
 	"""Set account_id invalid"""
 	dbc = db[DB_C_ACCOUNTS]
 	try: 
-		await dbc.update_one({ '_id': account_id }, { '$unset': {'invalid': True })		
+		await dbc.update_one({ '_id': account_id }, { '$unset': {'invalid': True }} )		
 	except Exception as err:
 		bu.error('Unexpected error', err)
 	finally:
