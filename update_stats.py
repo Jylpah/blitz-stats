@@ -402,14 +402,16 @@ async def clear_error_log(db : motor.motor_asyncio.AsyncIOMotorDatabase, account
 
 
 
- ## BROKEN
-
-async def chk_accounts2update(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_ids : list, stat_type: str) -> list:
+async def chk_accounts2update(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_ids: list, stat_type: str) -> list:
 	"""Check whether the DB has fresh enough stats for the account_id & stat_type"""
 	dbc = db[DB_C_ACCOUNTS]
 	try:
 		update_field = UPDATE_FIELD[stat_type]
 		NOW = bu.NOW()
+
+		# this should work since Python does not enforce type hints: https://docs.python.org/3/library/typing.html 
+		if type(account_ids) is int:
+			account_ids = list(account_ids)
 
 		cursor = dbc.find( { '$and' : [{ '_id' : { '$in': account_ids }}, \
 		                               { 'invalid' : { '$exists': False }}, \
@@ -700,7 +702,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 			url = None
 			if force:
 				bu.debug('account_id=' + str(account_id) + ' stats update forced', worker_id)
-			elif (await chk_account2update(db, account_id, field)):
+			elif (len(await chk_accounts2update(db, account_id, field)) == 1 ):
 				bu.debug('account_id=' + str(account_id) + ' does not have Fresh-enough stats in the DB', worker_id)
 			else:	
 				bu.debug('account_id=' + str(account_id) + ' has Fresh-enough stats in the DB', worker_id)
