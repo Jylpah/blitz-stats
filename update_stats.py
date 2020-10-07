@@ -559,7 +559,7 @@ async def set_account_invalid(db: motor.motor_asyncio.AsyncIOMotorDatabase, acco
 	"""Set account_id invalid"""
 	dbc = db[DB_C_ACCOUNTS]
 	try: 
-		await dbc.update_one({ '_id': account_id }, {'invalid': True })		
+		await dbc.update_one({ '_id': account_id }, { '$unset': {'invalid': True })		
 	except Exception as err:
 		bu.error('Unexpected error', err)
 	finally:
