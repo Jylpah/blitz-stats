@@ -404,7 +404,7 @@ async def clear_error_log(db : motor.motor_asyncio.AsyncIOMotorDatabase, account
 
  ## BROKEN
 
-async def check_accounts_2_update(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_ids : list, stat_type: str) -> list:
+async def chk_accounts2update(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_ids : list, stat_type: str) -> list:
 	"""Check whether the DB has fresh enough stats for the account_id & stat_type"""
 	dbc = db[DB_C_ACCOUNTS]
 	try:
@@ -421,6 +421,8 @@ async def check_accounts_2_update(db : motor.motor_asyncio.AsyncIOMotorDatabase,
 							{'last_battle_time' : 1, update_field : 1 } )
 		
 		stats_update_needed = list()
+
+		## chk_accounts2update_helper ?
 		async for res in cursor: 
 			if (update_field in res) and ('latest_battle_time' in res):
 				if (res[update_field] != None) and (res['latest_battle_time'] != None) and (res['latest_battle_time'] < NOW):
@@ -434,7 +436,7 @@ async def check_accounts_2_update(db : motor.motor_asyncio.AsyncIOMotorDatabase,
 	return stats_update_needed
 
 
-async def check_account_2_update(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id : int, stat_type: str) -> bool:
+async def chk_account2update(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id : int, stat_type: str) -> bool:
 	"""Check whether the DB has fresh enough stats for the account_id & stat_type"""
 	dbc = db[DB_C_ACCOUNTS]
 	try:
@@ -589,7 +591,7 @@ async def BS_player_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, p
 		try:
 			
 			url = None
-			if (not force) and (not await check_account_2_update(db, account_id, field)):
+			if (not force) and (not await chk_account2update(db, account_id, field)):
 				bu.debug('Fresh-enough stats for account_id=' + str(account_id) + ' exists in the DB', worker_id)
 			else:
 				stats = await bs.get_player_stats(account_id)
@@ -633,7 +635,7 @@ async def BS_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 		bu.print_progress()
 		try:
 			url = None
-			if (not force) and (not await check_account_2_update(db, account_id, field)):
+			if (not force) and (not await chk_account2update(db, account_id, field)):
 				bu.debug('Fresh-enough stats for account_id=' + str(account_id) + ' exists in the DB', worker_id)
 			else:
 					
@@ -698,7 +700,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 			url = None
 			if force:
 				bu.debug('account_id=' + str(account_id) + ' stats update forced', worker_id)
-			elif (await check_account_2_update(db, account_id, field)):
+			elif (await chk_account2update(db, account_id, field)):
 				bu.debug('account_id=' + str(account_id) + ' does not have Fresh-enough stats in the DB', worker_id)
 			else:	
 				bu.debug('account_id=' + str(account_id) + ' has Fresh-enough stats in the DB', worker_id)
@@ -759,7 +761,7 @@ async def WG_player_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, p
 		try:
 			#TBD: Check acccounts, fetch data, update accounts, even if not data fetched. 
 			url = None
-			if (not force) and (not await check_account_2_update(db, account_id, field)):
+			if (not force) and (not await chk_account2update(db, account_id, field)):
 				bu.debug(' account_id=' + str(account_id) + ' has Fresh-enough stats in the DB', worker_id)
 			else:	
 				bu.debug('account_id=' + str(account_id) + ' does not have Fresh-enough stats in the DB', worker_id)
@@ -854,7 +856,7 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 		try:
 			N_account_ids = len(account_ids)  # needed to keep count on finished tasks
 			if (not force) and (not clr_error_log):
-				account_ids = await check_accounts_2_update(db, account_ids, field)
+				account_ids = await chk_accounts2update(db, account_ids, field)
 			NOW = bu.NOW()	
 			stats = await wg.get_player_achievements(account_ids, cache=False)
 			if stats == None:
