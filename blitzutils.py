@@ -255,7 +255,7 @@ def verbose_std(msg = "", id = None) -> bool:
 
 def warning(msg = "", id = None, force: bool = False) -> bool:
     """Print a warning message"""
-    return _print_log_msg('', 'Warning: ' + msg, None, id, print_msg= (force or (_log_level >= NORMAL)) )        
+    return _print_log_msg('Warning', msg, None, id, print_msg= (force or (_log_level >= NORMAL)) )        
 
 
 def debug(msg = "", id = None, exception = None, force: bool = False) -> bool:
