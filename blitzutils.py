@@ -260,7 +260,9 @@ def warning(msg = "", id = None, force: bool = False) -> bool:
 
 def debug(msg = "", id = None, exception = None, force: bool = False) -> bool:
     """print a conditional debug message"""
-    return _print_log_msg('DEBUG', msg, exception, id, print_msg=((_log_level >= DEBUG) or force))
+    if (_log_level >= DEBUG) or force:
+        return _print_log_msg('DEBUG', msg, exception, id)
+    return False
 
 
 def error(msg = "", exception = None, id = None) -> bool:
