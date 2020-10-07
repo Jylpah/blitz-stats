@@ -12,7 +12,7 @@ logging.getLogger("asyncio").setLevel(logging.DEBUG)
 N_WORKERS = 40
 MAX_RETRIES = 3
 CACHE_VALID = 5   # 5 days
-MIN_UPDATE_INTERVAL = 7*24*3600 # 7 days
+#MIN_UPDATE_INTERVAL = 7*24*3600 # 7 days
 MAX_UPDATE_INTERVAL = 6*30*24*3600 # 6 months
 SLEEP = 0.1
 WG_APP_ID = 'cd770f38988839d7ab858d1cbe54bdd0'
@@ -317,43 +317,56 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 	force 		= args.force
 	cache_valid = args.cache_valid
 	sample 		= args.sample
+	update_field = UPDATE_FIELD[mode]
+	NOW = bu.NOW()
 
-	players = list()
+	if force:
+		pipeline = [   	{'$match': { '$and': [ { '_id': { '$lt': 31e8 } }, 
+												{ 'invalid': { '$exists': False } }] } }, 
+						]
+	else:
+		pipeline = [ 	{'$match': {  '$and' : [ { '_id': { '$lt': 31e8 } }, 
+												{ 'invalid': { '$exists': False} }, 
+												{ '$or': [ 
+															#{ update_field : { '$exists': False }}, 
+															{ update_field : None }, 
+															{ update_field : { '$lt': NOW - cache_valid}}
+															#,{ update_field : { '$gt': NOW }} 
+															] } 
+												] } }, 
+						{'$sample': {'size' : sample} } 
+					]
 	
 	if sample > 0:
-		if force:
-			pipeline = [   	{'$match': { '$and': [ { '_id': { '$lt': 31e8 } }, { 'invalid': { '$exists': False } }] } }, 
-							{'$sample': {'size' : sample} } ]
-		else:
-			pipeline = [ 	{'$match': {  '$and' : [ { '_id': { '$lt': 31e8 } }, { 'invalid': { '$exists': False} }, \
-													 { '$or': [ { UPDATE_FIELD[mode]: None }, \
-																{ UPDATE_FIELD[mode] : { '$lt': bu.NOW() - cache_valid } } ] } ] } }, \
-							{'$sample': {'size' : sample} } ]
-		
-		cursor = dbc.aggregate(pipeline, allowDiskUse=False)
-	else:
-		if force:
-			cursor = dbc.find( { '$and': [ { '_id': { '$lt': 31e8 } }, { 'invalid': { '$exists': False } } ] } )
-		else:
-			cursor = dbc.find(  { '$and': [ {'_id': { '$lt': 31e8 }}, { 'invalid': { '$exists':  False }}, \
-									 { '$or': [ { UPDATE_FIELD[mode]: None }, { UPDATE_FIELD[mode] : { '$lt': bu.NOW() - cache_valid } } ] } ] }, { '_id' : 1} )
+		pipeline.append({'$sample': {'size' : sample} })
+
+	cursor = dbc.aggregate(pipeline, allowDiskUse=False)
 	
+	account_ids = list()
 	i = 0
+	
 	tmp_steps = bu.get_progress_step()
 	bu.set_progress_step(1000)
 	bu.set_counter('Fetching players:')
+
 	async for player in cursor:
-		i += 1
-		if bu.print_progress():
-			bu.debug('Accounts read from DB: ' + str(i))
 		try:
-			players.append(player['_id'])
+			i += 1
+			if bu.print_progress():
+				bu.debug('Accounts read from DB: ' + str(i))
+			if (update_field in player) and ('latest_battle_time' in player):
+				if (player[update_field] != None) and (player['latest_battle_time'] != None) and (player['latest_battle_time'] < NOW):
+					if (NOW - player[update_field]) < min(MAX_UPDATE_INTERVAL, (player[update_field] - player['latest_battle_time'])/2):
+						continue
+			account_ids.append(player['_id'])
 		except Exception as err:
 			bu.error('Unexpected error', err)
+
 	bu.finish_progress_bar()
 	bu.set_progress_step(tmp_steps)
-	bu.debug(str(len(players)) + ' read from the DB')
-	return players
+	
+	bu.debug(str(len(account_ids)) + ' read from the DB')
+	return account_ids
 
 
 async def get_active_players_BS(args : argparse.Namespace):
@@ -401,7 +414,7 @@ async def clear_error_log(db : motor.motor_asyncio.AsyncIOMotorDatabase, account
 	await dbc.delete_many({ '$and': [ {'account_id': account_id}, {'type': stat_type }]})
 
 
-
+## DEPRECIATED
 async def chk_accounts2update(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_ids: list, stat_type: str) -> list:
 	"""Check whether the DB has fresh enough stats for the account_id & stat_type"""
 	dbc = db[DB_C_ACCOUNTS]
@@ -418,13 +431,12 @@ async def chk_accounts2update(db : motor.motor_asyncio.AsyncIOMotorDatabase, acc
 									   { '$or': [ { 'last_battle_time' : { '$exists': False }}, \
 												{ 'last_battle_time' : { '$gt': NOW }}, \
 												{ update_field : { '$exists': False }}, \
-												{ update_field : { '$lt': NOW - MIN_UPDATE_INTERVAL}}, \
+											#	{ update_field : { '$lt': NOW - MIN_UPDATE_INTERVAL}}, \
 												{ update_field : { '$gt': NOW}} ]}]}, \
 							{'last_battle_time' : 1, update_field : 1 } )
 		
 		stats_update_needed = list()
 
-		## chk_accounts2update_helper ?
 		async for res in cursor: 
 			if (update_field in res) and ('latest_battle_time' in res):
 				if (res[update_field] != None) and (res['latest_battle_time'] != None) and (res['latest_battle_time'] < NOW):
@@ -579,7 +591,7 @@ async def set_account_valid(db: motor.motor_asyncio.AsyncIOMotorDatabase, accoun
 		bu.debug('Marked account_id as valid: ' + str(account_id))
 	return None
 
-
+## DEPRECIATED
 async def BS_player_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, playerQ : asyncio.Queue, worker_id : int, args : argparse.Namespace):
 	"""Async Worker to process the player queue for BlitzStars.com Player stats"""
 	dbc = db[DB_C_BS_PLAYER_STATS]
@@ -622,7 +634,7 @@ async def BS_player_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, p
 			playerQ.task_done()	
 	return None
 
-
+## DEPRECIATED
 async def BS_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, playerQ : asyncio.Queue, worker_id : int, args : argparse.Namespace):
 	"""Async Worker to fetch players' tank stats from BlitzStars.com"""
 	global stats_added
@@ -648,11 +660,6 @@ async def BS_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 				else:
 					stats = await bs.tank_stats2WG(stats)  ## Stats conversion
 					tank_stats = []
-
-# UNDER DEVELOPMENT          
-#					db_stats = await get_player_tank_stat_DB(db, account_id, ['tank_id', 'last_battle_time'])
-#					df_db_stats = json_normalize(db_stats)
-#					df_db_stats['release'] = pd.cut(df_db_stats.last_battle_time, blitz_releases.sort())
 
 					for tank_stat in stats:
 						#bu.debug(str(tank_stat))
@@ -693,22 +700,14 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 	field = 'tank_stats'
 
 	clr_error_log 	= args.run_error_log
-	force 			= args.force
 	
 	while True:
-		account_id = await playerQ.get()
-		bu.print_progress()
 		try:
-			#TBD: Check acccounts, fetch data, update accounts, even if not data fetched. 
+			account_id = await playerQ.get()
+			bu.debug('account_id=' + str(account_id) + ' fetching tank stats', worker_id)
+			bu.print_progress()
+					
 			url = None
-			if force:
-				bu.debug('account_id=' + str(account_id) + ' stats update forced', worker_id)
-			elif (len(await chk_accounts2update(db, account_id, field)) == 1 ):
-				bu.debug('account_id=' + str(account_id) + ' does not have Fresh-enough stats in the DB', worker_id)
-			else:	
-				bu.debug('account_id=' + str(account_id) + ' has Fresh-enough stats in the DB', worker_id)
-				continue
-
 			stats = await wg.get_player_tank_stats(account_id, cache=False)
 			if stats == None:
 				raise bu.StatsNotFound('WG API return NULL stats for ' + str(account_id))
@@ -722,7 +721,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 
 				if (last_battle_time > latest_battle):
 					latest_battle = last_battle_time 
-			#	RECOMMENDATION TO USE SINGLE INSERTS OVER MANY
+			# RECOMMENDATION TO USE SINGLE INSERTS OVER MANY
 			try: 
 				res = await dbc.insert_many(tank_stats, ordered=False)
 				tmp = len(res.inserted_ids)
@@ -756,47 +755,42 @@ async def WG_player_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, p
 	field = 'player_stats'
 
 	clr_error_log 	= args.run_error_log
-	force 			= args.force
 	
 	while True:
-		account_id = await playerQ.get()
-		bu.print_progress()
 		try:
-			#TBD: Check acccounts, fetch data, update accounts, even if not data fetched. 
+			account_id = await playerQ.get()
+			bu.print_progress()
+			bu.debug('account_id=' + str(account_id) + ' fetching player stats', worker_id)
+		
 			url = None
-			if (not force) and (len(await chk_accounts2update(db, account_id, field)) == 0 ):
-				bu.debug(' account_id=' + str(account_id) + ' has Fresh-enough stats in the DB', worker_id)
-			else:	
-				bu.debug('account_id=' + str(account_id) + ' does not have Fresh-enough stats in the DB', worker_id)
-				#url = wg.getUrlPlayerTankList(account_id)	
-				#bu.error('[' + str(worker_id) + ']: URL: ' + url)			
-				stats = await wg.get_player_stats(account_id, cache=False)
-				if stats == None:
-					raise bu.StatsNotFound('WG API return NULL stats for ' + str(account_id))
-				tank_stats = []
-				latest_battle = 0
-				for tank_stat in stats:
-					tank_id 			= tank_stat['tank_id']
-					last_battle_time 	= tank_stat['last_battle_time']
-					tank_stat['_id']  	= mk_id(account_id, tank_id, last_battle_time)
-					tank_stats.append(tank_stat)
+			
+			stats = await wg.get_player_stats(account_id, cache=False)
+			if stats == None:
+				raise bu.StatsNotFound('WG API return NULL stats for ' + str(account_id))
+			tank_stats = []
+			latest_battle = 0
+			for tank_stat in stats:
+				tank_id 			= tank_stat['tank_id']
+				last_battle_time 	= tank_stat['last_battle_time']
+				tank_stat['_id']  	= mk_id(account_id, tank_id, last_battle_time)
+				tank_stats.append(tank_stat)
 
-					if (last_battle_time > latest_battle):
-						latest_battle = last_battle_time 
-				#	RECOMMENDATION TO USE SINGLE INSERTS OVER MANY
-				try: 
-					res = await dbc.insert_many(tank_stats, ordered=False)
-					tmp = len(res.inserted_ids)
-					bu.debug(str(tmp) + ' stats added (insert_many() result)', worker_id)
-					stats_added += tmp
-					#stats_added += len(res.inserted_ids)					
-				except pymongo.errors.BulkWriteError as err:
-					tmp = err.details['nInserted']
-					bu.debug(str(tmp) + ' stats added', worker_id)
-					stats_added += tmp										
-				finally:
-					await update_stats_update_time(db, account_id, field, latest_battle)
-					bu.debug('Added stats for account_id=' + str(account_id), worker_id)	
+				if (last_battle_time > latest_battle):
+					latest_battle = last_battle_time 
+			#	RECOMMENDATION TO USE SINGLE INSERTS OVER MANY
+			try: 
+				res = await dbc.insert_many(tank_stats, ordered=False)
+				tmp = len(res.inserted_ids)
+				bu.debug(str(tmp) + ' stats added (insert_many() result)', worker_id)
+				stats_added += tmp
+				#stats_added += len(res.inserted_ids)					
+			except pymongo.errors.BulkWriteError as err:
+				tmp = err.details['nInserted']
+				bu.debug(str(tmp) + ' stats added', worker_id)
+				stats_added += tmp										
+			finally:
+				await update_stats_update_time(db, account_id, field, latest_battle)
+				bu.debug('Added stats for account_id=' + str(account_id), worker_id)	
 	
 		except bu.StatsNotFound as err:
 			bu.debug(str(err), id=worker_id)
@@ -819,7 +813,6 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 	field = 'player_achievements'
 
 	clr_error_log 	= args.run_error_log
-	force 			= args.force
 	
 	players = dict()
 	server = None
@@ -858,13 +851,10 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 		
 		try:
 			N_account_ids = len(account_ids)  # needed to keep count on finished tasks
-			if (not force) and (not clr_error_log):
-				account_ids = await chk_accounts2update(db, account_ids, field)
 			NOW = bu.NOW()	
 			stats = await wg.get_player_achievements(account_ids, cache=False)
 			if stats == None:
 				raise bu.StatsNotFound('WG API returned NULL stats')
-			#bu.debug(str(stats), id=worker_id)
 			# players_achivements = []			
 			for account_id in account_ids:
 				try:
@@ -873,14 +863,14 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 						raise bu.StatsNotFound("No stats found for account_id = " + str(account_id))
 					
 					stat 				= stats[str(account_id)]
-					stat['account_id'] 	= int(account_id)
+					stat['account_id'] 	= account_id
 					stat['updated'] 	= NOW
-					stat['_id'] 		= mk_id(int(account_id), 0, NOW)
+					stat['_id'] 		= mk_id(account_id, 0, NOW)
+					
+					# RECOMMENDATION TO USE SINGLE INSERTS OVER MANY
+					await dbc.insert_one(stat)					
 					
 					# players_achivements.append(stat)
-				
-					# RECOMMENDATION TO USE SINGLE INSERTS OVER MANY
-					await dbc.insert_one(stat)
 					# res = await dbc.insert_many(players_achivements, ordered=False)
 					# tmp = len(res.inserted_ids)
 					# bu.debug(str(tmp) + ' stats added (insert_many() result)', worker_id)
@@ -890,7 +880,7 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 				except Exception as err:
 					bu.debug(exception=err, id=worker_id)
 					bu.debug('Failed to store stats for account_id = ' + str(account_id), id=worker_id)
-					await log_error(db, int(account_id), field, clr_error_log)
+					await log_error(db, account_id, field, clr_error_log)
 				finally:
 					await update_stats_update_time(db, account_id, field, NOW)					
 		except bu.StatsNotFound as err:	
