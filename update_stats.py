@@ -860,7 +860,7 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 					
 					# RECOMMENDATION TO USE SINGLE INSERTS OVER MANY
 					await dbc.insert_one(stat)					
-					
+					stats_added += 1
 					# players_achivements.append(stat)
 					# res = await dbc.insert_many(players_achivements, ordered=False)
 					# tmp = len(res.inserted_ids)
