@@ -410,7 +410,7 @@ async def chk_accounts2update(db : motor.motor_asyncio.AsyncIOMotorDatabase, acc
 		NOW = bu.NOW()
 
 		# this should work since Python does not enforce type hints: https://docs.python.org/3/library/typing.html 
-		if type(account_ids) is int:
+		if isinstance(account_ids, int):
 			account_ids = list(account_ids)
 
 		cursor = dbc.find( { '$and' : [{ '_id' : { '$in': account_ids }}, \
