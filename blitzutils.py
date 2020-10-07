@@ -122,6 +122,7 @@ class ThrottledClientSession(aiohttp.ClientSession):
 
 
 class AsyncLogger():
+    """Async file logger"""
     def __init__(self) -> None: 
         self._queue = asyncio.Queue()
         self._task = None
@@ -151,18 +152,16 @@ class AsyncLogger():
             try:
                 msg = await self._queue.get()
                 await self._file.write(msg + '\n')
+                self._queue.task_done()
+            except asyncio.CancelledError as err:
+                return None
             except Exception as err:
                 error(exception=err)
-            finally:
-                self._queue.task_done()
-
+            
 
     def log(self, msg: str  = ''):
-        if self._queue != None:
-            self._queue.put_nowait(msg)
-        else:
-            error('Logger queue not set up')
-
+        self._queue.put_nowait(msg)
+        
 
     async def close(self):
         try:
@@ -256,12 +255,14 @@ def verbose_std(msg = "", id = None) -> bool:
 
 def warning(msg = "", id = None, force: bool = False) -> bool:
     """Print a warning message"""
-    return _print_log_msg('', 'Warning: ' + msg, None, id, print_msg= (force or (_log_level >= NORMAL)) )        
+    return _print_log_msg('Warning', msg, None, id, print_msg= (force or (_log_level >= NORMAL)) )        
 
 
 def debug(msg = "", id = None, exception = None, force: bool = False) -> bool:
     """print a conditional debug message"""
-    return _print_log_msg('DEBUG', msg, exception, id, print_msg=((_log_level >= DEBUG) or force))
+    if (_log_level >= DEBUG) or force:
+        return _print_log_msg('DEBUG', msg, exception, id)
+    return False
 
 
 def error(msg = "", exception = None, id = None) -> bool:
@@ -271,7 +272,7 @@ def error(msg = "", exception = None, id = None) -> bool:
 
 def log(msg = "", id = None, exception = None) -> bool:
     """print a conditional debug message"""
-    return _print_log_msg('LOG', msg=msg, exception=exception, id=id, print_msg=False)
+    return _print_log_msg('LOG', msg=msg, exception=exception, id=id, print_msg=(_log_level >= DEBUG))
 
 
 def _print_log_msg(prefix = 'LOG', msg = '', exception = None, id = None, print_msg : bool = True):
@@ -484,12 +485,11 @@ async def get_url_JSON(session: aiohttp.ClientSession, url: str, chk_JSON_func =
                 await asyncio.sleep(SLEEP)    
 
             except aiohttp.ClientError as err:
-                debug("Could not retrieve URL: " + url)
-                debug(str(err))
+                debug("Could not retrieve URL: " + url, exception=err)
             except asyncio.CancelledError as err:
-                debug('Queue gets cancelled while still working.')        
+                debug('Queue gets cancelled while still working.', exception=err)        
             except Exception as err:
-                debug('Unexpected Exception', err)
+                debug('Unexpected Exception', exception=err)
         debug("Could not retrieve URL: " + url)
         return None
 
