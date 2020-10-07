@@ -270,7 +270,7 @@ def error(msg = "", exception = None, id = None) -> bool:
 
 def log(msg = "", id = None, exception = None) -> bool:
     """print a conditional debug message"""
-    return _print_log_msg('LOG', msg=msg, exception=exception, id=id, print_msg=False)
+    return _print_log_msg('LOG', msg=msg, exception=exception, id=id, print_msg=(_log_level >= DEBUG))
 
 
 def _print_log_msg(prefix = 'LOG', msg = '', exception = None, id = None, print_msg : bool = True):
