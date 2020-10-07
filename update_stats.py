@@ -91,7 +91,7 @@ async def main(argv):
 			DB_CERT		= configDB.get('db_ssl_cert_file', DB_CERT)
 			DB_CA		= configDB.get('db_ssl_ca_file', DB_CA)
 	else:
-		print('WARNING:' + FILE_CONFIG + ' Config file not found')
+		bu.warning(FILE_CONFIG + ' Config file not found')
 
 	parser = argparse.ArgumentParser(description='Analyze Blitz replay JSONs from WoTinspector.com')
 	parser.add_argument('--mode', default='help', nargs='+', choices=list(UPDATE_FIELD.keys()) + [ 'tankopedia' ], help='Choose what to update')
@@ -205,19 +205,19 @@ async def main(argv):
 			## wait queues to finish --------------------------------------
 			
 			if len(Qcreator_tasks) > 0: 
-				bu.debug('Waiting for the work queue makers to finish')
+				bu.log('Waiting for the work queue makers to finish')
 				await asyncio.wait(Qcreator_tasks)
 
-			bu.debug('All active players added to the queue. Waiting for stat workers to finish')
+			bu.log('All active players added to the queue. Waiting for stat workers to finish')
 			for mode in UPDATE_FIELD:
 				await Q[mode].join()		
 
 			bu.finish_progress_bar()
 
-			bu.debug('All work queues empty. Cancelling workers')
+			bu.log('All work queues empty. Cancelling workers')
 			for task in worker_tasks:
 				task.cancel()
-			bu.debug('Waiting for workers to cancel')
+			bu.log('Waiting for workers to cancel')
 			if len(worker_tasks) > 0:
 				await asyncio.gather(*worker_tasks, return_exceptions=True)
 
@@ -245,7 +245,7 @@ async def get_active_players(db : motor.motor_asyncio.AsyncIOMotorDatabase, args
 	active_players = {}
 	if args.run_error_log:
 		for mode in get_stat_modes(args.mode):
-			active_players[mode] = await get_prev_errors(db, mode)
+			active_players[mode] = await get_players_errorlog(db, mode)
 	elif args.player_src == 'blitzstars':
 		bu.debug('src BlitzStars')
 		tmp_players = await get_active_players_BS(args)
@@ -369,7 +369,7 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 	bu.finish_progress_bar()
 	bu.set_progress_step(tmp_steps)
 	
-	bu.debug(str(len(account_ids)) + ' read from the DB')
+	bu.log(str(len(account_ids)) + ' read from the DB')
 	return account_ids
 
 
@@ -398,7 +398,7 @@ async def get_active_players_BS(args : argparse.Namespace):
 	return active_players
 				
 
-async def get_prev_errors(db : motor.motor_asyncio.AsyncIOMotorDatabase, mode :str):
+async def get_players_errorlog(db : motor.motor_asyncio.AsyncIOMotorDatabase, mode :str):
 	"""Get list of acccount_ids of the previous failed requests"""
 	dbc = db[DB_C_ERROR_LOG]
 	account_ids =  set()
@@ -733,7 +733,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 				await update_stats_update_time(db, account_id, stat_type, latest_battle)
 				debug_account_id(account_id, str(tmp) + 'Tank stats added', id=worker_id)			
 		except bu.StatsNotFound as err:
-			debug_account_id(account_id, exception=err, id=worker_id)
+			log_account_id(account_id, exception=err, id=worker_id)
 			await log_error(db, account_id, stat_type, clr_error_log, chk_invalid)
 		except Exception as err:
 			error_account_id(account_id, 'Unexpected error: ' + ((' URL: ' + url) if url!= None else ""), exception=err, id=worker_id)
@@ -783,7 +783,7 @@ async def WG_player_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, p
 				debug_account_id(account_id, 'Player stats added', id=worker_id)	
 	
 		except bu.StatsNotFound as err:
-			debug_account_id(account_id, exception=err, id=worker_id)
+			log_account_id(account_id, exception=err, id=worker_id)
 			await log_error(db, account_id, stat_type, clr_error_log)
 		except Exception as err:
 			error_account_id(account_id, 'Unexpected error: ' + ((' URL: ' + url) if url!= None else ""), exception=err, id=worker_id)
@@ -873,13 +873,16 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 					if chk_invalid:
 						set_account_valid(db, account_id)
 					await update_stats_update_time(db, account_id, stat_type, NOW)
+				except bu.StatsNotFound as err:	
+					log_account_id(account_id, exception=err, id=worker_id)
+					await log_error(db, account_id, stat_type, clr_error_log, chk_invalid)
 				except Exception as err:
-					debug_account_id(account_id, exception=err, id=worker_id)
-					debug_account_id(account_id, 'Failed to store player achievement stats', id=worker_id)
+					error_account_id(account_id, 'Failed to store stats', exception=err, id=worker_id)
+					#error_account_id(account_id, 'Failed to store player achievement stats', id=worker_id)
 					await log_error(db, account_id, stat_type, clr_error_log, chk_invalid)
 					
 		except bu.StatsNotFound as err:	
-			bu.debug(exception=err, id=worker_id)
+			bu.log('Error fetching player achievement stats', exception=err, id=worker_id)
 			for account_id in account_ids:
 				await log_error(db, account_id, stat_type, clr_error_log, chk_invalid)
 		except Exception as err:
