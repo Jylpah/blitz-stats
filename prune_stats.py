@@ -67,7 +67,7 @@ async def main(argv):
     
     args = parser.parse_args()
     bu.set_log_level(args.silent, args.verbose, args.debug)
-    bu.set_progress_step(1000)
+    bu.set_progress_step(100)
 
     
     try:
@@ -121,7 +121,7 @@ async def main(argv):
                             tasks.append(asyncio.create_task(analyze_tank_stats_WG(workers, db, u, tankQ)))
                             bu.debug('Task ' + str(workers) + ' started')
                             workers += 1
-                        elif 'player_achivements' in args.mode:
+                        if 'player_achivements' in args.mode:
                             tasks.append(asyncio.create_task(analyze_player_achievements_WG(workers, db, u)))
                             bu.debug('Task ' + str(workers) + ' started')
                             workers += 1                    
@@ -136,19 +136,21 @@ async def main(argv):
                         await asyncio.gather(*tasks, return_exceptions=True)
                     if tankQ.empty():
                         break
+                bu.finish_progress_bar()
+                print_stats_analyze(args.mode)
     
         # do the actual pruning and DELETE DATA
         if args.prune:
             bu.verbose_std('Starting to prune in 3 seconds. Press CTRL + C to CANCEL')
             for i in range(3):
-                print(str(i) + '  ', end='')
+                print(str(i) + '  ', end='', flush=True)
                 time.sleep(1)
             print('')
             await prune_stats(db, args)
-
+            print_stats_prune(args.mode)
+    except KeyboardInterrupt:
         bu.finish_progress_bar()
-        print_stats(args.mode)
-            
+        bu.verbose_std('\nExiting..')
     except asyncio.CancelledError as err:
         bu.error('Queue gets cancelled while still working.')
     except Exception as err:
@@ -231,11 +233,16 @@ async def mk_accountQ(db : motor.motor_asyncio.AsyncIOMotorDatabase, step: int =
     return accountQ
 
 
-def print_stats(stat_types : list = list()):
+def print_stats_analyze(stat_types : list = list()):
     for stat_type in stat_types:
         bu.verbose_std(stat_type + ': ' + str(DUPS_FOUND[stat_type]) + ' new duplicates found')
+        DUPS_FOUND[stat_type] = 0
+    
+
+def print_stats_prune(stat_types : list = list()):
     for stat_type in stat_types:
         bu.verbose_std(stat_type + ': ' + str(STATS_PRUNED[stat_type]) + ' duplicates removed')
+        STATS_PRUNED[stat_type] = 0
 
 
 async def analyze_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, update: dict, tankQ: asyncio.Queue):
@@ -354,11 +361,13 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argpa
     try:
         
         dbc = db[DB_C_STATS_2_DEL]
-        for stat_type in args.mode:            
+        for stat_type in args.mode:
+            bu.set_counter('Pruning stats: ' + stat_type + ': ')            
             dbc2prune = db[DB_COLLECTIONS[stat_type]]
-            cursor = dbc.find({'type' : stat_type})
+            cursor = dbc.find({'type' : stat_type}).batch_size(100)
             async for doc in cursor:
                 id = doc['id']
+                bu.print_progress()
                 try:
                     await dbc2prune.delete_one({'_id' : id})
                 except Exception as err:
@@ -368,6 +377,7 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argpa
                 except Exception as err:
                     bu.error(exception=err)
                 STATS_PRUNED[stat_type] += 1
+            bu.finish_progress_bar()
 
     except Exception as err:
         bu.error(exception=err)
