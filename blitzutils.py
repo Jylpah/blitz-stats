@@ -197,6 +197,22 @@ def set_log_level_normal():
     _log_level = NORMAL
 
 
+def is_debug() -> bool:
+    return _log_level == DEBUG
+
+
+def is_verbose() -> bool:
+    return _log_level == VERBOSE
+
+
+def is_normal() -> bool:
+    return _log_level == NORMAL
+
+
+def is_silent() -> bool:
+    return _log_level == SILENT
+
+
 def set_log_level(silent: bool,verbose: bool, debug: bool):
     global _log_level
     _log_level = NORMAL
