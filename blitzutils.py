@@ -390,7 +390,8 @@ def finish_progress_bar():
     """Finish and close progress bar object"""
     global _progress_obj
 
-    _progress_obj.finish()
+    if _progress_obj != None:
+        _progress_obj.finish()
     _progress_obj = None
     print_new_line()
 
