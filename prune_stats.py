@@ -9,7 +9,7 @@ from datetime import date
 import blitzutils as bu
 from blitzutils import BlitzStars
 
-N_WORKERS = 1
+N_WORKERS = 4
 MAX_RETRIES = 3
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
@@ -28,9 +28,9 @@ DB_C_TANK_STR			= 'WG_TankStrs'
 DB_C_ERROR_LOG			= 'ErrorLog'
 DB_C_UPDATE_LOG			= 'UpdateLog'
 
-MODES = {  'tank_stats'             : DB_C_TANK_STATS, 
-            'player_achievements'   : DB_C_PLAYER_ACHIVEMENTS 
-            }
+DB_COLLECTIONS = {  'tank_stats'             : DB_C_TANK_STATS, 
+                    'player_achievements'   : DB_C_PLAYER_ACHIVEMENTS 
+                }
 
 CACHE_VALID = 24*3600*7   # 7 days
 
@@ -43,7 +43,7 @@ STATS_START_DATE = datetime.datetime(2014,1,1)
 
 STATS_PRUNED = dict()
 DUPS_FOUND = dict()
-for mode in MODES:
+for mode in DB_COLLECTIONS.keys():
     STATS_PRUNED[mode]  = 0
     DUPS_FOUND[mode]    = 0
 
@@ -56,10 +56,10 @@ async def main(argv):
     os.chdir(os.path.dirname(sys.argv[0]))
 
     parser = argparse.ArgumentParser(description='Prune stats from the DB by update')
-    parser.add_argument('--mode', default='tank_stats', nargs='+', choices=MODES.keys(), help='Select type of stats to export')
+    parser.add_argument('--mode', default=['tank_stats'], nargs='+', choices=DB_COLLECTIONS.keys(), help='Select type of stats to export')
     parser.add_argument( '-n', '--no_analyze', 	action='store_true', default=False, help='Skip analyzing the database (default FALSE: i.e. to analyze)')
     parser.add_argument( '-p', '--prune', 	action='store_true', default=False, help='Actually Prune database i.e. DELETE DATA (default is FALSE)')
-    parser.add_argument('updates', metavar='X.Y [Z.D ...]', type=str, nargs='+', help='List of updates to prune')
+    parser.add_argument('updates', metavar='X.Y [Z.D ...]', type=str, nargs='*', help='List of updates to prune')
     arggroup = parser.add_mutually_exclusive_group()
     arggroup.add_argument( '-d', '--debug', 	action='store_true', default=False, help='Debug mode')
     arggroup.add_argument( '-v', '--verbose', 	action='store_true', default=False, help='Verbose mode')
@@ -104,16 +104,13 @@ async def main(argv):
             tasks = []
             updates = await mk_update_list(db, args.updates)
             tankQ = None
-            accountQ = None
             for u in updates:           
                 bu.verbose_std('Processing update ' + u['update'])
-                #if not bu.is_debug():
-                #    bu.set_counter('Stats processed: ')   
+                if bu.is_normal():
+                    bu.set_counter('Stats processed: ')   
                 while True:
                     if  'tank_stats' in args.mode:
                         tankQ    = await mk_tankQ(db)
-                    elif 'player_achivements' in args.mode:
-                        accountQ = await mk_accountQ(db)
 
                     workers = 0
                     while workers < N_WORKERS:
@@ -125,7 +122,7 @@ async def main(argv):
                             bu.debug('Task ' + str(workers) + ' started')
                             workers += 1
                         elif 'player_achivements' in args.mode:
-                            tasks.append(asyncio.create_task(prune_player_achievements_WG(workers, db, u, accountQ)))
+                            tasks.append(asyncio.create_task(prune_player_achievements_WG(workers, db, u)))
                             bu.debug('Task ' + str(workers) + ' started')
                             workers += 1                    
             
@@ -145,6 +142,7 @@ async def main(argv):
             bu.verbose_std('Starting to prune in 3 seconds. Press CTRL + C to CANCEL')
             for i in range(3):
                 print(str(i) + '  ', end='')
+                time.sleep(1)
             print('')
             await prune_stats(db, args)
 
@@ -154,7 +152,7 @@ async def main(argv):
     except asyncio.CancelledError as err:
         bu.error('Queue gets cancelled while still working.')
     except Exception as err:
-        bu.error('Unexpected Exception: ' + str(type(err)) + ' : ' + str(err))
+        bu.error('Unexpected Exception', exception=err)
 
     return None
 
@@ -163,8 +161,14 @@ async def mk_update_list(db : motor.motor_asyncio.AsyncIOMotorDatabase, updates2
     """Create update queue for database queries"""
 
     if (len(updates2process) == 0):
-        return None
+        bu.error('No updates given to prune')
+        return list()
     bu.debug(str(updates2process))
+    # if len(updates2process) == 1:
+    #     p_updates_since = re.compile('\\d+\\.\\d+\\+$')
+    #     if p_updates_since.match(updates2process[0]) != None:
+    #         updates2process[0] = updates2process[0][:-1]
+    #         updates_since = True
     updates2process = set(updates2process)
     updates = list()
     try:
@@ -173,14 +177,25 @@ async def mk_update_list(db : motor.motor_asyncio.AsyncIOMotorDatabase, updates2
         cursor = dbc.find( {} , { '_id' : 0 }).sort('Date', pymongo.ASCENDING )
         cut_off_prev = 0
         bu.debug('Iterating over updates')
+        first_update_found = False
         async for doc in cursor:
             cut_off = doc['Cut-off']
             update = doc['Release']
-            if update in updates2process:
+            if update + '+' in updates2process:
+                updates2process.remove(update + '+')
+                first_update_found = True
+            if update + '-' in updates2process:
+                updates2process = set()
+                # stop finding updates to prunes
+                break
+            if first_update_found or (update in updates2process):
                 if (cut_off == None) or (cut_off == 0):
                     cut_off = bu.NOW()
                 updates.append({'update': update, 'start': cut_off_prev, 'end': cut_off})
-                updates2process.remove(update)
+                try:
+                    updates2process.remove(update)
+                except KeyError as err:
+                    bu.debug('If using X.Y+ or X.Y- arguments KeyError is normal', exception=err)
             cut_off_prev = cut_off
 
     except Exception as err:
@@ -217,7 +232,7 @@ async def mk_accountQ(db : motor.motor_asyncio.AsyncIOMotorDatabase, step: int =
 
 def print_stats(stat_types : list = list()):
     for stat_type in stat_types:
-        bu.verbose_std(stat_type + ': ' + str(DUPS_FOUND[stat_type]) + ' duplicates found')
+        bu.verbose_std(stat_type + ': ' + str(DUPS_FOUND[stat_type]) + ' new duplicates found')
     for stat_type in stat_types:
         bu.verbose_std(stat_type + ': ' + str(STATS_PRUNED[stat_type]) + ' duplicates removed')
 
@@ -226,6 +241,7 @@ async def prune_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMoto
     """Async Worker to fetch player tank stats"""
     dbc = db[DB_C_TANK_STATS]
     mode = 'tank_stats'
+
     try:
         start   = update['start']
         end     = update['end']
@@ -249,7 +265,8 @@ async def prune_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMoto
             entry_prev = mk_log_entry(mode, account_id_prev, -1, -1)        
             dups_counter = 0
             async for doc in cursor:
-                # bu.print_progress()
+                if bu.is_normal():
+                    bu.print_progress()
                 account_id = doc['account_id']
                 if bu.is_debug():
                     entry = mk_log_entry(mode, account_id, doc['last_battle_time'], doc['tank_id'])
@@ -259,7 +276,7 @@ async def prune_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMoto
                         bu.debug('Duplicate found: --------------------------------')
                         bu.debug(entry + ' : Old (to be deleted)')
                         bu.debug(entry_prev + ' : Newer')
-                    await add_stat2del(workerID, db, DB_C_TANK_STATS, doc['_id'])
+                    await add_stat2del(workerID, db, mode, doc['_id'])
                     dups_counter += 1
                 account_id_prev = account_id 
                 if bu.is_debug():
@@ -268,7 +285,7 @@ async def prune_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMoto
         except Exception as err:
             bu.error('Unexpected Exception: ' + str(type(err)) + ' : ' + str(err), id=workerID)
         finally:
-            bu.verbose_std('Tank_id=' + str(tank_id) + ' processed: ' + str(dups_counter) + ' duplicates found', id = workerID)
+            bu.debug('Tank_id=' + str(tank_id) + ' processed: ' + str(dups_counter) + ' duplicates found', id = workerID)
             tankQ.task_done()
 
     return None
@@ -291,7 +308,8 @@ async def prune_player_achievements_WG(workerID: int, db: motor.motor_asyncio.As
         entry_prev = mk_log_entry(mode, account_id_prev, -1)
         dups_counter = 0       
         async for doc in cursor:    
-            bu.print_progress()
+            if bu.is_normal():
+                bu.print_progress()
             account_id = doc['account_id']
             if bu.is_debug():
                 entry = mk_log_entry(mode, account_id, doc['last_battle_time'])
@@ -301,7 +319,7 @@ async def prune_player_achievements_WG(workerID: int, db: motor.motor_asyncio.As
                     bu.debug('Duplicate found: --------------------------------')
                     bu.debug(entry + ' : Old (to be deleted)')
                     bu.debug(entry_prev + ' : Newer')
-                await add_stat2del(workerID, db, DB_C_PLAYER_ACHIVEMENTS, doc['_id'])
+                await add_stat2del(workerID, db, mode, doc['_id'])
                 dups_counter += 1                
             account_id_prev = account_id
             if bu.is_debug():
@@ -310,18 +328,18 @@ async def prune_player_achievements_WG(workerID: int, db: motor.motor_asyncio.As
     except Exception as err:
         bu.error('Unexpected Exception', exception=err, id=workerID)
     finally:
-        bu.verbose_std( mode + ': ' + str(dups_counter) + ' duplicates found for update ' + update, id = workerID)          
+        bu.debug( mode + ': ' + str(dups_counter) + ' duplicates found for update ' + update, id = workerID)          
 
     return None
 
 
-async def add_stat2del(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, stats_type: str, id: str):
+async def add_stat2del(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, stat_type: str, id: str):
     """Adds _id of the stat record to be deleted in into DB_C_STATS_2_DEL"""
     global DUPS_FOUND
     dbc = db[DB_C_STATS_2_DEL]
     try:
-        await dbc.insert_one({'type': stats_type, 'id': id})
-        DUPS_FOUND[stats_type] += 1
+        await dbc.insert_one({'type': stat_type, 'id': id})
+        DUPS_FOUND[stat_type] += 1
     except Exception as err:
         bu.error(exception=err, id=workerID)
     return None
@@ -331,16 +349,21 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argpa
     """Execute DB pruning and DELETING DATA"""
     global STATS_PRUNED
     try:
-        bu.error('NOT TESTED YET')
-        sys.exit(1)
+        
         dbc = db[DB_C_STATS_2_DEL]
         for stat_type in args.mode:            
-            dbc2prune = db[stat_type]
+            dbc2prune = db[DB_COLLECTIONS[stat_type]]
             cursor = dbc.find({'type' : stat_type})
             async for doc in cursor:
                 id = doc['id']
-                await dbc2prune.delete_one({'_id' : id})
-                await dbc.delete_one({ 'id' : id })
+                try:
+                    await dbc2prune.delete_one({'_id' : id})
+                except Exception as err:
+                    bu.error('Failed to delete duplicate _id=' + id, exception=err)
+                try:
+                    await dbc.delete_one({ '_id' : doc['_id'] })
+                except Exception as err:
+                    bu.error(exception=err)
                 STATS_PRUNED[stat_type] += 1
 
     except Exception as err:
