@@ -118,11 +118,11 @@ async def main(argv):
                         #     bu.error('NOT IMPLEMENTED YET')
                         #     tasks.append(asyncio.create_task(prune_player_stats_WG(i, db, tankQ, start, end)))
                         if  'tank_stats' in args.mode:
-                            tasks.append(asyncio.create_task(prune_tank_stats_WG(workers, db, u, tankQ)))
+                            tasks.append(asyncio.create_task(analyze_tank_stats_WG(workers, db, u, tankQ)))
                             bu.debug('Task ' + str(workers) + ' started')
                             workers += 1
                         elif 'player_achivements' in args.mode:
-                            tasks.append(asyncio.create_task(prune_player_achievements_WG(workers, db, u)))
+                            tasks.append(asyncio.create_task(analyze_player_achievements_WG(workers, db, u)))
                             bu.debug('Task ' + str(workers) + ' started')
                             workers += 1                    
             
@@ -192,10 +192,11 @@ async def mk_update_list(db : motor.motor_asyncio.AsyncIOMotorDatabase, updates2
                 if (cut_off == None) or (cut_off == 0):
                     cut_off = bu.NOW()
                 updates.append({'update': update, 'start': cut_off_prev, 'end': cut_off})
-                try:
-                    updates2process.remove(update)
+                try: 
+                    if not first_update_found:
+                        updates2process.remove(update)
                 except KeyError as err:
-                    bu.debug('If using X.Y+ or X.Y- arguments KeyError is normal', exception=err)
+                    bu.error(exception=err)
             cut_off_prev = cut_off
 
     except Exception as err:
@@ -237,7 +238,7 @@ def print_stats(stat_types : list = list()):
         bu.verbose_std(stat_type + ': ' + str(STATS_PRUNED[stat_type]) + ' duplicates removed')
 
 
-async def prune_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, update: dict, tankQ: asyncio.Queue):
+async def analyze_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, update: dict, tankQ: asyncio.Queue):
     """Async Worker to fetch player tank stats"""
     dbc = db[DB_C_TANK_STATS]
     mode = 'tank_stats'
@@ -255,9 +256,9 @@ async def prune_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMoto
             tank_id = await tankQ.get()
             bu.debug(str(tankQ.qsize())  + ' tanks to process', id=workerID)
                 
-            pipeline = [ {'$match': { '$and': [  {'tank_id': tank_id }, {'last_battle_time': {'$lte': end}}, {'last_battle_time': {'$gt': start}} ] }},
-                         { '$project' : { 'account_id' : 1, 'tank_id' : 1, 'last_battle_time' : 1}},
-                         { '$sort': {'account_id': 1, 'last_battle_time': -1} }
+            pipeline = [    {'$match': { '$and': [  {'tank_id': tank_id }, {'last_battle_time': {'$lte': end}}, {'last_battle_time': {'$gt': start}} ] }},
+                            { '$project' : { 'account_id' : 1, 'tank_id' : 1, 'last_battle_time' : 1}},
+                            { '$sort': {'account_id': 1, 'last_battle_time': -1} }
                         ]
             cursor = dbc.aggregate(pipeline, allowDiskUse=True)
 
@@ -291,7 +292,7 @@ async def prune_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMoto
     return None
 
 
-async def prune_player_achievements_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, update: dict):
+async def analyze_player_achievements_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, update: dict):
     """Async Worker to fetch player achievement stats"""
     dbc = db[DB_C_PLAYER_ACHIVEMENTS]
     mode = 'player_achievements'
@@ -300,8 +301,10 @@ async def prune_player_achievements_WG(workerID: int, db: motor.motor_asyncio.As
         end     = update['end']
         update  = update['update']
         
-        pipeline = [ {'$match': { '$and': [  {'updated': {'$lte': end}}, {'updated': {'$gt': start}} ] }},
-                        {'$sort': {'account_id': 1, 'updated': -1} } ]
+        pipeline = [    {'$match': { '$and': [  {'updated': {'$lte': end}}, {'updated': {'$gt': start}} ] }},
+                        { '$project' : { 'account_id' : 1, 'last_battle_time' : 1}},
+                        { '$sort': {'account_id': 1, 'updated': -1} } 
+                    ]
         cursor = dbc.aggregate(pipeline, allowDiskUse=True)
 
         account_id_prev = -1 
