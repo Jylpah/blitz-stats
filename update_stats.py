@@ -9,7 +9,7 @@ from blitzutils import BlitzStars, WG
 
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
-N_WORKERS = 40
+N_WORKERS = 50
 MAX_RETRIES = 3
 CACHE_VALID = 5   # 5 days
 #MIN_UPDATE_INTERVAL = 7*24*3600 # 7 days
@@ -125,7 +125,7 @@ async def main(argv):
 		
 	try:		
 		bs = BlitzStars()
-		wg = WG(WG_APP_ID, rate_limit=WG_RATE_LIMIT)
+		wg = WG(WG_APP_ID, rate_limit=WG_RATE_LIMIT, global_rate_limit=False)
 
 		#### Connect to MongoDB
 		if (DB_USER==None) or (DB_PASSWD==None):
@@ -165,7 +165,7 @@ async def main(argv):
 			for mode in set(args.mode) & set(UPDATE_FIELD.keys()):
 				tmp_progress_max += len(active_players[mode])
 			# bu.print_new_line()
-			bu.set_progress_bar('Fetching stats:', tmp_progress_max, 25, True)
+			bu.set_progress_bar('Fetching stats:', tmp_progress_max, 50, True)
 
 			for mode in UPDATE_FIELD:
 				Q[mode] = asyncio.Queue()
@@ -225,6 +225,7 @@ async def main(argv):
 				# only for full stats
 				log_update_time(db, args.mode)
 			print_update_stats(args.mode)
+			wg.print_request_stats()
 			print_date('DB update ended', start_time)
 			bu.print_new_line(True)
 	except asyncio.CancelledError as err:
@@ -265,8 +266,10 @@ async def get_active_players(db : motor.motor_asyncio.AsyncIOMotorDatabase, args
 			for mode in get_stat_modes_BS(args.mode):
 				bu.debug('Getting players from BS: ' + mode)
 				active_players[mode] = tmp_players
+		
 		for mode in active_players.keys():
 			random.shuffle(active_players[mode])
+	
 	return active_players
 
 
@@ -695,7 +698,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 	chk_invalid		= args.chk_invalid
 	clr_error_log 	= args.run_error_log
 	
-	while True:
+	while not playerQ.empty():
 		try:
 			account_id = await playerQ.get()
 			debug_account_id(account_id, 'Fetching tank stats', id=worker_id)
@@ -741,6 +744,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 		finally:			
 			playerQ.task_done()	
 	return None
+
 
 ## NOT IMPLEMENTED YET
 async def WG_player_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, playerQ : asyncio.Queue, worker_id : int, args : argparse.Namespace):
