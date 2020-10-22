@@ -37,42 +37,52 @@ class ThrottledClientSession(aiohttp.ClientSession):
     """Rate-throttled client session class inherited from aiohttp.ClientSession)""" 
     MIN_SLEEP = 0.1
 
-    def __init__(self, rate_limit: float =None, *args,**kwargs) -> None: 
+    def __init__(self, rate_limit: float = None, *args,**kwargs) -> None: 
         super().__init__(*args,**kwargs)
-        self.rate_limit = rate_limit
+        self.rate_limit = None
         self._fillerTask = None
         self._queue = None
+        self._start_time = None
+        self._count = 0
+        self._start_time = time.time()
 
         if rate_limit != None:
             if rate_limit <= 0:
                 raise ValueError('rate_limit must be positive')
+            self.rate_limit = rate_limit
             #(increment, sleep) = self._get_rate_increment()            
             self._queue = asyncio.Queue(min(2, int(rate_limit)+1))
             # self._fillerTask = asyncio.create_task(self._filler(rate_limit))
             self._fillerTask = asyncio.create_task(self._filler())
-        self._start_time = time.time()
-        self._count = 0
+        
      
 
     def _get_sleep(self) -> list:
-        return max(1/self.rate_limit, self.MIN_SLEEP)
+        if self.rate_limit != None:
+            return max(1/self.rate_limit, self.MIN_SLEEP)
+        return None
 
 
     def get_rate(self) -> float:
         """Return rate of requests"""
-        if self._start_time != None:
-            return self._count / (time.time() - self._start_time)
-        else:
-            return None
+        return self._count / (time.time() - self._start_time)
 
-    def print_stats(self):
+
+    def get_stats(self):
+        """Get session statistics"""
+        res = {'rate' : self.get_rate(), 'rate_limit': self.rate_limit, 'count' : self._count }
+        return res
+        
+
+    def get_stats_str(self):
         """Print session statistics"""
-        return 'rate limit: ' + str(self.rate_limit) + ' rate: ' +  "{0:.1f}".format(self.get_rate()) + ' requests: ' + str(self._count)
+        return 'rate limit: ' + str(self.rate_limit if self.rate_limit != None else '-') + \
+                ' rate: ' +  "{0:.1f}".format(self.get_rate()) + ' requests: ' + str(self._count)
 
 
     def reset_counters(self):
         """Reset rate counters and return current results"""
-        res = {'rate' : self.get_rate(), 'rate_limit': self.rate_limit, 'count' : self._count }
+        res = self.get_stats()
         self._start_time = time.time()
         self._count = 0
         return res
@@ -88,9 +98,7 @@ class ThrottledClientSession(aiohttp.ClientSession):
     async def close(self) -> None:
         """Close rate-limiter's "bucket filler" task"""
         # DEBUG 
-        if self._start_time != None:
-            duration = time.time() - self._start_time
-            debug('Average WG API request rate: ' + '{:.1f}'.format(self._count / duration) + ' / sec')
+        debug(self.get_stats_str())
         if self._fillerTask != None:
             self._fillerTask.cancel()
         try:
@@ -131,16 +139,11 @@ class ThrottledClientSession(aiohttp.ClientSession):
             error(exception=err)
 
 
-    async def _allow(self) -> None:
+    async def _request(self, *args,**kwargs):
+        """Throttled _request()"""
         if self._queue != None:
             await self._queue.get()
             self._queue.task_done()
-        return None
-
-
-    async def _request(self, *args,**kwargs):
-        """Throttled _request()"""
-        await self._allow()
         self._count += 1
         return await super()._request(*args,**kwargs)
 
@@ -1149,10 +1152,10 @@ class WG:
     def print_request_stats(self):
         """Print session statics"""
         if self.global_rate_limit:
-            verbose_std('Globar rate limit: ' + self.session.print_stats())
+            verbose_std('Globar rate limit: ' + self.session.get_stats_str())
         else:
             for server in self.session:
-                verbose_std('Per server rate limits: '  + server + ': '+ self.session[server].print_stats())
+                verbose_std('Per server rate limits: '  + server + ': '+ self.session[server].get_stats_str())
 
 
     async def get_url_JSON(self, url: str, chk_JSON_func = None, max_tries = MAX_RETRIES) -> dict:
