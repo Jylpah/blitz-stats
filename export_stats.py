@@ -55,10 +55,11 @@ async def main(argv):
 
     parser = argparse.ArgumentParser(description='Retrieve player stats from the DB')
     parser.add_argument('-f', '--filename', type=str, default=None, help='Filename to write stats into')
-    parser.add_argument('--mode', default='help', choices=['player_stats', 'tank_stats', 'tankopedia'], help='Select type of stats to export')
+    parser.add_argument('--mode', default='help', choices=['tank_stats', 'tankopedia', 'accounts', 'player_stats_BS'], help='Select type of stats to export')
     parser.add_argument('--type', default='period', choices=['period', 'cumulative', 'newer', 'auto'], help='Select export type. \'auto\' exports periodic stats, but cumulative for the oldest one')
     parser.add_argument( '-a', '--all', 	action='store_true', default=False, help='Export all the stats instead of the latest per period')
     parser.add_argument('--tier', type=int, default=None, help='Filter tanks based on tier')
+    parser.add_argument('--sample', type=int, default=0, help='Sample size')
     parser.add_argument('--date_delta', type=int, default=DATE_DELTA, help='Date delta from the date')
     arggroup = parser.add_mutually_exclusive_group()
     arggroup.add_argument( '-d', '--debug', 	action='store_true', default=False, help='Debug mode')
@@ -103,6 +104,11 @@ async def main(argv):
                 args.filename = 'tanks.json'
             args.filename = bu.rebase_file_args(current_dir, args.filename)
             await export_tankopedia(db, args)
+        elif args.mode == 'accounts':
+            if args.filename == None:
+                args.filename = 'accounts.json'
+            args.filename = bu.rebase_file_args(current_dir, args.filename)
+            await export_accounts(db, args)
         else:
             args.filename = bu.rebase_file_args(current_dir, args.filename)
             periodQ = await mk_periodQ(args.dates, args.type)
@@ -220,6 +226,47 @@ async def export_tankopedia(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: 
     except Exception as err:
         bu.error(exception=err)
     return
+
+
+async def export_accounts(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace):
+    """Export account_ids"""
+    global STATS_EXPORTED
+    
+    try:
+        dbc = db[DB_C_ACCOUNTS]
+        sample = args.sample
+        filename = args.filename
+        
+        pipeline = [ 	{'$match': {  '$and' : [ { '_id': { '$lt': 31e8 } }, 
+												{ 'invalid': { '$exists': False} }												 
+												] } }						
+					]
+        if sample > 0:
+            pipeline.append({'$sample': {'size' : sample} })
+        
+        cursor = dbc.aggregate(pipeline, allowDiskUse=False)
+        
+        export = dict()
+        export['meta'] = { 'count': 0 }
+        account_ids = list()
+        count = 0
+        async for player in cursor:
+            account_ids.append(int(player['_id']))
+            count += 1
+            STATS_EXPORTED += 1
+        export['account_ids'] = account_ids
+        export['meta']['count'] = count
+
+    except Exception as err:
+        bu.error(exception=err)
+    
+    try:
+        async with aiofiles.open(filename, 'w', encoding="utf8") as fp:
+            await fp.write(json.dumps(export, indent=4, ensure_ascii=False))
+    except Exception as err:
+        bu.error(exception=err)
+    return
+
 
 async def q_tank_stats_BS(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, periodQ: asyncio.Queue, filename: str, tier=None):
     """Async Worker to fetch tank stats"""
