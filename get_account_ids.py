@@ -31,7 +31,7 @@ wi = None
 bs = None
 WI_STOP_SPIDER = False
 WI_old_replay_N = 0
-WI_old_replay_limit = 50
+WI_old_replay_limit = 25
 
 ## main() -------------------------------------------------------------
 
@@ -93,7 +93,7 @@ async def main(argv):
 	parser.add_argument('--db', 				action='store_true', default=False, help='Get account_ids from the database in case previous runs got interrupted')
 
 	parser.add_argument('--max', '--max_pages', dest='max_pages', type=int, default=MAX_PAGES, help='Maximum number of WoTinspector.com pages to spider')
-	parser.add_argument('--start', '--start_page', dest='start_page', type=int, default=1, help='Start page to start spidering of WoTinspector.com')
+	parser.add_argument('--start', '--start_page', dest='start_page', type=int, default=0, help='Start page to start spidering of WoTinspector.com')
 	parser.add_argument('files', metavar='FILE1 [FILE2 ...]', type=str, nargs='*', help='Files to read. Use \'-\' for STDIN')
 
 	args = parser.parse_args()
@@ -354,6 +354,7 @@ async def get_players_WI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: ar
 	for page in range(start_page,(start_page + max_pages)):
 		if WI_STOP_SPIDER: 
 			bu.debug('Stopping spidering WoTispector.com')
+			await empty_queue(replayQ, 'Replay Queue')
 			break
 		# url = wi.get_url_replay_listing(page)
 		bu.print_progress(id = "spider")
@@ -377,7 +378,6 @@ async def get_players_WI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: ar
 	n_replays = replayQ.qsize()
 	bu.set_progress_bar('Fetching replays', n_replays, step = 5, id = 'replays')
 
-
 	bu.debug('Replay links read. Replay Fetchers to finish')
 	await replayQ.join()
 	bu.finish_progress_bar()
@@ -390,55 +390,57 @@ async def get_players_WI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: ar
 
 	return players
 
-async def WI_old_replay_found(queue : asyncio.Queue):
-	global WI_old_replay_N
+async def WI_old_replay_found():
+	global WI_old_replay_N, WI_STOP_SPIDER
 	WI_old_replay_N +=1
 	if WI_old_replay_N == WI_old_replay_limit:
-		bu.verbose_std("\n" + str(WI_old_replay_limit) + ' old replays spidered. Stopping')
-		await empty_queue(queue, 'Replay Queue') 
-	return True
+		bu.verbose_std("\n" + str(WI_old_replay_N) + ' old replays spidered. Stopping spidering.')
+		WI_STOP_SPIDER = True		 
+		return True
+	return False
 
 async def WI_replay_fetcher(db : motor.motor_asyncio.AsyncIOMotorDatabase, queue : asyncio.Queue, workerID : int, force : bool):
 	players = set()
 	dbc = db[DB_C_REPLAYS]
-	msg_str = 'Replay Fetcher[' + str(workerID) + ']: '
-	
-	try:
-		while True:
+
+	while True:
+		try:
+			replay_link = None
 			replay_link = await queue.get()
 			bu.print_progress(id = 'replays')
 			replay_id = wi.get_replay_id(replay_link)
 			res = await dbc.find_one({'_id': replay_id})
 			if res != None:
-				bu.debug(msg_str + 'Replay already in the DB: ' + str(replay_id) )
-				queue.task_done()
+				bu.debug('Replay already in the DB: ' + str(replay_id) , id=workerID)
 				if force:
 					continue
 				else: 
-					await WI_old_replay_found(queue)					
+					await WI_old_replay_found()					
 					continue
 			url = wi.get_url_replay_view(replay_id)
 			json_resp = await wi.get_replay_JSON(replay_id)
 			
 			if json_resp == None:
-				bu.debug(msg_str + 'Could not fetch valid Replay JSON: ' + url)
-				queue.task_done()
+				bu.debug('Could not fetch valid Replay JSON: ' + url, id=workerID)
 				continue
 			json_resp['_id'] = replay_id
 			try:
 				await dbc.insert_one(json_resp)
-				bu.debug(msg_str + 'Replay added to database')
+				bu.debug('Replay added to database', id=workerID)
 			except Exception as err:
-				bu.error(msg_str + 'Unexpected Exception: ' + str(type(err)) + ' : ' + str(err)) 
+				bu.error('Unexpected Exception', exception=err, id=workerID) 
 			players.update(await parse_account_ids(json_resp))
-			bu.debug(msg_str + 'Processed replay: ' + url )
-			queue.task_done()
+			bu.debug('Processed replay: ' + url , id=workerID)
 			await asyncio.sleep(SLEEP)
+		except asyncio.CancelledError:
+			break
+		except Exception as err:
+			bu.error('Unexpected Exception', exception=err, id=workerID) 
+		finally:
+			if replay_link != None:
+				queue.task_done()	
+	return players
 	
-	except asyncio.CancelledError:		
-		return players
-	except Exception as err:
-		bu.error('Replay Fetcher[' + str(workerID) + ']: Unexpected Exception: ' + str(type(err)) + ' : ' + str(err)) 
 
 async def empty_queue(queue : asyncio.Queue, Qname = ''):
 	"""Empty the task queue"""
