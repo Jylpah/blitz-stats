@@ -102,7 +102,7 @@ class ThrottledClientSession(aiohttp.ClientSession):
         if self._fillerTask != None:
             self._fillerTask.cancel()
         try:
-            await asyncio.wait_for(self._fillerTask, timeout= 2)
+            await asyncio.wait_for(self._fillerTask, timeout= 0.5)
         except asyncio.TimeoutError as err:
             error(exception=err)
         await super().close()
@@ -886,6 +886,16 @@ class WG:
 
 
     @classmethod
+	def get_tank_name(cls, tank_str: str) -> str:
+        """Return tank name from short tank string in replays"""
+        try:
+            return cls.tanks["userStr"][tank_str]
+        except:
+            error('Tank ' + tank_str + ' not found')
+        return tank_str
+
+
+    @classmethod										 
     def get_tank_user_strs(cls) -> str:
         return cls.tanks["userStr"].keys()
 
@@ -1627,6 +1637,7 @@ class WoTinspector:
             error('Unexpected Exception', err) 
             return None
 
+
     async def post_replay(self,  data, filename = 'Replay', account_id = 0, title = 'Replay', priv = False, N = None):
         try:
             N = N if N != None else self.REPLAY_N
@@ -1706,7 +1717,7 @@ class WoTinspector:
             replay_links = set()
             for tag in links:
                 link = tag.get('href',None)
-                if (link is not None) and (link.startswith(cls.URL_REPLAY_DL)):
+                if (link is not None) and link.startswith(cls.URL_REPLAY_DL):
                     replay_links.add(link)
                     debug('Adding replay link:' + link)
         except Exception as err:
