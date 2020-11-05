@@ -20,6 +20,7 @@ WG_APP_ID = 'cd770f38988839d7ab858d1cbe54bdd0'
 FILE_CONFIG = 'blitzstats.ini'
 FILE_ACTIVE_PLAYERS='activeinlast30days.json'
 
+# MongoDB collections for storing stats
 DB_C_ACCOUNTS   		= 'WG_Accounts'
 DB_C_PLAYER_STATS		= 'WG_PlayerStats'
 DB_C_PLAYER_ACHIVEMENTS	= 'WG_PlayerAchievements'
@@ -31,6 +32,7 @@ DB_C_TANK_STR			= 'WG_TankStrs'
 DB_C_ERROR_LOG			= 'ErrorLog'
 DB_C_UPDATE_LOG			= 'UpdateLog'
 
+## Matches --mode param
 UPDATE_FIELD = {'tank_stats'			: 'updated_WGtankstats',
 				'player_stats'			: 'updated_WGplayerstats',
 				'player_achievements'	: 'updated_WGplayerachievements'
@@ -57,6 +59,7 @@ async def main(argv):
 	WG_RATE_LIMIT	= 20  ## WG standard. Do not edit unless you have your
 						  ## own server app ID, it will REDUCE the performance
 	
+	# DB defaults
 	DB_SERVER 	= 'localhost'
 	DB_PORT 	= 27017
 	DB_SSL		= False
@@ -730,7 +733,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 				stats_added += tmp										
 			finally:
 				if clr_error_log:
-					clear_error_log(db, account_id, stat_type)
+					await clear_error_log(db, account_id, stat_type)
 				if chk_invalid:
 					set_account_valid(db, account_id)
 				await update_stats_update_time(db, account_id, stat_type, latest_battle)
@@ -780,7 +783,7 @@ async def WG_player_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, p
 		
 			finally:
 				if clr_error_log:
-					clear_error_log(db, account_id, stat_type)
+					await clear_error_log(db, account_id, stat_type)
 				if chk_invalid:
 					set_account_invalid(db, account_id)
 				await update_stats_update_time(db, account_id, stat_type, last_battle_time)
@@ -873,7 +876,7 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 					# #stats_added += len(res.inserted_ids)	
 					debug_account_id(account_id, 'stats added', id=worker_id)
 					if clr_error_log:
-						clear_error_log(db, account_id, stat_type)
+						await clear_error_log(db, account_id, stat_type)
 					if chk_invalid:
 						set_account_valid(db, account_id)
 					await update_stats_update_time(db, account_id, stat_type, NOW)
