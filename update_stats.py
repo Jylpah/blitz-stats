@@ -423,6 +423,7 @@ async def chk_accounts2update(db : motor.motor_asyncio.AsyncIOMotorDatabase, acc
 	"""Check whether the DB has fresh enough stats for the account_id & stat_type"""
 	dbc = db[DB_C_ACCOUNTS]
 	try:
+		bu.verbose_std('chk_accounts2update() is depreciated')
 		update_field = UPDATE_FIELD[stat_type]
 		NOW = bu.NOW()
 
