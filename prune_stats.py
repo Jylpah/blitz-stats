@@ -121,7 +121,7 @@ async def main(argv):
                 workers = 0
                 # Does not work in parallel        
                 if MODE_PLAYER_ACHIEVEMENTS in args.mode:
-                    tasks.append(asyncio.create_task(analyze_player_achievements_WG(workers, db, u)))
+                    tasks.append(asyncio.create_task(analyze_player_achievements_WG(workers, db, u, args.prune)))
                     bu.debug('Task ' + str(workers) + ' started: analyze_player_achievements_WG()')
                     workers += 1
                 if MODE_PLAYER_STATS in args.mode:
@@ -131,7 +131,7 @@ async def main(argv):
                     workers += 1
                 while workers < N_WORKERS:
                     if MODE_TANK_STATS in args.mode:
-                        tasks.append(asyncio.create_task(analyze_tank_stats_WG(workers, db, u, tankQ)))
+                        tasks.append(asyncio.create_task(analyze_tank_stats_WG(workers, db, u, tankQ, args.prune)))
                         bu.debug('Task ' + str(workers) + ' started: analyze_tank_stats_WG()')
                     workers += 1    # Can do this since only MODE_TANK_STATS is running in parallel                   
                 
@@ -259,7 +259,7 @@ def print_stats_prune(stat_types : list = list()):
         STATS_PRUNED[stat_type] = 0
 
 
-async def analyze_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, update: dict, tankQ: asyncio.Queue):
+async def analyze_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, update: dict, tankQ: asyncio.Queue, prune : bool = False):
     """Async Worker to fetch player tank stats"""
     dbc = db[DB_C_TANK_STATS]
     stat_type = MODE_TANK_STATS
@@ -298,7 +298,7 @@ async def analyze_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMo
                         bu.debug('Duplicate found: --------------------------------', id=workerID)
                         bu.debug(entry + ' : Old (to be deleted)', id=workerID)
                         bu.debug(entry_prev + ' : Newer', id=workerID)
-                    await add_stat2del(workerID, db, stat_type, doc['_id'])
+                    await add_stat2del(workerID, db, stat_type, doc['_id'], prune)
                     dups_counter += 1
                 account_id_prev = account_id 
                 if bu.is_debug():
@@ -313,7 +313,7 @@ async def analyze_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMo
     return None
 
 
-async def analyze_player_achievements_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, update: dict):
+async def analyze_player_achievements_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, update: dict, prune : bool = False):
     """Async Worker to fetch player achievement stats"""
     dbc = db[DB_C_PLAYER_ACHIVEMENTS]
     stat_type = MODE_PLAYER_ACHIEVEMENTS
@@ -344,7 +344,7 @@ async def analyze_player_achievements_WG(workerID: int, db: motor.motor_asyncio.
                     bu.debug('Duplicate found: --------------------------------', id=workerID)
                     bu.debug(entry + ' : Old (to be deleted)', id=workerID)
                     bu.debug(entry_prev + ' : Newer', id=workerID)
-                await add_stat2del(workerID, db, stat_type, doc['_id'])
+                await add_stat2del(workerID, db, stat_type, doc['_id'], prune)
                 dups_counter += 1                
             account_id_prev = account_id
             if bu.is_debug():
@@ -362,13 +362,19 @@ async def analyze_player_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIO
     bu.error('NOT IMPLEMENTED YET')
     pass
 
-async def add_stat2del(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, stat_type: str, id: str):
+async def add_stat2del(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, stat_type: str, id: str, prune : bool = False):
     """Adds _id of the stat record to be deleted in into DB_C_STATS_2_DEL"""
-    global DUPS_FOUND
+    global DUPS_FOUND, STATS_PRUNED
+
     dbc = db[DB_C_STATS_2_DEL]
+    dbc2prune = db[DB_C[stat_type]]
     try:
-        await dbc.insert_one({'type': stat_type, 'id': id})
-        DUPS_FOUND[stat_type] += 1
+        if prune:
+            res = await dbc2prune.delete_one( { '_id': id } )
+            STATS_PRUNED[stat_type] += res.deleted_count
+        else:
+            await dbc.insert_one({'type': stat_type, 'id': id})
+            DUPS_FOUND[stat_type] += 1
     except Exception as err:
         bu.error(exception=err, id=workerID)
     return None
