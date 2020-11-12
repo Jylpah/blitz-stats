@@ -362,6 +362,7 @@ async def analyze_player_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIO
     bu.error('NOT IMPLEMENTED YET')
     pass
 
+
 async def add_stat2del(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, stat_type: str, id: str, prune : bool = False):
     """Adds _id of the stat record to be deleted in into DB_C_STATS_2_DEL"""
     global DUPS_FOUND, STATS_PRUNED
