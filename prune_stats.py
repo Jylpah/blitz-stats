@@ -271,7 +271,10 @@ async def mk_accountQ(db : motor.motor_asyncio.AsyncIOMotorDatabase, step: int =
 
 def print_stats_analyze(stat_types : list = list()):
     for stat_type in stat_types:
-        bu.verbose_std(stat_type + ': ' + str(DUPS_FOUND[stat_type]) + ' new duplicates found')
+        if DUPS_FOUND[stat_type] == 0:
+            bu.verbose_std(stat_type + ': No duplicates found')
+        else:    
+            bu.verbose_std(stat_type + ': ' + str(DUPS_FOUND[stat_type]) + ' new duplicates found')
         DUPS_FOUND[stat_type] = 0
     
 
