@@ -188,6 +188,7 @@ async def mk_update_list(db : motor.motor_asyncio.AsyncIOMotorDatabase, updates2
         cut_off_prev = 0
         bu.debug('Iterating over updates')
         first_update_found = False
+        last_update_found  = False
         async for doc in cursor:
             cut_off = doc['Cut-off']
             update = doc['Release']
@@ -195,9 +196,11 @@ async def mk_update_list(db : motor.motor_asyncio.AsyncIOMotorDatabase, updates2
                 updates2process.remove(update + '+')
                 first_update_found = True
             if update + '-' in updates2process:
-                updates2process = set()
-                # stop finding updates to prunes
-                break
+                if not first_update_found:
+                    bu.error('"update_A-" can only be used in conjuction with "update_B+"')
+                updates2process.remove(update + '-')
+                last_update_found = True
+            ## first_update_found has to be set for the update- to work
             if first_update_found or (update in updates2process):
                 if (cut_off == None) or (cut_off == 0):
                     cut_off = bu.NOW()
@@ -207,6 +210,9 @@ async def mk_update_list(db : motor.motor_asyncio.AsyncIOMotorDatabase, updates2
                         updates2process.remove(update)
                 except KeyError as err:
                     bu.error(exception=err)
+                if last_update_found:
+                    first_update_found = False
+                    last_update_found = False
             cut_off_prev = cut_off
 
     except Exception as err:
