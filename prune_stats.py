@@ -375,7 +375,7 @@ async def add_stat2del(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDataba
 
 
 async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argparse.Namespace):
-    """Execute DB pruning and DELETING DATA"""
+    """Execute DB pruning and DELETING DATA. Does NOT verify whether there are newer stats"""
     global STATS_PRUNED
     try:
         batch_size = 200
