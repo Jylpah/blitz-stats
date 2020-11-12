@@ -114,7 +114,7 @@ async def main(argv):
                 bu.verbose_std('Processing update ' + u['update'])
                 if bu.is_normal():
                     bu.set_counter('Stats processed: ')   
-                
+
                 if  MODE_TANK_STATS in args.mode:
                     tankQ    = await mk_tankQ(db)
 
@@ -167,12 +167,34 @@ async def main(argv):
     return None
 
 
+def mk_update_entry(update: str, start: int, end: int):
+    """Make update entry to the update list to process"""
+    if (end == None) or (end == 0):
+        end = bu.NOW()
+    return {'update': update, 'start': start, 'end': end}
+
+
+async def get_latest_update(db: motor.motor_asyncio.AsyncIOMotorDatabase) -> dict:
+    try:
+        dbc = db[DB_C_UPDATES]
+        cursor = dbc.find().sort('Date',-1).limit(2)
+        updates = await cursor.to_list(2)
+        doc = updates.pop(0)
+        update = doc['Release']
+        end = doc['Cut-off']
+        doc = updates.pop(0)
+        start = doc['Cut-off']
+        return mk_update_entry(update, start, end)
+    except Exception as err:
+        bu.error(exception=err)   
+
+
 async def mk_update_list(db : motor.motor_asyncio.AsyncIOMotorDatabase, updates2process : list) -> list:
     """Create update queue for database queries"""
 
     if (len(updates2process) == 0):
-        bu.error('No updates given to prune')
-        return list()
+        bu.verbose_std('Selecting the latest update')
+        return [ await get_latest_update(db) ]
     bu.debug(str(updates2process))
     # if len(updates2process) == 1:
     #     p_updates_since = re.compile('\\d+\\.\\d+\\+$')
@@ -204,7 +226,7 @@ async def mk_update_list(db : motor.motor_asyncio.AsyncIOMotorDatabase, updates2
             if first_update_found or (update in updates2process):
                 if (cut_off == None) or (cut_off == 0):
                     cut_off = bu.NOW()
-                updates.append({'update': update, 'start': cut_off_prev, 'end': cut_off})
+                updates.append(mk_update_entry(update, cut_off_prev, cut_off))
                 try: 
                     if not first_update_found:
                         updates2process.remove(update)
@@ -322,6 +344,8 @@ async def analyze_player_achievements_WG(workerID: int, db: motor.motor_asyncio.
         start   = update['start']
         end     = update['end']
         update  = update['update']
+
+        bu.debug('Update: ' + update + ' Start: ' + str(start) + ' End: ' + str(end))
         
         pipeline = [    {'$match': { '$and': [  {'updated': {'$lte': end}}, {'updated': {'$gt': start}} ] }},
                         { '$project' : { 'account_id' : 1, 'updated' : 1}},
