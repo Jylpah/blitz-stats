@@ -129,12 +129,9 @@ async def main(argv):
 				bu.debug(str(args.files))
 				players.update(await get_players_replays(args.files, args.workers))
 
-			await update_account_ids(db, players)
-		
+			await update_account_ids(db, players)		
 		else:
-			bu.verbose_std('REMOVING ACCOUNT_IDs FROM THE DATABASE * * * * * * * * * * * ')
-			await asyncio.sleep(5)
-			await remove_account_ids(db, args.files)
+			await invalidate_account_ids(db, args.files)
 
 	except asyncio.CancelledError as err:
 		bu.error('Queue gets cancelled while still working.')
@@ -146,33 +143,44 @@ async def main(argv):
 	return None
 
 
-async def remove_account_ids(db: motor.motor_asyncio.AsyncIOMotorDatabase, files: list):
-	"""Remove account_ids from the DB"""
-	dbc = db[DB_C_ACCOUNTS]
-
+async def invalidate_account_ids(db: motor.motor_asyncio.AsyncIOMotorDatabase, files: list):
+	"""Invalidate account_ids from the DB to prevent further requests"""
+	# dbc = db[DB_C_ACCOUNTS]
+	
+	bu.verbose_std('INVALIDATING ACCOUNT_IDs FROM THE DATABASE * * * * * * * * * * * ')
+	await asyncio.sleep(5)
+	
 	account_ids = set()
 	for file in files:
 		account_ids.update(await bu.read_int_list(file))
-	
-	account_id_list = list(account_ids)
-	bu.verbose_std('Deleting ' + str(len(account_id_list)) + ' account_ids')
 
-	deleted_count = 0
-	BATCH = 500
-	while len(account_id_list) > 0:
-		if len(account_id_list) >= BATCH:
-			end = BATCH
-		else:
-			end = len(account_id_list)
-		try: 
-			res = await dbc.delete_many({ '_id': { '$in': account_id_list[:end] } } )
-			deleted_count += res.deleted_count
+	bu.verbose_std('Invalidating ' + str(len(account_ids)) + ' account_ids')
+	invalidated = 0
+	
+	for account_id in account_ids:
+		try:
+			# mark the account invalid to prevent further requests
+			await set_account_invalid(db, account_id)
+			# manually check data in the DB
+			
+			invalidated += 1 
 		except Exception as err:
 			bu.error('Unexpected Exception: ' + str(type(err)) + ' : '+ str(err))
-		del(account_id_list[:end])
-	
-	bu.verbose_std(str(deleted_count) + ' account_ids deleted from the database')
+		
+	bu.verbose_std(str(invalidated) + ' account_ids invalidated from the database')
 
+	return None
+
+
+async def set_account_invalid(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int):
+	"""Set account_id invalid"""
+	dbc = db[DB_C_ACCOUNTS]
+	try: 
+		await dbc.update_one({ '_id': account_id }, { '$set': {'invalid': True }} )		
+	except Exception as err:
+		bu.error('account_id=' + str(account_id) +  'Unexpected error', exception=err)
+	finally:
+		bu.debug('account_id=' + str(account_id) + ' Marked as invalid')
 	return None
 
 
