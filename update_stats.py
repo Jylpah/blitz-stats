@@ -486,13 +486,8 @@ async def chk_account2update(db : motor.motor_asyncio.AsyncIOMotorDatabase, acco
 
 
 def print_update_stats(mode: list, error_log : bool = False):
-	if error_log:
-		stats_txt = 'accounts rechecked'
-	else:
-		stats_txt = 'stats updated'
-
 	if len(get_stat_modes(mode)) > 0:
-		bu.verbose_std('Total ' + str(stats_added) + ' ' + stats_txt)
+		bu.verbose_std('Total ' + str(stats_added) + ' stats updated')
 		return True
 	else:
 		return False
