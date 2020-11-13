@@ -454,6 +454,7 @@ async def chk_accounts2update(db : motor.motor_asyncio.AsyncIOMotorDatabase, acc
 	bu.debug('Stats to update: ' + str(len(stats_update_needed)))
 	return stats_update_needed
 
+
 ## DEPRECIATED
 async def chk_account2update(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id : int, stat_type: str) -> bool:
 	"""Check whether the DB has fresh enough stats for the account_id & stat_type"""
@@ -592,6 +593,7 @@ async def set_account_valid(db: motor.motor_asyncio.AsyncIOMotorDatabase, accoun
 		error_account_id(account_id, 'Unexpected error', exception=err)
 	finally:
 		debug_account_id(account_id, 'Marked as valid')
+
 
 ## DEPRECIATED
 async def BS_player_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, playerQ : asyncio.Queue, worker_id : int, args : argparse.Namespace):
