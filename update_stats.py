@@ -227,7 +227,7 @@ async def main(argv):
 			if (args.sample == 0) and (not args.run_error_log):
 				# only for full stats
 				log_update_time(db, args.mode)
-			print_update_stats(args.mode)
+			print_update_stats(args.mode, args.run_error_log)
 			wg.print_request_stats()
 			print_date('DB update ended', start_time)
 			bu.print_new_line(True)
@@ -415,6 +415,7 @@ async def get_players_errorlog(db : motor.motor_asyncio.AsyncIOMotorDatabase, mo
 			account_ids.add(stat['account_id'])
 		except Exception as err:
 			bu.error('Unexpected error', err)
+	bu.verbose_std('Re-checking ' + len(account_ids) + ' account_ids')
 	return list(account_ids)
 
 
@@ -484,9 +485,14 @@ async def chk_account2update(db : motor.motor_asyncio.AsyncIOMotorDatabase, acco
 		return False
 
 
-def print_update_stats(mode: list):
+def print_update_stats(mode: list, error_log : bool = False):
+	if error_log:
+		stats_txt = 'accounts rechecked'
+	else:
+		stats_txt = 'stats updated'
+
 	if len(get_stat_modes(mode)) > 0:
-		bu.verbose_std('Total ' + str(stats_added) + ' stats updated')
+		bu.verbose_std('Total ' + str(stats_added) + ' ' + stats_txt)
 		return True
 	else:
 		return False
