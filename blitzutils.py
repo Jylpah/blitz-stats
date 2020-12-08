@@ -398,6 +398,9 @@ def print_progress(force = False, id : str = None) -> bool:
     """Print progress bar/dots. Returns True if the dot is being printed."""
     global _progress_i
     
+    if (_log_level == SILENT) or (_log_level == DEBUG):
+        return False
+
     _progress_i +=  1 
     if ((_progress_i % _progress_N) == 0):
         if (_log_level > SILENT) and ( force or (_log_level < DEBUG ) ):

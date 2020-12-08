@@ -312,8 +312,7 @@ async def analyze_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMo
             entry_prev = mk_log_entry(stat_type, { 'account_id': -1})        
             dups_counter = 0
             async for doc in cursor:
-                if bu.is_normal():
-                    bu.print_progress()
+                bu.print_progress()
                 account_id = doc['account_id']
                 if bu.is_debug():
                     entry = mk_log_entry(stat_type, { 'account_id' : account_id, 'last_battle_time' : doc['last_battle_time'], 'tank_id' : doc['tank_id']})
@@ -413,11 +412,16 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argpa
     global STATS_PRUNED
     try:
         batch_size = 200
-        dbc = db[DB_C_STATS_2_DEL]
+        dbc_prunelist = db[DB_C_STATS_2_DEL]
         for stat_type in args.mode:
-            bu.set_counter(stat_type + ' pruned: ')            
-            dbc2prune = db[DB_C[stat_type]]
-            cursor = dbc.find({'type' : stat_type}).batch_size(batch_size)
+            dbc_2_prune = db[DB_C[stat_type]]
+            #DB_FILTER = {'type' : stat_type}
+            stats2prune = await dbc_prunelist.count_documents({'type' : stat_type})
+            bu.debug('Pruning ' + str(stats2prune) + ' ' + stat_type)
+            bu.set_progress_bar(stat_type + ' pruned: ', stats2prune)
+            #bu.set_counter(stat_type + ' pruned: ')
+            time.sleep(2)
+            cursor = dbc_prunelist.find({'type' : stat_type}).batch_size(batch_size)
             docs = await cursor.to_list(batch_size)
             while docs:
                 ids = set()
@@ -426,12 +430,12 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argpa
                     bu.print_progress()
                 if len(ids) > 0:
                     try:
-                        res = await dbc2prune.delete_many( { '_id': { '$in': list(ids) } } )
+                        res = await dbc_2_prune.delete_many( { '_id': { '$in': list(ids) } } )
                         STATS_PRUNED[stat_type] += res.deleted_count
                     except Exception as err:
                         bu.error('Failure in deleting ' + stat_type, exception=err)
                     try:
-                        await dbc.delete_many({ 'type': stat_type, 'id': { '$in': list(ids) } })
+                        await dbc_prunelist.delete_many({ 'type': stat_type, 'id': { '$in': list(ids) } })
                     except Exception as err:
                         bu.error('Failure in clearing stats-to-be-pruned table')
                 docs = await cursor.to_list(batch_size)
@@ -452,6 +456,7 @@ def mk_log_entry(stat_type: str = None, stats: dict = None):
     except Exception as err:
         bu.error(exception=err)
         return None
+
 
 async def get_tanks_DB(db: motor.motor_asyncio.AsyncIOMotorDatabase):
     """Get tank_ids of tanks in the DB"""
