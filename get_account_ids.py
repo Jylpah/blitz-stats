@@ -362,7 +362,7 @@ async def get_players_WI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: ar
 	for page in range(start_page,(start_page + max_pages)):
 		if WI_STOP_SPIDER: 
 			bu.debug('Stopping spidering WoTispector.com')
-			await empty_queue(replayQ, 'Replay Queue')
+			# await empty_queue(replayQ, 'Replay Queue')
 			break
 		# url = wi.get_url_replay_listing(page)
 		bu.print_progress(id = "spider")
