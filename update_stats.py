@@ -503,6 +503,7 @@ async def update_stats_update_time(db : motor.motor_asyncio.AsyncIOMotorDatabase
 	"""Update DB_C_ACCOUNTS table with the update time of the player's stats"""
 
 	# dbc = db[DB_C_ACCOUNTS]
+	dbc_update_log = db[DB_C_UPDATE_LOG]
 	try:
 		#await dbc.update_one( { '_id' : account_id }, { '$set': { 'last_battle_time': last_battle_time, UPDATE_FIELD[stat_type] : bu.NOW(), 'inactive': inactive }} )
 		#await dbc.update_one( { '_id' : account_id }, { '$set': { 'last_battle_time': last_battle_time, UPDATE_FIELD[stat_type] : bu.NOW() }} )
@@ -514,9 +515,12 @@ async def update_stats_update_time(db : motor.motor_asyncio.AsyncIOMotorDatabase
 			FIELDS['inactive'] = inactive
 		if FIELDS == dict():
 			FIELDS = None
-
 		# await dbc.update_one( { '_id' : account_id }, { '$set': FIELDS } )
 		await update_account(db, account_id, stat_type, FIELDS)
+		
+		## Added 2020-12-09 to keep log of updated account IDs
+		await dbc_update_log.insert_one({ 'mode': stat_type, 'account_id' : account_id, 'updated': bu.NOW()})
+		
 		return True
 	except Exception as err:
 		error_account_id(account_id, 'Unexpected error', exception=err)
@@ -683,6 +687,7 @@ async def BS_player_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, p
 				await clear_error_log(db, account_id, field)
 			playerQ.task_done()	
 	return None
+
 
 ## DEPRECIATED
 async def BS_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, playerQ : asyncio.Queue, worker_id : int, args : argparse.Namespace):
