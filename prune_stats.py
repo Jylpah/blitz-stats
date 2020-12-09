@@ -59,6 +59,7 @@ for stat_type in DB_C.keys():
 
 async def main(argv):
     # set the directory for the script
+    current_dir = os.getcwd()
     os.chdir(os.path.dirname(sys.argv[0]))
 
     parser = argparse.ArgumentParser(description='Prune stats from the DB by update')
@@ -70,13 +71,17 @@ async def main(argv):
     arggroup.add_argument( '-d', '--debug', 	action='store_true', default=False, help='Debug mode')
     arggroup.add_argument( '-v', '--verbose', 	action='store_true', default=False, help='Verbose mode')
     arggroup.add_argument( '-s', '--silent', 	action='store_true', default=False, help='Silent mode')
-    
-    args = parser.parse_args()
-    bu.set_log_level(args.silent, args.verbose, args.debug)
-    bu.set_progress_step(100)
+    parser.add_argument('-l', '--log', action='store_true', default=False, help='Enable file logging')
 
-    
+    args = parser.parse_args()
+
     try:
+        bu.set_log_level(args.silent, args.verbose, args.debug)
+        bu.set_progress_step(100)
+        if args.log:
+            datestr = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+            await bu.set_file_logging(bu.rebase_file_args(current_dir, 'prune_stats_' + datestr + '.log'))
+
 		## Read config
         config = configparser.ConfigParser()
         config.read(FILE_CONFIG)
