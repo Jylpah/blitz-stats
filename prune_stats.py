@@ -117,8 +117,7 @@ async def main(argv):
             tankQ = None
             for u in updates:           
                 bu.verbose_std('Processing update ' + u['update'])
-                if bu.is_normal() or bu.is_verbose():
-                    bu.set_counter('Stats processed: ')   
+                bu.set_counter('Stats processed: ')   
 
                 if  MODE_TANK_STATS in args.mode:
                     tankQ    = await mk_tankQ(db)
