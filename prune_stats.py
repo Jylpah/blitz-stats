@@ -2,14 +2,14 @@
 
 # Script Prune stats from the DB per release 
 
-import sys, os, argparse, datetime, json, inspect, pprint, aiohttp, asyncio, aiofiles
+import sys, os, argparse, datetime, json, inspect, pprint, aiohttp, asyncio, aiofiles, collections
 import aioconsole, re, logging, time, xmltodict, collections, pymongo, motor.motor_asyncio
 import ssl, configparser
 from datetime import date
 import blitzutils as bu
 from blitzutils import BlitzStars
 
-N_WORKERS = 6
+N_WORKERS = 4
 MAX_RETRIES = 3
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
@@ -27,7 +27,6 @@ DB_C_TANKS     			= 'Tankopedia'
 DB_C_TANK_STR			= 'WG_TankStrs'
 DB_C_ERROR_LOG			= 'ErrorLog'
 DB_C_UPDATE_LOG			= 'UpdateLog'
-
 
 MODE_TANK_STATS         = 'tank_stats'
 MODE_PLAYER_STATS       = 'player_stats'
@@ -50,10 +49,13 @@ STATS_START_DATE = datetime.datetime(2014,1,1)
 
 STATS_PRUNED = dict()
 DUPS_FOUND = dict()
+
 for stat_type in DB_C.keys():
     STATS_PRUNED[stat_type]  = 0
     DUPS_FOUND[stat_type]    = 0
 
+def def_value_zero():
+    return 0
 
 # main() -------------------------------------------------------------
 
@@ -304,10 +306,11 @@ def print_stats_analyze(stat_types : list = list()):
         DUPS_FOUND[stat_type] = 0
     
 
-def print_stats_prune(stat_types : list = list()):
-    for stat_type in stat_types:
-        bu.verbose_std(stat_type + ': ' + str(STATS_PRUNED[stat_type]) + ' duplicates removed')
-        STATS_PRUNED[stat_type] = 0
+def print_stats_prune(stats_pruned : dict):
+    """Print end statistics of the pruning operation"""
+    for stat_type in stats_pruned:
+        bu.verbose_std(stat_type + ': ' + str(stats_pruned[stat_type]) + ' duplicates removed')
+        stats_pruned[stat_type] = 0
 
 
 async def analyze_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, update: dict, tankQ: asyncio.Queue, prune : bool = False):
@@ -861,7 +864,7 @@ async def add_stat2del(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDataba
     return None
 
 
-async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argparse.Namespace):
+async def prune_stats_serial(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argparse.Namespace):
     """Execute DB pruning and DELETING DATA. Does NOT verify whether there are newer stats"""
     global STATS_PRUNED
     try:
@@ -898,6 +901,83 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argpa
         bu.error(exception=err)
     return None
 
+
+async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argparse.Namespace):
+    """Parellen DB pruning, DELETES DATA. Does NOT verify whether there are newer stats"""
+    #global STATS_PRUNED
+    try:
+        dbc_prunelist = db[DB_C_STATS_2_DEL]
+        batch_size = 500
+        stats_pruned = dict()
+        Q = asyncio.Queue(2*N_WORKERS)
+        workers = list()
+        for workerID in range(N_WORKERS):
+            workers.append(asyncio.create_task(prune_stats_worker(db, Q, workerID)))                    
+        
+        for stat_type in args.mode:
+            stats_pruned[stat_type] = 0
+            stats2prune               = dict()
+            stats2prune['stat_type']  = stat_type
+
+            N_stats2prune = await dbc_prunelist.count_documents({'type' : stat_type})
+            
+            bu.debug('Pruning ' + str(N_stats2prune) + ' ' + stat_type)            
+            bu.set_progress_bar(stat_type + ' pruned: ', N_stats2prune, step = 1000, slow=True)
+            cursor = dbc_prunelist.find({'type' : stat_type}).batch_size(batch_size)
+            docs = await cursor.to_list(batch_size)
+            while docs:
+                ids = set()
+                for doc in docs:
+                    ids.add(doc['id'])                    
+                if len(ids) > 0:
+                    stats2prune['ids'] = ids
+                    await Q.put(stats2prune)
+                    bu.debug('added ' + str(len(ids)) + ' stats to be pruned to the queue')
+                docs = await cursor.to_list(batch_size)
+            
+            await Q.join()                                          # waiting for the Queue to finish 
+            for res in await asyncio.gather(*workers):
+                stats_pruned[res['stat_type']] += res['pruned']
+            
+            bu.finish_progress_bar()
+        print_stats_prune(stats_pruned)
+
+    except Exception as err:
+        bu.error(exception=err)
+    return None
+
+
+async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, Q: asyncio.Queue, ID: int = 1) -> dict:
+    """Paraller Worker for pruning stats"""
+    stats_pruned = collections.defaultdict(def_value_zero)
+    bu.debug('Started', id=ID)
+    try:
+        dbc_prunelist = db[DB_C_STATS_2_DEL]        
+        stats_pruned = collections.defaultdict(def_value_zero)
+        while True:
+            prune_task  = await Q.get()
+            try:                 
+                stat_type   = prune_task['stat_type']
+                ids         = prune_task['ids']
+                dbc_2_prune = db[DB_C[stat_type]]
+                
+                res = await dbc_2_prune.delete_many( { '_id': { '$in': list(ids) } } )
+                bu.print_progress(step=len(ids))
+                bu.debug('Pruned ' + str(res.deleted_count) + ' stats from ' + stat_type, id=ID )
+                stats_pruned[stat_type] += res.deleted_count
+            except Exception as err:
+                bu.error(exception=err, id=ID)
+            
+            try:
+                await dbc_prunelist.delete_many({ 'type': stat_type, 'id': { '$in': list(ids) } })
+            except Exception as err:
+                bu.error('Failure in clearing stats-to-be-pruned table', id=ID)
+            Q.task_done()        
+    except (asyncio.CancelledError):
+        bu.debug('Prune queue is empty', id=ID)
+    except Exception as err:
+        bu.error(exception=err, id=ID)
+    return stats_pruned
 
 # def mk_log_entry(stat_type: str = None, account_id=None, last_battle_time=None, tank_id = None):
 def mk_log_entry(stat_type: str = None, stats: dict = None):
