@@ -9,7 +9,7 @@ from datetime import date
 import blitzutils as bu
 from blitzutils import BlitzStars
 
-N_WORKERS = 4
+N_WORKERS = 6
 MAX_RETRIES = 3
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
@@ -415,7 +415,7 @@ async def analyze_player_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIO
     pass
 
 
-async def check_player_achievements(db: motor.motor_asyncio.AsyncIOMotorDatabase, update_record: dict, sample: int = DEFAULT_SAMPLE) -> bool:
+async def check_player_achievements_serial(db: motor.motor_asyncio.AsyncIOMotorDatabase, update_record: dict, sample: int = DEFAULT_SAMPLE) -> bool:
     """Check analyzed player achievement duplicates"""
     try:
         dbc_dups    = db[DB_C_STATS_2_DEL]
@@ -445,10 +445,6 @@ async def check_player_achievements(db: motor.motor_asyncio.AsyncIOMotorDatabase
         else:
             bu.verbose_std(header)
 
-        ## Async 
-        # for worker
-        #  check_worker(update, sample / N_worker)
-        # join results
         cursor = dbc_dups.aggregate(pipeline, allowDiskUse=False)
         id = None
         dups_ok      = 0
@@ -493,7 +489,114 @@ async def check_player_achievements(db: motor.motor_asyncio.AsyncIOMotorDatabase
         return False
 
 
-async def check_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, update_record: dict, sample: int = DEFAULT_SAMPLE):
+async def check_player_achievements(db: motor.motor_asyncio.AsyncIOMotorDatabase, update: dict, sample: int = DEFAULT_SAMPLE):
+    """Parallel check for the analyzed player achievement duplicates"""
+    try:
+        dups_ok      = 0
+        dups_nok     = 0
+        dups_skipped = 0
+        dups_total   = 0
+        
+        dbc_dups    = db[DB_C_STATS_2_DEL]
+        stat_type   = MODE_PLAYER_ACHIEVEMENTS
+        
+        bu.verbose_std('Checking Player Achievement duplicates for update ' + update['update'])
+        bu.verbose_std('Counting duplicates ... ', eol=False)
+        N_dups = await dbc_dups.count_documents({'type': stat_type})
+        bu.verbose_std(str(N_dups) + ' found')
+        
+        if (sample > 0) and (sample < N_dups):            
+            header = 'Checking sample of duplicates: ' 
+        else:
+            sample = 0
+            header = 'Checking ALL duplicates: '
+        
+        if bu.is_normal():
+            bu.set_progress_bar(header, sample, 100, slow=True)            
+        else:
+            bu.verbose_std(header)
+                
+        worker_tasks = list()
+        for sub_sample in split_int(sample, N_WORKERS):
+            worker_tasks.append(asyncio.create_task(check_player_achievement_worker(db, update, sub_sample )))
+ 
+        if len(worker_tasks) > 0:
+            for res in await asyncio.gather(*worker_tasks):
+                dups_ok      += res['ok']
+                dups_nok     += res['nok']
+                dups_skipped += res['skipped']
+                dups_total   += res['total']
+
+        if bu.is_normal():
+            bu.finish_progress_bar()
+        print_dups_stats(stat_type, N_dups, sample, dups_ok, dups_nok, dups_skipped)
+        return dups_nok == 0
+    except Exception as err:
+        bu.error(exception=err)
+        return False
+
+
+async def check_player_achievement_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, update_record: dict, sample: int) -> dict:
+    """Worker to check Player Achievement duplicates. Returns results in a dict"""
+    try:
+        id = None
+        dups_ok      = 0
+        dups_nok     = 0
+        dups_skipped = 0
+        
+        dbc         = db[DB_C_PLAYER_ACHIVEMENTS]
+        dbc_dups    = db[DB_C_STATS_2_DEL]
+        stat_type   = MODE_PLAYER_ACHIEVEMENTS
+        
+        start   = update_record['start']
+        end     = update_record['end']
+        update  = update_record['update']
+
+        pipeline = [ {'$match': { 'type': stat_type}} ]
+        if sample > 0:
+            pipeline.append({'$sample' : {'size': sample }})
+        cursor = dbc_dups.aggregate(pipeline, allowDiskUse=False)
+       
+        async for dup in cursor:
+            try:                
+                id = dup['id']
+                if bu.is_normal():   ## since the --verbose causes far more logging 
+                    bu.print_progress()
+                dup_stat        = await dbc.find_one({'_id': id})
+                updated         = dup_stat['updated']
+                account_id      = dup_stat['account_id']
+                if updated > end or updated <= start:
+                    bu.verbose('Sampled an duplicate not in the defined update. Skipping')
+                    dups_skipped += 1
+                    continue
+                
+                bu.verbose(str_dups_player_achievements(update, account_id, updated, is_dup=True))
+                cursor_stats = dbc.find({ '$and': [ {'account_id': account_id}, {'updated': { '$gt': updated }}, 
+                                                    { 'updated': { '$lt': end }}] }).sort('updated', pymongo.ASCENDING )
+                dup_count = 0
+                async for stat in cursor_stats:
+                    updated     = stat['updated']
+                    bu.verbose(str_dups_player_achievements(update, account_id, updated))
+                    dup_count = 1  # on purpose! 
+                    
+                if dup_count == 0:
+                    dups_nok += 1
+                    bu.verbose("NO DUPLICATE FOUND FOR: account_id=" + str(account_id) +  " updated=" + str(updated) + " _id=" + id) 
+                else:
+                    dups_ok += 1                        
+                                    
+            except Exception as err:
+                bu.error('Error checking duplicates. Mode=' + stat_type + ' _id=' + str(id), err)
+                return None
+
+    except Exception as err:
+        bu.error('Mode=' + stat_type + ' _id=' + str(id), err)
+        return None
+    
+    return {'total': sample, 'ok': dups_ok, 'nok': dups_nok, 'skipped': dups_skipped, 'stat_type': stat_type }
+
+
+async def check_tank_stats_serial(db: motor.motor_asyncio.AsyncIOMotorDatabase, update_record: dict, sample: int = DEFAULT_SAMPLE):
     """Check analyzed tank stat duplicates"""
     try:
         dbc_dups    = db[DB_C_STATS_2_DEL]
@@ -572,6 +675,133 @@ async def check_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, update_
         return False
 
 
+async def check_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, update: dict, sample: int = DEFAULT_SAMPLE):
+    """Parallel check for the analyzed tank stat duplicates"""
+    try:
+        dups_ok      = 0
+        dups_nok     = 0
+        dups_skipped = 0
+        dups_total   = 0
+        
+        dbc_dups    = db[DB_C_STATS_2_DEL]
+        stat_type   = MODE_TANK_STATS
+        
+        bu.verbose_std('Checking Tank Stats duplicates for update ' + update['update'])
+        bu.verbose_std('Counting duplicates ... ', eol=False)
+        N_dups = await dbc_dups.count_documents({'type': stat_type})
+        bu.verbose_std(str(N_dups) + ' found')
+        
+        if (sample > 0) and (sample < N_dups):            
+            header = 'Checking sample of duplicates: ' 
+        else:
+            sample = 0
+            header = 'Checking ALL duplicates: '
+        
+        if bu.is_normal():
+            bu.set_progress_bar(header, sample, 100, slow=True)            
+        else:
+            bu.verbose_std(header)
+                
+        worker_tasks = list()
+        for sub_sample in split_int(sample, N_WORKERS):
+            worker_tasks.append(asyncio.create_task(check_tank_stat_worker(db, update, sub_sample )))
+ 
+        if len(worker_tasks) > 0:
+            for res in await asyncio.gather(*worker_tasks):
+                dups_ok      += res['ok']
+                dups_nok     += res['nok']
+                dups_skipped += res['skipped']
+                dups_total   += res['total']
+
+        if bu.is_normal():
+            bu.finish_progress_bar()
+        print_dups_stats(stat_type, N_dups, sample, dups_ok, dups_nok, dups_skipped)
+        return dups_nok == 0
+    except Exception as err:
+        bu.error(exception=err)
+        return False
+
+
+async def check_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, update_record: dict, sample: int) -> dict:
+    """Worker to check Tank Stats duplicates. Returns results in a dict"""
+    try:
+        id = None
+        dups_ok      = 0
+        dups_nok     = 0
+        dups_skipped = 0
+        
+        dbc         = db[DB_C_TANK_STATS]
+        dbc_dups    = db[DB_C_STATS_2_DEL]
+        stat_type   = MODE_TANK_STATS
+        
+        start   = update_record['start']
+        end     = update_record['end']
+        update  = update_record['update']
+
+        pipeline = [ {'$match': { 'type': stat_type}} ]
+        if sample > 0:
+            pipeline.append({'$sample' : {'size': sample }})
+        cursor = dbc_dups.aggregate(pipeline, allowDiskUse=False)
+       
+        async for dup in cursor:
+            try:                
+                id = dup['id']
+                if bu.is_normal():   ## since the --verbose causes far more logging 
+                    bu.print_progress()
+                dup_stat    = await dbc.find_one({'_id': id})
+                last_battle_time= dup_stat['last_battle_time']
+                account_id      = dup_stat['account_id']
+                tank_id         = dup_stat['tank_id']
+                if last_battle_time > end or last_battle_time <= start:
+                    bu.verbose('Sampled an duplicate not in the defined update. Skipping')
+                    dups_skipped += 1
+                    continue
+                
+                bu.verbose(str_dups_tank_stats(update, account_id, tank_id, last_battle_time, is_dup=True))
+                cursor_stats = dbc.find({ '$and': [ {'account_id': account_id}, {'tank_id': tank_id}, 
+                                                    {'last_battle_time': { '$gt': last_battle_time }}, { 'last_battle_time': { '$lt': end }}] }
+                                                    ).sort('last_battle_time', pymongo.ASCENDING )
+                dup_count = 0
+                async for stat in cursor_stats:
+                    last_battle_time     = stat['last_battle_time']
+                    bu.verbose(str_dups_tank_stats(update, account_id, tank_id, last_battle_time))
+                    dup_count = 1  # =1 on purpose
+                    
+                if dup_count == 0:
+                    dups_nok += 1
+                    bu.verbose("NO DUPLICATE FOUND FOR: account_id=" + str(account_id) +  ' tank_id=' + str(tank_id) + " last_battle_time=" + str(last_battle_time) + " _id=" + id) 
+                else:
+                    dups_ok += 1                        
+                                    
+            except Exception as err:
+                bu.error('Error checking duplicates. Mode=' + stat_type + ' _id=' + str(id), err)
+                return None
+
+    except Exception as err:
+        bu.error('Mode=' + stat_type + ' _id=' + str(id), err)
+        return None
+    
+    return {'total': sample, 'ok': dups_ok, 'nok': dups_nok, 'skipped': dups_skipped, 'stat_type': stat_type }
+            
+
+def split_int(total:int, N: int) -> list:
+    try:
+        res = list()
+        if N == None or N <= 0 or N > total:
+            bu.error('Invalid argument N')
+            return None
+        left = total
+        for _ in range(N-1):
+            sub_total = int(total/N) 
+            res.append(sub_total)
+            left -= sub_total
+        res.append(left)
+        return res
+    except Exception as err:
+        bu.error(exception=err)
+        return None
+
+
 def print_dups_stats(stat_type: str, dups_total: int, sample: int, dups_ok: int = 0, dups_nok: int = 0, dups_skipped: int= 0):
     try:
         sample_str = (str(sample)  +  " (" + '{:.2f}'.format(sample/dups_total*100) + "%)") if sample > 0 else "all"        
@@ -642,8 +872,7 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argpa
             #DB_FILTER = {'type' : stat_type}
             stats2prune = await dbc_prunelist.count_documents({'type' : stat_type})
             bu.debug('Pruning ' + str(stats2prune) + ' ' + stat_type)
-            bu.set_progress_bar(stat_type + ' pruned: ', stats2prune)
-            #bu.set_counter(stat_type + ' pruned: ')
+            bu.set_progress_bar(stat_type + ' pruned: ', stats2prune, slow=True)
             time.sleep(2)
             cursor = dbc_prunelist.find({'type' : stat_type}).batch_size(batch_size)
             docs = await cursor.to_list(batch_size)
