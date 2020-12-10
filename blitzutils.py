@@ -608,7 +608,7 @@ def get_JSON_value(json, key : str = None, keys : list = None, keypath = None):
 ## -----------------------------------------------------------
 
 class SlowBar(IncrementalBar):
-    suffix = '%(index)d/%(max)d %(percent)d%% ETA %(remaining_hours).0f h %(remaining_mins).0f mins'
+    suffix = '%(index)d/%(max)d %(percent)d%% AVG %(avg_rate).1f/sec ETA %(remaining_hours).0f h %(remaining_mins).0f mins'
     @property
     def remaining_hours(self):
         return self.eta // 3600
@@ -616,6 +616,13 @@ class SlowBar(IncrementalBar):
     @property
     def remaining_mins(self):
         return (self.eta - (self.eta // 3600)*3600) // 60
+
+    @property
+    def avg_rate(self):
+        if self.avg > 0:
+            return  1 / self.avg
+        else:
+            return 0
  
 
 ## -----------------------------------------------------------
