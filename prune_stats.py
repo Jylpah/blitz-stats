@@ -971,20 +971,28 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, Q: as
                 stat_type   = prune_task['stat_type']
                 ids         = prune_task['ids']
                 dbc_2_prune = db[DB_C[stat_type]]
-                
-                res = await dbc_2_prune.delete_many( { '_id': { '$in': ids } } )
-                bu.debug('Pruned ' + str(res.deleted_count) + ' stats from ' + stat_type, id=ID )
-                stats_pruned[stat_type] += res.deleted_count
-                bu.print_progress(step=res.deleted_count)
-                if res.deleted_count != len(ids):
-                    bu.error('Not all duplicates deleted. Dups=' + str(len(ids)) + ' deleted=' + str(res.deleted_count))
+
+                for _id in ids:
+                    res = await dbc_2_prune.delete_one( { '_id': _id } )
+                    if res.deleted_count == 1:
+                        await dbc_prunelist.delete_one({ '$and': [ {'type': stat_type}, {'id': _id }]})
+                        stats_pruned[stat_type] += 1
+                        bu.print_progress()
+                    else:
+                        bu.error('Could not delete ' + stat_type + ' _id=' + _id)            
+                # res = await dbc_2_prune.delete_many( { '_id': { '$in': ids } } )
+                # bu.debug('Pruned ' + str(res.deleted_count) + ' stats from ' + stat_type, id=ID )
+                # stats_pruned[stat_type] += res.deleted_count
+                # bu.print_progress(step=res.deleted_count)
+                # if res.deleted_count != len(ids):
+                #     bu.error('Not all duplicates deleted. Dups=' + str(len(ids)) + ' deleted=' + str(res.deleted_count))
             except Exception as err:
                 bu.error(exception=err, id=ID)
             
-            try:
-                await dbc_prunelist.delete_many({ 'type': stat_type, 'id': { '$in': ids } })
-            except Exception as err:
-                bu.error('Failure in clearing stats-to-be-pruned table', id=ID)
+            # try:
+            #     await dbc_prunelist.delete_many({ '$and': [ {'type': stat_type}, {'id': { '$in': ids } }]})
+            # except Exception as err:
+            #     bu.error('Failure in clearing stats-to-be-pruned table', id=ID)
             Q.task_done()        
     except (asyncio.CancelledError):
         bu.debug('Prune queue is empty', id=ID)
