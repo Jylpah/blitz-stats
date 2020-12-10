@@ -286,31 +286,31 @@ def _randomword(length):
    return ''.join(random.choice(letters) for i in range(length))
 
 
-def verbose(msg = "", id = None) -> bool:
+def verbose(msg = "", id = None, eol : bool =True) -> bool:
     """Print a message"""
-    return _print_log_msg('', msg, exception=None, id=id, print_msg= (_log_level >= VERBOSE) )  
+    return _print_log_msg('', msg, exception=None, id=id, print_msg= (_log_level >= VERBOSE), eol=eol)  
 
 
-def verbose_std(msg = "", id = None) -> bool:
+def verbose_std(msg = "", id = None, eol : bool =True) -> bool:
     """Print a message"""
-    return _print_log_msg('', msg, exception=None, id=id, print_msg= (_log_level >= NORMAL) )  
+    return _print_log_msg('', msg, exception=None, id=id, print_msg= (_log_level >= NORMAL), eol=eol )  
 
 
-def warning(msg = "", id = None, force: bool = False) -> bool:
+def warning(msg = "", id = None, force: bool = False, eol : bool =True) -> bool:
     """Print a warning message"""
-    return _print_log_msg('Warning', msg, None, id, print_msg= (force or (_log_level >= NORMAL)) )        
+    return _print_log_msg('Warning', msg, None, id, print_msg= (force or (_log_level >= NORMAL)), eol=eol)        
 
 
-def debug(msg = "", id = None, exception = None, force: bool = False) -> bool:
+def debug(msg = "", id = None, exception = None, force: bool = False, eol : bool =True) -> bool:
     """print a conditional debug message"""
     if (_log_level >= DEBUG) or force:
-        return _print_log_msg('DEBUG', msg, exception, id)
+        return _print_log_msg('DEBUG', msg, exception, id, eol=eol)
     return False
 
 
-def error(msg = "", exception = None, id = None) -> bool:
+def error(msg = "", exception = None, id = None, eol : bool =True) -> bool:
     """Print an error message"""
-    return _print_log_msg('ERROR', msg, exception, id)
+    return _print_log_msg('ERROR', msg, exception, id, eol=eol)
 
 
 def log(msg = "", id = None, exception = None) -> bool:
@@ -318,7 +318,7 @@ def log(msg = "", id = None, exception = None) -> bool:
     return _print_log_msg('LOG', msg=msg, exception=exception, id=id, print_msg=(_log_level >= DEBUG))
 
 
-def _print_log_msg(prefix = 'LOG', msg = '', exception = None, id = None, print_msg : bool = True):
+def _print_log_msg(prefix = 'LOG', msg = '', exception = None, id = None, print_msg : bool = True, eol : bool=True):
     # Use empty prefix to determine standard verbose messages
     if not (print_msg or LOG):
         return False
@@ -338,7 +338,10 @@ def _print_log_msg(prefix = 'LOG', msg = '', exception = None, id = None, print_
 
     msg = prefix + msg + exception_msg
     if print_msg: 
-        print(msg)
+        if eol:
+            print(msg)
+        else:
+            print(msg, end='')
         retval = True
     if _log_msg(msg):
         retval = True
@@ -356,8 +359,9 @@ def set_progress_step(n: int):
     """Set the frequency of the progress dots. The bigger 'n', the fewer dots"""
     global _progress_N, _progress_i 
     if n > 0:
-        _progress_N = n
-        _progress_i = 0
+        _progress_N     = n
+        _progress_i     = 0
+        _progress_steps = 0
     return
 
 
@@ -367,7 +371,7 @@ def get_progress_step():
 
 
 def set_progress_bar(heading: str, max_value: int, step: int = None, slow: bool = False, id: str = None):
-    global _progress_obj, _progress_N, _progress_i, _progress_id
+    global _progress_obj, _progress_N, _progress_i, _progress_id, _progress_steps
     _progress_id = id
     if step == None:
         _progress_N = int(max_value / 1000) if (max_value > 1000) else 2
@@ -379,34 +383,39 @@ def set_progress_bar(heading: str, max_value: int, step: int = None, slow: bool 
         _progress_obj = SlowBar(heading, max=max_value)
     else:
         _progress_obj = IncrementalBar(heading, max=max_value, suffix='%(index)d/%(max)d %(percent)d%%')
-    _progress_i = 0
+    _progress_i     = 0
+    _progress_steps = 0
 
     _log_msg(heading + str(max_value))
     return
 
 
 def set_counter(heading: str):
-    global _progress_obj, _progress_i
+    global _progress_obj, _progress_i, _progress_steps
     _progress_i = 0
+    _progress_steps = 0
     if _progress_obj != None:
         finish_progress_bar()
     _progress_obj = Counter(heading)
     return 
 
 
-def print_progress(force = False, id : str = None) -> bool:
+def print_progress(step: int = 1, force = False, id : str = None) -> bool:
     """Print progress bar/dots. Returns True if the dot is being printed."""
-    global _progress_i
+    global _progress_i, _progress_steps
     
     if (_log_level == SILENT) or (_log_level == DEBUG):
         return False
 
-    _progress_i +=  1 
-    if ((_progress_i % _progress_N) == 0):
+    _progress_i +=  step
+    steps = _progress_i // _progress_N
+    new_steps = steps - _progress_steps
+    _progress_steps += new_steps
+    if (new_steps> 0):
         if (_log_level > SILENT) and ( force or (_log_level < DEBUG ) ):
             if (_progress_obj != None):
                 if (_progress_id == id):
-                    _progress_obj.next(_progress_N)
+                    _progress_obj.next(_progress_N * new_steps)
                     return True
                 else:
                     return False
@@ -435,7 +444,7 @@ def wait(sec : int):
     for i in range(0, sec): 
        i=i   ## to get rid of the warning... 
        time.sleep(1)
-       print_progress(True)
+       print_progress(force=True)
     print('', flush=True)  
 
 
@@ -605,7 +614,7 @@ def get_JSON_value(json, key : str = None, keys : list = None, keypath = None):
 ## -----------------------------------------------------------
 
 class SlowBar(IncrementalBar):
-    suffix = '%(index)d/%(max)d %(percent)d%% ETA %(remaining_hours).0f h %(remaining_mins).0f mins'
+    suffix = '%(index)d/%(max)d %(percent)d%% AVG %(avg_rate).1f/sec ETA %(remaining_hours).0f h %(remaining_mins).0f mins'
     @property
     def remaining_hours(self):
         return self.eta // 3600
@@ -613,6 +622,13 @@ class SlowBar(IncrementalBar):
     @property
     def remaining_mins(self):
         return (self.eta - (self.eta // 3600)*3600) // 60
+
+    @property
+    def avg_rate(self):
+        if self.avg > 0:
+            return  1 / self.avg
+        else:
+            return 0
  
 
 ## -----------------------------------------------------------

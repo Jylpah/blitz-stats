@@ -318,66 +318,66 @@ def log_update_time(db : motor.motor_asyncio.AsyncIOMotorDatabase, mode : list):
 
 async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, mode: str, args : argparse.Namespace):
 	"""Get list of active accounts from the database"""
-	dbc = db[DB_C_ACCOUNTS]
-	
-	force 			= args.force
-	cache_valid 	= args.cache_valid
-	sample 			= args.sample
-	chk_invalid 	= args.chk_invalid
-	update_field 	= UPDATE_FIELD[mode]
-	NOW = bu.NOW()
+	try:
+		dbc = db[DB_C_ACCOUNTS]
+		
+		force 			= args.force
+		cache_valid 	= args.cache_valid
+		sample 			= args.sample
+		chk_invalid 	= args.chk_invalid
+		update_field 	= UPDATE_FIELD[mode]
+		NOW = bu.NOW()
 
-	if chk_invalid:
-		pipeline = [   	{'$match': { '$and': [ { '_id': { '$lt': 31e8 } }, 
-												{ 'invalid': { '$exists': True } }] } }, 
+		if chk_invalid:
+			pipeline = [   	{'$match': { '$and': [ { '_id': { '$lt': 31e8 } }, 
+													{ 'invalid': { '$exists': True } }] } }, 
+							]
+		elif force:
+			pipeline = [   	{'$match': { '$and': [ { '_id': { '$lt': 31e8 } }, 
+													{ 'invalid': { '$exists': False } }] } }, 
+							]
+		else:
+			pipeline = [ 	{'$match': {  '$and' : [ { '_id': { '$lt': 31e8 } }, 
+													{ 'invalid': { '$exists': False} }, 
+													{ '$or': [ 
+																{ update_field : None }, 
+																{ update_field : { '$lt': NOW - cache_valid}}
+																] } 
+													] } }						
 						]
-	elif force:
-		pipeline = [   	{'$match': { '$and': [ { '_id': { '$lt': 31e8 } }, 
-												{ 'invalid': { '$exists': False } }] } }, 
-						]
-	else:
-		pipeline = [ 	{'$match': {  '$and' : [ { '_id': { '$lt': 31e8 } }, 
-												{ 'invalid': { '$exists': False} }, 
-												{ '$or': [ 
-															#{ update_field : { '$exists': False }}, 
-															{ update_field : None }, 
-															{ update_field : { '$lt': NOW - cache_valid}}
-															#,{ update_field : { '$gt': NOW }} 
-															] } 
-												] } }						
-					]
-	
-	if sample > 0:
-		pipeline.append({'$sample': {'size' : sample} })
+		
+		if sample > 0:
+			pipeline.append({'$sample': {'size' : sample} })
 
-	cursor = dbc.aggregate(pipeline, allowDiskUse=False)
-	
-	account_ids = list()
-	i = 0
-	
-	tmp_steps = bu.get_progress_step()
-	bu.set_progress_step(1000)
-	bu.set_counter('Fetching players:')
+		cursor = dbc.aggregate(pipeline, allowDiskUse=False)
+		
+		account_ids = list()
+		i = 0		
+		tmp_steps = bu.get_progress_step()
+		bu.set_progress_step(1000)
+		bu.set_counter('Fetching players:')
 
-	async for player in cursor:
-		try:
-			i += 1
-			if bu.print_progress():
-				bu.debug('Accounts read from DB: ' + str(i))
-			if (not force) and (not chk_invalid) and (update_field in player) and ('latest_battle_time' in player):
-				if (player[update_field] != None) and (player['latest_battle_time'] != None) and (player['latest_battle_time'] < NOW):
-					if (NOW - player[update_field]) < min(MAX_UPDATE_INTERVAL, (player[update_field] - player['latest_battle_time'])/2):
-						continue
-			account_ids.append(player['_id'])
-		except Exception as err:
-			bu.error('Unexpected error', err)
+		async for player in cursor:
+			try:
+				i += 1
+				if bu.print_progress():
+					bu.debug('Accounts read from DB: ' + str(i))
+				# REMOVED 2020-12-09 to ensure inactive players are being captured
+				# if (not force) and (not chk_invalid) and (update_field in player) and ('latest_battle_time' in player):
+				# 	if (player[update_field] != None) and (player['latest_battle_time'] != None) and (player['latest_battle_time'] < NOW):
+				# 		if (NOW - player[update_field]) < min(MAX_UPDATE_INTERVAL, (player[update_field] - player['latest_battle_time'])/2):
+				# 			continue
+				account_ids.append(player['_id'])
+			except Exception as err:
+				bu.error('account_id=' + str(player), err)
 
-	bu.finish_progress_bar()
-	bu.set_progress_step(tmp_steps)
-	
-	bu.log(str(len(account_ids)) + ' read from the DB')
-	return account_ids
-
+		bu.finish_progress_bar()
+		bu.set_progress_step(tmp_steps)
+		
+		bu.log(str(len(account_ids)) + ' read from the DB')
+		return account_ids
+	except Exception as err:
+		bu.error('Unexpected error', err)
 
 async def get_active_players_BS(args : argparse.Namespace):
 	"""Get active_players from BlitzStars or local cache file"""
@@ -406,17 +406,22 @@ async def get_active_players_BS(args : argparse.Namespace):
 
 async def get_players_errorlog(db : motor.motor_asyncio.AsyncIOMotorDatabase, mode :str):
 	"""Get list of acccount_ids of the previous failed requests"""
-	dbc = db[DB_C_ERROR_LOG]
-	account_ids =  set()
-	
-	cursor = dbc.find({'type': mode}, { 'account_id': 1, '_id': 0 } )
-	async for stat in cursor:
-		try:
-			account_ids.add(stat['account_id'])
-		except Exception as err:
-			bu.error('Unexpected error', err)
-	bu.verbose_std('Re-checking ' + len(account_ids) + ' account_ids')
-	return list(account_ids)
+	try:
+		dbc = db[DB_C_ERROR_LOG]
+		account_ids =  set()
+		
+		cursor = dbc.find({'type': mode}, { 'account_id': 1, '_id': 0 } )
+		async for stat in cursor:
+			try:
+				account_ids.add(stat['account_id'])
+			except Exception as err:
+				bu.error('Unexpected error', err)
+		bu.verbose_std('Re-checking ' + str(len(account_ids)) + ' account_ids')
+		return list(account_ids)
+
+	except Exception as err:
+		bu.error('Unexpected error', err)	
+	return None
 
 
 ## DEPRECIATED
@@ -425,6 +430,7 @@ async def chk_accounts2update(db : motor.motor_asyncio.AsyncIOMotorDatabase, acc
 	dbc = db[DB_C_ACCOUNTS]
 	try:
 		bu.verbose_std('chk_accounts2update() is depreciated')
+		stats_update_needed = list()
 		update_field = UPDATE_FIELD[stat_type]
 		NOW = bu.NOW()
 
@@ -441,7 +447,7 @@ async def chk_accounts2update(db : motor.motor_asyncio.AsyncIOMotorDatabase, acc
 												{ update_field : { '$gt': NOW}} ]}]}, \
 							{'last_battle_time' : 1, update_field : 1 } )
 		
-		stats_update_needed = list()
+		
 
 		async for res in cursor: 
 			if (update_field in res) and ('latest_battle_time' in res):
@@ -493,13 +499,31 @@ def print_update_stats(mode: list, error_log : bool = False):
 		return False
 
 
-async def update_stats_update_time(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id, field, last_battle_time: bool = None) -> bool:
-	dbc = db[DB_C_ACCOUNTS]
+async def update_stats_update_time(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int, stat_type: str, last_battle_time: int = None, inactive: bool = None) -> bool:
+	"""Update DB_C_ACCOUNTS table with the update time of the player's stats"""
+
+	# dbc = db[DB_C_ACCOUNTS]
+	dbc_update_log = db[DB_C_UPDATE_LOG]
 	try:
-		await dbc.update_one( { '_id' : account_id }, { '$set': { 'last_battle_time': last_battle_time, UPDATE_FIELD[field] : bu.NOW() }} )
+		#await dbc.update_one( { '_id' : account_id }, { '$set': { 'last_battle_time': last_battle_time, UPDATE_FIELD[stat_type] : bu.NOW(), 'inactive': inactive }} )
+		#await dbc.update_one( { '_id' : account_id }, { '$set': { 'last_battle_time': last_battle_time, UPDATE_FIELD[stat_type] : bu.NOW() }} )
+		FIELDS = dict()
+
+		if last_battle_time != None:
+			FIELDS['last_battle_time'] = last_battle_time
+		if inactive != None:
+			FIELDS['inactive'] = inactive
+		if FIELDS == dict():
+			FIELDS = None
+		# await dbc.update_one( { '_id' : account_id }, { '$set': FIELDS } )
+		await update_account(db, account_id, stat_type, FIELDS)
+		
+		## Added 2020-12-09 to keep log of updated account IDs
+		await dbc_update_log.insert_one({ 'mode': stat_type, 'account_id' : account_id, 'updated': bu.NOW()})
+		
 		return True
 	except Exception as err:
-		bu.error('Unexpected error', err)
+		error_account_id(account_id, 'Unexpected error', exception=err)
 		return False	
 
 
@@ -573,11 +597,35 @@ async def del_account_id(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_i
 	return None
 
 
-async def set_account_invalid(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int):
+async def update_account(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int, stat_type: str = None, fields: dict = None, unset : bool = False) -> bool:
+	"""Low-level helper function to update account collection"""
+	try:
+		dbc = db[DB_C_ACCOUNTS]
+		if fields == None:
+			FIELDS = fields
+		else:
+			FIELDS = dict()
+		if stat_type != None:
+			FIELDS[UPDATE_FIELD[stat_type]] = bu.NOW()
+		
+		if FIELDS == dict():
+			return False
+		if unset:
+			await dbc.update_one({ '_id': account_id }, { '$unset': FIELDS } )
+		else:
+			await dbc.update_one({ '_id': account_id }, { '$set': FIELDS } )
+		return True
+	except Exception as err:
+		error_account_id(account_id, 'Error updating account', exception=err)	
+
+
+async def set_account_invalid(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int, stat_type: str = None):
 	"""Set account_id invalid"""
-	dbc = db[DB_C_ACCOUNTS]
+	# dbc = db[DB_C_ACCOUNTS]
 	try: 
-		await dbc.update_one({ '_id': account_id }, { '$set': {'invalid': True }} )		
+		FIELDS = { 'invalid': True }
+		#await dbc.update_one({ '_id': account_id }, { '$set': {'invalid': True }} )
+		await update_account(db, account_id, stat_type, FIELDS )
 	except Exception as err:
 		error_account_id(account_id, 'Unexpected error', exception=err)
 	finally:
@@ -587,9 +635,10 @@ async def set_account_invalid(db: motor.motor_asyncio.AsyncIOMotorDatabase, acco
 
 async def set_account_valid(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int):
 	"""Set account_id valid"""
-	dbc = db[DB_C_ACCOUNTS]
+	#dbc = db[DB_C_ACCOUNTS]
 	try: 
-		await dbc.update_one({ '_id': account_id }, { '$unset': {'invalid': "" }} )		
+		# await dbc.update_one({ '_id': account_id }, { '$unset': {'invalid': "" }} )		
+		await update_account(db, account_id, fields={'invalid': "" }, unset=True)
 	except Exception as err:
 		error_account_id(account_id, 'Unexpected error', exception=err)
 	finally:
@@ -638,6 +687,7 @@ async def BS_player_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, p
 				await clear_error_log(db, account_id, field)
 			playerQ.task_done()	
 	return None
+
 
 ## DEPRECIATED
 async def BS_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, playerQ : asyncio.Queue, worker_id : int, args : argparse.Namespace):
@@ -712,7 +762,9 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 			bu.print_progress()
 					
 			url = None
-			tmp = 0
+			added = 0
+			inactive = None
+			latest_battle = None
 
 			stats = await wg.get_player_tank_stats(account_id, cache=False)
 			if stats == None:
@@ -730,25 +782,27 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 			# RECOMMENDATION TO USE SINGLE INSERTS OVER MANY
 			try: 
 				res = await dbc.insert_many(tank_stats, ordered=False)
-				tmp = len(res.inserted_ids)
-				stats_added += tmp					
+				added = len(res.inserted_ids)
+				stats_added += added					
 			except pymongo.errors.BulkWriteError as err:
-				tmp = err.details['nInserted']
-				stats_added += tmp										
+				added = err.details['nInserted']
+				stats_added += added										
 			finally:
 				if clr_error_log:
 					await clear_error_log(db, account_id, stat_type)
 				if chk_invalid:
 					set_account_valid(db, account_id)
-				await update_stats_update_time(db, account_id, stat_type, latest_battle)
-				debug_account_id(account_id, str(tmp) + 'Tank stats added', id=worker_id)			
+				if added == 0:
+					inactive = True
+				await update_stats_update_time(db, account_id, stat_type, latest_battle, inactive)
+				debug_account_id(account_id, str(added) + 'Tank stats added', id=worker_id)			
 		except bu.StatsNotFound as err:
 			log_account_id(account_id, exception=err, id=worker_id)
 			await log_error(db, account_id, stat_type, clr_error_log, chk_invalid)
 		except Exception as err:
 			error_account_id(account_id, 'Unexpected error: ' + ((' URL: ' + url) if url!= None else ""), exception=err, id=worker_id)
 			await log_error(db, account_id, stat_type, clr_error_log, chk_invalid)
-		finally:			
+		finally:
 			playerQ.task_done()	
 	return None
 
@@ -780,7 +834,6 @@ async def WG_player_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, p
 				raise bu.StatsNotFound('WG API return NULL stats for ' + str(account_id))
 		
 			last_battle_time = stats['last_battle_time']
-			#	RECOMMENDATION TO USE SINGLE INSERTS OVER MANY
 			try: 
 				await dbc.insert_one(stats, ordered=False)
 				stats_added += 1
@@ -914,7 +967,7 @@ async def log_error(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id: i
 	try:
 		if clr_error_log:
 			log_account_id(account_id, 'Setting account invalid')
-			await set_account_invalid(db, account_id)
+			await set_account_invalid(db, account_id, stat_type)
 			await clear_error_log(db, account_id, stat_type)
 		elif chk_invalid:
 			debug_account_id(account_id, 'Still invalid')
