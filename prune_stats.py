@@ -183,7 +183,6 @@ async def main(argv):
                 time.sleep(1)
             print('')
             await prune_stats(db, args)
-            print_stats_prune(args.mode)
     except KeyboardInterrupt:
         bu.finish_progress_bar()
         bu.verbose_std('\nExiting..')
@@ -308,9 +307,13 @@ def print_stats_analyze(stat_types : list = list()):
 
 def print_stats_prune(stats_pruned : dict):
     """Print end statistics of the pruning operation"""
-    for stat_type in stats_pruned:
-        bu.verbose_std(stat_type + ': ' + str(stats_pruned[stat_type]) + ' duplicates removed')
-        stats_pruned[stat_type] = 0
+    try:
+        for stat_type in stats_pruned:
+            bu.verbose_std(stat_type + ': ' + str(stats_pruned[stat_type]) + ' duplicates removed')
+            stats_pruned[stat_type] = 0
+    except Exception as err:
+        bu.error(exception=err)
+    return None    
 
 
 async def analyze_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, update: dict, tankQ: asyncio.Queue, prune : bool = False):
@@ -323,7 +326,7 @@ async def analyze_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMo
         end     = update['end']
         update  = update['update']
     except Exception as err:
-        bu.error('Unexpected Exception: ' + str(type(err)) + ' : ' + str(err), id=workerID)
+        bu.error(exception=err, id=workerID)
         return None    
 
     while not tankQ.empty():
@@ -358,7 +361,7 @@ async def analyze_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMo
                     entry_prev = entry
 
         except Exception as err:
-            bu.error('Unexpected Exception: ' + str(type(err)) + ' : ' + str(err), id=workerID)
+            bu.error(exception=err, id=workerID)
         finally:
             bu.debug('Tank_id=' + str(tank_id) + ' processed: ' + str(dups_counter) + ' duplicates found', id = workerID)
             tankQ.task_done()
@@ -697,7 +700,7 @@ async def check_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, update:
         if (sample > 0) and (sample < N_dups):            
             header = 'Checking sample of duplicates: ' 
         else:
-            sample = 0
+            sample = N_dups
             header = 'Checking ALL duplicates: '
         
         if bu.is_normal():
@@ -706,8 +709,11 @@ async def check_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, update:
             bu.verbose_std(header)
                 
         worker_tasks = list()
-        for sub_sample in split_int(sample, N_WORKERS):
-            worker_tasks.append(asyncio.create_task(check_tank_stat_worker(db, update, sub_sample )))
+        if sample < N_dups:
+            for sub_sample in split_int(sample, N_WORKERS):
+                worker_tasks.append(asyncio.create_task(check_tank_stat_worker(db, update, sub_sample )))
+        else:
+            worker_tasks.append(asyncio.create_task(check_tank_stat_worker(db, update, sample )))
  
         if len(worker_tasks) > 0:
             for res in await asyncio.gather(*worker_tasks):
@@ -907,15 +913,15 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argpa
     #global STATS_PRUNED
     try:
         dbc_prunelist = db[DB_C_STATS_2_DEL]
-        batch_size = 500
+        batch_size = 100
         stats_pruned = dict()
-        Q = asyncio.Queue(2*N_WORKERS)
+        Q = asyncio.Queue(10*N_WORKERS)
         workers = list()
         for workerID in range(N_WORKERS):
             workers.append(asyncio.create_task(prune_stats_worker(db, Q, workerID)))                    
         
         for stat_type in args.mode:
-            stats_pruned[stat_type] = 0
+            stats_pruned[stat_type]   = 0
             stats2prune               = dict()
             stats2prune['stat_type']  = stat_type
 
@@ -930,16 +936,21 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argpa
                 for doc in docs:
                     ids.add(doc['id'])                    
                 if len(ids) > 0:
-                    stats2prune['ids'] = ids
+                    stats2prune['ids'] = list(ids)
                     await Q.put(stats2prune)
                     bu.debug('added ' + str(len(ids)) + ' stats to be pruned to the queue')
                 docs = await cursor.to_list(batch_size)
             
-            await Q.join()                                          # waiting for the Queue to finish 
-            for res in await asyncio.gather(*workers):
-                stats_pruned[res['stat_type']] += res['pruned']
-            
+            # waiting for the Queue to finish 
+            await Q.join()
             bu.finish_progress_bar()
+
+        if len(workers) > 0:
+            for worker in workers:
+                worker.cancel()
+            for res in await asyncio.gather(*workers):
+                for stat_type in res:  
+                    stats_pruned[stat_type] += res[stat_type]
         print_stats_prune(stats_pruned)
 
     except Exception as err:
@@ -961,15 +972,17 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, Q: as
                 ids         = prune_task['ids']
                 dbc_2_prune = db[DB_C[stat_type]]
                 
-                res = await dbc_2_prune.delete_many( { '_id': { '$in': list(ids) } } )
-                bu.print_progress(step=len(ids))
+                res = await dbc_2_prune.delete_many( { '_id': { '$in': ids } } )
                 bu.debug('Pruned ' + str(res.deleted_count) + ' stats from ' + stat_type, id=ID )
                 stats_pruned[stat_type] += res.deleted_count
+                bu.print_progress(step=res.deleted_count)
+                if res.deleted_count != len(ids):
+                    bu.error('Not all duplicates deleted. Dups=' + str(len(ids)) + ' deleted=' + str(res.deleted_count))
             except Exception as err:
                 bu.error(exception=err, id=ID)
             
             try:
-                await dbc_prunelist.delete_many({ 'type': stat_type, 'id': { '$in': list(ids) } })
+                await dbc_prunelist.delete_many({ 'type': stat_type, 'id': { '$in': ids } })
             except Exception as err:
                 bu.error('Failure in clearing stats-to-be-pruned table', id=ID)
             Q.task_done()        
