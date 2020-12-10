@@ -286,31 +286,31 @@ def _randomword(length):
    return ''.join(random.choice(letters) for i in range(length))
 
 
-def verbose(msg = "", id = None) -> bool:
+def verbose(msg = "", id = None, eol : bool =True) -> bool:
     """Print a message"""
-    return _print_log_msg('', msg, exception=None, id=id, print_msg= (_log_level >= VERBOSE) )  
+    return _print_log_msg('', msg, exception=None, id=id, print_msg= (_log_level >= VERBOSE), eol=eol)  
 
 
-def verbose_std(msg = "", id = None) -> bool:
+def verbose_std(msg = "", id = None, eol : bool =True) -> bool:
     """Print a message"""
-    return _print_log_msg('', msg, exception=None, id=id, print_msg= (_log_level >= NORMAL) )  
+    return _print_log_msg('', msg, exception=None, id=id, print_msg= (_log_level >= NORMAL), eol=eol )  
 
 
-def warning(msg = "", id = None, force: bool = False) -> bool:
+def warning(msg = "", id = None, force: bool = False, eol : bool =True) -> bool:
     """Print a warning message"""
-    return _print_log_msg('Warning', msg, None, id, print_msg= (force or (_log_level >= NORMAL)) )        
+    return _print_log_msg('Warning', msg, None, id, print_msg= (force or (_log_level >= NORMAL)), eol=eol)        
 
 
-def debug(msg = "", id = None, exception = None, force: bool = False) -> bool:
+def debug(msg = "", id = None, exception = None, force: bool = False, eol : bool =True) -> bool:
     """print a conditional debug message"""
     if (_log_level >= DEBUG) or force:
-        return _print_log_msg('DEBUG', msg, exception, id)
+        return _print_log_msg('DEBUG', msg, exception, id, eol=eol)
     return False
 
 
-def error(msg = "", exception = None, id = None) -> bool:
+def error(msg = "", exception = None, id = None, eol : bool =True) -> bool:
     """Print an error message"""
-    return _print_log_msg('ERROR', msg, exception, id)
+    return _print_log_msg('ERROR', msg, exception, id, eol=eol)
 
 
 def log(msg = "", id = None, exception = None) -> bool:
@@ -318,7 +318,7 @@ def log(msg = "", id = None, exception = None) -> bool:
     return _print_log_msg('LOG', msg=msg, exception=exception, id=id, print_msg=(_log_level >= DEBUG))
 
 
-def _print_log_msg(prefix = 'LOG', msg = '', exception = None, id = None, print_msg : bool = True):
+def _print_log_msg(prefix = 'LOG', msg = '', exception = None, id = None, print_msg : bool = True, eol : bool=True):
     # Use empty prefix to determine standard verbose messages
     if not (print_msg or LOG):
         return False
@@ -338,7 +338,10 @@ def _print_log_msg(prefix = 'LOG', msg = '', exception = None, id = None, print_
 
     msg = prefix + msg + exception_msg
     if print_msg: 
-        print(msg)
+        if eol:
+            print(msg)
+        else:
+            print(msg, end='')
         retval = True
     if _log_msg(msg):
         retval = True
