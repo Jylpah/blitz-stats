@@ -514,7 +514,7 @@ async def check_player_achievements(db: motor.motor_asyncio.AsyncIOMotorDatabase
         if (sample > 0) and (sample < N_dups):            
             header = 'Checking sample of duplicates: ' 
         else:
-            sample = 0
+            sample = N_dups
             header = 'Checking ALL duplicates: '
         
         if bu.is_normal():
@@ -523,9 +523,12 @@ async def check_player_achievements(db: motor.motor_asyncio.AsyncIOMotorDatabase
             bu.verbose_std(header)
                 
         worker_tasks = list()
-        for sub_sample in split_int(sample, N_WORKERS):
-            worker_tasks.append(asyncio.create_task(check_player_achievement_worker(db, update, sub_sample )))
- 
+        if sample < N_dups:
+            for sub_sample in split_int(sample, N_WORKERS):
+                worker_tasks.append(asyncio.create_task(check_player_achievement_worker(db, update, sub_sample )))
+        else:
+            worker_tasks.append(asyncio.create_task(check_player_achievement_worker(db, update)))
+
         if len(worker_tasks) > 0:
             for res in await asyncio.gather(*worker_tasks):
                 dups_ok      += res['ok']
@@ -542,7 +545,7 @@ async def check_player_achievements(db: motor.motor_asyncio.AsyncIOMotorDatabase
         return False
 
 
-async def check_player_achievement_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, update_record: dict, sample: int) -> dict:
+async def check_player_achievement_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, update_record: dict, sample: int = 0) -> dict:
     """Worker to check Player Achievement duplicates. Returns results in a dict"""
     try:
         id = None
@@ -598,7 +601,9 @@ async def check_player_achievement_worker(db: motor.motor_asyncio.AsyncIOMotorDa
     except Exception as err:
         bu.error('Mode=' + stat_type + ' _id=' + str(id), err)
         return None
-    
+
+    if sample == 0:
+        sample = dups_ok + dups_nok + dups_skipped
     return {'total': sample, 'ok': dups_ok, 'nok': dups_nok, 'skipped': dups_skipped, 'stat_type': stat_type }
 
 
@@ -713,7 +718,7 @@ async def check_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, update:
             for sub_sample in split_int(sample, N_WORKERS):
                 worker_tasks.append(asyncio.create_task(check_tank_stat_worker(db, update, sub_sample )))
         else:
-            worker_tasks.append(asyncio.create_task(check_tank_stat_worker(db, update, sample )))
+            worker_tasks.append(asyncio.create_task(check_tank_stat_worker(db, update)))
  
         if len(worker_tasks) > 0:
             for res in await asyncio.gather(*worker_tasks):
@@ -731,7 +736,7 @@ async def check_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, update:
         return False
 
 
-async def check_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, update_record: dict, sample: int) -> dict:
+async def check_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, update_record: dict, sample: int = 0) -> dict:
     """Worker to check Tank Stats duplicates. Returns results in a dict"""
     try:
         id = None
@@ -789,7 +794,9 @@ async def check_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, u
     except Exception as err:
         bu.error('Mode=' + stat_type + ' _id=' + str(id), err)
         return None
-    
+
+    if sample == 0:
+        sample = dups_ok + dups_nok + dups_skipped
     return {'total': sample, 'ok': dups_ok, 'nok': dups_nok, 'skipped': dups_skipped, 'stat_type': stat_type }
             
 
@@ -797,18 +804,17 @@ def split_int(total:int, N: int) -> list:
     try:
         res = list()
         if N == None or N <= 0 or N > total:
-            bu.error('Invalid argument N')
-            return None
+            bu.debug('Invalid argument N')
+            return res
         left = total
         for _ in range(N-1):
             sub_total = int(total/N) 
             res.append(sub_total)
             left -= sub_total
-        res.append(left)
-        return res
+        res.append(left)    
     except Exception as err:
         bu.error(exception=err)
-        return None
+    return res
 
 
 def print_dups_stats(stat_type: str, dups_total: int, sample: int, dups_ok: int = 0, dups_nok: int = 0, dups_skipped: int= 0):
