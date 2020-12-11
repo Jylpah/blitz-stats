@@ -77,7 +77,7 @@ async def main(argv):
     arggroup_verbosity.add_argument( '-v', '--verbose', action='store_true', default=False, help='Verbose mode')
     arggroup_verbosity.add_argument( '-s', '--silent', 	action='store_true', default=False, help='Silent mode')
 
-    parser.add_argument('--sample', type=int, default=DEFAULT_SAMPLE, help='Sample size')
+    parser.add_argument('--sample', type=int, default=DEFAULT_SAMPLE, help='Sample size. Default=' + str(DEFAULT_SAMPLE) + ' . 0: check ALL.')
     parser.add_argument('-l', '--log', action='store_true', default=False, help='Enable file logging')
     parser.add_argument('updates', metavar='X.Y [Z.D ...]', type=str, nargs='*', help='List of updates to prune')
     args = parser.parse_args()
