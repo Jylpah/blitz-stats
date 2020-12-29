@@ -43,6 +43,41 @@ bs = None
 wg = None
 stats_added = 0
 
+
+class UpdateStats:
+	def __init__(self, stat_type: str):
+		self.stats = 
+		_type = stat_type
+		self._added = 0
+		self._marked_invalid = 0
+		self._marked_valid = 0
+		self._errors = 0
+
+	def added(self, adds: int = 0):
+		self._added += adds
+		return self._added
+
+	def marked_invalid(self, invalids: int = 0):
+		self._marked_invalid += invalids
+		return self._marked_invalid
+
+	def marked_valid(self, valids: int = 0):
+		self._marked_valid += valids
+		return self._marked_valid
+
+	def errors(self, errors: int = 0):
+		self._errors += errors
+		return self._errors
+
+	def get_type(self) -> str:
+		return self._type
+
+	def get_stats(self) -> dict:
+		res = dict()
+		res['type'] = self._type
+		res[]
+
+
 ## main() -------------------------------------------------------------
 
 
