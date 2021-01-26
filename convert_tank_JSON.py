@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.8
+#!/usr/bin/env python3
 
 ## script to fetch Blitz data from BlizStars.com
 ##

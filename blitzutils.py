@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.8
+#!/usr/bin/env python3
 
 import sys, os, json, time,  base64, urllib, inspect, hashlib, re, string, random
 import asyncio, aiofiles, aiohttp, aiosqlite, lxml, collections
@@ -32,7 +32,6 @@ os.umask(UMASK)
 ## -----------------------------------------------------------
 #### Class ThrottledClientSession(aiohttp.ClientSession)
 ## -----------------------------------------------------------
-
 class ThrottledClientSession(aiohttp.ClientSession):
     """Rate-throttled client session class inherited from aiohttp.ClientSession)""" 
     MIN_SLEEP = 0.1
@@ -151,7 +150,6 @@ class ThrottledClientSession(aiohttp.ClientSession):
 ## -----------------------------------------------------------
 #### Class AsyncLogger()
 ## -----------------------------------------------------------
-
 class AsyncLogger():
     """Async file logger"""
     def __init__(self) -> None: 
@@ -239,7 +237,10 @@ class RecordLogger():
         return self.logger
     
 
-    def merge(self, B: RecordLogger):
+    def merge(self, B):
+        if not isinstance(B, RecordLogger):
+            error('input is RecordLogger object')
+            return None 
         for cat in B.get_categories():
             self.log(cat, B.get_value(cat))
 
@@ -1644,7 +1645,7 @@ class WoTinspector:
 
     REPLAY_N = 1
 
-    def __init__(self, rate_limit: int = 30):
+    def __init__(self, rate_limit: int = 20):
         self.session = ThrottledClientSession(rate_limit=rate_limit)
         
 

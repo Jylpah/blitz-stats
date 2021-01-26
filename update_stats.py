@@ -1,11 +1,11 @@
-#!/usr/bin/env python3.8
+#!/usr/bin/env python3
 
 # Script fetch Blitz player stats and tank stats
 
 import sys, argparse, json, os, inspect, pprint, aiohttp, asyncio, aiofiles, aioconsole, re, logging, time, xmltodict, collections, pymongo
 import motor.motor_asyncio, ssl, configparser, random, datetime
 import blitzutils as bu
-from blitzutils import BlitzStars, WG
+from blitzutils import BlitzStars, WG, RecordLogger
 
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
@@ -221,13 +221,15 @@ async def main(argv):
 			for task in worker_tasks:
 				task.cancel()
 			bu.log('Waiting for workers to cancel')
-			if len(worker_tasks) > 0:
-				await asyncio.gather(*worker_tasks, return_exceptions=True)
+			stat_logger = RecordLogger()
+			if len(worker_tasks) > 0:				
+				for stats_logged in await asyncio.gather(*worker_tasks, return_exceptions=True):
+					stat_logger.merge(stats_logged)
 
 			if (args.sample == 0) and (not args.run_error_log):
 				# only for full stats
 				log_update_time(db, args.mode)
-			print_update_stats(args.mode, args.run_error_log)
+			print_update_stats(args.mode, args.run_error_log, stat_logger)
 			wg.print_request_stats()
 			print_date('DB update ended', start_time)
 			bu.print_new_line(True)
@@ -491,7 +493,11 @@ async def chk_account2update(db : motor.motor_asyncio.AsyncIOMotorDatabase, acco
 		return False
 
 
-def print_update_stats(mode: list, error_log : bool = False):
+def print_update_stats(mode: list, error_log : bool = False, stat_logger: RecordLogger = None):
+	if stat_logger != None:
+		for stat in sorted(stat_logger.get_categories()):
+			bu.verbose_std('{:20}: {}'.format(stat, stat_logger.get_value(stat)))
+	
 	if len(get_stat_modes(mode)) > 0:
 		bu.verbose_std('Total ' + str(stats_added) + ' stats updated')
 		return True
@@ -755,6 +761,8 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 	chk_invalid		= args.chk_invalid
 	clr_error_log 	= args.run_error_log
 	
+	stat_logger = RecordLogger()
+
 	while not playerQ.empty():
 		try:
 			account_id = await playerQ.get()
@@ -767,7 +775,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 			latest_battle = None
 
 			stats = await wg.get_player_tank_stats(account_id, cache=False)
-			if stats == None:
+			if stats == None:				
 				raise bu.StatsNotFound('WG API return NULL stats for ' + str(account_id))
 			tank_stats = []
 			latest_battle = 0
@@ -788,23 +796,29 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 				added = err.details['nInserted']
 				stats_added += added										
 			finally:
+				stat_logger.log('accounts with tank stats')
+				stat_logger.log('tank stats')
 				if clr_error_log:
 					await clear_error_log(db, account_id, stat_type)
 				if chk_invalid:
+					stat_logger.log('invalid accounts marked valid')
 					set_account_valid(db, account_id)
 				if added == 0:
+					stat_logger.log('account inactive')
 					inactive = True
 				await update_stats_update_time(db, account_id, stat_type, latest_battle, inactive)
 				debug_account_id(account_id, str(added) + 'Tank stats added', id=worker_id)			
 		except bu.StatsNotFound as err:
+			stat_logger.log('accounts without tank stats')
 			log_account_id(account_id, exception=err, id=worker_id)
 			await log_error(db, account_id, stat_type, clr_error_log, chk_invalid)
 		except Exception as err:
+			stat_logger.log('accounts with errors')
 			error_account_id(account_id, 'Unexpected error: ' + ((' URL: ' + url) if url!= None else ""), exception=err, id=worker_id)
 			await log_error(db, account_id, stat_type, clr_error_log, chk_invalid)
 		finally:
 			playerQ.task_done()	
-	return None
+	return stat_logger
 
 
 ## NOT IMPLEMENTED YET
