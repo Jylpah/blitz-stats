@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.8
+#!/usr/bin/env python3
 
 # Script Prune stats from the DB per release 
 
@@ -7,7 +7,7 @@ import aioconsole, re, logging, time, xmltodict, collections, pymongo, motor.mot
 import ssl, configparser
 from datetime import date
 import blitzutils as bu
-from blitzutils import BlitzStars
+from blitzutils import BlitzStars, RecordLogger
 
 N_WORKERS = 4
 MAX_RETRIES = 3

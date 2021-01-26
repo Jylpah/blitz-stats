@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.8
+#!/usr/bin/env python3
 
 # Script fetch Blitz player stats and tank stats
 
@@ -7,7 +7,7 @@ import motor.motor_asyncio, ssl, lxml, re, logging, time, xmltodict, collections
 import configparser
 import blitzutils as bu
 from bs4 import BeautifulSoup
-from blitzutils import BlitzStars, WG, WoTinspector
+from blitzutils import BlitzStars, WG, WoTinspector, RecordLogger
 
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
@@ -391,11 +391,13 @@ async def get_players_WI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: ar
 	bu.finish_progress_bar()
 	bu.debug('Replays fetched. Cancelling fetcher workers')
 	for task in tasks:
-		task.cancel()	
+		task.cancel()
+	replays = 0	
 	for res in await asyncio.gather(*tasks):
-		players.update(res)		
+		players.update(res[0])
+		replays += res[1]		
 	await wi.close()
-
+	bu.verbose_std('Replays added into DB: ' + str(replays))
 	return players
 
 async def WI_old_replay_found():
@@ -411,6 +413,7 @@ async def WI_replay_fetcher(db : motor.motor_asyncio.AsyncIOMotorDatabase, queue
 	players = set()
 	dbc = db[DB_C_REPLAYS]
 
+	replays = 0 
 	while True:
 		try:
 			replay_link = None
@@ -433,6 +436,7 @@ async def WI_replay_fetcher(db : motor.motor_asyncio.AsyncIOMotorDatabase, queue
 				continue
 			json_resp['_id'] = replay_id
 			try:
+				replays += 1
 				await dbc.insert_one(json_resp)
 				bu.debug('Replay added to database', id=workerID)
 			except Exception as err:
@@ -447,7 +451,7 @@ async def WI_replay_fetcher(db : motor.motor_asyncio.AsyncIOMotorDatabase, queue
 		finally:
 			if replay_link != None:
 				queue.task_done()	
-	return players
+	return players, replays
 	
 
 async def empty_queue(queue : asyncio.Queue, Qname = ''):
