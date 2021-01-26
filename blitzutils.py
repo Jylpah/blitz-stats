@@ -1,7 +1,7 @@
 #!/usr/bin/env python3.8
 
 import sys, os, json, time,  base64, urllib, inspect, hashlib, re, string, random
-import asyncio, aiofiles, aiohttp, aiosqlite, lxml
+import asyncio, aiofiles, aiohttp, aiosqlite, lxml, collections
 from pathlib import Path
 from bs4 import BeautifulSoup
 from progress.bar import IncrementalBar
@@ -148,6 +148,10 @@ class ThrottledClientSession(aiohttp.ClientSession):
         return await super()._request(*args,**kwargs)
 
 
+## -----------------------------------------------------------
+#### Class AsyncLogger()
+## -----------------------------------------------------------
+
 class AsyncLogger():
     """Async file logger"""
     def __init__(self) -> None: 
@@ -199,7 +203,47 @@ class AsyncLogger():
         except Exception as err:
             error('Error closing log file', err)
         return None 
-        
+
+
+def def_value_zero():
+    return 0
+
+
+## -----------------------------------------------------------
+#### Class RecordLogger()
+## -----------------------------------------------------------
+class RecordLogger():
+
+
+    def __init__(self):
+        self.logger = collections.defaultdict(def_value_zero)
+
+
+    def log(self, category: str, count: int = 1) -> None:
+        self.logger[category] += count
+        return None
+
+
+    def get_value(self, category) -> int:
+        try:
+            return self.logger[category]
+        except:
+            return None
+
+
+    def get_categories(self) -> list:
+        return list(self.logger.keys())
+
+    
+    def get_values(self) -> dict():
+        return self.logger
+    
+
+    def merge(self, B: RecordLogger):
+        for cat in B.get_categories():
+            self.log(cat, B.get_value(cat))
+
+
 ## -----------------------------------------------------------
 #### Utils
 ## -----------------------------------------------------------
