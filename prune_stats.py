@@ -10,7 +10,7 @@ import blitzutils as bu
 from blitzutils import BlitzStars, RecordLogger
 
 N_WORKERS = 4
-MAX_RETRIES = 3
+
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
 FILE_CONFIG = 'blitzstats.ini'
@@ -921,16 +921,14 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argpa
         dbc_prunelist = db[DB_C_STATS_2_DEL]
         batch_size = 100
         stats_pruned = dict()
-        Q = asyncio.Queue(10*N_WORKERS)
+        Q = asyncio.Queue(2*batch_size)
         workers = list()
         for workerID in range(N_WORKERS):
             workers.append(asyncio.create_task(prune_stats_worker(db, Q, workerID)))                    
         
         for stat_type in args.mode:
             stats_pruned[stat_type]   = 0
-            stats2prune               = dict()
-            stats2prune['stat_type']  = stat_type
-
+            
             N_stats2prune = await dbc_prunelist.count_documents({'type' : stat_type})
             
             bu.debug('Pruning ' + str(N_stats2prune) + ' ' + stat_type)            
@@ -942,7 +940,9 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argpa
                 for doc in docs:
                     ids.add(doc['id'])                    
                 if len(ids) > 0:
-                    stats2prune['ids'] = list(ids)
+                    stats2prune                 = dict()
+                    stats2prune['stat_type']    = stat_type
+                    stats2prune['ids']          = list(ids)
                     await Q.put(stats2prune)
                     bu.debug('added ' + str(len(ids)) + ' stats to be pruned to the queue')
                 docs = await cursor.to_list(batch_size)
@@ -985,20 +985,9 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, Q: as
                         stats_pruned[stat_type] += 1
                         bu.print_progress()
                     else:
-                        bu.error('Could not delete ' + stat_type + ' _id=' + _id)            
-                # res = await dbc_2_prune.delete_many( { '_id': { '$in': ids } } )
-                # bu.debug('Pruned ' + str(res.deleted_count) + ' stats from ' + stat_type, id=ID )
-                # stats_pruned[stat_type] += res.deleted_count
-                # bu.print_progress(step=res.deleted_count)
-                # if res.deleted_count != len(ids):
-                #     bu.error('Not all duplicates deleted. Dups=' + str(len(ids)) + ' deleted=' + str(res.deleted_count))
+                        bu.error('Could not delete ' + stat_type + ' _id=' + _id)                
             except Exception as err:
                 bu.error(exception=err, id=ID)
-            
-            # try:
-            #     await dbc_prunelist.delete_many({ '$and': [ {'type': stat_type}, {'id': { '$in': ids } }]})
-            # except Exception as err:
-            #     bu.error('Failure in clearing stats-to-be-pruned table', id=ID)
             Q.task_done()        
     except (asyncio.CancelledError):
         bu.debug('Prune queue is empty', id=ID)
