@@ -212,20 +212,30 @@ def def_value_zero():
 ## -----------------------------------------------------------
 class RecordLogger():
 
-
-    def __init__(self):
+    def __init__(self, name: str = ''):
         self.logger = collections.defaultdict(def_value_zero)
+        self.name = name
 
 
     def log(self, category: str, count: int = 1) -> None:
-        self.logger[category] += count
+        self.logger[self._get_long_cat(category)] += count
         return None
 
 
+    def _get_long_cat(self, cat) -> str:
+        return self.name + ': ' + cat
+
+
+    def _get_str(self, cat: str) -> str:
+        return '{:40}: {}'.format(cat, self.get_value(cat))
+    
+
     def get_value(self, category) -> int:
-        try:
+        if category in self.logger:
             return self.logger[category]
-        except:
+        elif self._get_long_cat(category) in self.logger:
+            return self.logger[self._get_long_cat(category)]
+        else:
             return None
 
 
@@ -239,10 +249,23 @@ class RecordLogger():
 
     def merge(self, B):
         if not isinstance(B, RecordLogger):
-            error('input is RecordLogger object')
+            error('input is not a RecordLogger object')
             return None 
         for cat in B.get_categories():
-            self.log(cat, B.get_value(cat))
+            self.logger[cat] += B.get_value(cat)
+
+
+    def print(self, do_print : bool = False): 
+        if do_print:
+            print(self.name + ':')
+            for cat in self.logger:
+                print(self._get_str(cat))
+            return None
+        else:
+            ret = self.name + ':'
+            for cat in self.logger:
+                ret = ret + '\n' + self._get_str(cat)
+            return ret
 
 
 ## -----------------------------------------------------------

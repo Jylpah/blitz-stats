@@ -221,7 +221,7 @@ async def main(argv):
 			for task in worker_tasks:
 				task.cancel()
 			bu.log('Waiting for workers to cancel')
-			stat_logger = RecordLogger()
+			stat_logger = RecordLogger('Update stats')
 			if len(worker_tasks) > 0:				
 				for stats_logged in await asyncio.gather(*worker_tasks, return_exceptions=True):
 					stat_logger.merge(stats_logged)
@@ -229,8 +229,11 @@ async def main(argv):
 			if (args.sample == 0) and (not args.run_error_log):
 				# only for full stats
 				log_update_time(db, args.mode)
-			print_update_stats(args.mode, args.run_error_log, stat_logger)
+
 			wg.print_request_stats()
+			bu.print_new_line(True)
+			print_update_stats(args.mode, args.run_error_log, stat_logger)
+			bu.print_new_line(True)
 			print_date('DB update ended', start_time)
 			bu.print_new_line(True)
 	except asyncio.CancelledError as err:
@@ -496,12 +499,11 @@ async def chk_account2update(db : motor.motor_asyncio.AsyncIOMotorDatabase, acco
 
 def print_update_stats(mode: list, error_log : bool = False, stat_logger: RecordLogger = None):
 	if stat_logger != None:
-		for stat in sorted(stat_logger.get_categories()):
-			bu.verbose_std('{:40}: {}'.format(stat, stat_logger.get_value(stat)))
-	
-	if len(get_stat_modes(mode)) > 0:
-		bu.verbose_std('Total ' + str(stats_added) + ' stats updated')
+		bu.verbose_std(stat_logger.print())
 		return True
+	# if len(get_stat_modes(mode)) > 0:
+	# 	bu.verbose_std('Total ' + str(stats_added) + ' stats updated')
+	# 	return True
 	else:
 		return False
 
@@ -761,8 +763,9 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 
 	chk_invalid		= args.chk_invalid
 	clr_error_log 	= args.run_error_log
+	force 			= args.force
 	
-	stat_logger = RecordLogger()
+	stat_logger = RecordLogger('Tank stats')
 
 	while not playerQ.empty():
 		try:
@@ -797,26 +800,27 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 				added = err.details['nInserted']
 				stats_added += added										
 			finally:
-				stat_logger.log('tank stats: accounts /w stats')
-				stat_logger.log('tank stats: tanks', added)
+				stat_logger.log('accounts updated')
+				stat_logger.log('added', added)
 				if clr_error_log:
 					await clear_error_log(db, account_id, stat_type)
 				if chk_invalid:
-					stat_logger.log('tank stats: accounts marked valid')
+					stat_logger.log('accounts marked valid')
 					set_account_valid(db, account_id)
-				if added == 0:
-					stat_logger.log('tank stats: accounts inactive')
-					inactive = True
-				else:
-					inactive = False
+				if not force:
+					if added == 0:
+						stat_logger.log('accounts marked inactive')
+						inactive = True
+					else:
+						inactive = False
 				await update_stats_update_time(db, account_id, stat_type, latest_battle, inactive)
 				debug_account_id(account_id, str(added) + 'Tank stats added', id=worker_id)			
 		except bu.StatsNotFound as err:
-			stat_logger.log('tank stats: accounts /wo stats')
+			stat_logger.log('no stats found')
 			log_account_id(account_id, exception=err, id=worker_id)
 			await log_error(db, account_id, stat_type, clr_error_log, chk_invalid)
 		except Exception as err:
-			stat_logger.log('tank stats: unknown errors')
+			stat_logger.log('unknown errors')
 			error_account_id(account_id, 'Unexpected error: ' + ((' URL: ' + url) if url!= None else ""), exception=err, id=worker_id)
 			await log_error(db, account_id, stat_type, clr_error_log, chk_invalid)
 		finally:
@@ -890,7 +894,7 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 	server = None
 	account_ids = None
 
-	stat_logger = RecordLogger()
+	stat_logger = RecordLogger('Player achievements')
 
 	for server in WG.URL_WG_SERVER.keys():
 		players[server] = list()
@@ -945,14 +949,14 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 					# RECOMMENDATION TO USE SINGLE INSERTS OVER MANY
 					await dbc.insert_one(stat)					
 					stats_added += 1
-					stat_logger.log('player stats: added')
+					stat_logger.log('added')
 					# players_achivements.append(stat)
 					# res = await dbc.insert_many(players_achivements, ordered=False)
 					# tmp = len(res.inserted_ids)
 					# bu.debug(str(tmp) + ' stats added (insert_many() result)', worker_id)
 					# stats_added += tmp
 					# #stats_added += len(res.inserted_ids)	
-					debug_account_id(account_id, 'stats added', id=worker_id)
+					debug_account_id(account_id, 'stats updated', id=worker_id)
 					if clr_error_log:
 						await clear_error_log(db, account_id, stat_type)
 					if chk_invalid:
@@ -960,22 +964,22 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 					await update_stats_update_time(db, account_id, stat_type, NOW)
 				except bu.StatsNotFound as err:	
 					log_account_id(account_id, exception=err, id=worker_id)
-					stat_logger.log('players stats: no stats found')
+					stat_logger.log('no stats found')
 					await log_error(db, account_id, stat_type, clr_error_log, chk_invalid)
 				except Exception as err:
 					error_account_id(account_id, 'Failed to store stats', exception=err, id=worker_id)
-					stat_logger.log('players stats: errors')
+					stat_logger.log('errors')
 					#error_account_id(account_id, 'Failed to store player achievement stats', id=worker_id)
 					await log_error(db, account_id, stat_type, clr_error_log, chk_invalid)
 					
 		except bu.StatsNotFound as err:	
-			stat_logger.log('players stats: no stats found', len(account_ids))
+			stat_logger.log('no stats found', len(account_ids))
 			bu.log('Error fetching player achievement stats', exception=err, id=worker_id)
 			for account_id in account_ids:
 				await log_error(db, account_id, stat_type, clr_error_log, chk_invalid)
 		except Exception as err:
 			bu.error('Unexpected error in fetching: ', exception=err, id=worker_id)
-			stat_logger.log('players stats: errors', len(account_ids))
+			stat_logger.log('errors', len(account_ids))
 			for account_id in account_ids:
 				await log_error(db, account_id, stat_type, clr_error_log, chk_invalid)
 		finally:			
@@ -983,7 +987,7 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 			for _ in range(N_account_ids):
 				playerQ.task_done()
 			account_ids = None
-	return None
+	return stat_logger
 
 
 async def log_error(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int, stat_type: str, 
