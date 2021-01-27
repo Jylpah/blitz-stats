@@ -68,7 +68,7 @@ async def main(argv):
     parser = argparse.ArgumentParser(description='Prune stats from the DB by update')
     parser.add_argument('--mode', default=['tank_stats'], nargs='+', choices=DB_C.keys(), help='Select type of stats to export')
     
-    parser.add_argument( '-a', '--analyze', action='store_true', default=False, help='Skip analyzing the database')
+    parser.add_argument( '-a', '--analyze', action='store_true', default=False, help='Analyze the database for duplicates')
     parser.add_argument( '-c', '--check', 	action='store_true', default=False, help='Check the analyzed duplicates')
     parser.add_argument( '-p', '--prune', 	action='store_true', default=False, help='Actually Prune database i.e. DELETE DATA')
     
