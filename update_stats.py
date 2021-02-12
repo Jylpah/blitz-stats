@@ -334,24 +334,11 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 		update_field 	= UPDATE_FIELD[mode]
 		NOW = bu.NOW()
 
-		if chk_invalid:
-			pipeline = [   	{'$match': { '$and': [ { '_id': { '$lt': 31e8 } }, 
-													{ 'invalid': { '$exists': True } }] } }, 
-							]
-		elif force:
-			pipeline = [   	{'$match': { '$and': [ { '_id': { '$lt': 31e8 } }, 
-													{ 'invalid': { '$exists': False } }] } }, 
-							]
-		else:
-			pipeline = [ 	{'$match': {  '$and' : [ { '_id': { '$lt': 31e8 } }, 
-													{ 'invalid': { '$exists': False} }, 
-													{ '$or': [ 
-																{ update_field : None }, 
-																{ update_field : { '$lt': NOW - cache_valid}}
-																] } 
-													] } }						
-						]
-		
+		match = [ { '_id' : {  '$lt' : 31e8}}, { 'invalid': { '$exists': chk_invalid }} ]
+		if not force:
+			match.append( { '$or': [ { update_field : None }, { update_field : { '$lt': NOW - cache_valid}} ] } )
+			
+		pipeline = [ { '$match' : { '$and' : match } } ]
 		if sample > 0:
 			pipeline.append({'$sample': {'size' : sample} })
 
@@ -368,12 +355,14 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 				i += 1
 				if bu.print_progress():
 					bu.debug('Accounts read from DB: ' + str(i))
-				
-				if (not force) and (not chk_invalid) and ('invalid'in player):
-					if player['invalid']  and (update_field in player) and ('latest_battle_time' in player):
-						if (player[update_field] != None) and (player['latest_battle_time'] != None) and (player['latest_battle_time'] < NOW):
-							if (NOW - player[update_field]) < min(MAX_UPDATE_INTERVAL, (player[update_field] - player['latest_battle_time'])/2):
-								continue
+				try: 
+					if player['inactive'] and not (force or chk_invalid):    # enable forced recheck of accounts marked not inactive
+						latest_battle_time = min(player['latest_battle_time'], NOW)
+						if (NOW - player[update_field]) < min(MAX_UPDATE_INTERVAL, (player[update_field] - latest_battle_time)/2):
+							continue
+				except:
+					# not all fields in the account record. Ignore and re-check the account.
+					pass
 				account_ids.append(player['_id'])
 			except Exception as err:
 				bu.error('account_id=' + str(player), err)
@@ -619,7 +608,7 @@ async def update_account(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_i
 			set_fields[UPDATE_FIELD[stat_type]] = bu.NOW()
 		else:
 			set_fields[UPDATE_FIELD['default']] = bu.NOW()
-			
+
 		if len(unset_fields) > 0:
 			await dbc.update_one({ '_id': account_id }, {  '$set': set_fields, '$unset': unset_fields } )
 		else:
