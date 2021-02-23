@@ -356,13 +356,13 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 				if bu.print_progress():
 					bu.debug('Accounts read from DB: ' + str(i))
 				try: 
-					if player['inactive'] and not (force or chk_invalid):    # enable forced recheck of accounts marked not inactive
+					if ('inactive' in player) and player['inactive'] and not (force or chk_invalid):    # enable forced recheck of accounts marked not inactive
 						latest_battle_time = min(player['latest_battle_time'], NOW)
 						if (NOW - player[update_field]) < min(MAX_UPDATE_INTERVAL, (player[update_field] - latest_battle_time)/2):
 							continue
 				except:
-					# not all fields in the account record. Ignore and re-check the account.
-					pass
+					# not all fields in the account record. SKIP since the account is inactive
+					continue
 				account_ids.append(player['_id'])
 			except Exception as err:
 				bu.error('account_id=' + str(player), err)
@@ -951,7 +951,7 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 						await clear_error_log(db, account_id, stat_type)
 					if chk_invalid:
 						set_account_valid(db, account_id)
-					await update_stats_update_time(db, account_id, stat_type, stat['last_battle_time'])
+					await update_stats_update_time(db, account_id, stat_type)
 				except bu.StatsNotFound as err:	
 					log_account_id(account_id, exception=err, id=worker_id)
 					stat_logger.log('no stats found')
