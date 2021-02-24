@@ -198,14 +198,14 @@ async def export_tankopedia(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: 
     try:
         dbc = db[DB_C_TANKOPEDIA]
         tank_count = await dbc.count_documents({})
-        tank_cursor = dbc.find()
+        tank_cursor = dbc.find().sort('tank_id', pymongo.ASCENDING)
         export = {}
         export['status'] = 'ok'
         export['meta'] = { 'count': tank_count }
         data = {}
         async for tank in tank_cursor:
             del tank['_id']
-            data[str(tank['tank_id'])] = tank
+            data[str(tank['tank_id'])] = bu.sort_dict(tank)
             STATS_EXPORTED += 1
         export['data'] = data
 
@@ -215,7 +215,7 @@ async def export_tankopedia(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: 
         tank_strs = {}
         async for tank_str in cursor:
             tank_strs[tank_str['_id']] = tank_str['value']
-        export['userStr'] = tank_strs
+        export['userStr'] = bu.sort_dict(tank_strs)
 
     except Exception as err:
         bu.error(exception=err)
