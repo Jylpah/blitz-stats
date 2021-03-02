@@ -6,8 +6,8 @@ ENV PATH /app/getBlitzStats:/usr/local/bin:$PATH
 WORKDIR /app/getBlitzStats
 RUN mkdir data
 COPY requirements.txt ./
-RUN python3.8 -m pip install --no-cache-dir -U pip
-RUN python3.8 -m pip install --no-cache-dir -r requirements.txt
+RUN python3.9 -m pip install --no-cache-dir -U pip
+RUN python3.9 -m pip install --no-cache-dir -r requirements.txt
 COPY tanks.json maps.json ./
 COPY *.py ./
 CMD ["/bin/bash"]
