@@ -322,6 +322,11 @@ def log_update_time(db : motor.motor_asyncio.AsyncIOMotorDatabase, mode : list):
 	return True
 
 
+def mk_account(account_id: int, inactive: bool = False ) -> dict:
+	return { 'account_id': account_id, 'inactive': inactive }
+
+
+
 async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, mode: str, args : argparse.Namespace):
 	"""Get list of active accounts from the database"""
 	try:
@@ -353,17 +358,20 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 		async for player in cursor:
 			try:
 				i += 1
+				inactive = False
 				if bu.print_progress():
 					bu.debug('Accounts read from DB: ' + str(i))
 				try: 
-					if ('inactive' in player) and player['inactive'] and not (force or chk_invalid):    # enable forced recheck of accounts marked not inactive
-						latest_battle_time = min(player['latest_battle_time'], NOW)
-						if (NOW - player[update_field]) < min(MAX_UPDATE_INTERVAL, (player[update_field] - latest_battle_time)/2):
-							continue
+					if ('inactive' in player) and player['inactive']:
+						inactive = True
+						if not (force or chk_invalid):    # enable forced recheck of accounts marked not inactive
+							latest_battle_time = min(player['latest_battle_time'], NOW)
+							if (NOW - player[update_field]) < min(MAX_UPDATE_INTERVAL, (player[update_field] - latest_battle_time)/2):
+								continue
 				except:
 					# not all fields in the account record. SKIP since the account is inactive
 					continue
-				account_ids.append(player['_id'])
+				account_ids.append(mk_account(player['_id'], inactive))
 			except Exception as err:
 				bu.error('account_id=' + str(player), err)
 
@@ -374,6 +382,7 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 		return account_ids
 	except Exception as err:
 		bu.error('Unexpected error', err)
+
 
 async def get_active_players_BS(args : argparse.Namespace):
 	"""Get active_players from BlitzStars or local cache file"""
@@ -397,7 +406,10 @@ async def get_active_players_BS(args : argparse.Namespace):
 	else:
 		async with aiofiles.open(FILE_ACTIVE_PLAYERS, 'rt') as f:
 			active_players = json.loads(await f.read())
-	return active_players
+	account_ids = list()
+	for account_id in active_players:
+		account_ids.append(mk_account(account_id))
+	return account_ids
 				
 
 async def get_players_errorlog(db : motor.motor_asyncio.AsyncIOMotorDatabase, mode :str):
@@ -409,7 +421,10 @@ async def get_players_errorlog(db : motor.motor_asyncio.AsyncIOMotorDatabase, mo
 		cursor = dbc.find({'type': mode}, { 'account_id': 1, '_id': 0 } )
 		async for stat in cursor:
 			try:
-				account_ids.add(stat['account_id'])
+				inactive = False
+				if ('inactive' in stat):
+					inactive = stat['inactive']
+				account_ids.add(mk_account(stat['account_id'], inactive))
 			except Exception as err:
 				bu.error('Unexpected error', err)
 		bu.verbose_std('Re-checking ' + str(len(account_ids)) + ' account_ids')
@@ -418,73 +433,6 @@ async def get_players_errorlog(db : motor.motor_asyncio.AsyncIOMotorDatabase, mo
 	except Exception as err:
 		bu.error('Unexpected error', err)	
 	return None
-
-
-## DEPRECIATED
-async def chk_accounts2update(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_ids: list, stat_type: str) -> list:
-	"""Check whether the DB has fresh enough stats for the account_id & stat_type"""
-	dbc = db[DB_C_ACCOUNTS]
-	try:
-		bu.verbose_std('chk_accounts2update() is depreciated')
-		stats_update_needed = list()
-		update_field = UPDATE_FIELD[stat_type]
-		NOW = bu.NOW()
-
-		# this should work since Python does not enforce type hints: https://docs.python.org/3/library/typing.html 
-		if isinstance(account_ids, int):
-			account_ids = list(account_ids)
-
-		cursor = dbc.find( { '$and' : [{ '_id' : { '$in': account_ids }}, \
-		                               { 'invalid' : { '$exists': False }}, \
-									   { '$or': [ { 'last_battle_time' : { '$exists': False }}, \
-												{ 'last_battle_time' : { '$gt': NOW }}, \
-												{ update_field : { '$exists': False }}, \
-											#	{ update_field : { '$lt': NOW - MIN_UPDATE_INTERVAL}}, \
-												{ update_field : { '$gt': NOW}} ]}]}, \
-							{'last_battle_time' : 1, update_field : 1 } )
-		
-		
-
-		async for res in cursor: 
-			if (update_field in res) and ('latest_battle_time' in res):
-				if (res[update_field] != None) and (res['latest_battle_time'] != None) and (res['latest_battle_time'] < NOW):
-					if (NOW - res[update_field])  < min(MAX_UPDATE_INTERVAL, (res[update_field] - res['latest_battle_time'])/2):
-						continue
-			stats_update_needed.append(res['_id'])
-		
-	except Exception as err:
-		bu.error('Unexpected error', err)
-	bu.debug('Stats to update: ' + str(len(stats_update_needed)))
-	return stats_update_needed
-
-
-## DEPRECIATED
-async def chk_account2update(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id : int, stat_type: str) -> bool:
-	"""Check whether the DB has fresh enough stats for the account_id & stat_type"""
-	dbc = db[DB_C_ACCOUNTS]
-	bu.error('DEPRECIATED function')
-	try:
-		update_field = UPDATE_FIELD[stat_type]
-		res = await dbc.find_one( { '_id' : account_id })
-		if res == None:
-			bu.debug('account_id: ' + str(account_id) + ' not found fromn account DB. This should not happen.')
-			return False
-		if ('invalid' in res):
-			bu.debug('account_id: ' + str(account_id) + ' is invalid')
-			return False
-		if (update_field in res) and ('latest_battle_time' in res):
-			if (res[update_field] == None) or (res['latest_battle_time'] == None) or (res['latest_battle_time'] > bu.NOW()):
-				return True
-			elif (bu.NOW() - res[update_field])  < min(MAX_UPDATE_INTERVAL, (res[update_field] - res['latest_battle_time'])/2):
-				bu.debug('account_id: ' + str(account_id) + ' has been updated recently')
-				return False
-			# Do update
-			return True
-		else:
-			return True
-	except Exception as err:
-		bu.error('Unexpected error', err)
-		return False
 
 
 def print_update_stats(mode: list, error_log : bool = False, stat_logger: RecordLogger = None):
@@ -576,10 +524,13 @@ async def update_tankopedia( db: motor.motor_asyncio.AsyncIOMotorDatabase, filen
 async def mk_playerQ(queue : asyncio.Queue, account_ids : list):
 	"""Create queue of replays to post"""
 	for account_id in account_ids:
-		if account_id < 31e8:
-			await queue.put(account_id)
-		else:
-			debug_account_id(account_id, 'Chinese account. Cannot retrieve stats, skipping.')
+		try:
+			if account_id['account_id'] < 31e8:
+				await queue.put(account_id)
+			else:
+				debug_account_id(account_id, 'Chinese account. Cannot retrieve stats, skipping.')
+		except:
+			bu.error('No account_id found')
 	return None
 
 
@@ -593,6 +544,26 @@ async def del_account_id(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_i
 	finally:
 		debug_account_id(account_id, 'Removed account_id from the DB')
 	return None
+
+## DEPRECIATED
+async def is_account_valid(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int) -> bool: 
+	"""Check whether the account is valid. Returns None if the account is not found"""
+	try:
+		dbc = db[DB_C_ACCOUNTS]
+		res = await dbc.find_one( { '_id' : account_id })
+		if res == None:
+			bu.debug('account_id: ' + str(account_id) + ' not found fromn account DB')
+			return None
+		elif ('invalid' in res):
+			bu.debug('account_id: ' + str(account_id) + ' is invalid')
+			return False
+		elif ('inactive' in res) and (res['inactive'] == True):
+			return False
+		else:
+			return True		
+	except Exception as err:
+		error_account_id(account_id, 'Error checking account', exception=err)	
+	return False
 
 
 async def update_account(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int, stat_type: str = None, set_fields: dict = dict(), unset_fields : dict = dict()) -> bool:
@@ -617,6 +588,7 @@ async def update_account(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_i
 	except Exception as err:
 		error_account_id(account_id, 'Error updating account', exception=err)	
 	return False
+
 
 async def set_account_invalid(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int, stat_type: str = None):
 	"""Set account_id invalid"""
@@ -651,30 +623,26 @@ async def BS_player_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, p
 	field = 'player_stats_BS'
 
 	clr_error_log 	= args.run_error_log
-	force 			= args.force
-
+	
 	while True:
-		account_id = await playerQ.get()
+		player = await playerQ.get()
+		account_id = player['account_id']
 		bu.print_progress()
-		try:
-			
+		try:			
 			url = None
-			if (not force) and (len(await chk_accounts2update(db, account_id, field)) == 0):
-				debug_account_id(account_id, 'Fresh-enough stats exists in the DB', worker_id)
-			else:
-				stats = await bs.get_player_stats(account_id)
-				if stats == None:
-					raise bu.StatsNotFound('BlitzStars player stats not found: account_id ' + str(account_id))
-				last_battle_time = -1
-				for stat in stats:
-					last_battle_time = max(last_battle_time, stat['last_battle_time'])
-				try: 
-					await dbc.insert_many(stats, ordered=False)
-				except pymongo.errors.BulkWriteError as err:
-					pass
-				finally:
-					await update_stats_update_time(db, account_id, field, last_battle_time)
-					debug_account_id(account_id, 'Stats added', id=worker_id)		
+			stats = await bs.get_player_stats(account_id)
+			if stats == None:
+				raise bu.StatsNotFound('BlitzStars player stats not found: account_id ' + str(account_id))
+			last_battle_time = -1
+			for stat in stats:
+				last_battle_time = max(last_battle_time, stat['last_battle_time'])
+			try: 
+				await dbc.insert_many(stats, ordered=False)
+			except pymongo.errors.BulkWriteError as err:
+				pass
+			finally:
+				await update_stats_update_time(db, account_id, field, last_battle_time)
+				debug_account_id(account_id, 'Stats added', id=worker_id)		
 		except bu.StatsNotFound as err:
 			bu.debug(exception=err, id=worker_id)
 			await log_error(db, account_id, field, clr_error_log)		
@@ -697,42 +665,38 @@ async def BS_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 	field = 'tank_stats_BS'
 
 	clr_error_log 	= args.run_error_log
-	force 			= args.force
 
 	while True:
-		account_id = await playerQ.get()
+		player  = await playerQ.get()
+		account_id = player['account_id']
 		bu.print_progress()
 		try:
 			url = None
-			if (not force) and (len(await chk_accounts2update(db, account_id, field)) == 0 ):
-				debug_account_id(account_id, 'Fresh-enough stats exists in the DB', id=worker_id)
+			stats = await bs.get_player_tank_stats(account_id, cache=False)				
+			if (stats == None) or (len(stats) == 0):
+				debug_account_id(account_id, 'Did not receive stats from BlitzStars', id=worker_id)
 			else:
-					
-				stats = await bs.get_player_tank_stats(account_id, cache=False)				
-				if (stats == None) or (len(stats) == 0):
-					debug_account_id(account_id, 'Did not receive stats from BlitzStars', id=worker_id)
-				else:
-					stats = await bs.tank_stats2WG(stats)  ## Stats conversion
-					tank_stats = []
+				stats = await bs.tank_stats2WG(stats)  ## Stats conversion
+				tank_stats = []
 
-					for tank_stat in stats:
-						#bu.debug(str(tank_stat))
-						account_id 			= tank_stat['account_id'] 
-						tank_id 			= tank_stat['tank_id']
-						last_battle_time 	= tank_stat['last_battle_time']
-						tank_stat['_id']  	= mk_id(account_id, tank_id, last_battle_time)
-						tank_stats.append(tank_stat)
-					try: 
-						## Add functionality to filter out those stats that aretoo close to existing stats
-						res = await dbc.insert_many(tank_stats, ordered=False)
-						tmp = len(res.inserted_ids)
-						stats_added += tmp
-					except pymongo.errors.BulkWriteError as err:
-						tmp = err.details['nInserted']						
-						stats_added += tmp								
-					finally:
-						await update_stats_update_time(db, account_id, field, last_battle_time)
-						debug_account_id(account_id, 'Added ' + str(tmp) + ' stats', id=worker_id)	
+				for tank_stat in stats:
+					#bu.debug(str(tank_stat))
+					account_id 			= tank_stat['account_id'] 
+					tank_id 			= tank_stat['tank_id']
+					last_battle_time 	= tank_stat['last_battle_time']
+					tank_stat['_id']  	= mk_id(account_id, tank_id, last_battle_time)
+					tank_stats.append(tank_stat)
+				try: 
+					## Add functionality to filter out those stats that aretoo close to existing stats
+					res = await dbc.insert_many(tank_stats, ordered=False)
+					tmp = len(res.inserted_ids)
+					stats_added += tmp
+				except pymongo.errors.BulkWriteError as err:
+					tmp = err.details['nInserted']						
+					stats_added += tmp								
+				finally:
+					await update_stats_update_time(db, account_id, field, last_battle_time)
+					debug_account_id(account_id, 'Added ' + str(tmp) + ' stats', id=worker_id)	
 
 		except Exception as err:
 			error_account_id(account_id, 'Unexpected error: ' + ((' URL: ' + url) if url!= None else ""), exception=err, id=worker_id)
@@ -759,13 +723,14 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 
 	while not playerQ.empty():
 		try:
-			account_id = await playerQ.get()
+			player = await playerQ.get()
+			account_id = player['account_id']
+			inactive = player['inactive']
 			debug_account_id(account_id, 'Fetching tank stats', id=worker_id)
 			bu.print_progress()
 					
 			url = None
-			added = 0
-			inactive = None
+			added = 0			
 			latest_battle = None
 
 			stats = await wg.get_player_tank_stats(account_id, cache=False)
@@ -797,12 +762,20 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 				if chk_invalid:
 					stat_logger.log('accounts marked valid')
 					set_account_valid(db, account_id)
-				if not force:
-					if added == 0:
+				
+				if added == 0:
+					if inactive:
+						stat_logger.log('accounts still inactive')
+					else:
 						stat_logger.log('accounts marked inactive')
+					if not force:
 						inactive = True
 					else:
-						inactive = False
+						inactive = None
+				else:
+					if inactive:
+						stat_logger.log('accounts marked active')						
+					inactive = False
 				await update_stats_update_time(db, account_id, stat_type, latest_battle, inactive)
 				debug_account_id(account_id, str(added) + 'Tank stats added', id=worker_id)			
 		except bu.StatsNotFound as err:
@@ -1015,7 +988,6 @@ def debug_account_id(account_id: int, msg: str = '', id: int = None, exception: 
 
 def error_account_id(account_id: int, msg: str = '', id: int = None, exception: Exception = None):
 	return bu.error('account_id=' + str(account_id).ljust(10) + ': ' + msg, id=id, exception=exception)
-
 
 
 def mk_id(account_id: int, tank_id: int, last_battle_time: int) -> str:
