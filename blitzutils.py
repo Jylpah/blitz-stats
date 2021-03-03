@@ -1428,6 +1428,10 @@ class WG:
         return self.get_tank_data(tank_id, 'tier')
 
 
+    def get_tank_name_id(self, tank_id: int):
+        return self.get_tank_data(tank_id, 'name')
+
+
     async def put_2_statsQ(self, statsType: str, key: list, stats: list):
         """Save stats to a async queue to be saved by the stat_saver -task"""
         if self.statsQ == None:
