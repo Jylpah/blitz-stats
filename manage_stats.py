@@ -1072,7 +1072,7 @@ async def snapshot_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase):
                                 {'$group': { '_id': '$account_id',
                                             'doc': {'$first': '$$ROOT'}}},
                                 {'$replaceRoot': {'newRoot': '$doc'}}, 
-                                { '$out': target_collection } ]
+                                { '$merge': { 'into': target_collection, 'on': '_id', 'whenMatched': 'keepExisting' }} ]
                     cursor = dbc_archive.aggregate(pipeline, allowDiskUse=True)
                     s = 0
                     async for _ in cursor:
