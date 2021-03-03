@@ -2,7 +2,7 @@
 
 # Script Prune stats from the DB per release 
 
-import sys, os, argparse, datetime, json, inspect, pprint, aiohttp, asyncio, aiofiles, collections
+import sys, os, argparse, datetime, json, inspect, pprint, aiohttp, asyncio, aiofiles
 import aioconsole, re, logging, time, xmltodict, collections, pymongo, motor.motor_asyncio
 import ssl, configparser
 from datetime import date
@@ -999,12 +999,13 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, Q: as
 
                 for _id in ids:
                     res = await dbc_2_prune.delete_one( { '_id': _id } )
-                    if res.deleted_count == 1:
-                        await dbc_prunelist.delete_one({ '$and': [ {'type': stat_type}, {'id': _id }]})
+                    if res.deleted_count == 1:                        
                         stats_pruned[stat_type] += 1
                         bu.print_progress()
                     else:
-                        bu.error('Could not delete ' + stat_type + ' _id=' + _id)                
+                        bu.error('Could not delete ' + stat_type + ' _id=' + _id)
+                    await dbc_prunelist.delete_one({ '$and': [ {'type': stat_type}, {'id': _id }]})
+                    
             except Exception as err:
                 bu.error(exception=err, id=ID)
             Q.task_done()        
