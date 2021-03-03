@@ -1044,10 +1044,10 @@ async def snapshot_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase):
 
         dbc_archive       = db[DB_C[MODE_TANK_STATS]]
         target_collection = DB_C_TANK_STATS + '_latest'
-        dbc               = db[target_collection]
+        #dbc               = db[target_collection]
 
         tank_ids       = await get_tanks_DB(db)
-        id_step     = int(5e6)
+        id_step     = int(5e5)
         bu.verbose_std('Creating a snapshot of the latest tank stats')
         rl = RecordLogger('Snapshot tank stats')
         l = len(tank_ids)
@@ -1062,9 +1062,9 @@ async def snapshot_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase):
                 if tank_name == None:
                     tank_name = 'Tank name not found'
             i += 1
-            bu.set_counter('Processing tank (' + str(i) + '/' + str(l) + '): ' + tank_name + ' :')
+            bu.set_counter('Processing tank (' + str(i) + '/' + str(l) + '): ' + tank_name + ' :', rate=True)
             bu.log('Processing tank (' + str(i) + '/' + str(l) + '): ' + tank_name + ' :')
-            bu.set_progress_step(1000)
+            bu.set_progress_step(100)
             for account_id in range(0, int(31e8), id_step):
                 try:
                     pipeline = [ {'$match': { '$and': [{'account_id': {'$gte': account_id}}, {'account_id': {'$lt': account_id + id_step}}, {'tank_id': tank_id } ] }},
@@ -1074,9 +1074,11 @@ async def snapshot_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase):
                                 {'$replaceRoot': {'newRoot': '$doc'}}, 
                                 { '$out': target_collection } ]
                     cursor = dbc_archive.aggregate(pipeline, allowDiskUse=True)
+                    s = 0
                     async for _ in cursor:
                         bu.print_progress()
-                        rl.log('Tank stats snapshotted')
+                        s +=1
+                    rl.log('Tank stats snapshotted', s)
                 except Exception as err:
                     bu.error(exception=err)
             bu.finish_progress_bar()
