@@ -458,13 +458,16 @@ def set_progress_bar(heading: str, max_value: int, step: int = None, slow: bool 
     return
 
 
-def set_counter(heading: str):
+def set_counter(heading: str, rate = False):
     global _progress_obj, _progress_i, _progress_steps
     _progress_i = 0
     _progress_steps = 0
     if _progress_obj != None:
         finish_progress_bar()
-    _progress_obj = Counter(heading)
+    if rate:
+        _progress_obj = RateCounter(heading)
+    else:
+        _progress_obj = Counter(heading)
     return 
 
 
@@ -702,6 +705,20 @@ class SlowBar(IncrementalBar):
         else:
             return 0
  
+
+## -----------------------------------------------------------
+#### Class RateCounter 
+## -----------------------------------------------------------
+class RateCounter(Counter):
+    suffix = '%(index)d AVG %(avg_rate).1f/sec'
+    
+    @property
+    def avg_rate(self):
+        if self.avg > 0:
+            return  1 / self.avg
+        else:
+            return 0
+
 
 ## -----------------------------------------------------------
 #### Class StatsNotFound 
