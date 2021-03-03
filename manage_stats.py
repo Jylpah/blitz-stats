@@ -1047,7 +1047,7 @@ async def snapshot_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase):
         #dbc               = db[target_collection]
 
         tank_ids       = await get_tanks_DB(db)
-        id_step     = int(5e5)
+        id_step     = int(1e6)
         bu.verbose_std('Creating a snapshot of the latest tank stats')
         rl = RecordLogger('Snapshot tank stats')
         l = len(tank_ids)
@@ -1067,7 +1067,7 @@ async def snapshot_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase):
             bu.set_progress_step(100)
             for account_id in range(0, int(31e8), id_step):
                 try:
-                    pipeline = [ {'$match': { '$and': [{'account_id': {'$gte': account_id}}, {'account_id': {'$lt': account_id + id_step}}, {'tank_id': tank_id } ] }},
+                    pipeline = [ {'$match': { '$and': [ {'tank_id': tank_id }, {'account_id': {'$gte': account_id}}, {'account_id': {'$lt': account_id + id_step}} ] }},
                                 {'$sort': {'last_battle_time': -1}},
                                 {'$group': { '_id': '$account_id',
                                             'doc': {'$first': '$$ROOT'}}},
