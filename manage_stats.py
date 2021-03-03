@@ -787,7 +787,7 @@ async def check_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, u
                     continue
                 
                 bu.verbose(str_dups_tank_stats(update, account_id, tank_id, last_battle_time, is_dup=True))
-                cursor_stats = dbc.find({ '$and': [ {'account_id': account_id}, {'tank_id': tank_id}, 
+                cursor_stats = dbc.find({ '$and': [ {'tank_id': tank_id}, {'account_id': account_id},
                                                     {'last_battle_time': { '$gt': last_battle_time }}, { 'last_battle_time': { '$lt': end }}] }
                                                     ).sort('last_battle_time', pymongo.ASCENDING )
                 dup_count = 0
