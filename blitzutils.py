@@ -211,7 +211,7 @@ def def_value_zero():
 #### Class RecordLogger()
 ## -----------------------------------------------------------
 class RecordLogger():
-
+    """Count stats for categories"""
     def __init__(self, name: str = ''):
         self.logger = collections.defaultdict(def_value_zero)
         self.name = name
@@ -425,7 +425,7 @@ def _log_msg(msg =''):
 
 def set_progress_step(n: int):
     """Set the frequency of the progress dots. The bigger 'n', the fewer dots"""
-    global _progress_N, _progress_i 
+    global _progress_N, _progress_i, _progress_steps 
     if n > 0:
         _progress_N     = n
         _progress_i     = 0
