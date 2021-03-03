@@ -1063,8 +1063,11 @@ async def snapshot_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase):
                     tank_name = 'Tank name not found'
             i += 1
             bu.log('Processing tank (' + str(i) + '/' + str(l) + '): ' + tank_name + ' :')
-            bu.set_counter('Processing tank (' + str(i) + '/' + str(l) + '): ' + tank_name + ' :', rate=True)            
-            bu.set_progress_step(1000)
+            n_tank_stats = dbc_archive.count_documents({ 'tank_id': tank_id})
+            #bu.set_counter('Processing tank (' + str(i) + '/' + str(l) + '): ' + tank_name + ' :', rate=True)
+            bu.set_progress_bar('Processing tank (' + str(i) + '/' + str(l) + '): ' + tank_name + ' :', 
+                                n_tank_stats, step = 100, slow=True )
+            #bu.set_progress_step(1000)
             for account_id in range(0, int(31e8), id_step):
                 try:
                     pipeline = [ {'$match': { '$and': [ {'tank_id': tank_id }, {'account_id': {'$gte': account_id}}, {'account_id': {'$lt': account_id + id_step}} ] }},
