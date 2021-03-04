@@ -81,6 +81,8 @@ async def main(argv):
     arggroup_action.add_argument( '--prune', 	action='store_true', default=False, help='Prune database for the analyzed duplicates i.e. DELETE DATA')
     arggroup_action.add_argument( '--snapshot',	action='store_true', default=False, help='Snapshot latest stats from the archive')
     arggroup_action.add_argument( '--archive',	action='store_true', default=False, help='Archive latest stats')
+    
+    parser.add_argument('--opt_tanks', default=None, nargs='*', type=str, help='List of tank_ids for other options. Use "tank_id+" to start from a tank_id')
 
     arggroup_verbosity = parser.add_mutually_exclusive_group()
     arggroup_verbosity.add_argument( '-d', '--debug', 	action='store_true', default=False, help='Debug mode')
@@ -196,7 +198,7 @@ async def main(argv):
             if MODE_PLAYER_ACHIEVEMENTS in args.mode:
                 await snapshot_player_achivements(db)
             if MODE_TANK_STATS in args.mode:
-                await snapshot_tank_stats(db)
+                await snapshot_tank_stats(db, args)
              
     except KeyboardInterrupt:
         bu.finish_progress_bar()
@@ -1033,11 +1035,37 @@ async def get_tank_name(db: motor.motor_asyncio.AsyncIOMotorDatabase, tank_id: i
     return None
 
 
+async def get_tanks_opt(db: motor.motor_asyncio.AsyncIOMotorDatabase, option: list = None):
+    """read option and return tank_ids"""
+    try:
+        TANK_ID_MAX = 10e7
+        tank_id_start = TANK_ID_MAX
+        tank_ids = set()
+        p = re.compile(r'^(\d+)(\+)?$')
+        for tank in option:
+            try:
+                m = p.match(tank).groups()
+                if m[1] != None:
+                    tank_id_start = min(m[0], tank_id_start)
+                else:
+                    tank_ids.add(m[0])
+            except:
+                bu.error('Invalid tank_id give: ' + tank)
+        
+        if tank_id_start < TANK_ID_MAX:
+            tank_ids_start = [ tank_id for tank_id in sorted(get_tanks_DB(db)) if tank_id >= tank_id_start ]
+            tank_ids.update(tank_ids_start)
+        return list(tank_ids)
+    except Exception as err:
+        bu.error('Returning empty list', exception=err)
+    return list()
+
+
 async def snapshot_player_achivements(db: motor.motor_asyncio.AsyncIOMotorDatabase):
     pass
 
 
-async def snapshot_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase):
+async def snapshot_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace = None):
     try:
         # dbc         = db[DB_C[MODE_TANK_STATS]]
         # dbc_archive = db[DB_C_ARCHIVE[MODE_TANK_STATS]]
@@ -1046,7 +1074,10 @@ async def snapshot_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase):
         target_collection = DB_C_TANK_STATS + '_latest'
         #dbc               = db[target_collection]
 
-        tank_ids       = await get_tanks_DB(db)
+        if args.opt_tanks != None:
+            tank_ids = await get_tanks_opt(db, args.opt_tanks)
+        else:
+            tank_ids = await get_tanks_DB(db)
         id_step     = int(1e6)
         bu.verbose_std('Creating a snapshot of the latest tank stats')
         rl = RecordLogger('Snapshot tank stats')
@@ -1078,7 +1109,7 @@ async def snapshot_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase):
                                 { '$merge': { 'into': target_collection, 'on': '_id', 'whenMatched': 'keepExisting' }} ]
                     cursor = dbc_archive.aggregate(pipeline, allowDiskUse=True)
                     s = 0
-                    async for _ in cursor:
+                    async for _ in cursor:      ## This one does not work yet
                         bu.print_progress()
                         s +=1
                     rl.log('Tank stats snapshotted', s)
