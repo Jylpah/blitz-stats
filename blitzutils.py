@@ -496,7 +496,7 @@ def print_progress(step: int = 1, force = False, id : str = None) -> bool:
     return False    
 
 
-def finish_progress_bar():
+def finish_progress_bar(print_nl: bool = False):
     """Finish and close progress bar object"""
     global _progress_obj
 
@@ -505,8 +505,8 @@ def finish_progress_bar():
         # if isinstance(_progress_obj, Counter):
         #     print_nl = False
         _progress_obj.finish()
-        # if print_nl:
-        print_new_line()
+        if print_nl:
+            print_new_line()
     _progress_obj = None
     return None
 
