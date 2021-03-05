@@ -34,6 +34,8 @@ MODE_TANK_STATS         = 'tank_stats'
 MODE_PLAYER_STATS       = 'player_stats'
 MODE_PLAYER_ACHIEVEMENTS= 'player_achievements'
 
+FIELD_UPDATED = '_updated'
+
 DB_C = {    MODE_TANK_STATS             : DB_C_TANK_STATS, 
             MODE_PLAYER_STATS           : DB_C_PLAYER_STATS,
             MODE_PLAYER_ACHIEVEMENTS    : DB_C_PLAYER_ACHIVEMENTS 
@@ -1082,62 +1084,27 @@ async def archive_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args:
         dbc                 = db[DB_C[MODE_TANK_STATS]]
         archive_collection  = DB_C_ARCHIVE[MODE_TANK_STATS]
                 
-        if args.opt_tanks != None:
-            tank_ids = await get_tanks_opt(db, args.opt_tanks, archive=True)
-        else:
-            tank_ids = await get_tanks_DB(db, archive=True)
+        bu.verbose_std('Archiving tank stats')
+        rl = RecordLogger('Archive tank stats')
+        ## bu.set_progress_bar(info_str, n_tank_stats, step = 1000, slow=True )  ## After MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
+        pipeline = [ {'$match': { FIELD_UPDATED : True } },
+                    { '$unset': FIELD_UPDATED },                                  
+                    { '$merge': { 'into': archive_collection, 'on': '_id', 'whenMatched': 'keepExisting' }} ]
+        cursor = dbc.aggregate(pipeline, allowDiskUse=True)
+        s = 0
+        async for _ in cursor:      ## This one does not work yet until MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
+            pass
+            # bu.print_progress()
+            # s +=1
+        rl.log('Tank stats archived', s)        
         
-        bu.verbose_std('Creating a snapshot of the latest tank stats')
-        
-        rl = RecordLogger('Snapshot tank stats')
-        l = len(tank_ids)
-        i = 0
-        id_max      = int(31e8)
-        id_step     = int(1e6)
-        for tank_id in tank_ids:
-            tank_name = None
-            try:
-                tank_name = await get_tank_name(db, tank_id)
-            except Exception as err:
-                bu.error('tank_id=' + str(tank_id) + ' not found', exception=err)
-            finally:
-                if tank_name == None:
-                    tank_name = 'Tank name not found'
-            i += 1
-            info_str = 'Processing tank (' + str(i) + '/' + str(l) + '): ' + tank_name + ' (' +  str(tank_id) + '):'
-            bu.log(info_str)
-            # n_tank_stats = dbc_archive.count_documents({ 'tank_id': tank_id})
-            #bu.set_counter(info_str, rate=True)
-            #bu.set_progress_step(1000)
-            bu.set_progress_bar(info_str, 31e8/id_step, step = 1, slow=True )
-            ## bu.set_progress_bar(info_str, n_tank_stats, step = 1000, slow=True )  ## After MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
-            for account_id in range(0, id_max, id_step):
-                bu.print_progress()
-                try:
-                    pipeline = [ {'$match': { '$and': [ {'tank_id': tank_id }, {'account_id': {'$gte': account_id}}, {'account_id': {'$lt': account_id + id_step}} ] }},
-                                {'$sort': {'last_battle_time': -1}},
-                                {'$group': { '_id': '$account_id',
-                                            'doc': {'$first': '$$ROOT'}}},
-                                {'$replaceRoot': {'newRoot': '$doc'}}, 
-                                { '$merge': { 'into': archive_collection, 'on': '_id', 'whenMatched': 'keepExisting' }} ]
-                    cursor = dbc.aggregate(pipeline, allowDiskUse=True)
-                    s = 0
-                    async for _ in cursor:      ## This one does not work yet until MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
-                        pass
-                        # bu.print_progress()
-                        # s +=1
-                    rl.log('Tank stats snapshotted', s)
-                except Exception as err:
-                    bu.error(exception=err)
-            bu.finish_progress_bar()
-            rl.log('Tanks processed')
-        bu.log(rl.print(do_print=False))
-        rl.print()
     except Exception as err:
         bu.error(exception=err)
+    finally:
+        bu.finish_progress_bar()        
+        bu.log(rl.print(do_print=False))
+        rl.print()
     return None
-
-    
 
 
 async def snapshot_player_achivements(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace = None):
