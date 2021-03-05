@@ -15,6 +15,7 @@ logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
 FILE_CONFIG = 'blitzstats.ini'
 
+DB_C_ARCHIVE            = '_archive'
 DB_C_ACCOUNTS   		= 'WG_Accounts'
 DB_C_UPDATES            = 'WG_Releases'
 DB_C_PLAYER_STATS		= 'WG_PlayerStats'
@@ -38,11 +39,9 @@ DB_C = {    MODE_TANK_STATS             : DB_C_TANK_STATS,
             MODE_PLAYER_ACHIEVEMENTS    : DB_C_PLAYER_ACHIVEMENTS 
         }
 
-DB_C_ARCHIVE = {    MODE_TANK_STATS             : DB_C_TANK_STATS + '_Archive', 
-                    MODE_PLAYER_STATS           : DB_C_PLAYER_STATS + '_Archive',
-                    MODE_PLAYER_ACHIEVEMENTS    : DB_C_PLAYER_ACHIVEMENTS + '_Archive'
-        }
-
+DB_C_ARCHIVE = dict()
+for mode in DB_C:
+    DB_C_ARCHIVE[mode] = DB_C[mode] + DB_C_ARCHIVE
 
 CACHE_VALID = 24*3600*7   # 7 days
 DEFAULT_SAMPLE = 1000
@@ -198,9 +197,17 @@ async def main(argv):
             bu.verbose_std('Starting to snapshot stats in 3 seconds. Press CTRL 0 C to CANCEL')
             bu.wait(3)
             if MODE_PLAYER_ACHIEVEMENTS in args.mode:
-                await snapshot_player_achivements(db)
+                await snapshot_player_achivements(db, args)
             if MODE_TANK_STATS in args.mode:
                 await snapshot_tank_stats(db, args)
+
+        elif args.archive:
+            bu.verbose_std('Starting to archive stats in 3 seconds. Press CTRL 0 C to CANCEL')
+            bu.wait(3)
+            if MODE_PLAYER_ACHIEVEMENTS in args.mode:
+                await archive_player_achivements(db, args)
+            if MODE_TANK_STATS in args.mode:
+                await archive_tank_stats(db, args)
              
     except KeyboardInterrupt:
         bu.finish_progress_bar()
@@ -1020,9 +1027,12 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, Q: as
     return rl
 
 
-async def get_tanks_DB(db: motor.motor_asyncio.AsyncIOMotorDatabase):
+async def get_tanks_DB(db: motor.motor_asyncio.AsyncIOMotorDatabase, archive=False):
     """Get tank_ids of tanks in the DB"""
-    dbc = db[DB_C_TANK_STATS]
+    if archive: 
+        dbc = db[DB_C_TANK_STATS + DB_C_ARCHIVE]
+    else:
+        dbc = db[DB_C_TANK_STATS]
     return await dbc.distinct('tank_id').sort()
 
 
@@ -1037,7 +1047,7 @@ async def get_tank_name(db: motor.motor_asyncio.AsyncIOMotorDatabase, tank_id: i
     return None
 
 
-async def get_tanks_opt(db: motor.motor_asyncio.AsyncIOMotorDatabase, option: list = None):
+async def get_tanks_opt(db: motor.motor_asyncio.AsyncIOMotorDatabase, option: list = None, archive=False):
     """read option and return tank_ids"""
     try:
         TANK_ID_MAX = 10e7
@@ -1055,7 +1065,7 @@ async def get_tanks_opt(db: motor.motor_asyncio.AsyncIOMotorDatabase, option: li
                 bu.error('Invalid tank_id give: ' + tank)
         
         if tank_id_start < TANK_ID_MAX:
-            tank_ids_start = [ tank_id for tank_id in sorted(get_tanks_DB(db)) if tank_id >= tank_id_start ]
+            tank_ids_start = [ tank_id for tank_id in sorted(await get_tanks_DB(db, archive=False)) if tank_id >= tank_id_start ]
             tank_ids.update(tank_ids_start)
         return list(tank_ids)
     except Exception as err:
@@ -1063,7 +1073,74 @@ async def get_tanks_opt(db: motor.motor_asyncio.AsyncIOMotorDatabase, option: li
     return list()
 
 
-async def snapshot_player_achivements(db: motor.motor_asyncio.AsyncIOMotorDatabase):
+async def archive_player_achivements(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace = None):
+    pass
+
+
+async def archive_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace = None):
+    try:
+        dbc                 = db[DB_C[MODE_TANK_STATS]]
+        archive_collection  = DB_C_ARCHIVE[MODE_TANK_STATS]
+                
+        if args.opt_tanks != None:
+            tank_ids = await get_tanks_opt(db, args.opt_tanks, archive=True)
+        else:
+            tank_ids = await get_tanks_DB(db, archive=True)
+        
+        bu.verbose_std('Creating a snapshot of the latest tank stats')
+        
+        rl = RecordLogger('Snapshot tank stats')
+        l = len(tank_ids)
+        i = 0
+        id_max      = int(31e8)
+        id_step     = int(1e6)
+        for tank_id in tank_ids:
+            tank_name = None
+            try:
+                tank_name = await get_tank_name(db, tank_id)
+            except Exception as err:
+                bu.error('tank_id=' + str(tank_id) + ' not found', exception=err)
+            finally:
+                if tank_name == None:
+                    tank_name = 'Tank name not found'
+            i += 1
+            info_str = 'Processing tank (' + str(i) + '/' + str(l) + '): ' + tank_name + ' (' +  str(tank_id) + '):'
+            bu.log(info_str)
+            # n_tank_stats = dbc_archive.count_documents({ 'tank_id': tank_id})
+            #bu.set_counter(info_str, rate=True)
+            #bu.set_progress_step(1000)
+            bu.set_progress_bar(info_str, 31e8/id_step, step = 1, slow=True )
+            ## bu.set_progress_bar(info_str, n_tank_stats, step = 1000, slow=True )  ## After MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
+            for account_id in range(0, id_max, id_step):
+                bu.print_progress()
+                try:
+                    pipeline = [ {'$match': { '$and': [ {'tank_id': tank_id }, {'account_id': {'$gte': account_id}}, {'account_id': {'$lt': account_id + id_step}} ] }},
+                                {'$sort': {'last_battle_time': -1}},
+                                {'$group': { '_id': '$account_id',
+                                            'doc': {'$first': '$$ROOT'}}},
+                                {'$replaceRoot': {'newRoot': '$doc'}}, 
+                                { '$merge': { 'into': archive_collection, 'on': '_id', 'whenMatched': 'keepExisting' }} ]
+                    cursor = dbc.aggregate(pipeline, allowDiskUse=True)
+                    s = 0
+                    async for _ in cursor:      ## This one does not work yet until MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
+                        pass
+                        # bu.print_progress()
+                        # s +=1
+                    rl.log('Tank stats snapshotted', s)
+                except Exception as err:
+                    bu.error(exception=err)
+            bu.finish_progress_bar()
+            rl.log('Tanks processed')
+        bu.log(rl.print(do_print=False))
+        rl.print()
+    except Exception as err:
+        bu.error(exception=err)
+    return None
+
+    
+
+
+async def snapshot_player_achivements(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace = None):
     pass
 
 
