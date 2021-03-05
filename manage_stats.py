@@ -97,9 +97,11 @@ async def main(argv):
     try:
         bu.set_log_level(args.silent, args.verbose, args.debug)
         bu.set_progress_step(100)
+        if args.snapshot or args.archive:
+            args.log = True
         if args.log:
             datestr = datetime.datetime.now().strftime("%Y%m%d_%H%M")
-            await bu.set_file_logging(bu.rebase_file_args(current_dir, 'prune_stats_' + datestr + '.log'))
+            await bu.set_file_logging(bu.rebase_file_args(current_dir, 'manage_stats_' + datestr + '.log'))
 
 		## Read config
         config = configparser.ConfigParser()
@@ -233,7 +235,7 @@ async def get_latest_update(db: motor.motor_asyncio.AsyncIOMotorDatabase) -> dic
         bu.error(exception=err)   
 
 
-async def mk_update_list(db : motor.motor_asyncio.AsyncIOMotorDatabase, updates2process : list) -> list:
+async  def mk_update_list(db : motor.motor_asyncio.AsyncIOMotorDatabase, updates2process : list) -> list:
     """Create update queue for database queries"""
 
     if (len(updates2process) == 0):
@@ -1021,7 +1023,7 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, Q: as
 async def get_tanks_DB(db: motor.motor_asyncio.AsyncIOMotorDatabase):
     """Get tank_ids of tanks in the DB"""
     dbc = db[DB_C_TANK_STATS]
-    return await dbc.distinct('tank_id')
+    return await dbc.distinct('tank_id').sort()
 
 
 async def get_tank_name(db: motor.motor_asyncio.AsyncIOMotorDatabase, tank_id: int) -> str:
@@ -1031,7 +1033,7 @@ async def get_tank_name(db: motor.motor_asyncio.AsyncIOMotorDatabase, tank_id: i
         res = await dbc.find_one( { 'tank_id': tank_id}, { '_id': 0, 'name': 1} )
         return res['name']
     except Exception as err:
-        bu.error(exception=err)
+        bu.debug(exception=err)
     return None
 
 
@@ -1069,7 +1071,6 @@ async def snapshot_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args
     try:
         # dbc         = db[DB_C[MODE_TANK_STATS]]
         # dbc_archive = db[DB_C_ARCHIVE[MODE_TANK_STATS]]
-
         dbc_archive       = db[DB_C[MODE_TANK_STATS]]
         target_collection = DB_C_TANK_STATS + '_latest'
         #dbc               = db[target_collection]
@@ -1078,11 +1079,14 @@ async def snapshot_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args
             tank_ids = await get_tanks_opt(db, args.opt_tanks)
         else:
             tank_ids = await get_tanks_DB(db)
-        id_step     = int(1e6)
+        
         bu.verbose_std('Creating a snapshot of the latest tank stats')
+        
         rl = RecordLogger('Snapshot tank stats')
         l = len(tank_ids)
         i = 0
+        id_max      = int(31e8)
+        id_step     = int(1e6)
         for tank_id in tank_ids:
             tank_name = None
             try:
@@ -1093,13 +1097,15 @@ async def snapshot_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args
                 if tank_name == None:
                     tank_name = 'Tank name not found'
             i += 1
-            info_str = 'Processing tank (' + str(i) + '/' + str(l) + '): ' + tank_name + ' :'
+            info_str = 'Processing tank (' + str(i) + '/' + str(l) + '): ' + tank_name + ' (' +  str(tank_id) + '):'
             bu.log(info_str)
-            n_tank_stats = dbc_archive.count_documents({ 'tank_id': tank_id})
+            # n_tank_stats = dbc_archive.count_documents({ 'tank_id': tank_id})
             #bu.set_counter(info_str, rate=True)
-            bu.set_progress_bar(info_str, n_tank_stats, step = 100, slow=True )
             #bu.set_progress_step(1000)
-            for account_id in range(0, int(31e8), id_step):
+            bu.set_progress_bar(info_str, 31e8/id_step, step = 1, slow=True )
+            ## bu.set_progress_bar(info_str, n_tank_stats, step = 1000, slow=True )  ## After MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
+            for account_id in range(0, id_max, id_step):
+                bu.print_progress()
                 try:
                     pipeline = [ {'$match': { '$and': [ {'tank_id': tank_id }, {'account_id': {'$gte': account_id}}, {'account_id': {'$lt': account_id + id_step}} ] }},
                                 {'$sort': {'last_battle_time': -1}},
@@ -1109,9 +1115,10 @@ async def snapshot_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args
                                 { '$merge': { 'into': target_collection, 'on': '_id', 'whenMatched': 'keepExisting' }} ]
                     cursor = dbc_archive.aggregate(pipeline, allowDiskUse=True)
                     s = 0
-                    async for _ in cursor:      ## This one does not work yet
-                        bu.print_progress()
-                        s +=1
+                    async for _ in cursor:      ## This one does not work yet until MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
+                        pass
+                        # bu.print_progress()
+                        # s +=1
                     rl.log('Tank stats snapshotted', s)
                 except Exception as err:
                     bu.error(exception=err)
