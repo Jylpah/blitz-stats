@@ -1031,11 +1031,16 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, Q: as
 
 async def get_tanks_DB(db: motor.motor_asyncio.AsyncIOMotorDatabase, archive=False):
     """Get tank_ids of tanks in the DB"""
-    if archive: 
-        dbc = db[DB_C_TANK_STATS + DB_C_ARCHIVE]
-    else:
-        dbc = db[DB_C_TANK_STATS]
-    return await dbc.distinct('tank_id').sort()
+    try:
+        if archive: 
+            collection = DB_C_TANK_STATS + DB_C_ARCHIVE
+        else:
+            collection = DB_C_TANK_STATS
+        dbc = db[collection]
+        return await dbc.distinct('tank_id').sort()
+    except Exception as err:
+        bu.error('Could not fetch tank_ids', exception=err)
+    return None
 
 
 async def get_tank_name(db: motor.motor_asyncio.AsyncIOMotorDatabase, tank_id: int) -> str:
@@ -1064,10 +1069,9 @@ async def get_tanks_opt(db: motor.motor_asyncio.AsyncIOMotorDatabase, option: li
                 else:
                     tank_ids.add(m[0])
             except:
-                bu.error('Invalid tank_id give: ' + tank)
-        
+                bu.error('Invalid tank_id give: ' + tank)        
         if tank_id_start < TANK_ID_MAX:
-            tank_ids_start = [ tank_id for tank_id in sorted(await get_tanks_DB(db, archive=False)) if tank_id >= tank_id_start ]
+            tank_ids_start = [ tank_id for tank_id in sorted(await get_tanks_DB(db, archive)) if tank_id >= tank_id_start ]
             tank_ids.update(tank_ids_start)
         return list(tank_ids)
     except Exception as err:
@@ -1113,16 +1117,13 @@ async def snapshot_player_achivements(db: motor.motor_asyncio.AsyncIOMotorDataba
 
 async def snapshot_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace = None):
     try:
-        # dbc         = db[DB_C[MODE_TANK_STATS]]
-        # dbc_archive = db[DB_C_ARCHIVE[MODE_TANK_STATS]]
-        dbc_archive       = db[DB_C[MODE_TANK_STATS]]
-        target_collection = DB_C_TANK_STATS + '_latest'
-        #dbc               = db[target_collection]
+        target_collection = DB_C_TANK_STATS
+        dbc_archive       = db[DB_C_ARCHIVE[MODE_TANK_STATS]]
 
         if args.opt_tanks != None:
-            tank_ids = await get_tanks_opt(db, args.opt_tanks)
+            tank_ids = await get_tanks_opt(db, args.opt_tanks, archive=True)
         else:
-            tank_ids = await get_tanks_DB(db)
+            tank_ids = await get_tanks_DB(db, archive=True)
         
         bu.verbose_std('Creating a snapshot of the latest tank stats')
         
