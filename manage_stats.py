@@ -15,7 +15,7 @@ logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
 FILE_CONFIG = 'blitzstats.ini'
 
-DB_C_ARCHIVE            = '_archive'
+DB_STR_ARCHIVE          = '_archive'
 DB_C_ACCOUNTS   		= 'WG_Accounts'
 DB_C_UPDATES            = 'WG_Releases'
 DB_C_PLAYER_STATS		= 'WG_PlayerStats'
@@ -43,7 +43,7 @@ DB_C = {    MODE_TANK_STATS             : DB_C_TANK_STATS,
 
 DB_C_ARCHIVE = dict()
 for mode in DB_C:
-    DB_C_ARCHIVE[mode] = DB_C[mode] + DB_C_ARCHIVE
+    DB_C_ARCHIVE[mode] = DB_C[mode] + DB_STR_ARCHIVE
 
 CACHE_VALID = 24*3600*7   # 7 days
 DEFAULT_SAMPLE = 1000
@@ -1033,7 +1033,7 @@ async def get_tanks_DB(db: motor.motor_asyncio.AsyncIOMotorDatabase, archive=Fal
     """Get tank_ids of tanks in the DB"""
     try:
         if archive: 
-            collection = DB_C_TANK_STATS + DB_C_ARCHIVE
+            collection = DB_C_TANK_STATS + DB_STR_ARCHIVE
         else:
             collection = DB_C_TANK_STATS
         dbc = db[collection]
