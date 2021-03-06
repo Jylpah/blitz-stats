@@ -1071,7 +1071,7 @@ async def get_tanks_opt(db: motor.motor_asyncio.AsyncIOMotorDatabase, option: li
             except:
                 bu.error('Invalid tank_id give: ' + tank)        
         if tank_id_start < TANK_ID_MAX:
-            tank_ids_start = [ tank_id for tank_id in sorted(await get_tanks_DB(db, archive)) if tank_id >= tank_id_start ]
+            tank_ids_start = [ int(tank_id) for tank_id in sorted(await get_tanks_DB(db, archive)) if tank_id >= tank_id_start ]
             tank_ids.update(tank_ids_start)
         return list(tank_ids)
     except Exception as err:
