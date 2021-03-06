@@ -135,7 +135,10 @@ async def main(argv):
 
         #if args.analyze or args.check:
         #    updates = await mk_update_list(db, args.updates)
-        updates = await mk_update_list(db, args.updates)
+        if args.check or args.analyze:
+            updates = await mk_update_list(db, args.updates)
+        else:
+            updates = list()
 
         if args.analyze:
             tasks = []
@@ -204,7 +207,9 @@ async def main(argv):
                 await snapshot_tank_stats(db, args)
 
         elif args.archive:
-            bu.verbose_std('Starting to archive stats in 3 seconds. Press CTRL 0 C to CANCEL')
+            bu.verbose_std('Starting to archive stats in 3 seconds')
+            bu.verbose_std('Run ANALYZE + PRUNE before archive')
+            bu.verbose_std('Press CTRL + C to CANCEL')
             bu.wait(3)
             if MODE_PLAYER_ACHIEVEMENTS in args.mode:
                 await archive_player_achivements(db, args)
