@@ -15,7 +15,7 @@ logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
 FILE_CONFIG = 'blitzstats.ini'
 
-DB_STR_ARCHIVE          = '_archive'
+DB_STR_ARCHIVE          = '_Archive'
 DB_C_ACCOUNTS   		= 'WG_Accounts'
 DB_C_UPDATES            = 'WG_Releases'
 DB_C_PLAYER_STATS		= 'WG_PlayerStats'
@@ -1033,11 +1033,11 @@ async def get_tanks_DB(db: motor.motor_asyncio.AsyncIOMotorDatabase, archive=Fal
     """Get tank_ids of tanks in the DB"""
     try:
         if archive: 
-            collection = DB_C_TANK_STATS + DB_STR_ARCHIVE
+            collection = DB_C_ARCHIVE[MODE_TANK_STATS]
         else:
-            collection = DB_C_TANK_STATS
+            collection = DB_C[MODE_TANK_STATS]
         dbc = db[collection]
-        return await dbc.distinct('tank_id').sort()
+        return sorted(await dbc.distinct('tank_id'))
     except Exception as err:
         bu.error('Could not fetch tank_ids', exception=err)
     return None
@@ -1064,15 +1064,18 @@ async def get_tanks_opt(db: motor.motor_asyncio.AsyncIOMotorDatabase, option: li
         for tank in option:
             try:
                 m = p.match(tank).groups()
+                if m[0] == None:
+                    raise Exception('Invalid tank_id given' + str(tank))
                 if m[1] != None:
-                    tank_id_start = min(m[0], tank_id_start)
+                    tank_id_start = min(int(m[0]), tank_id_start)
                 else:
-                    tank_ids.add(m[0])
-            except:
-                bu.error('Invalid tank_id give: ' + tank)        
-        if tank_id_start < TANK_ID_MAX:
-            tank_ids_start = [ int(tank_id) for tank_id in sorted(await get_tanks_DB(db, archive)) if tank_id >= tank_id_start ]
-            tank_ids.update(tank_ids_start)
+                    tank_ids.add(int(m[0]))
+            except Exception as err:
+                bu.error('Invalid tank_id give: ' + tank, exception=err)        
+        if tank_id_start < TANK_ID_MAX:            
+            all_tanks = await get_tanks_DB(db, archive)
+            tank_ids_start = [ tank_id for tank_id in all_tanks if tank_id >= tank_id_start ]
+            tank_ids.update(tank_ids_start)        
         return list(tank_ids)
     except Exception as err:
         bu.error('Returning empty list', exception=err)
@@ -1131,7 +1134,7 @@ async def snapshot_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args
         l = len(tank_ids)
         i = 0
         id_max      = int(31e8)
-        id_step     = int(1e6)
+        id_step     = int(5e6)
         for tank_id in tank_ids:
             tank_name = None
             try:
