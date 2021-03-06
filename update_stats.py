@@ -32,6 +32,8 @@ DB_C_TANK_STR			= 'WG_TankStrs'
 DB_C_ERROR_LOG			= 'ErrorLog'
 DB_C_UPDATE_LOG			= 'UpdateLog'
 
+FIELD_UPDATED = '_updated'
+
 ## Matches --mode param
 UPDATE_FIELD = {'tank_stats'			: 'updated_WGtankstats',
 				'player_stats'			: 'updated_WGplayerstats',
@@ -144,7 +146,8 @@ async def main(argv):
 		await db[DB_C_BS_TANK_STATS].create_index([('account_id', pymongo.ASCENDING), ('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
 		await db[DB_C_BS_TANK_STATS].create_index([('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
 		#await db[DB_C_TANK_STATS].create_index([('account_id', pymongo.ASCENDING), ('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
-		await db[DB_C_TANK_STATS].create_index([('account_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
+		await db[DB_C_TANK_STATS].create_index([('account_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])
+		await db[DB_C_TANK_STATS].create_index([('tank_id', pymongo.ASCENDING), ('account_id', pymongo.ASCENDING) ])	
 		await db[DB_C_TANK_STATS].create_index([('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
 		await db[DB_C_PLAYER_ACHIVEMENTS].create_index([('account_id', pymongo.ASCENDING), ('updated', pymongo.DESCENDING) ])	
 		await db[DB_C_TANKS].create_index([('tank_id', pymongo.ASCENDING), ('tier', pymongo.DESCENDING) ])	
@@ -718,6 +721,10 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 	chk_invalid		= args.chk_invalid
 	clr_error_log 	= args.run_error_log
 	force 			= args.force
+	mark_inactive = True
+	if 'sample' in args:
+		mark_inactive = False
+	now = bu.NOW()
 	
 	stat_logger = RecordLogger('Tank stats')
 
@@ -742,6 +749,8 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 				tank_id 			= tank_stat['tank_id']
 				last_battle_time 	= tank_stat['last_battle_time']
 				tank_stat['_id']  	= mk_id(account_id, tank_id, last_battle_time)
+				## Needed for stats archiving
+				tank_stat[FIELD_UPDATED] = now
 				tank_stats.append(tank_stat)
 
 				if (last_battle_time > latest_battle):
@@ -768,7 +777,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 						stat_logger.log('accounts still inactive')
 					else:
 						stat_logger.log('accounts marked inactive')
-					if not force:
+					if mark_inactive and (not force):
 						inactive = True
 					else:
 						inactive = None
@@ -907,18 +916,14 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 					stat 				= stats[str(account_id)]
 					stat['account_id'] 	= account_id
 					stat['updated'] 	= NOW
+					## Needed for stats archiving. Not yet implemented for player_achievements
+					# stat[FIELD_UPDATED] = True
 					stat['_id'] 		= mk_id(account_id, 0, NOW)
 					
 					# RECOMMENDATION TO USE SINGLE INSERTS OVER MANY
 					await dbc.insert_one(stat)					
 					stats_added += 1
 					stat_logger.log('added')
-					# players_achivements.append(stat)
-					# res = await dbc.insert_many(players_achivements, ordered=False)
-					# tmp = len(res.inserted_ids)
-					# bu.debug(str(tmp) + ' stats added (insert_many() result)', worker_id)
-					# stats_added += tmp
-					# #stats_added += len(res.inserted_ids)	
 					debug_account_id(account_id, 'stats updated', id=worker_id)
 					if clr_error_log:
 						await clear_error_log(db, account_id, stat_type)

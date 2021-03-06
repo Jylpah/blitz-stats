@@ -211,7 +211,7 @@ def def_value_zero():
 #### Class RecordLogger()
 ## -----------------------------------------------------------
 class RecordLogger():
-
+    """Count stats for categories"""
     def __init__(self, name: str = ''):
         self.logger = collections.defaultdict(def_value_zero)
         self.name = name
@@ -425,7 +425,7 @@ def _log_msg(msg =''):
 
 def set_progress_step(n: int):
     """Set the frequency of the progress dots. The bigger 'n', the fewer dots"""
-    global _progress_N, _progress_i 
+    global _progress_N, _progress_i, _progress_steps 
     if n > 0:
         _progress_N     = n
         _progress_i     = 0
@@ -458,13 +458,16 @@ def set_progress_bar(heading: str, max_value: int, step: int = None, slow: bool 
     return
 
 
-def set_counter(heading: str):
+def set_counter(heading: str, rate = False):
     global _progress_obj, _progress_i, _progress_steps
     _progress_i = 0
     _progress_steps = 0
     if _progress_obj != None:
         finish_progress_bar()
-    _progress_obj = Counter(heading)
+    if rate:
+        _progress_obj = RateCounter(heading)
+    else:
+        _progress_obj = Counter(heading)
     return 
 
 
@@ -493,7 +496,7 @@ def print_progress(step: int = 1, force = False, id : str = None) -> bool:
     return False    
 
 
-def finish_progress_bar():
+def finish_progress_bar(print_nl: bool = False):
     """Finish and close progress bar object"""
     global _progress_obj
 
@@ -502,8 +505,8 @@ def finish_progress_bar():
         # if isinstance(_progress_obj, Counter):
         #     print_nl = False
         _progress_obj.finish()
-        # if print_nl:
-        print_new_line()
+        if print_nl:
+            print_new_line()
     _progress_obj = None
     return None
 
@@ -702,6 +705,20 @@ class SlowBar(IncrementalBar):
         else:
             return 0
  
+
+## -----------------------------------------------------------
+#### Class RateCounter 
+## -----------------------------------------------------------
+class RateCounter(Counter):
+    suffix = '%(index)d AVG %(avg_rate).1f/sec'
+    
+    @property
+    def avg_rate(self):
+        if self.avg > 0:
+            return  1 / self.avg
+        else:
+            return 0
+
 
 ## -----------------------------------------------------------
 #### Class StatsNotFound 
@@ -1426,6 +1443,10 @@ class WG:
  
     def get_tank_tier(self, tank_id: int):
         return self.get_tank_data(tank_id, 'tier')
+
+
+    def get_tank_name_id(self, tank_id: int):
+        return self.get_tank_data(tank_id, 'name')
 
 
     async def put_2_statsQ(self, statsType: str, key: list, stats: list):
