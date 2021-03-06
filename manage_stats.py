@@ -1047,7 +1047,7 @@ async def get_tank_name(db: motor.motor_asyncio.AsyncIOMotorDatabase, tank_id: i
     """Get tank name from DB's Tankopedia"""
     try:
         dbc = db[DB_C_TANKS]
-        res = await dbc.find_one( { 'tank_id': tank_id}, { '_id': 0, 'name': 1} )
+        res = await dbc.find_one( { 'tank_id': int(tank_id)}, { '_id': 0, 'name': 1} )
         return res['name']
     except Exception as err:
         bu.debug(exception=err)
