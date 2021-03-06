@@ -1095,7 +1095,7 @@ async def archive_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args:
         rl = RecordLogger('Archive tank stats')
         N_updated_stats = dbc.count_documents({ FIELD_UPDATED : True })
         bu.set_progress_bar('Archiving tank stats', N_updated_stats, step = 1000, slow=True )  ## After MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
-        pipeline = [ {'$match': { FIELD_UPDATED : True } },
+        pipeline = [ {'$match': { FIELD_UPDATED : { '$exists': True } } },
                     { '$unset': FIELD_UPDATED },                                  
                     { '$merge': { 'into': archive_collection, 'on': '_id', 'whenMatched': 'keepExisting' }} ]
         cursor = dbc.aggregate(pipeline, allowDiskUse=True)
@@ -1151,7 +1151,7 @@ async def snapshot_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args
             # n_tank_stats = dbc_archive.count_documents({ 'tank_id': tank_id})
             #bu.set_counter(info_str, rate=True)
             #bu.set_progress_step(1000)
-            bu.set_progress_bar(info_str, 31e8/id_step, step = 1, slow=True )
+            bu.set_progress_bar(info_str, 31e8/id_step, step = 4, slow=True )
             ## bu.set_progress_bar(info_str, n_tank_stats, step = 1000, slow=True )  ## After MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
             for account_id in range(0, id_max, id_step):
                 bu.print_progress()
