@@ -1083,26 +1083,26 @@ async def get_tanks_opt(db: motor.motor_asyncio.AsyncIOMotorDatabase, option: li
 
 
 async def archive_player_achivements(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace = None):
-    pass
+    bu.error('Not implemented yet: --archive --mode player_achievements')
+    return None
 
 
 async def archive_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace = None):
     try:
         dbc                 = db[DB_C[MODE_TANK_STATS]]
         archive_collection  = DB_C_ARCHIVE[MODE_TANK_STATS]
-                
-        bu.verbose_std('Archiving tank stats')
+        
         rl = RecordLogger('Archive tank stats')
-        ## bu.set_progress_bar(info_str, n_tank_stats, step = 1000, slow=True )  ## After MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
+        N_updated_stats = dbc.count_documents({ FIELD_UPDATED : True })
+        bu.set_progress_bar('Archiving tank stats', N_updated_stats, step = 1000, slow=True )  ## After MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
         pipeline = [ {'$match': { FIELD_UPDATED : True } },
                     { '$unset': FIELD_UPDATED },                                  
                     { '$merge': { 'into': archive_collection, 'on': '_id', 'whenMatched': 'keepExisting' }} ]
         cursor = dbc.aggregate(pipeline, allowDiskUse=True)
         s = 0
         async for _ in cursor:      ## This one does not work yet until MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
-            pass
-            # bu.print_progress()
-            # s +=1
+            bu.print_progress()
+            s +=1
         rl.log('Tank stats archived', s)        
         
     except Exception as err:
@@ -1115,7 +1115,8 @@ async def archive_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args:
 
 
 async def snapshot_player_achivements(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace = None):
-    pass
+    bu.error('Not implemented yet: --snapshot  --mode player_achievements')
+    return None
 
 
 async def snapshot_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace = None):
