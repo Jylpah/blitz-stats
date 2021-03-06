@@ -912,20 +912,14 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 					stat 				= stats[str(account_id)]
 					stat['account_id'] 	= account_id
 					stat['updated'] 	= NOW
-					## Needed for stats archiving
-					stat[FIELD_UPDATED] = True
+					## Needed for stats archiving. Not yet implemented for player_achievements
+					# stat[FIELD_UPDATED] = True
 					stat['_id'] 		= mk_id(account_id, 0, NOW)
 					
 					# RECOMMENDATION TO USE SINGLE INSERTS OVER MANY
 					await dbc.insert_one(stat)					
 					stats_added += 1
 					stat_logger.log('added')
-					# players_achivements.append(stat)
-					# res = await dbc.insert_many(players_achivements, ordered=False)
-					# tmp = len(res.inserted_ids)
-					# bu.debug(str(tmp) + ' stats added (insert_many() result)', worker_id)
-					# stats_added += tmp
-					# #stats_added += len(res.inserted_ids)	
 					debug_account_id(account_id, 'stats updated', id=worker_id)
 					if clr_error_log:
 						await clear_error_log(db, account_id, stat_type)
