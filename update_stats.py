@@ -721,6 +721,10 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 	chk_invalid		= args.chk_invalid
 	clr_error_log 	= args.run_error_log
 	force 			= args.force
+	mark_inactive = True
+	if 'sample' in args:
+		mark_inactive = False
+	now = bu.NOW()
 	
 	stat_logger = RecordLogger('Tank stats')
 
@@ -746,7 +750,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 				last_battle_time 	= tank_stat['last_battle_time']
 				tank_stat['_id']  	= mk_id(account_id, tank_id, last_battle_time)
 				## Needed for stats archiving
-				tank_stat[FIELD_UPDATED] = True
+				tank_stat[FIELD_UPDATED] = now
 				tank_stats.append(tank_stat)
 
 				if (last_battle_time > latest_battle):
@@ -773,7 +777,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 						stat_logger.log('accounts still inactive')
 					else:
 						stat_logger.log('accounts marked inactive')
-					if not force:
+					if mark_inactive and (not force):
 						inactive = True
 					else:
 						inactive = None
