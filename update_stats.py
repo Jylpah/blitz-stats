@@ -732,8 +732,8 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 	while not playerQ.empty():
 		try:
 			player = await playerQ.get()
-			account_id = player['account_id']
-			inactive = player['inactive']
+			account_id 	= player['account_id']
+			inactive 	= player['inactive']
 			debug_account_id(account_id, 'Fetching tank stats', id=worker_id)
 			bu.print_progress()
 					
@@ -748,7 +748,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 			latest_battle = 0
 			for tank_stat in stats:
 				tank_id 			= tank_stat['tank_id']
-				last_battle_time 	= wg.chk_last_battle_time(tank_stat['last_battle_time'])				
+				last_battle_time 	= wg.chk_last_battle_time(tank_stat['last_battle_time'], now)				
 				tank_stat['_id']  	= mk_id(account_id, tank_id, last_battle_time)
 				## Needed for stats archiving
 				tank_stat[FIELD_UPDATED] = now
@@ -799,7 +799,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 			await log_error(db, account_id, stat_type, clr_error_log, chk_invalid)
 		finally:
 			playerQ.task_done()	
-	return 
+	return stat_logger
 
 
 ## NOT IMPLEMENTED YET
