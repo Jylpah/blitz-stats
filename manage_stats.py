@@ -1108,7 +1108,9 @@ async def archive_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args:
         async for _ in cursor:      ## This one does not work yet until MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
             bu.print_progress()
             s +=1
-        rl.log('Tank stats archived', s)        
+        rl.log('Tank stats archived', s) 
+
+        ## Clean the latest stats # TO DO  
         
     except Exception as err:
         bu.error(exception=err)

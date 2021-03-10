@@ -12,8 +12,9 @@ logging.getLogger("asyncio").setLevel(logging.DEBUG)
 N_WORKERS = 50
 MAX_RETRIES = 3
 CACHE_VALID = 7   # days
-#MIN_UPDATE_INTERVAL = 7*24*3600 # 7 days
-MAX_UPDATE_INTERVAL = 4*30*24*3600 # 6 months
+MAX_UPDATE_INTERVAL = 4*30*24*60*60 # 4 months
+INACTIVE_THRESHOLD 	= 2*30*24*60*60
+TIME_SYNC_THRESHOLD = 24*3600 
 SLEEP = 0.1
 WG_APP_ID = 'cd770f38988839d7ab858d1cbe54bdd0'
 
@@ -100,7 +101,7 @@ async def main(argv):
 		bu.warning(FILE_CONFIG + ' Config file not found')
 
 	parser = argparse.ArgumentParser(description='Analyze Blitz replay JSONs from WoTinspector.com')
-	parser.add_argument('--mode', default='help', nargs='+', choices=list(UPDATE_FIELD.keys()) + [ 'tankopedia' ], help='Choose what to update')
+	parser.add_argument('--mode', default='help', nargs=1, choices=list(UPDATE_FIELD.keys()) + [ 'tankopedia' ], help='Choose what to update')
 	parser.add_argument('--file', default=None, help='JSON file to read')
 	parser.add_argument('--force', action='store_true', default=False, help='Force refreshing the active player list')
 	parser.add_argument('--workers', type=int, default=N_WORKERS, help='Number of asynchronous workers')
@@ -172,7 +173,7 @@ async def main(argv):
 			for mode in set(args.mode) & set(UPDATE_FIELD.keys()):
 				tmp_progress_max += len(active_players[mode])
 			# bu.print_new_line()
-			bu.set_progress_bar('Fetching stats:', tmp_progress_max, 50, True)
+			bu.set_progress_bar('Fetching stats:', tmp_progress_max, 200, True)
 
 			for mode in UPDATE_FIELD:
 				Q[mode] = asyncio.Queue()
@@ -182,32 +183,32 @@ async def main(argv):
 				Qcreator_tasks.append(asyncio.create_task(mk_playerQ(Q[mode], active_players[mode])))
 				for i in range(args.workers):
 					worker_tasks.append(asyncio.create_task(WG_tank_stat_worker( db, Q[mode], i, args )))
-					bu.debug('Tank list Task started', id=i)	
+					bu.debug('WG Tank stat Task started', id=i)	
 		
-			if 'tank_stats_BS' in args.mode:
-				mode = 'tank_stats_BS'
-				Qcreator_tasks.append(asyncio.create_task(mk_playerQ(Q[mode], active_players[mode])))
-				for i in range(args.workers):
-					worker_tasks.append(asyncio.create_task(BS_tank_stat_worker(db, Q[mode], i, args )))
-					bu.debug('Tank stat Task ' + str(i) + ' started')	
-
-			if 'player_achievements' in args.mode:
+			elif 'player_achievements' in args.mode:
 				mode = 'player_achievements'
 				Qcreator_tasks.append(asyncio.create_task(mk_playerQ(Q[mode], active_players[mode])))
 				for i in range(args.workers):
 					worker_tasks.append(asyncio.create_task(WG_player_achivements_worker(db, Q[mode], i, args )))
-					bu.debug('Player achievement stat Task started', id=i)
+					bu.debug('WG Player achievement stat Task started', id=i)
 
-			if 'player_stats' in args.mode:
+			elif 'player_stats' in args.mode:
 				mode = 'player_stats'
 				bu.error('Fetching WG player stats NOT IMPLEMENTED YET')
 
-			if 'player_stats_BS' in args.mode:
+			elif 'tank_stats_BS' in args.mode:
+				mode = 'tank_stats_BS'
+				Qcreator_tasks.append(asyncio.create_task(mk_playerQ(Q[mode], active_players[mode])))
+				for i in range(args.workers):
+					worker_tasks.append(asyncio.create_task(BS_tank_stat_worker(db, Q[mode], i, args )))
+					bu.debug('BlitzStars Tank stat Task ' + str(i) + ' started')	
+			
+			elif 'player_stats_BS' in args.mode:
 				mode = 'player_stats_BS'
 				Qcreator_tasks.append(asyncio.create_task(mk_playerQ(Q[mode], active_players[mode])))
 				for i in range(args.workers):
 					worker_tasks.append(asyncio.create_task(BS_player_stat_worker(db, Q[mode], i, args )))
-					bu.debug('Player stat Task ' + str(i) + ' started')
+					bu.debug('BlitzStars Player stat Task ' + str(i) + ' started')
 					
 			## wait queues to finish --------------------------------------
 			
@@ -411,7 +412,7 @@ async def get_active_players_BS(args : argparse.Namespace):
 			active_players = json.loads(await f.read())
 	account_ids = list()
 	for account_id in active_players:
-		account_ids.append(mk_account(account_id))
+		account_ids.append(mk_account(account_id, False))
 	return account_ids
 				
 
@@ -424,14 +425,19 @@ async def get_players_errorlog(db : motor.motor_asyncio.AsyncIOMotorDatabase, mo
 		cursor = dbc.find({'type': mode}, { 'account_id': 1, '_id': 0 } )
 		async for stat in cursor:
 			try:
-				inactive = False
-				if ('inactive' in stat):
-					inactive = stat['inactive']
-				account_ids.add(mk_account(stat['account_id'], inactive))
+				# inactive = False
+				# if ('inactive' in stat):
+				# 	inactive = stat['inactive']
+				account_ids.add(stat['account_id'])
 			except Exception as err:
 				bu.error('Unexpected error', err)
-		bu.verbose_std('Re-checking ' + str(len(account_ids)) + ' account_ids')
-		return list(account_ids)
+		
+		res = list()
+		for account_id in account_ids:
+			res.append(mk_account(account_id, False))
+		bu.verbose_std('Re-checking ' + str(len(res)) + ' account_ids')
+		
+		return res
 
 	except Exception as err:
 		bu.error('Unexpected error', err)	
@@ -731,8 +737,8 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 	while not playerQ.empty():
 		try:
 			player = await playerQ.get()
-			account_id = player['account_id']
-			inactive = player['inactive']
+			account_id 	= player['account_id']
+			inactive 	= player['inactive']
 			debug_account_id(account_id, 'Fetching tank stats', id=worker_id)
 			bu.print_progress()
 					
@@ -747,13 +753,13 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 			latest_battle = 0
 			for tank_stat in stats:
 				tank_id 			= tank_stat['tank_id']
-				last_battle_time 	= tank_stat['last_battle_time']
+				last_battle_time 	= wg.chk_last_battle_time(tank_stat['last_battle_time'], now)				
 				tank_stat['_id']  	= mk_id(account_id, tank_id, last_battle_time)
 				## Needed for stats archiving
 				tank_stat[FIELD_UPDATED] = now
 				tank_stats.append(tank_stat)
 
-				if (last_battle_time > latest_battle):
+				if (last_battle_time > latest_battle) and (last_battle_time < now): ## Filter out broken stats
 					latest_battle = last_battle_time 
 			# RECOMMENDATION TO USE SINGLE INSERTS OVER MANY
 			try: 
@@ -765,7 +771,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 				stats_added += added										
 			finally:
 				stat_logger.log('accounts updated')
-				stat_logger.log('added', added)
+				stat_logger.log('tank stats added', added)
 				if clr_error_log:
 					await clear_error_log(db, account_id, stat_type)
 				if chk_invalid:
@@ -773,14 +779,15 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 					set_account_valid(db, account_id)
 				
 				if added == 0:
-					if inactive:
-						stat_logger.log('accounts still inactive')
-					else:
-						stat_logger.log('accounts marked inactive')
-					if mark_inactive and (not force):
-						inactive = True
-					else:
+					stat_logger.log('accounts w/o new stats')
+					if (now - latest_battle < INACTIVE_THRESHOLD) or force or (not mark_inactive):
 						inactive = None
+					else:
+						if inactive:
+							stat_logger.log('accounts still inactive')
+						else:
+							stat_logger.log('accounts marked inactive')
+							inactive = True
 				else:
 					if inactive:
 						stat_logger.log('accounts marked active')						
@@ -788,7 +795,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 				await update_stats_update_time(db, account_id, stat_type, latest_battle, inactive)
 				debug_account_id(account_id, str(added) + 'Tank stats added', id=worker_id)			
 		except bu.StatsNotFound as err:
-			stat_logger.log('no stats found')
+			stat_logger.log('accounts without stats')
 			log_account_id(account_id, exception=err, id=worker_id)
 			await log_error(db, account_id, stat_type, clr_error_log, chk_invalid)
 		except Exception as err:
@@ -875,7 +882,8 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 		
 		try:
 			while not playerQ.empty():
-				account_id = await playerQ.get()
+				player = await playerQ.get()
+				account_id = player['account_id']
 				server = wg.get_server(account_id)
 				if server != None:
 					players[server].append(account_id)
