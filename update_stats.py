@@ -748,10 +748,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 			latest_battle = 0
 			for tank_stat in stats:
 				tank_id 			= tank_stat['tank_id']
-				last_battle_time 	= tank_stat['last_battle_time']
-				if last_battle_time > now + TIME_SYNC_THRESHOLD:
-					tank_stat['last_battle_time'] = now
-					last_battle_time = now
+				last_battle_time 	= wg.chk_last_battle_time(tank_stat['last_battle_time'])				
 				tank_stat['_id']  	= mk_id(account_id, tank_id, last_battle_time)
 				## Needed for stats archiving
 				tank_stat[FIELD_UPDATED] = now
