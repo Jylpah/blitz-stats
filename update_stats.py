@@ -12,8 +12,8 @@ logging.getLogger("asyncio").setLevel(logging.DEBUG)
 N_WORKERS = 50
 MAX_RETRIES = 3
 CACHE_VALID = 7   # days
-#MIN_UPDATE_INTERVAL = 7*24*3600 # 7 days
-MAX_UPDATE_INTERVAL = 4*30*24*3600 # 6 months
+MAX_UPDATE_INTERVAL = 4*30*24*60*60 # 4 months
+INACTIVE_THRESHOLD 	= 2*30*24*60*60  
 SLEEP = 0.1
 WG_APP_ID = 'cd770f38988839d7ab858d1cbe54bdd0'
 
@@ -765,7 +765,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 				stats_added += added										
 			finally:
 				stat_logger.log('accounts updated')
-				stat_logger.log('added', added)
+				stat_logger.log('tank stats added', added)
 				if clr_error_log:
 					await clear_error_log(db, account_id, stat_type)
 				if chk_invalid:
@@ -773,14 +773,15 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 					set_account_valid(db, account_id)
 				
 				if added == 0:
-					if inactive:
-						stat_logger.log('accounts still inactive')
-					else:
-						stat_logger.log('accounts marked inactive')
-					if mark_inactive and (not force):
-						inactive = True
-					else:
+					stat_logger.log('accounts w/o new stats')
+					if (now - latest_battle < INACTIVE_THRESHOLD) or force or (not mark_inactive):
 						inactive = None
+					else:
+						if inactive:
+							stat_logger.log('accounts still inactive')
+						else:
+							stat_logger.log('accounts marked inactive')
+							inactive = True
 				else:
 					if inactive:
 						stat_logger.log('accounts marked active')						
@@ -788,7 +789,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 				await update_stats_update_time(db, account_id, stat_type, latest_battle, inactive)
 				debug_account_id(account_id, str(added) + 'Tank stats added', id=worker_id)			
 		except bu.StatsNotFound as err:
-			stat_logger.log('no stats found')
+			stat_logger.log('accounts without stats')
 			log_account_id(account_id, exception=err, id=worker_id)
 			await log_error(db, account_id, stat_type, clr_error_log, chk_invalid)
 		except Exception as err:
@@ -797,7 +798,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 			await log_error(db, account_id, stat_type, clr_error_log, chk_invalid)
 		finally:
 			playerQ.task_done()	
-	return stat_logger
+	return 
 
 
 ## NOT IMPLEMENTED YET
