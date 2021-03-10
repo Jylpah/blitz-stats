@@ -101,7 +101,7 @@ async def main(argv):
 		bu.warning(FILE_CONFIG + ' Config file not found')
 
 	parser = argparse.ArgumentParser(description='Analyze Blitz replay JSONs from WoTinspector.com')
-	parser.add_argument('--mode', default='help', nargs='+', choices=list(UPDATE_FIELD.keys()) + [ 'tankopedia' ], help='Choose what to update')
+	parser.add_argument('--mode', default='help', nargs=1, choices=list(UPDATE_FIELD.keys()) + [ 'tankopedia' ], help='Choose what to update')
 	parser.add_argument('--file', default=None, help='JSON file to read')
 	parser.add_argument('--force', action='store_true', default=False, help='Force refreshing the active player list')
 	parser.add_argument('--workers', type=int, default=N_WORKERS, help='Number of asynchronous workers')
@@ -183,32 +183,32 @@ async def main(argv):
 				Qcreator_tasks.append(asyncio.create_task(mk_playerQ(Q[mode], active_players[mode])))
 				for i in range(args.workers):
 					worker_tasks.append(asyncio.create_task(WG_tank_stat_worker( db, Q[mode], i, args )))
-					bu.debug('Tank list Task started', id=i)	
+					bu.debug('WG Tank stat Task started', id=i)	
 		
-			if 'tank_stats_BS' in args.mode:
-				mode = 'tank_stats_BS'
-				Qcreator_tasks.append(asyncio.create_task(mk_playerQ(Q[mode], active_players[mode])))
-				for i in range(args.workers):
-					worker_tasks.append(asyncio.create_task(BS_tank_stat_worker(db, Q[mode], i, args )))
-					bu.debug('Tank stat Task ' + str(i) + ' started')	
-
-			if 'player_achievements' in args.mode:
+			elif 'player_achievements' in args.mode:
 				mode = 'player_achievements'
 				Qcreator_tasks.append(asyncio.create_task(mk_playerQ(Q[mode], active_players[mode])))
 				for i in range(args.workers):
 					worker_tasks.append(asyncio.create_task(WG_player_achivements_worker(db, Q[mode], i, args )))
-					bu.debug('Player achievement stat Task started', id=i)
+					bu.debug('WG Player achievement stat Task started', id=i)
 
-			if 'player_stats' in args.mode:
+			elif 'player_stats' in args.mode:
 				mode = 'player_stats'
 				bu.error('Fetching WG player stats NOT IMPLEMENTED YET')
 
-			if 'player_stats_BS' in args.mode:
+			elif 'tank_stats_BS' in args.mode:
+				mode = 'tank_stats_BS'
+				Qcreator_tasks.append(asyncio.create_task(mk_playerQ(Q[mode], active_players[mode])))
+				for i in range(args.workers):
+					worker_tasks.append(asyncio.create_task(BS_tank_stat_worker(db, Q[mode], i, args )))
+					bu.debug('BlitzStars Tank stat Task ' + str(i) + ' started')	
+			
+			elif 'player_stats_BS' in args.mode:
 				mode = 'player_stats_BS'
 				Qcreator_tasks.append(asyncio.create_task(mk_playerQ(Q[mode], active_players[mode])))
 				for i in range(args.workers):
 					worker_tasks.append(asyncio.create_task(BS_player_stat_worker(db, Q[mode], i, args )))
-					bu.debug('Player stat Task ' + str(i) + ' started')
+					bu.debug('BlitzStars Player stat Task ' + str(i) + ' started')
 					
 			## wait queues to finish --------------------------------------
 			
@@ -412,7 +412,7 @@ async def get_active_players_BS(args : argparse.Namespace):
 			active_players = json.loads(await f.read())
 	account_ids = list()
 	for account_id in active_players:
-		account_ids.append(mk_account(account_id))
+		account_ids.append(mk_account(account_id, False))
 	return account_ids
 				
 
@@ -425,14 +425,19 @@ async def get_players_errorlog(db : motor.motor_asyncio.AsyncIOMotorDatabase, mo
 		cursor = dbc.find({'type': mode}, { 'account_id': 1, '_id': 0 } )
 		async for stat in cursor:
 			try:
-				inactive = False
-				if ('inactive' in stat):
-					inactive = stat['inactive']
-				account_ids.add(mk_account(stat['account_id'], inactive))
+				# inactive = False
+				# if ('inactive' in stat):
+				# 	inactive = stat['inactive']
+				account_ids.add(stat['account_id'])
 			except Exception as err:
 				bu.error('Unexpected error', err)
-		bu.verbose_std('Re-checking ' + str(len(account_ids)) + ' account_ids')
-		return list(account_ids)
+		
+		res = list()
+		for account_id in account_ids:
+			res.append(mk_account(account_id, False))
+		bu.verbose_std('Re-checking ' + str(len(res)) + ' account_ids')
+		
+		return res
 
 	except Exception as err:
 		bu.error('Unexpected error', err)	
