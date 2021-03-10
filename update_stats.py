@@ -877,7 +877,8 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 		
 		try:
 			while not playerQ.empty():
-				account_id = await playerQ.get()
+				player = await playerQ.get()
+				account_id = player['account_id']
 				server = wg.get_server(account_id)
 				if server != None:
 					players[server].append(account_id)
