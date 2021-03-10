@@ -13,7 +13,8 @@ N_WORKERS = 50
 MAX_RETRIES = 3
 CACHE_VALID = 7   # days
 MAX_UPDATE_INTERVAL = 4*30*24*60*60 # 4 months
-INACTIVE_THRESHOLD 	= 2*30*24*60*60  
+INACTIVE_THRESHOLD 	= 2*30*24*60*60
+TIME_SYNC_THRESHOLD = 24*3600 
 SLEEP = 0.1
 WG_APP_ID = 'cd770f38988839d7ab858d1cbe54bdd0'
 
@@ -748,12 +749,15 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 			for tank_stat in stats:
 				tank_id 			= tank_stat['tank_id']
 				last_battle_time 	= tank_stat['last_battle_time']
+				if last_battle_time > now + TIME_SYNC_THRESHOLD:
+					tank_stat['last_battle_time'] = now
+					last_battle_time = now
 				tank_stat['_id']  	= mk_id(account_id, tank_id, last_battle_time)
 				## Needed for stats archiving
 				tank_stat[FIELD_UPDATED] = now
 				tank_stats.append(tank_stat)
 
-				if (last_battle_time > latest_battle):
+				if (last_battle_time > latest_battle) and (last_battle_time < now): ## Filter out broken stats
 					latest_battle = last_battle_time 
 			# RECOMMENDATION TO USE SINGLE INSERTS OVER MANY
 			try: 
