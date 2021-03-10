@@ -746,6 +746,8 @@ class WG:
     CACHE_DB_FILE           = '.blitzutils_cache.sqlite3' 
     CACHE_GRACE_TIME        =  30*24*3600  # 30 days cache
 
+    TIME_SYNC_THRESHOLD     = 24*3600
+
     # sql_create_player_stats_tbl = """CREATE TABLE IF NOT EXISTS player_stats (
     #                             account_id INTEGER NOT NULL,
     #                             date INTEGER NOT NULL,
@@ -1138,6 +1140,16 @@ class WG:
             error('JSON check FAILED: ' + str(json_resp) )
             error(exception=err)
         return False
+
+
+    @classmethod
+    def chk_last_battle_time(cls, last_battle_time: int) -> int:
+        """Check that the last_battle_time is not inthe future (MAX_UINT)"""
+        now = NOW()
+        if last_battle_time > now  + cls.TIME_SYNC_THRESHOLD:
+            return now
+        else: 
+            return last_battle_time
 
 
     ## Methods --------------------------------------------------
