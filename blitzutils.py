@@ -1143,9 +1143,10 @@ class WG:
 
 
     @classmethod
-    def chk_last_battle_time(cls, last_battle_time: int) -> int:
+    def chk_last_battle_time(cls, last_battle_time: int, now: int = None) -> int:
         """Check that the last_battle_time is not inthe future (MAX_UINT)"""
-        now = NOW()
+        if now == None:
+            now = NOW()
         if last_battle_time > now  + cls.TIME_SYNC_THRESHOLD:
             return now
         else: 
