@@ -74,7 +74,7 @@ async def main(argv):
     os.chdir(os.path.dirname(sys.argv[0]))
 
     parser = argparse.ArgumentParser(description='Manage DB stats')
-    parser.add_argument('--mode', default=['tank_stats'], nargs='+', choices=DB_C.keys(), help='Select type of stats to export')
+    parser.add_argument('--mode', default=['tank_stats'], nargs='+', choices=DB_C.keys(), help='Select type of stats to process')
     
     arggroup_action = parser.add_mutually_exclusive_group(required=True)
     arggroup_action.add_argument( '--analyze',  action='store_true', default=False, help='Analyze the database for duplicates')
@@ -142,6 +142,10 @@ async def main(argv):
             updates = list()
 
         if args.analyze:
+
+            ## CONTINUE HERE
+            ## MOVE TO analyze_stats()
+
             tasks = []
             tankQ = None
             bu.verbose_std('Starting to analyse stats in 3 seconds. Press CTRL + C to CANCEL')
@@ -156,18 +160,18 @@ async def main(argv):
                 workers = 0
                 # Does not work in parallel        
                 if MODE_PLAYER_ACHIEVEMENTS in args.mode:
-                    tasks.append(asyncio.create_task(analyze_player_achievements_WG(workers, db, u, args.prune)))
-                    bu.debug('Task ' + str(workers) + ' started: analyze_player_achievements_WG()')
+                    tasks.append(asyncio.create_task(analyze_player_achievements_worker(workers, db, u, args.prune)))
+                    bu.debug('Task ' + str(workers) + ' started: analyze_player_achievements_worker()')
                     workers += 1
                 if MODE_PLAYER_STATS in args.mode:
                     # NOT IMPLEMENTED YET
-                    tasks.append(asyncio.create_task(analyze_player_stats_WG(workers, db, u, args.prune)))
-                    bu.debug('Task ' + str(workers) + ' started: analyze_player_stats_WG()')
+                    tasks.append(asyncio.create_task(analyze_player_stats_worker(workers, db, u, args.prune)))
+                    bu.debug('Task ' + str(workers) + ' started: analyze_player_stats_worker()')
                     workers += 1
                 while workers < N_WORKERS:
                     if MODE_TANK_STATS in args.mode:
-                        tasks.append(asyncio.create_task(analyze_tank_stats_WG(workers, db, u, tankQ, args.prune)))
-                        bu.debug('Task ' + str(workers) + ' started: analyze_tank_stats_WG()')
+                        tasks.append(asyncio.create_task(analyze_tank_stats_worker(workers, db, u, tankQ, args.prune)))
+                        bu.debug('Task ' + str(workers) + ' started: analyze_tank_stats_worker()')
                     workers += 1    # Can do this since only MODE_TANK_STATS is running in parallel                   
                 
                 bu.debug('Waiting for workers to finish')
@@ -350,7 +354,7 @@ def print_stats_prune(stats_pruned : dict):
     return None    
 
 
-async def analyze_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, update: dict, tankQ: asyncio.Queue, prune : bool = False):
+async def analyze_tank_stats_worker(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, update: dict, tankQ: asyncio.Queue, prune : bool = False):
     """Async Worker to fetch player tank stats"""
     dbc = db[DB_C_TANK_STATS]
     stat_type = MODE_TANK_STATS
@@ -404,7 +408,7 @@ async def analyze_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMo
     return None
 
 
-async def analyze_player_achievements_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, update: dict, prune : bool = False):
+async def analyze_player_achievements_worker(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, update: dict, prune : bool = False):
     """Async Worker to fetch player achievement stats"""
     dbc = db[DB_C_PLAYER_ACHIVEMENTS]
     stat_type = MODE_PLAYER_ACHIEVEMENTS
@@ -451,7 +455,7 @@ async def analyze_player_achievements_WG(workerID: int, db: motor.motor_asyncio.
     return None
 
 
-async def analyze_player_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, update: dict, prune : bool = False):
+async def analyze_player_stats_worker(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, update: dict, prune : bool = False):
     bu.error('NOT IMPLEMENTED YET')
     pass
 
@@ -1100,7 +1104,7 @@ async def archive_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args:
         archive_collection  = DB_C_ARCHIVE[MODE_TANK_STATS]
         
         rl = RecordLogger('Archive tank stats')
-        N_updated_stats = dbc.count_documents({ FIELD_UPDATED : True })
+        N_updated_stats = await dbc.count_documents({ FIELD_UPDATED : True })
         bu.set_progress_bar('Archiving tank stats', N_updated_stats, step = 1000, slow=True )  ## After MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
         pipeline = [ {'$match': { FIELD_UPDATED : { '$exists': True } } },
                     { '$unset': FIELD_UPDATED },                                  
@@ -1126,26 +1130,39 @@ async def archive_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args:
 async def clean_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace = None):
     """Clean the Latest stats from older stats"""
     try: 
-        dbc = db[DB_C[MODE_TANK_STATS]]
-        rl = RecordLogger('Clean tank stats')
+        dbc      = db[DB_C[MODE_TANK_STATS]]
+        rl       = RecordLogger('Clean tank stats')
+        q_dirty  = {FIELD_UPDATED: { '$exists': True}}
+        n_dirty  = await dbc.count_documents(q_dirty)
+        accounts_tanks = set()
 
-        ## Get stats with FIELD_UPDATE
-        ## Get unique account_id, tank_id combos
-        ## Go through the combos & delete all older versions
-        account_tanks = set()
-        cursor = dbc.find_all({FIELD_UPDATED: { '$exists': True}}, {'tank_id': True, 'account_id': True, '_id' : False})
+        bu.set_progress_bar('Finding stats to clean', n_dirty*2, slow=True)
+        cursor = dbc.find_all(q_dirty, {'tank_id': True, 'account_id': True, '_id' : False})
         async for doc in cursor:
-            account_tanks.add([doc['account_id'], doc['tank_id']])
-        for stat in account_tanks:
+            accounts_tanks.add([doc['account_id'], doc['tank_id']])
+            bu.print_progress()
+
+        for stat in accounts_tanks:
+            bu.print_progress()
             account_id = stat[0]
             tank_id    = stat[1]
-            cursor = dbc.find({ '$and': [ {'account_id': account_id}, {'tank_id': tank_id}]}, {'last_battle_time': True}).sort('last_battle_time', pymongo.DESCENDING)
-
-
+            cursor = dbc.find({ '$and': [ {'account_id': account_id}, {'tank_id': tank_id}]}, 
+                            {'last_battle_time': True}).sort('last_battle_time', pymongo.DESCENDING)
+            n = 0
+            async for doc in cursor:
+                if n == 0:
+                    n = 1
+                    continue
+                else:
+                    await add_stat2del(None, db, MODE_TANK_STATS, doc['_id'])
+                    n += 1
+            rl.log('Stats to clean', n-1)
 
     except Exception as err:
         bu.error(exception=err)
-    
+    finally:
+        rl.print()
+        return None    
 
 
 async def snapshot_player_achivements(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace = None):
