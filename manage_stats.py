@@ -144,7 +144,7 @@ async def main(argv):
         if args.analyze:
 
             ## CONTINUE HERE
-            ## MOVE TO analyze_stats()
+            ## MOVE TO analyze_stats(), add --archive option to clean the archive. 
 
             tasks = []
             tankQ = None
