@@ -239,6 +239,15 @@ class RecordLogger():
             return None
 
 
+    def sum(self, categories: list) -> int:
+        ret = 0
+        for cat in categories:
+            val = self.get_value(cat)
+            if val != None:
+                ret += val
+        return ret
+        
+
     def get_categories(self) -> list:
         return list(self.logger.keys())
 
