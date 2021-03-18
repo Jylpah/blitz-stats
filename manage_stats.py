@@ -77,11 +77,12 @@ async def main(argv):
     parser.add_argument('--mode', default=['tank_stats'], nargs='+', choices=DB_C.keys(), help='Select type of stats to export')
     
     arggroup_action = parser.add_mutually_exclusive_group(required=True)
-    arggroup_action.add_argument( '--analyze', action='store_true', default=False, help='Analyze the database for duplicates')
+    arggroup_action.add_argument( '--analyze',  action='store_true', default=False, help='Analyze the database for duplicates')
     arggroup_action.add_argument( '--check', 	action='store_true', default=False, help='Check the analyzed duplicates')
     arggroup_action.add_argument( '--prune', 	action='store_true', default=False, help='Prune database for the analyzed duplicates i.e. DELETE DATA')
     arggroup_action.add_argument( '--snapshot',	action='store_true', default=False, help='Snapshot latest stats from the archive')
     arggroup_action.add_argument( '--archive',	action='store_true', default=False, help='Archive latest stats')
+    arggroup_action.add_argument( '--clean',	action='store_true', default=False, help='Clean latest stats from old stats')
     
     parser.add_argument('--opt_tanks', default=None, nargs='*', type=str, help='List of tank_ids for other options. Use "tank_id+" to start from a tank_id')
 
@@ -367,8 +368,9 @@ async def analyze_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMo
             tank_id = await tankQ.get()
             bu.debug(str(tankQ.qsize())  + ' tanks to process', id=workerID)
                 
-            pipeline = [    {'$match': { '$and': [  {'tank_id': tank_id }, {'last_battle_time': {'$lte': end}}, {'last_battle_time': {'$gt': start}} ] }},
-                            { '$project' : { 'account_id' : 1, 'tank_id' : 1, 'last_battle_time' : 1}},
+            pipeline = [    {'$match': { '$and': [  {'tank_id': tank_id }, 
+                                {'last_battle_time': {'$lte': end}}, {'last_battle_time': {'$gt': start}} ] }},
+                            { '$project' : { 'account_id' : 1, 'last_battle_time' : 1}},
                             { '$sort': {'account_id': 1, 'last_battle_time': -1} }
                         ]
             cursor = dbc.aggregate(pipeline, allowDiskUse=True)
@@ -380,7 +382,7 @@ async def analyze_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMo
                 bu.print_progress()
                 account_id = doc['account_id']
                 if bu.is_debug():
-                    entry = mk_log_entry(stat_type, { 'account_id' : account_id, 'last_battle_time' : doc['last_battle_time'], 'tank_id' : doc['tank_id']})
+                    entry = mk_log_entry(stat_type, { 'account_id' : account_id, 'last_battle_time' : doc['last_battle_time'], 'tank_id' : tank_id})
                 if account_id == account_id_prev:
                     # Older doc found!
                     if bu.is_debug():
@@ -722,10 +724,7 @@ async def check_tank_stats_serial(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
 async def check_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, update: dict, sample: int = DEFAULT_SAMPLE):
     """Parallel check for the analyzed tank stat duplicates"""
     try:
-        dups_ok      = 0
-        dups_nok     = 0
-        dups_skipped = 0
-        dups_total   = 0
+        rl = RecordLogger('Check Tank stats')
         
         dbc_dups    = db[DB_C_STATS_2_DEL]
         stat_type   = MODE_TANK_STATS
@@ -755,15 +754,12 @@ async def check_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, update:
  
         if len(worker_tasks) > 0:
             for res in await asyncio.gather(*worker_tasks):
-                dups_ok      += res['ok']
-                dups_nok     += res['nok']
-                dups_skipped += res['skipped']
-                dups_total   += res['total']
+                rl.merge(res)
 
         if bu.is_normal():
             bu.finish_progress_bar()
-        print_dups_stats(stat_type, N_dups, sample, dups_ok, dups_nok, dups_skipped)
-        return dups_nok == 0
+        rl.print()
+        return rl.get_value('Invalid duplicate') == 0
     except Exception as err:
         bu.error(exception=err)
         return False
@@ -773,9 +769,7 @@ async def check_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, u
     """Worker to check Tank Stats duplicates. Returns results in a dict"""
     try:
         id = None
-        dups_ok      = 0
-        dups_nok     = 0
-        dups_skipped = 0
+        rl = RecordLogger('Check Tank stats')
         
         dbc         = db[DB_C_TANK_STATS]
         dbc_dups    = db[DB_C_STATS_2_DEL]
@@ -801,24 +795,31 @@ async def check_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, u
                 tank_id         = dup_stat['tank_id']
                 if last_battle_time > end or last_battle_time <= start:
                     bu.verbose('Sampled an duplicate not in the defined update. Skipping')
-                    dups_skipped += 1
+                    rl.log('Skipped duplicates')
                     continue
                 
                 bu.verbose(str_dups_tank_stats(update, account_id, tank_id, last_battle_time, is_dup=True))
                 cursor_stats = dbc.find({ '$and': [ {'tank_id': tank_id}, {'account_id': account_id},
-                                                    {'last_battle_time': { '$gt': last_battle_time }}, { 'last_battle_time': { '$lt': end }}] }
+                                                    {'last_battle_time': { '$gt': start }}, { 'last_battle_time': { '$lt': end }}] }
                                                     ).sort('last_battle_time', pymongo.ASCENDING )
                 dup_count = 0
+                older = 0
+                newer = 0
                 async for stat in cursor_stats:
-                    last_battle_time     = stat['last_battle_time']
+
+                    stat_last_battle_time     = stat['last_battle_time']
+                    if stat_last_battle_time > last_battle_time:
+                        newer += 1
+                        dup_count += 1  # =1 on purpose
+                    elif stat_last_battle_time < last_battle_time:
+                        older += 1
                     bu.verbose(str_dups_tank_stats(update, account_id, tank_id, last_battle_time))
-                    dup_count = 1  # =1 on purpose
                     
                 if dup_count == 0:
-                    dups_nok += 1
+                    rl.log('Invalid duplicate')
                     bu.verbose("NO DUPLICATE FOUND FOR: account_id=" + str(account_id) +  ' tank_id=' + str(tank_id) + " last_battle_time=" + str(last_battle_time) + " _id=" + id) 
                 else:
-                    dups_ok += 1                        
+                    rl.log('Valid duplicate')
                                     
             except Exception as err:
                 bu.error('Error checking duplicates. Mode=' + stat_type + ' _id=' + str(id), err)
@@ -829,8 +830,9 @@ async def check_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, u
         return None
 
     if sample == 0:
-        sample = dups_ok + dups_nok + dups_skipped
-    return {'total': sample, 'ok': dups_ok, 'nok': dups_nok, 'skipped': dups_skipped, 'stat_type': stat_type }
+        sample = rl.sum(['Valid duplicate', 'Invalid duplicate', 'Skipped duplicates'])
+    rl.log('Total', sample)
+    return rl
             
 
 def split_int(total:int, N: int) -> list:
@@ -1119,6 +1121,31 @@ async def archive_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args:
         bu.log(rl.print(do_print=False))
         rl.print()
     return None
+
+
+async def clean_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace = None):
+    """Clean the Latest stats from older stats"""
+    try: 
+        dbc = db[DB_C[MODE_TANK_STATS]]
+        rl = RecordLogger('Clean tank stats')
+
+        ## Get stats with FIELD_UPDATE
+        ## Get unique account_id, tank_id combos
+        ## Go through the combos & delete all older versions
+        account_tanks = set()
+        cursor = dbc.find_all({FIELD_UPDATED: { '$exists': True}}, {'tank_id': True, 'account_id': True, '_id' : False})
+        async for doc in cursor:
+            account_tanks.add([doc['account_id'], doc['tank_id']])
+        for stat in account_tanks:
+            account_id = stat[0]
+            tank_id    = stat[1]
+            cursor = dbc.find({ '$and': [ {'account_id': account_id}, {'tank_id': tank_id}]}, {'last_battle_time': True}).sort('last_battle_time', pymongo.DESCENDING)
+
+
+
+    except Exception as err:
+        bu.error(exception=err)
+    
 
 
 async def snapshot_player_achivements(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace = None):
