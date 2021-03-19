@@ -1144,8 +1144,20 @@ async def clean_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: a
         q_dirty  = {FIELD_UPDATED: { '$exists': True}}
         n_dirty  = await dbc.count_documents(q_dirty)
         accounts_tanks = set()
-
+        ## ===
+        tank_ids = await get_tanks_DB(db)
         bu.set_progress_bar('Finding stats to clean', n_dirty*2, slow=True)
+
+        ## CAN THIS WORK with $skip?
+        for tank_id in tank_ids:
+            pipeline = [ {'$match': { '$and': [ {'tank_id': tank_id }, {'account_id': {'$gte': account_id}}, {'account_id': {'$lt': account_id + id_step}} ] }},
+                         {'$sort': {'last_battle_time': pymongo.DESCENDING}},
+                         {'$group': { '_id': '$account_id',
+                                            'doc': {'$first': '$$ROOT'}}},
+                                {'$replaceRoot': {'newRoot': '$doc'}}, 
+                                { '$merge': { 'into': target_collection, 'on': '_id', 'whenMatched': 'keepExisting' }} ]
+
+
         cursor = dbc.find_all(q_dirty, {'tank_id': True, 'account_id': True, '_id' : False})
         async for doc in cursor:
             accounts_tanks.add([doc['account_id'], doc['tank_id']])
