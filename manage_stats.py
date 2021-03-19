@@ -153,13 +153,15 @@ async def main(argv):
             for u in updates:                
                 if MODE_PLAYER_ACHIEVEMENTS in args.mode:
                     rl.merge(await check_player_achievements(db, u, args.sample))
-                        # bu.error('Error in checking Player Achievement duplicates.')
-                        # raise KeyboardInterrupt()
+
                 if MODE_TANK_STATS in args.mode:
                     rl.merge(await check_tank_stats(db, u, args.sample))
-                        # bu.error('Error in checking Tank Stats duplicates.') 
-                        # raise KeyboardInterrupt()
+
             rl.print()        
+            if rl.get_error_status():
+                bu.error('Error in checking Tank Stats duplicates.') 
+                raise KeyboardInterrupt()
+        
         elif args.prune:
             # do the actual pruning and DELETE DATA
             bu.verbose_std('Starting to prune in 3 seconds. Press CTRL + C to CANCEL')
@@ -167,7 +169,7 @@ async def main(argv):
             await prune_stats(db, args)
         
         elif args.snapshot:
-            bu.verbose_std('Starting to snapshot stats in 3 seconds. Press CTRL 0 C to CANCEL')
+            bu.verbose_std('Starting to snapshot stats in 3 seconds. Press CTRL + C to CANCEL')
             bu.wait(3)
             if MODE_PLAYER_ACHIEVEMENTS in args.mode:
                 await snapshot_player_achivements(db, args)
@@ -387,7 +389,7 @@ async def analyze_tank_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase
                                 {'last_battle_time': {'$lte': end}}, 
                                 {'last_battle_time': {'$gt': start}} ] }},
                             { '$project' : { 'account_id' : 1, 'last_battle_time' : 1}},
-                            { '$sort': {'account_id': 1, 'last_battle_time': -1} }
+                            { '$sort': {'account_id': pymongo.ASCENDING, 'last_battle_time': pymongo.DESCENDING} }
                         ]
             cursor = dbc.aggregate(pipeline, allowDiskUse=True)
 
@@ -434,7 +436,7 @@ async def analyze_player_achievements_worker(db: motor.motor_asyncio.AsyncIOMoto
         
         pipeline = [    {'$match': { '$and': [  {'updated': {'$lte': end}}, {'updated': {'$gt': start}} ] }},
                         { '$project' : { 'account_id' : 1, 'updated' : 1}},
-                        { '$sort': {'account_id': 1, 'updated': pymongo.DESCENDING} } 
+                        { '$sort': {'account_id': pymongo.ASCENDING, 'updated': pymongo.DESCENDING} } 
                     ]
         cursor = dbc.aggregate(pipeline, allowDiskUse=True)
 
@@ -523,8 +525,9 @@ async def check_player_achievements_serial(db: motor.motor_asyncio.AsyncIOMotorD
                     continue
                 
                 bu.verbose(str_dups_player_achievements(update, account_id, updated, is_dup=True))
-                cursor_stats = dbc.find({ '$and': [ {'account_id': account_id}, {'updated': { '$gt': updated }}, 
-                                                { 'updated': { '$lt': end }}] }).sort('updated', pymongo.ASCENDING )
+                cursor_stats = dbc.find({ '$and': [ {'account_id': account_id}, 
+                                                    {'updated': { '$gt': updated }}, 
+                                                    {'updated': { '$lt': end }}] }).sort('updated', pymongo.ASCENDING )
                 dup_count = 0
                 async for stat in cursor_stats:
                     updated     = stat['updated']
@@ -547,7 +550,8 @@ async def check_player_achievements_serial(db: motor.motor_asyncio.AsyncIOMotorD
         return False
 
 
-async def check_player_achievements(db: motor.motor_asyncio.AsyncIOMotorDatabase, update: dict, sample: int = DEFAULT_SAMPLE):
+async def check_player_achievements(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
+                                    update: dict, sample: int = DEFAULT_SAMPLE):
     """Parallel check for the analyzed player achievement duplicates"""
     try:
         rl = RecordLogger('Check Player Achivements')
@@ -589,7 +593,8 @@ async def check_player_achievements(db: motor.motor_asyncio.AsyncIOMotorDatabase
     return rl
 
 
-async def check_player_achievement_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, update_record: dict, sample: int = 0) -> dict:
+async def check_player_achievement_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
+                                          update_record: dict, sample: int = 0) -> dict:
     """Worker to check Player Achievement duplicates. Returns results in a dict"""
     try:
         id = None
@@ -960,11 +965,12 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argpa
     """Parellen DB pruning, DELETES DATA. Does NOT verify whether there are newer stats"""
     #global STATS_PRUNED
     try:
-        dbc_prunelist = db[DB_C_STATS_2_DEL]
-        batch_size = 100
         rl = RecordLogger('Prune stats')
+        dbc_prunelist = db[DB_C_STATS_2_DEL]
+        batch_size = 100        
         Q = asyncio.Queue(5*batch_size)
         workers = list()
+
         for workerID in range(N_WORKERS):
             workers.append(asyncio.create_task(prune_stats_worker(db, Q, workerID)))                    
         
@@ -1211,7 +1217,7 @@ async def snapshot_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args
                 bu.print_progress()
                 try:
                     pipeline = [ {'$match': { '$and': [ {'tank_id': tank_id }, {'account_id': {'$gte': account_id}}, {'account_id': {'$lt': account_id + id_step}} ] }},
-                                {'$sort': {'last_battle_time': -1}},
+                                {'$sort': {'last_battle_time': pymongo.DESCENDING}},
                                 {'$group': { '_id': '$account_id',
                                             'doc': {'$first': '$$ROOT'}}},
                                 {'$replaceRoot': {'newRoot': '$doc'}}, 
