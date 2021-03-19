@@ -212,13 +212,17 @@ def def_value_zero():
 ## -----------------------------------------------------------
 class RecordLogger():
     """Count stats for categories"""
-    def __init__(self, name: str = ''):
+    def __init__(self, name: str = '', error = None):
         self.logger = collections.defaultdict(def_value_zero)
         self.name = name
+        self.error_cat = error
+        self.error_status = False
 
 
     def log(self, category: str, count: int = 1) -> None:
         self.logger[self._get_long_cat(category)] += count
+        if (self.error_cat != None) and (category == self.error_cat):
+            self.error_status = True
         return None
 
 
@@ -254,6 +258,10 @@ class RecordLogger():
     
     def get_values(self) -> dict():
         return self.logger
+
+    
+    def get_error_status(self) -> bool:
+        return self.error_status
     
 
     def merge(self, B):
@@ -262,11 +270,12 @@ class RecordLogger():
             return None 
         for cat in B.get_categories():
             self.logger[cat] += B.get_value(cat)
+            self.error_status = self.error_status or B.get_error_status()
 
 
     def print(self, do_print : bool = False): 
         if do_print:
-            print(self.name + ':')
+            print(self.name + ': ' + 'ERROR occured' if self.get_error_status() else '')
             for cat in self.logger:
                 print(self._get_str(cat))
             return None
