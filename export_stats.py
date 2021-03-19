@@ -347,7 +347,7 @@ async def q_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDat
                         cursor = dbc.find({ '$and': [{'last_battle_time': {'$lt': timeB}}, {'last_battle_time': {'$gte': timeA}}, {'tank_id': tank_id } ] })
                     else:
                         pipeline = [ {'$match': { '$and': [{'last_battle_time': {'$lte': timeB}}, {'last_battle_time': {'$gt': timeA}}, {'tank_id': tank_id } ] }},
-                                {'$sort': {'last_battle_time': -1}},
+                                {'$sort': {'last_battle_time': pymongo.DESCENDING}},
                                 {'$group': { '_id': '$account_id',
                                             'doc': {'$first': '$$ROOT'}}},
                                 {'$replaceRoot': {'newRoot': '$doc'}}, 
@@ -400,7 +400,7 @@ async def q_player_stats_BS(workerID: int, db: motor.motor_asyncio.AsyncIOMotorD
                         pipeline = [{'$match': {
                             '$and': [{'last_battle_time': {'$lte': timeB}}, {'last_battle_time': {'$gt': timeA}},
                                 {'account_id': {'$lte': id + id_step}}, {'account_id': {'$gt': id}}]}},
-                                {'$sort': {'last_battle_time': -1}},
+                                {'$sort': {'last_battle_time': pymongo.DESCENDING}},
                                 {'$group': {'_id': '$account_id',
                                             'doc': {'$first': '$$ROOT'}}},
                                 {'$replaceRoot': {'newRoot': '$doc'}},
