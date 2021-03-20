@@ -88,6 +88,7 @@ async def main(argv):
     arggroup_action.add_argument( '--clean',	action='store_true', default=False, help='Clean latest stats from old stats')
     
     parser.add_argument('--opt_tanks', default=None, nargs='*', type=str, help='List of tank_ids for other options. Use "tank_id+" to start from a tank_id')
+    parser.add_argument( '--opt_archive', action='store_true', default=False, help='Process stats archive (--mode=tank_stats only)')
 
     arggroup_verbosity = parser.add_mutually_exclusive_group()
     arggroup_verbosity.add_argument( '-d', '--debug', 	action='store_true', default=False, help='Debug mode')
@@ -196,11 +197,18 @@ async def main(argv):
     return None
 
 
-def mk_update_entry(update: str, start: int, end: int):
+def mk_update_entry(update: str, start: int, end: int)  -> dict:
     """Make update entry to the update list to process"""
     if (end == None) or (end == 0):
         end = bu.NOW()
-    return {'update': update, 'start': start, 'end': end}
+    return {'update': update, 'start': start, 'end': end }
+
+
+def mk_prune_task(ids: list, _id = None) -> dict:
+    """Make a prune task for prune queue"""
+    if (ids == None) or (len(ids) == 0):
+        return None
+    return { 'ids': ids, '_id': _id }
 
 
 async def get_latest_update(db: motor.motor_asyncio.AsyncIOMotorDatabase) -> dict:
@@ -364,17 +372,17 @@ async def analyze_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, updates: l
     except Exception as err:
         bu.error(exception=err)
 
-async def analyze_tank_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, update: dict, workerID: int, 
+async def analyze_tank_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
+                                    update_record: dict, workerID: int, 
                                     tankQ: asyncio.Queue, prune : bool = False):
-    """Async Worker to fetch player tank stats"""
+    """Worker to analyze duplicates in tank stats"""
     try:
-        dbc = db[DB_C_TANK_STATS]
-        stat_type = MODE_TANK_STATS
-        rl = RecordLogger('Analyze Tank Stats')
-    
-        start   = update['start']
-        end     = update['end']
-        update  = update['update']
+        dbc         = db[DB_C_TANK_STATS]
+        stat_type   = MODE_TANK_STATS
+        rl          = RecordLogger('Analyze Tank Stats')    
+        start       = update_record['start']
+        end         = update_record['end']
+        update      = update_record['update']
     except Exception as err:
         bu.error(exception=err, id=workerID)
         return None    
@@ -974,21 +982,28 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argpa
     try:
         rl = RecordLogger('Prune stats')
         dbc_prunelist = db[DB_C_STATS_2_DEL]
-        batch_size = 100        
-        Q = asyncio.Queue(5*batch_size)
+        batch_size = 100
+        deleteQs = dict()        
         workers = list()
+        workerID = 0
+        archive = args.opt_archive
 
-        for workerID in range(N_WORKERS):
-            workers.append(asyncio.create_task(prune_stats_worker(db, Q, workerID)))                    
+        for stat_type in args.mode:
+            deleteQs[stat_type] = asyncio.Queue(5*batch_size)
+            workerID += 1
+            workers.append(asyncio.create_task(prune_stats_worker(db, stat_type, deleteQs[stat_type], workerID, archive)))                    
         
         for stat_type in args.mode:
-            N_stats2prune = await dbc_prunelist.count_documents({'type' : stat_type})
-            
+            N_stats2prune = await dbc_prunelist.count_documents({'type' : stat_type})            
             bu.debug('Pruning ' + str(N_stats2prune) + ' ' + stat_type)            
             bu.set_progress_bar(stat_type + ' pruned: ', N_stats2prune, step = 1000, slow=True)
+
             cursor = dbc_prunelist.find({'type' : stat_type}).batch_size(batch_size)
             docs = await cursor.to_list(batch_size)
             while docs:
+                
+                ## TODO FIX
+                
                 ids = set()
                 for doc in docs:
                     ids.add(doc['id'])                    
@@ -996,13 +1011,15 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argpa
                     stats2prune                 = dict()
                     stats2prune['stat_type']    = stat_type
                     stats2prune['ids']          = list(ids)
-                    await Q.put(stats2prune)
+
+                    await deleteQs[stat_type].put(stats2prune)
+                    
                     bu.debug('added ' + str(len(ids)) + ' stats to be pruned to the queue')
                     rl.log(stat_type + ' to be pruned', len(ids))
                 docs = await cursor.to_list(batch_size)
             
             # waiting for the Queue to finish 
-            await Q.join()
+            await deleteQs[stat_type].join()
             bu.finish_progress_bar()
 
         if len(workers) > 0:
@@ -1078,10 +1095,6 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                 ids         = prune_task['ids']
                 prune_id    = prune_task['_id']
                         
-                if len(ids) == 0:
-                    rl.log('Error: empty _id list')
-                    continue
-
                 res = await dbc_2_prune.delete_many( { '_id': { '$in': ids } } )
 
                 if res.deleted_count > 0:                        
@@ -1226,45 +1239,63 @@ async def clean_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase):
         return rl
     
 
-async def clean_tank_stats_worker(  db: motor.motor_asyncio.AsyncIOMotorDatabase, 
-                                    accountQ: asyncio.Queue, deleteQ: asyncio.Queue, 
-                                    ID: int = 1) -> RecordLogger:
-    """Worker to clean tank stats"""
+async def find_old_tank_stats_worker(  db: motor.motor_asyncio.AsyncIOMotorDatabase, 
+                                        accountQ: asyncio.Queue, deleteQ: asyncio.Queue, 
+                                        update_record: dict = None, archive = False,
+                                        ID: int = 1) -> RecordLogger:
+    """Worker to find duplicates to prune"""
     try:
         rl       = RecordLogger('Clean tank stats')
-        dbc      = db[DB_C[MODE_TANK_STATS]]
         tank_ids = await get_tanks_DB(db)
+        update = 'N/A'
+        if archive:
+            dbc      = db[DB_C_ARCHIVE[MODE_TANK_STATS]]
+        else:
+            dbc      = db[DB_C[MODE_TANK_STATS]]
+        
+        if update_record != None:
+            update  = update_record['update']
+            start   = update_record['start']
+            end     = update_record['end']        
+        else:
+            update = 'ALL'
+            if archive:
+                bu.error('CRITICAL !!!! TRYING TO PRUNE TANK STATS ARCHIVE !!!! EXITING...')
+                sys.exit(1)
         
         while not accountQ.empty():
             try:
-                account_range = await accountQ.get()
-                account_id_min = account_range['min']
-                account_id_max = account_range['max']
+                accounts = await accountQ.get()
+                account_id_min = accounts['min']
+                account_id_max = accounts['max']
                 
                 for tank_id in tank_ids:
-                    pipeline = [   { '$match': { '$and': [ { 'tank_id': tank_id }, 
-                                              {'account_id': { '$gte': account_id_min}}, 
-                                              {'account_id': { '$lt': account_id_max}} ] } }, 
-                                    { '$sort': { 'last_battle_time': pymongo.DESCENDING } }, 
-                                    { '$group': { '_id': '$account_id', 
-                                                    'ids': {'$push': '$_id' },
-                                                #    'last_battle_times': { '$push': '$last_battle_time' } }, 
-                                                    'len': { "$sum": 1 } } },                           
-                                    { '$match': { 'len': { '$gt': 1 } } }, 
-                                    { '$project': { 'ids_old': {  '$slice': [  '$ids', 1, '$len' ] } } }
-                        ]
+                    match_stage = [ { 'tank_id': tank_id }, 
+                                    {'account_id': { '$gte': account_id_min}}, 
+                                    {'account_id': { '$lt' : account_id_max}} ]
+                    if update_record != None:
+                        match_stage.append( {'last_battle_time': {'$gt': start}} )
+                        match_stage.append( {'last_battle_time': {'$lte': end}} )
+
+                    pipeline = [{ '$match': { '$and': match_stage } }, 
+                                { '$sort': { 'last_battle_time': pymongo.DESCENDING } }, 
+                                { '$group': { '_id': '$account_id', 
+                                              'all_ids': {'$push': '$_id' },
+                                              'len': { "$sum": 1 } } },                           
+                                { '$match': { 'len': { '$gt': 1 } } }, 
+                                { '$project': { 'ids': {  '$slice': [  '$all_ids', 1, '$len' ] } } }
+                            ]
                     cursor = dbc.aggregate(pipeline, allowDiskUse=True)
                     async for res in cursor:
-                        n = len(res['ids_old'])
-                        for _id in res['ids_old']:
-                            await deleteQ.put(_id)
+                        n = len(res['ids'])
+                        await deleteQ.put(res['ids'])
                         bu.print_progress(n)
-                        rl.log('Stats to clean', n)
-                accountQ.task_done()
+                        rl.log('Stats to prune', n)                    
 
             except Exception as err:
-                bu.error(exception=err)
-
+                bu.error('Update=' + update, exception=err)
+            finally:
+                accountQ.task_done()
 
     except Exception as err:
         bu.error(exception=err)
