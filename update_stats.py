@@ -14,7 +14,7 @@ MAX_RETRIES = 3
 CACHE_VALID = 7   # days
 MAX_UPDATE_INTERVAL = 4*30*24*60*60 # 4 months
 INACTIVE_THRESHOLD 	= 2*30*24*60*60
-TIME_SYNC_THRESHOLD = 24*3600 
+#TIME_SYNC_THRESHOLD = 24*3600 
 SLEEP = 0.1
 WG_APP_ID = 'cd770f38988839d7ab858d1cbe54bdd0'
 
@@ -396,7 +396,8 @@ async def get_active_players_BS(args : argparse.Namespace):
 	cache_valid = args.cache_valid
 
 	active_players = None
-	if force or not (os.path.exists(FILE_ACTIVE_PLAYERS) and os.path.isfile(FILE_ACTIVE_PLAYERS)) or (bu.NOW() - os.path.getmtime(FILE_ACTIVE_PLAYERS) > cache_valid):
+	if force or (not (os.path.exists(FILE_ACTIVE_PLAYERS))) or \
+		( os.path.isfile(FILE_ACTIVE_PLAYERS) and (bu.NOW() - os.path.getmtime(FILE_ACTIVE_PLAYERS) > cache_valid) ):
 		try:
 			bu.verbose('Retrieving active players file from BlitzStars.com')
 			url = bs.get_url_active_players()

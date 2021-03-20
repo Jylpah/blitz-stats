@@ -408,7 +408,7 @@ async def analyze_tank_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase
                         bu.debug('Duplicate found: --------------------------------', id=workerID)
                         bu.debug(entry + ' : Old (to be deleted)', id=workerID)
                         bu.debug(entry_prev + ' : Newer', id=workerID)
-                    await add_stat2del(workerID, db, stat_type, doc['_id'], prune)
+                    await add_stat2del(db, stat_type, doc['_id'], workerID, prune)
                     rl.log(stat_type + ' duplicates')
                 account_id_prev = account_id 
                 entry_prev = entry
@@ -455,7 +455,7 @@ async def analyze_player_achievements_worker(db: motor.motor_asyncio.AsyncIOMoto
                     bu.debug('Duplicate found: --------------------------------', id=workerID)
                     bu.debug(entry + ' : Old (to be deleted)', id=workerID)
                     bu.debug(entry_prev + ' : Newer', id=workerID)
-                await add_stat2del(workerID, db, stat_type, doc['_id'], prune)
+                await add_stat2del(db, stat_type, doc['_id'], workerID, prune)
                 rl.log(stat_type + ' duplicates')                
             account_id_prev = account_id
             entry_prev = entry 
@@ -777,7 +777,7 @@ async def check_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, update:
         return rl
 
 
-async def check_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, update_record: dict, sample: int = 0) -> dict:
+async def check_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, update_record: dict = None, sample: int = 0) -> dict:
     """Worker to check Tank Stats duplicates. Returns results in a dict"""
     try:
         id = None
@@ -787,9 +787,10 @@ async def check_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, u
         dbc_dups    = db[DB_C_STATS_2_DEL]
         stat_type   = MODE_TANK_STATS
         
-        start   = update_record['start']
-        end     = update_record['end']
-        update  = update_record['update']
+        if update != None:
+            start   = update_record['start']
+            end     = update_record['end']
+            update  = update_record['update']
 
         pipeline = [ {'$match': { 'type': stat_type}} ]
         if sample > 0:
@@ -905,7 +906,7 @@ def str_dups_tank_stats(update : str, account_id: int, tank_id: int, last_battle
         return "ERROR"
 
 
-async def add_stat2del(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDatabase, stat_type: str, id: str, prune : bool = False):
+async def add_stat2del(db: motor.motor_asyncio.AsyncIOMotorDatabase, stat_type: str, id: str, workerID: int = None,  prune : bool = False):
     """Adds _id of the stat record to be deleted in into DB_C_STATS_2_DEL"""
     global DUPS_FOUND, STATS_PRUNED
 
@@ -1149,16 +1150,23 @@ async def clean_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: a
         bu.set_progress_bar('Finding stats to clean', n_dirty*2, slow=True)
 
         ## CAN THIS WORK with $skip?
+        ## FOR account_id steps
         for tank_id in tank_ids:
-            pipeline = [ {'$match': { '$and': [ {'tank_id': tank_id }, {'account_id': {'$gte': account_id}}, {'account_id': {'$lt': account_id + id_step}} ] }},
-                         {'$sort': {'last_battle_time': pymongo.DESCENDING}},
-                         {'$group': { '_id': '$account_id',
-                                            'doc': {'$first': '$$ROOT'}}},
-                                {'$replaceRoot': {'newRoot': '$doc'}}, 
-                                { '$merge': { 'into': target_collection, 'on': '_id', 'whenMatched': 'keepExisting' }} ]
-
-
-        cursor = dbc.find_all(q_dirty, {'tank_id': True, 'account_id': True, '_id' : False})
+            pipeline = [  { '$match': { '$and': [ { 'tank_id': 1 }, { 'account_id': { '$lte': 5e8}} ] } }, 
+                          { '$sort': { 'last_battle_time': pymongo.DESCENDING } }, 
+                          { '$group': { '_id': '$account_id', 
+                                        'ids': {'$push': '$_id' },
+                                    #    'last_battle_times': { '$push': '$last_battle_time' } }, 
+                                        'len': { "$sum": 1 } } },                           
+                          { '$match': { 'len': { '$gt': 1 } } }, 
+                          { '$project': { 'ids_old': {  '$slice': [  '$ids', 1, '$len' ] } } }
+                        ]
+            cursor = dbc.aggregate(pipeline, allowDiskUse=True)
+            async for res in cursor:
+                for _id in res['ids_old']:
+                    await add_stat2del(db, MODE_TANK_STATS, _id )
+                bu.print_progress(len(res['ids_old']))
+        
         async for doc in cursor:
             accounts_tanks.add([doc['account_id'], doc['tank_id']])
             bu.print_progress()
@@ -1175,7 +1183,7 @@ async def clean_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: a
                     n = 1
                     continue
                 else:
-                    await add_stat2del(None, db, MODE_TANK_STATS, doc['_id'])
+                    await add_stat2del(db, MODE_TANK_STATS, doc['_id'])
                     n += 1
             rl.log('Stats to clean', n-1)
 
