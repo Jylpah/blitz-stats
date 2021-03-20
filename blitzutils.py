@@ -764,7 +764,7 @@ class WG:
     CACHE_DB_FILE           = '.blitzutils_cache.sqlite3' 
     CACHE_GRACE_TIME        =  30*24*3600  # 30 days cache
 
-    TIME_SYNC_THRESHOLD     = 24*3600
+    TIME_SYNC_THRESHOLD     = 3*3600
 
     # sql_create_player_stats_tbl = """CREATE TABLE IF NOT EXISTS player_stats (
     #                             account_id INTEGER NOT NULL,
