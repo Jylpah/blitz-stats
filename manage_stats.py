@@ -788,9 +788,13 @@ async def check_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, u
         stat_type   = MODE_TANK_STATS
         
         if update != None:
-            start   = update_record['start']
-            end     = update_record['end']
             update  = update_record['update']
+            start   = update_record['start']
+            end     = update_record['end']            
+        else:
+            update = 'ALL'
+            start  = 0
+            end    = bu.NOW()
 
         pipeline = [ {'$match': { 'type': stat_type}} ]
         if sample > 0:
@@ -798,48 +802,37 @@ async def check_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, u
         cursor = dbc_dups.aggregate(pipeline, allowDiskUse=False)
        
         async for dup in cursor:
-            try:                
-                id = dup['id']
-                if bu.is_normal():   ## since the --verbose causes far more logging 
-                    bu.print_progress()
-                dup_stat    = await dbc.find_one({'_id': id})
+            try:
+                _id = 'undefined'                
+                _id = dup['id']
+                bu.print_progress()
+                dup_stat        = await dbc.find_one({'_id': _id})
                 last_battle_time= dup_stat['last_battle_time']
                 account_id      = dup_stat['account_id']
                 tank_id         = dup_stat['tank_id']
                 if last_battle_time > end or last_battle_time <= start:
-                    bu.verbose('Sampled an duplicate not in the defined update. Skipping')
+                    bu.verbose('The sampled duplicate is not within the defined update. Skipping')
                     rl.log('Skipped duplicates')
                     continue
                 
                 bu.verbose(str_dups_tank_stats(update, account_id, tank_id, last_battle_time, is_dup=True))
-                cursor_stats = dbc.find({ '$and': [ {'tank_id': tank_id}, {'account_id': account_id},
-                                                    {'last_battle_time': { '$gt': start }}, { 'last_battle_time': { '$lt': end }}] }
-                                                    ).sort('last_battle_time', pymongo.ASCENDING )
-                dup_count = 0
-                older = 0
-                newer = 0
-                async for stat in cursor_stats:
-
-                    stat_last_battle_time     = stat['last_battle_time']
-                    if stat_last_battle_time > last_battle_time:
-                        newer += 1
-                        dup_count += 1  # =1 on purpose
-                    elif stat_last_battle_time < last_battle_time:
-                        older += 1
-                    bu.verbose(str_dups_tank_stats(update, account_id, tank_id, last_battle_time))
+                newer_stat = await dbc.find_one({ '$and': [ {'tank_id': tank_id}, {'account_id': account_id},
+                                                    {'last_battle_time': { '$gt': last_battle_time }}, 
+                                                    { 'last_battle_time': { '$lte': end }}] })
                     
-                if dup_count == 0:
+                if newer_stat == None:
                     rl.log('Invalid duplicate')
-                    bu.verbose("NO DUPLICATE FOUND FOR: account_id=" + str(account_id) +  ' tank_id=' + str(tank_id) + " last_battle_time=" + str(last_battle_time) + " _id=" + id) 
+                    bu.verbose(str_dups_tank_stats(update, account_id, tank_id, last_battle_time, status='INVALID DUPLICATE: _id=' + dup_stat['_id']))                    
                 else:
                     rl.log('Valid duplicate')
-                                    
+                    bu.verbose(str_dups_tank_stats(update, account_id, tank_id, last_battle_time, is_dup=True))
+
             except Exception as err:
-                bu.error('Error checking duplicates. Mode=' + stat_type + ' _id=' + str(id), err)
+                bu.error('Error checking duplicates. Mode=' + stat_type + ' _id=' + str(_id), err)
                 return None
 
     except Exception as err:
-        bu.error('Mode=' + stat_type + ' _id=' + str(id), err)
+        bu.error('Mode=' + stat_type + ' _id=' + str(_id), err)
         return None
 
     if sample == 0:
@@ -898,9 +891,15 @@ def str_dups_player_achievements(update : str, account_id: int,  updated: int, i
         return "ERROR"
 
 
-def str_dups_tank_stats(update : str, account_id: int, tank_id: int, last_battle_time: int, is_dup: bool = False):
+def str_dups_tank_stats(update : str, account_id: int, tank_id: int, last_battle_time: int, is_dup: bool = None, status: str = ''):
     try:
-        return  ("           " if not is_dup else "DUPLICATE: ") + "Update: " + update + ' account_id=' + str(account_id) + ' tank_id=' + str(tank_id) + ' last_battle_time: ' + str(last_battle_time)
+        
+        if is_dup != None:
+            if is_dup:
+                status = 'DUPLICATE' 
+            else:
+                status = 'Not duplicate'        
+        return('Update: {:s} account_id={:<10d} tank_id={:<5d} latest_battle_time={:d} : {:s}'.format(update, account_id, tank_id, last_battle_time, status) )
     except Exception as err:
         bu.error(exception=err)
         return "ERROR"
