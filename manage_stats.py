@@ -780,7 +780,6 @@ async def check_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, update:
 async def check_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, update_record: dict = None, sample: int = 0) -> dict:
     """Worker to check Tank Stats duplicates. Returns results in a dict"""
     try:
-        id = None
         rl = RecordLogger('Check Tank stats')
         
         dbc         = db[DB_C_TANK_STATS]
