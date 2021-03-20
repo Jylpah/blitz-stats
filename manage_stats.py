@@ -386,8 +386,8 @@ async def analyze_tank_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase
             bu.debug(str(tankQ.qsize())  + ' tanks to process', id=workerID)
                 
             pipeline = [    {'$match': { '$and': [  {'tank_id': tank_id }, 
-                                {'last_battle_time': {'$lte': end}}, 
-                                {'last_battle_time': {'$gt': start}} ] }},
+                                {'last_battle_time': {'$gt': start}}, 
+                                {'last_battle_time': {'$lte': end}} ] }},
                             { '$project' : { 'account_id' : 1, 'last_battle_time' : 1}},
                             { '$sort': {'account_id': pymongo.ASCENDING, 'last_battle_time': pymongo.DESCENDING} }
                         ]
@@ -917,8 +917,6 @@ def str_dups_tank_stats(update : str, account_id: int, tank_id: int, last_battle
 
 async def add_stat2del(db: motor.motor_asyncio.AsyncIOMotorDatabase, stat_type: str, id: str, workerID: int = None,  prune : bool = False) -> int:
     """Adds _id of the stat record to be deleted in into DB_C_STATS_2_DEL"""
-    global DUPS_FOUND, STATS_PRUNED
-
     dbc = db[DB_C_STATS_2_DEL]
     dbc2prune = db[DB_C[stat_type]]
     try:
@@ -1026,8 +1024,7 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, Q: as
     bu.debug('Started', id=ID)
     rl = RecordLogger('Prune stats')
     try:
-        dbc_prunelist = db[DB_C_STATS_2_DEL]        
-        
+        dbc_prunelist = db[DB_C_STATS_2_DEL]       
         
         while True:
             prune_task  = await Q.get()
@@ -1146,43 +1143,82 @@ async def archive_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args:
     return None
 
 
-async def clean_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace = None):
+async def clean_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase):
     """Clean the Latest stats from older stats"""
     try: 
         dbc      = db[DB_C[MODE_TANK_STATS]]
         rl       = RecordLogger('Clean tank stats')
         q_dirty  = {FIELD_UPDATED: { '$exists': True}}
         n_dirty  = await dbc.count_documents(q_dirty)
-        accounts_tanks = set()
-        ## ===
-        tank_ids = await get_tanks_DB(db)
-        bu.set_progress_bar('Finding stats to clean', n_dirty*2, slow=True)
-
-        ## CAN THIS WORK with $skip?
-        ## FOR account_id steps
-        for tank_id in tank_ids:
-            pipeline = [  { '$match': { '$and': [ { 'tank_id': tank_id }, { 'account_id': { '$lte': 5e8}} ] } }, 
-                          { '$sort': { 'last_battle_time': pymongo.DESCENDING } }, 
-                          { '$group': { '_id': '$account_id', 
-                                        'ids': {'$push': '$_id' },
-                                    #    'last_battle_times': { '$push': '$last_battle_time' } }, 
-                                        'len': { "$sum": 1 } } },                           
-                          { '$match': { 'len': { '$gt': 1 } } }, 
-                          { '$project': { 'ids_old': {  '$slice': [  '$ids', 1, '$len' ] } } }
-                        ]
-            cursor = dbc.aggregate(pipeline, allowDiskUse=True)
-            async for res in cursor:
-                n = len(res['ids_old'])
-                for _id in res['ids_old']:
-                    await add_stat2del(db, MODE_TANK_STATS, _id )
-                bu.print_progress(n)
-                rl.log('Stats to clean', n)
-
+        
+        bu.set_progress_bar('Finding stats to clean', n_dirty, slow=True)
+        accountQ = await mk_accountQ(db)
+        deleteQ  = asyncio.Queue(10e3)
+        tasks = list()
+        for workerID in range(0,N_WORKERS):
+            tasks.append(asyncio.create_task(clean_tank_stats_worker(db, accountQ, deleteQ, workerID)))
+        
+        bu.debug('Waiting for workers to finish')
+        await asyncio.wait(tasks)       
+        bu.debug('Cancelling workers')
+        for task in tasks:
+            task.cancel()
+        bu.debug('Waiting for workers to cancel')
+        if len(tasks) > 0:
+            for res in await asyncio.gather(*tasks, return_exceptions=True):
+                rl.merge(res)          
+       
     except Exception as err:
         bu.error(exception=err)
     finally:
         rl.print()
-        return None    
+        return rl
+    
+
+async def clean_tank_stats_worker(  db: motor.motor_asyncio.AsyncIOMotorDatabase, 
+                                    accountQ: asyncio.Queue, deleteQ: asyncio.Queue, 
+                                    ID: int = 1) -> RecordLogger:
+    """Worker to clean tank stats"""
+    try:
+        rl       = RecordLogger('Clean tank stats')
+        dbc      = db[DB_C[MODE_TANK_STATS]]
+        tank_ids = await get_tanks_DB(db)
+        
+        while not accountQ.empty():
+            try:
+                account_range = await accountQ.get()
+                account_id_min = account_range['min']
+                account_id_max = account_range['max']
+                
+                for tank_id in tank_ids:
+                    pipeline = [   { '$match': { '$and': [ { 'tank_id': tank_id }, 
+                                              {'account_id': { '$gte': account_id_min}}, 
+                                              {'account_id': { '$lt': account_id_max}} ] } }, 
+                                    { '$sort': { 'last_battle_time': pymongo.DESCENDING } }, 
+                                    { '$group': { '_id': '$account_id', 
+                                                    'ids': {'$push': '$_id' },
+                                                #    'last_battle_times': { '$push': '$last_battle_time' } }, 
+                                                    'len': { "$sum": 1 } } },                           
+                                    { '$match': { 'len': { '$gt': 1 } } }, 
+                                    { '$project': { 'ids_old': {  '$slice': [  '$ids', 1, '$len' ] } } }
+                        ]
+                    cursor = dbc.aggregate(pipeline, allowDiskUse=True)
+                    async for res in cursor:
+                        n = len(res['ids_old'])
+                        for _id in res['ids_old']:
+                            await deleteQ.put(_id)
+                        bu.print_progress(n)
+                        rl.log('Stats to clean', n)
+                accountQ.task_done()
+
+            except Exception as err:
+                bu.error(exception=err)
+
+
+    except Exception as err:
+        bu.error(exception=err)
+    return rl    
+     
 
 
 async def snapshot_player_achivements(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace = None):
