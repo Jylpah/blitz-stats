@@ -29,12 +29,11 @@ DB_C_TANK_STR			= 'WG_TankStrs'
 DB_C_ERROR_LOG			= 'ErrorLog'
 DB_C_UPDATE_LOG			= 'UpdateLog'
 
+FIELD_UPDATED = '_updated'
 
 MODE_TANK_STATS         = 'tank_stats'
 MODE_PLAYER_STATS       = 'player_stats'
 MODE_PLAYER_ACHIEVEMENTS= 'player_achievements'
-
-FIELD_UPDATED = '_updated'
 
 DB_C = {    MODE_TANK_STATS             : DB_C_TANK_STATS, 
             MODE_PLAYER_STATS           : DB_C_PLAYER_STATS,
@@ -45,8 +44,8 @@ DB_C_ARCHIVE = dict()
 for mode in DB_C:
     DB_C_ARCHIVE[mode] = DB_C[mode] + DB_STR_ARCHIVE
 
-CACHE_VALID = 24*3600*7   # 7 days
-DEFAULT_SAMPLE = 1000
+CACHE_VALID     = 7*24*3600   # 7 days
+DEFAULT_SAMPLE  = 1000
 
 bs = None
 
@@ -1018,16 +1017,19 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argpa
     return None
 
 
-async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, Q: asyncio.Queue, ID: int = 1) -> dict:
+async def prune_stats_worker_OLD(db: motor.motor_asyncio.AsyncIOMotorDatabase, pruneQ: asyncio.Queue, ID: int = 1) -> dict:
     """Paraller Worker for pruning stats"""
     
+    ## TODO
+    ## Change to stat_type specific worker with own pruneQ
+
     bu.debug('Started', id=ID)
     rl = RecordLogger('Prune stats')
     try:
         dbc_prunelist = db[DB_C_STATS_2_DEL]       
         
         while True:
-            prune_task  = await Q.get()
+            prune_task  = await pruneQ.get()
             try:                 
                 stat_type   = prune_task['stat_type']
                 ids         = prune_task['ids']
@@ -1048,7 +1050,56 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, Q: as
                         bu.error(exception=err, id=ID)
             except Exception as err:
                 bu.error(exception=err, id=ID)
-            Q.task_done()        
+            pruneQ.task_done()        
+    except (asyncio.CancelledError):
+        bu.debug('Prune queue is empty', id=ID)
+    except Exception as err:
+        bu.error(exception=err, id=ID)
+    return rl
+
+
+async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
+                             stat_type : str, pruneQ: asyncio.Queue, 
+                             ID: int = 1, archive: bool = False) -> dict:
+    """Paraller Worker for pruning stats"""
+    
+    try:
+        bu.debug('Started', id=ID)
+        rl = RecordLogger('Prune stats')
+        dbc_prunelist = db[DB_C_STATS_2_DEL]       
+        if archive:
+            dbc_2_prune   = db[DB_C_ARCHIVE[stat_type]]
+        else:
+            dbc_2_prune   = db[DB_C[stat_type]]
+
+        while True:
+            prune_task  = await pruneQ.get()
+            try:
+                ids         = prune_task['ids']
+                prune_id    = prune_task['_id']
+                        
+                if len(ids) == 0:
+                    rl.log('Error: empty _id list')
+                    continue
+
+                res = await dbc_2_prune.delete_many( { '_id': { '$in': ids } } )
+
+                if res.deleted_count > 0:                        
+                    rl.log(stat_type + ' pruned', res.deleted_count)
+                    bu.print_progress(res.deleted_count)
+                else:
+                    bu.error('Could not find ' + stat_type + ' _ids=' + ', '.join(ids))
+                    rl.log('Error: ' + stat_type + ' Not found', len(ids))
+
+                if prune_id != None:
+                    await dbc_prunelist.delete_one({ '$and': [ {'type': stat_type}, {'id': prune_id }]})
+                
+            except Exception as err:
+                bu.error(exception=err, id=ID)
+                rl.log('Error: ' + stat_type + ' failure')
+            finally:
+                pruneQ.task_done()        # is executed even when 'continue' is called
+
     except (asyncio.CancelledError):
         bu.debug('Prune queue is empty', id=ID)
     except Exception as err:
