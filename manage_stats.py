@@ -204,14 +204,14 @@ def mk_update_entry(update: str, start: int, end: int)  -> dict:
     return {'update': update, 'start': start, 'end': end }
 
 
-def mk_dups_record(ids: list, _id = None) -> dict:
+def mk_dups_Q_entry(ids: list) -> dict:
     """Make a prune task for prune queue"""
     if (ids == None) or (len(ids) == 0):
         return None
-    return { 'ids': ids, '_id': _id }
+    return { 'ids': ids }
 
 
-def mk_dup_entry(stat_type: str, _id=str) -> dict:
+def mk_dup_db_entry(stat_type: str, _id=str) -> dict:
     return  {'type': stat_type, 'id': _id} 
 
 
@@ -424,19 +424,17 @@ async def analyze_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
     return rl
 
 
-async def save_dups_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, stat_type: str, dupsQ: asyncio.Queue):
+async def save_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase, 
+                            stat_type: str, dupsQ: asyncio.Queue):
     """Save duplicates information to the DB"""
     try:
         dbc = db[DB_C_STATS_2_DEL]
-        rl = RecordLogger('Save duplicate info')
+        rl = RecordLogger('Save duplicate info to DB')
         while True:
             try:
                 dups = await dupsQ.get()
-                ids = dups['ids']
-                l = len(ids)
-                for _id in ids:
-                    await dbc.insert_one( mk_dup_entry(stat_type, _id) )
-                rl.log('Duplicates saved', l)
+                res = await dbc.insert_many( [ mk_dup_db_entry(stat_type, dup_id) for dup_id in dups['ids'] ] )
+                rl.log('Duplicates saved', len(res.inserted_ids))
             except Exception as err:
                 bu.error(exception=err)
             finally:
@@ -444,6 +442,33 @@ async def save_dups_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, stat_ty
     
     except (asyncio.CancelledError):
         bu.debug('Duplicate queue is empty')
+    except Exception as err:
+        bu.error(exception=err)
+    return rl
+
+
+async def get_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase, 
+                            stat_type: str, dupsQ: asyncio.Queue):
+    """Read duplicates info from the DB"""
+    try:
+        dbc = db[DB_C_STATS_2_DEL]
+        batch_size = 100
+        rl = RecordLogger('Fetchs ' + stat_type + ' duplicates from DB')
+
+        cursor = dbc.find({'type' : stat_type}).batch_size(batch_size)
+        dups = await cursor.to_list(batch_size)
+        while dups:
+            try:
+                await dupsQ.put( mk_dups_Q_entry([ dup['id']  for dup in dups ]) )
+                rl.log('Duplicates read', len(dups))
+            except Exception as err:
+                rl.log('Erros')
+                bu.error(exception=err)
+            finally:
+                dups = await cursor.to_list(batch_size)
+    
+    except (asyncio.CancelledError):
+        bu.debug('Cancelled before finishing')
     except Exception as err:
         bu.error(exception=err)
     return rl
@@ -743,7 +768,7 @@ async def check_player_achievement_worker(db: motor.motor_asyncio.AsyncIOMotorDa
     rl.log('Total', sample)
     return rl 
 
-
+## DEPRECIATED
 async def check_tank_stats_serial(db: motor.motor_asyncio.AsyncIOMotorDatabase, update_record: dict, sample: int = DEFAULT_SAMPLE):
     """Check analyzed tank stat duplicates"""
     try:
