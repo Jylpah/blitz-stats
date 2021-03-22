@@ -299,11 +299,12 @@ async def mk_tankQ(db : motor.motor_asyncio.AsyncIOMotorDatabase) -> asyncio.Que
     return tankQ
 
 
-async def mk_accountQ(step: int = 1e7) -> asyncio.Queue:
+async def mk_accountQ(step: int = int(1e6)) -> asyncio.Queue:
     """Create ACCOUNT_ID queue for database queries"""    
     accountQ = asyncio.Queue()
     try:
-        for min in range(0,4e9-step, step):
+        id_max      = int(31e8)        
+        for min in range(0,id_max-step, step):
             await accountQ.put({'min': min, 'max': min + step})            
     except Exception as err:
         bu.error(exception=err)
@@ -389,8 +390,7 @@ async def analyze_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
         
         await dupsQ.join()
         dups_saver.cancel()
-        dups_rl = await asyncio.gather(*[dups_saver], return_exceptions=True)
-        rl.merge(dups_rl)
+        rl.merge(await asyncio.gather(*[dups_saver], return_exceptions=True))
     
     except Exception as err:
         bu.error(exception=err)
@@ -413,7 +413,7 @@ async def save_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
             except Exception as err:
                 bu.error(exception=err)
             finally:
-                dups.task_done()
+                dupsQ.task_done()
     
     except (asyncio.CancelledError):
         bu.debug('Duplicate queue is empty')
@@ -1266,7 +1266,7 @@ async def get_tank_name(db: motor.motor_asyncio.AsyncIOMotorDatabase, tank_id: i
 async def get_tanks_opt(db: motor.motor_asyncio.AsyncIOMotorDatabase, option: list = None, archive=False):
     """read option and return tank_ids"""
     try:
-        TANK_ID_MAX = 10e7
+        TANK_ID_MAX = int(10e6)
         tank_id_start = TANK_ID_MAX
         tank_ids = set()
         p = re.compile(r'^(\d+)(\+)?$')
