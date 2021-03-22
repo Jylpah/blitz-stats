@@ -889,7 +889,7 @@ async def check_dup_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabas
                         rl.log('Skipped')
                         continue
                 
-                    bu.verbose(str_dups_tank_stats(update, account_id, tank_id, last_battle_time, is_dup=True))
+                    
                     newer_stat = await dbc.find_one({ '$and': [ {'tank_id': tank_id}, 
                                                                 {'account_id': account_id},
                                                                 {'last_battle_time': { '$gt': last_battle_time }}, 
@@ -900,7 +900,12 @@ async def check_dup_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabas
                         bu.verbose(str_dups_tank_stats(update, account_id, tank_id, last_battle_time, status='INVALID DUPLICATE: _id=' + _id))                    
                     else:
                         rl.log('OK')
-                        bu.verbose(str_dups_tank_stats(update, account_id, tank_id, last_battle_time, is_dup=True))
+                        if bu.is_verbose():
+                            bu.verbose(str_dups_tank_stats(update, account_id, tank_id, last_battle_time, is_dup=True))
+                            last_battle_time= newer_stat['last_battle_time']
+                            account_id      = newer_stat['account_id']
+                            tank_id         = newer_stat['tank_id']
+                            bu.verbose(str_dups_tank_stats(update, account_id, tank_id, last_battle_time, is_dup=None))
 
                 except Exception as err:
                     rl.log('Errors')
@@ -1053,7 +1058,7 @@ def str_dups_tank_stats(update : str, account_id: int, tank_id: int, last_battle
     try:
         if status == None:
             if is_dup == None:
-                status = 'Checking'
+                status = 'Newer stat'
             if is_dup:
                 status = 'Duplicate' 
             else:
