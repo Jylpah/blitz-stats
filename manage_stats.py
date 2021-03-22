@@ -966,7 +966,6 @@ async def check_dup_player_achievements_worker(db: motor.motor_asyncio.AsyncIOMo
                         rl.log('Skipped')
                         continue
                 
-                    bu.verbose(str_dups_player_achievements(update, account_id, updated, is_dup=None))
                     newer_stat = await dbc.find_one({ '$and': [ {'account_id': account_id},
                                                                 {'updated': { '$gt': updated }}, 
                                                                 { 'updated': { '$lte': end }}
@@ -976,7 +975,11 @@ async def check_dup_player_achievements_worker(db: motor.motor_asyncio.AsyncIOMo
                         bu.verbose(str_dups_player_achievements(update, account_id, updated, status='INVALID DUPLICATE: _id=' + _id))                    
                     else:
                         rl.log('OK')
-                        bu.verbose(str_dups_player_achievements(update, account_id, updated, is_dup=True))
+                        if bu.is_verbose():
+                            bu.verbose(str_dups_player_achievements(update, account_id, updated, is_dup=True))
+                            updated         = newer_stat['updated']
+                            account_id      = newer_stat['account_id']                    
+                            bu.verbose(str_dups_player_achievements(update, account_id, updated, is_dup=None))
 
                 except Exception as err:
                     rl.log('Errors')
@@ -1038,10 +1041,11 @@ async def find_update(db: motor.motor_asyncio.AsyncIOMotorDatabase, updates : li
 
 def str_dups_player_achievements(update : str, account_id: int,  updated: int, 
                                  is_dup: bool = None, status: str = None):
+    """Return string of duplicate status of player achivement stat"""
     try:
         if status == None:
             if is_dup == None:
-                status = 'Checking'
+                status = 'Newer stat'
             if is_dup:
                 status = 'Duplicate' 
             else:
