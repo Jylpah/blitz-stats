@@ -55,6 +55,7 @@ for mode in DB_C:
 CACHE_VALID     = 7*24*3600   # 7 days
 DEFAULT_SAMPLE  = 1000
 QUEUE_LEN       = 1000
+DEFAULT_BATCH   = 1000
 
 bs = None
 
@@ -481,7 +482,6 @@ async def get_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
     """Read duplicates info from the DB"""
     try:
         dbc = db[DB_C_STATS_2_DEL]
-        batch_size = 100
         if archive:
             stat_type = stat_type + MODE_ARCHIVE
         rl = RecordLogger('Fetch ' + stat_type)
@@ -491,7 +491,7 @@ async def get_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
             pipeline.append({ '$sample': { 'size': sample } })
 
         cursor = dbc.aggregate(pipeline, allowDiskUse=True )
-        dups = await cursor.to_list(batch_size)
+        dups = await cursor.to_list(DEFAULT_BATCH)
         while dups:
             try:
                 ids  =  [ dup['id']   for dup in dups ]
@@ -502,7 +502,7 @@ async def get_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
                 rl.log('Errors')
                 bu.error(exception=err)
             finally:
-                dups = await cursor.to_list(batch_size)
+                dups = await cursor.to_list(DEFAULT_BATCH)
     
     except (asyncio.CancelledError):
         bu.debug('Cancelled before finishing')
@@ -1207,7 +1207,7 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argpa
 
 async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
                              stat_type : str, pruneQ: asyncio.Queue, 
-                             ID: int = 1, archive: bool = False) -> dict:
+                             ID: int = 1, archive: bool = False, check=False) -> dict:
     """Paraller Worker for pruning stats"""
     
     try:
@@ -1215,17 +1215,28 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase,
         rl              = RecordLogger('Prune ' + stat_type)
         dbc_prunelist   = db[DB_C_STATS_2_DEL]       
         if archive:
-            dbc_2_prune   = db[DB_C_ARCHIVE[stat_type]]
-            stat_type = stat_type + MODE_ARCHIVE
+            dbc_2_prune = db[DB_C_ARCHIVE[stat_type]]
+            stat_type   = stat_type + MODE_ARCHIVE
+            dbc_check   = None
         else:
-            dbc_2_prune   = db[DB_C[stat_type]]
+            dbc_2_prune = db[DB_C[stat_type]]
+            dbc_check   = db[DB_C_ARCHIVE[stat_type]]
 
         while True:
             prune_task  = await pruneQ.get()
             try:
                 ids         = prune_task['ids']
                 prune_ids   = prune_task['_ids']
-                        
+                
+                if check and dbc_check != None:
+                    cursor = dbc_check.find( {'_id': { '$in': ids }}) 
+                    res = await cursor.to_list(DEFAULT_BATCH)
+                    if len(ids) != len(res):
+                        bu.error('Not all stats to be pruned can be found from ' + get_mode_str(stat_type, True))
+                        rl.log('Error: Archive check failed', len(ids))
+                        pruneQ.task_done()
+                        continue
+
                 res = await dbc_2_prune.delete_many( { '_id': { '$in': ids } } )
 
                 not_deleted = len(ids) - res.deleted_count
