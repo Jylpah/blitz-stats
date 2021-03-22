@@ -231,10 +231,12 @@ async def get_latest_update(db: motor.motor_asyncio.AsyncIOMotorDatabase) -> dic
 
 async  def mk_update_list(db : motor.motor_asyncio.AsyncIOMotorDatabase, updates2process : list) -> list:
     """Create update queue for database queries"""
-
     if (len(updates2process) == 0):
-        bu.verbose_std('Selecting the latest update')
+        bu.verbose_std('Processing the latest update')
         return [ await get_latest_update(db) ]
+    elif (len(updates2process) == 1) and (updates2process[0] == 'all'):
+        bu.verbose_std('Processing ALL data')
+        return [ None ]
     bu.debug(str(updates2process))
     # if len(updates2process) == 1:
     #     p_updates_since = re.compile('\\d+\\.\\d+\\+$')
@@ -364,7 +366,10 @@ async def analyze_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
         
         for u in updates: 
             try:
-                bu.verbose_std('Analyzing ' + db_str + ' tank stats for duplicates. Update ' + u['update'])
+                if u == None:
+                    bu.verbose_std('Analyzing ' + db_str + ' tank stats for duplicates. (ALL DATA)')
+                else:
+                    bu.verbose_std('Analyzing ' + db_str + ' tank stats for duplicates. Update ' + u['update'])
                 bu.set_counter('Stats processed: ')   
                 accountQ = await mk_accountQ()
                 tasks = []
@@ -453,60 +458,60 @@ async def get_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
     return rl
 
 
-## DEPRECIATED
-async def analyze_tank_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
-                                    update_record: dict, workerID: int, 
-                                    tankQ: asyncio.Queue, prune : bool = False):
-    """Worker to analyze duplicates in tank stats"""
-    try:
-        dbc         = db[DB_C_TANK_STATS]
-        stat_type   = MODE_TANK_STATS
-        rl          = RecordLogger('Analyze Tank Stats')    
-        start       = update_record['start']
-        end         = update_record['end']
-        update      = update_record['update']
-    except Exception as err:
-        bu.error(exception=err, id=workerID)
-        return None    
+# ## DEPRECIATED
+# async def analyze_tank_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
+#                                     update_record: dict, workerID: int, 
+#                                     tankQ: asyncio.Queue, prune : bool = False):
+#     """Worker to analyze duplicates in tank stats"""
+#     try:
+#         dbc         = db[DB_C_TANK_STATS]
+#         stat_type   = MODE_TANK_STATS
+#         rl          = RecordLogger('Analyze Tank Stats')    
+#         start       = update_record['start']
+#         end         = update_record['end']
+#         update      = update_record['update']
+#     except Exception as err:
+#         bu.error(exception=err, id=workerID)
+#         return None    
 
-    while not tankQ.empty():
-        try:
-            tank_id = await tankQ.get()
-            bu.debug('Update ' + update + ': ' + str(tankQ.qsize())  + ' tanks to process', id=workerID)
+#     while not tankQ.empty():
+#         try:
+#             tank_id = await tankQ.get()
+#             bu.debug('Update ' + update + ': ' + str(tankQ.qsize())  + ' tanks to process', id=workerID)
                 
-            pipeline = [    {'$match': { '$and': [  {'tank_id': tank_id }, 
-                                {'last_battle_time': {'$gt': start}}, 
-                                {'last_battle_time': {'$lte': end}} ] }},
-                            { '$project' : { 'account_id' : 1, 'last_battle_time' : 1}},
-                            { '$sort': {'account_id': pymongo.ASCENDING, 'last_battle_time': pymongo.DESCENDING} }
-                        ]
-            cursor = dbc.aggregate(pipeline, allowDiskUse=True)
+#             pipeline = [    {'$match': { '$and': [  {'tank_id': tank_id }, 
+#                                 {'last_battle_time': {'$gt': start}}, 
+#                                 {'last_battle_time': {'$lte': end}} ] }},
+#                             { '$project' : { 'account_id' : 1, 'last_battle_time' : 1}},
+#                             { '$sort': {'account_id': pymongo.ASCENDING, 'last_battle_time': pymongo.DESCENDING} }
+#                         ]
+#             cursor = dbc.aggregate(pipeline, allowDiskUse=True)
 
-            account_id_prev = -1
-            entry_prev = mk_log_entry(stat_type, { 'account_id': -1})        
-            async for doc in cursor:
-                bu.print_progress()
-                account_id = doc['account_id']
-                if bu.is_debug():
-                    entry = mk_log_entry(stat_type, {   'account_id' : account_id, 
-                                                        'last_battle_time' : doc['last_battle_time'], 
-                                                        'tank_id' : tank_id})
-                if account_id == account_id_prev:
-                    # Older doc found!
-                    if bu.is_debug():
-                        bu.debug('Duplicate found: --------------------------------', id=workerID)
-                        bu.debug(entry + ' : Old (to be deleted)', id=workerID)
-                        bu.debug(entry_prev + ' : Newer', id=workerID)
-                    await add_stat2del(db, stat_type, doc['_id'], workerID, prune)
-                    rl.log(stat_type + ' duplicates')
-                account_id_prev = account_id 
-                entry_prev = entry
+#             account_id_prev = -1
+#             entry_prev = mk_log_entry(stat_type, { 'account_id': -1})        
+#             async for doc in cursor:
+#                 bu.print_progress()
+#                 account_id = doc['account_id']
+#                 if bu.is_debug():
+#                     entry = mk_log_entry(stat_type, {   'account_id' : account_id, 
+#                                                         'last_battle_time' : doc['last_battle_time'], 
+#                                                         'tank_id' : tank_id})
+#                 if account_id == account_id_prev:
+#                     # Older doc found!
+#                     if bu.is_debug():
+#                         bu.debug('Duplicate found: --------------------------------', id=workerID)
+#                         bu.debug(entry + ' : Old (to be deleted)', id=workerID)
+#                         bu.debug(entry_prev + ' : Newer', id=workerID)
+#                     await add_stat2del(db, stat_type, doc['_id'], workerID, prune)
+#                     rl.log(stat_type + ' duplicates')
+#                 account_id_prev = account_id 
+#                 entry_prev = entry
 
-        except Exception as err:
-            bu.error(exception=err, id=workerID)
-        finally:            
-            tankQ.task_done()
-    return rl
+#         except Exception as err:
+#             bu.error(exception=err, id=workerID)
+#         finally:            
+#             tankQ.task_done()
+#     return rl
 
 
 async def analyze_player_achievements(db: motor.motor_asyncio.AsyncIOMotorDatabase,
@@ -618,7 +623,11 @@ async def check_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
             for u in updates:
                 try:
                     mode_str = get_mode_str(stat_type)    
-                    bu.verbose_std('Checking ' + mode_str +  ' duplicates for update ' + u['update'])
+                    if u == None:
+                        bu.verbose_std('Checking ' + mode_str +  ' duplicates. (ALL DATA)')                         
+                    else:
+                        bu.verbose_std('Checking ' + mode_str +  ' duplicates for update ' + u['update'])
+        
                     bu.verbose_std('Counting duplicates ... ', eol=False)
                     N_dups = await count_dups2prune(stat_type, archive)
                     bu.verbose_std(str(N_dups) + ' found')
