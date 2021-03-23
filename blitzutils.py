@@ -918,6 +918,8 @@ class WG:
         'china' : range(int(31e8),int(4e9))
         }
 
+    ACCOUNT_ID_MAX = max(ACCOUNT_ID_SERVER['asia'])
+
     def __init__(self, WG_app_id : str = None, tankopedia_fn : str =  None, maps_fn : str = None, 
                 stats_cache: bool = False, rate_limit: int = 10, global_rate_limit = True):
         

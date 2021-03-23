@@ -7,7 +7,7 @@ import aioconsole, re, logging, time, xmltodict, collections, pymongo, motor.mot
 import ssl, configparser
 from datetime import date
 import blitzutils as bu
-from blitzutils import BlitzStars, RecordLogger
+from blitzutils import BlitzStars, RecordLogger, WG
 
 N_WORKERS = 4
 
@@ -313,6 +313,25 @@ async def mk_accountQ(step: int = int(5e7)) -> asyncio.Queue:
         bu.error(exception=err)
     bu.debug('Account_id queue created')    
     return accountQ
+
+
+async def mk_account_tankQ(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
+                            tank_ids: list = None, 
+                            account_id_step: int = int(5e7)) -> asyncio.Queue:
+    """Create a queue of ACCOUNT_ID * TANK_ID queue for database queries"""    
+    retQ = asyncio.Queue()
+    try:
+        if tank_ids != None:
+            tank_ids = await get_tanks_DB(db)
+        id_max = WG.ACCOUNT_ID_MAX
+        for min in range(0,id_max-account_id_step, account_id_step):
+            for tank_id in tank_ids:
+                await retQ.put( { 'tank_id': tank_id, 'account_id': {'min': min, 'max': min + account_id_step } } )            
+    except Exception as err:
+        bu.error('Failed to create account_id * tank_id queue', exception=err)
+        return None
+    bu.debug('account_id * tank_id queue created')    
+    return retQ
 
 
 def print_stats_analyze(stat_types : list = list()):
@@ -836,7 +855,8 @@ def get_mode_str(stat_type: str, archive : bool = None) -> str:
                 
 #             await dupsQ.join()
 #             rl.merge(await asyncio.gather(*[ dups_worker ]))
-#             for rl_task in await asyncio.gather(*tasks):
+#             
+#             for rl_task in await asyncio.gather(*tasks, ):
 #                 rl.merge(rl_task)
 
 #         if bu.is_normal():
