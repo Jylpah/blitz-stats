@@ -217,11 +217,11 @@ def mk_update_entry(update: str, start: int, end: int)  -> dict:
     return {'update': update, 'start': start, 'end': end }
 
 
-def mk_dups_Q_entry(ids: list, _ids: list = None) -> dict:
+def mk_dups_Q_entry(ids: list, from_db: bool = False) -> dict:
     """Make a prune task for prune queue"""
     if (ids == None) or (len(ids) == 0):
         return None
-    return { 'ids': ids, '_ids': _ids }
+    return { 'ids': ids, 'from_db': from_db }
 
 
 def mk_dup_db_entry(stat_type: str, _id=str) -> dict:
@@ -556,9 +556,8 @@ async def get_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
         
         while dups:
             try:
-                ids  =  [ dup['id']   for dup in dups ]
-                _ids =  [ dup['_id']  for dup in dups ]
-                await dupsQ.put( mk_dups_Q_entry( ids, _ids ) )
+                ids  =  [ dup['id']   for dup in dups ]                
+                await dupsQ.put( mk_dups_Q_entry( ids, True ) )
                 count += len(dups)
                 rl.log('Read', len(dups))
             except Exception as err:
@@ -1304,8 +1303,8 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase,
         while True:
             prune_task  = await pruneQ.get()
             try:
-                ids         = prune_task['ids']
-                prune_ids   = prune_task['_ids']
+                ids     = prune_task['ids']
+                from_db = prune_task['from_db']
                 
                 if check and dbc_check != None:
                     cursor = dbc_check.find( {'_id': { '$in': ids }}) 
@@ -1321,12 +1320,16 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                 not_deleted = len(ids) - res.deleted_count
                 rl.log('Pruned', res.deleted_count)
                 bu.print_progress(res.deleted_count)
-                if not_deleted != 0:                    
+                if not_deleted != 0:
+                    cursor = dbc_2_prune.find({ '_id': { '$in': ids }}, { '_id': True } ) 
+                    docs_not_deleted = set( await cursor.to_list(DEFAULT_BATCH))
+                    docs_deleted = list(set(ids) - docs_not_deleted)
                     bu.error('Could not prune all ' + get_mode_str(stat_type, archive) + ': pruned=' + str(res.deleted_count) + ' NOT pruned=' + str(not_deleted))
                     rl.log('NOT pruned', not_deleted)
-    
-                if prune_ids != None:
-                    await dbc_prunelist.delete_many({ '$and': [ {'type': stat_type}, {'_id': { '$in': prune_ids } } ]})
+                else:
+                    docs_deleted = ids
+                if from_db:
+                    await dbc_prunelist.delete_many({ '$and': [ {'type': stat_type}, {'id': { '$in': docs_deleted } } ]})
                 
             except Exception as err:
                 bu.error(exception=err, id=ID)
@@ -1516,9 +1519,7 @@ async def find_dup_tank_stats_worker(  db: motor.motor_asyncio.AsyncIOMotorDatab
                 cursor = dbc.aggregate(pipeline, allowDiskUse=True)
                 async for res in cursor:
                     await dupsQ.put(mk_dups_Q_entry(res['ids']))
-                    n = len(res['ids'])
-                    #bu.print_progress(n)
-                    rl.log('Found', n)
+                    rl.log('Found', len(res['ids']))
                 bu.print_progress()                    
 
             except Exception as err:
@@ -1575,7 +1576,7 @@ async def find_dup_player_achivements_worker(db: motor.motor_asyncio.AsyncIOMoto
                 cursor = dbc.aggregate(pipeline, allowDiskUse=True)
                 async for res in cursor:
                     n = len(res['ids'])
-                    await dupsQ.put(res)
+                    await dupsQ.put(mk_dups_Q_entry(res['ids']))
                     # bu.print_progress(n)
                     rl.log('Found', n)                    
                 bu.print_progress()
