@@ -466,7 +466,7 @@ def get_progress_step():
 def set_progress_bar(heading: str, max_value: int, step: int = None, slow: bool = False, id: str = None) -> bool:
     global _progress_obj, _progress_N, _progress_i, _progress_id, _progress_steps
     try:
-        if not is_normal():
+        if not (is_normal() or is_verbose()):
             return False
         _progress_id = id
         if step == None:
@@ -492,7 +492,7 @@ def set_progress_bar(heading: str, max_value: int, step: int = None, slow: bool 
 def set_counter(heading: str, rate = False) -> bool:
     global _progress_obj, _progress_i, _progress_steps
     try:
-        if not is_normal():
+        if not (is_normal() or is_verbose()):
             return None
         _progress_i = 0
         _progress_steps = 0
@@ -512,7 +512,7 @@ def print_progress(step: int = 1, force = False, id : str = None) -> bool:
     """Print progress bar/dots. Returns True if the dot is being printed."""
     global _progress_i, _progress_steps
     try:
-        if not is_normal():
+        if not (is_normal() or is_verbose()):
             return False
         _progress_i +=  step
         steps = _progress_i // _progress_N
