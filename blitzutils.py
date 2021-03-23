@@ -212,21 +212,22 @@ def def_value_zero():
 ## -----------------------------------------------------------
 class RecordLogger():
     """Count stats for categories"""
-    def __init__(self, name: str = '', error = None):
+    def __init__(self, name: str = '', errors = None):
         self.logger = collections.defaultdict(def_value_zero)
         self.name = name
-        self.error_cat = error
+        self.error_cats = errors
         self.error_status = False
 
 
     def log(self, category: str, count: int = 1) -> None:
-        self.logger[self._get_long_cat(category)] += count
-        if (self.error_cat != None) and (category == self.error_cat):
+        #self.logger[self._get_long_cat(category)] += count
+        self.logger[category] += count
+        if (self.error_cats != None) and (category in self.error_cats):
             self.error_status = True
         return None
 
 
-    def _get_long_cat(self, cat) -> str:
+    def get_long_cat(self, cat) -> str:
         return self.name + ': ' + cat
 
 
@@ -237,8 +238,8 @@ class RecordLogger():
     def get_value(self, category) -> int:
         if category in self.logger:
             return self.logger[category]
-        elif self._get_long_cat(category) in self.logger:
-            return self.logger[self._get_long_cat(category)]
+        # elif self._get_long_cat(category) in self.logger:
+        #     return self.logger[self._get_long_cat(category)]
         else:
             return None
 
@@ -269,15 +270,15 @@ class RecordLogger():
             error('input is not a RecordLogger object: ' + str(type(B)))
             return None 
         for cat in B.get_categories():
-            self.logger[cat] += B.get_value(cat)
+            self.logger[B.get_long_cat(cat)] += B.get_value(cat)
             self.error_status = self.error_status or B.get_error_status()
 
 
-    def print(self, do_print : bool = False): 
+    def print(self, do_print : bool = True): 
         if do_print:
-            print(self.name + ': ' + 'ERROR occured' if self.get_error_status() else '')
+            verbose_std(self.name + ': ' + ('ERROR occured' if self.get_error_status() else '-----------'))
             for cat in self.logger:
-                print(self._get_str(cat))
+                verbose_std(self._get_str(cat))
             return None
         else:
             ret = self.name + ':'
@@ -911,11 +912,11 @@ class WG:
         }
 
     ACCOUNT_ID_SERVER= {
-        'ru'    : range(0, int(5e8)),
-        'eu'    : range(int(5e8), int(10e8)),
-        'na'    : range(int(1e9),int(2e9)),
-        'asia'  : range(int(2e9),int(31e8)),
-        'china' : range(int(31e8),int(4e9))
+        'ru'    : [ 0, int(5e8)],
+        'eu'    : [ int(5e8), int(10e8) ],
+        'na'    : [ int(1e9),int(2e9) ],
+        'asia'  : [ int(2e9),int(31e8) ],
+        'china' : [ int(31e8),int(4e9)]
         }
 
     ACCOUNT_ID_MAX = max(ACCOUNT_ID_SERVER['asia'])
