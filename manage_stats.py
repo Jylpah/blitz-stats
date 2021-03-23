@@ -41,6 +41,9 @@ STR_MODES = {
     MODE_PLAYER_STATS           : 'Player Stats',
     MODE_PLAYER_ACHIEVEMENTS    : 'Player Achievements' 
 }
+modes = list(STR_MODES.keys())
+for stat_type in modes:
+    STR_MODES[stat_type + MODE_ARCHIVE] = STR_MODES[stat_type] + ' (Archive)'
 
 
 DB_C = {    MODE_TANK_STATS             : DB_C_TANK_STATS, 
@@ -63,13 +66,6 @@ TODAY = datetime.datetime.utcnow().date()
 DEFAULT_DAYS_DELTA = datetime.timedelta(days=90)
 DATE_DELTA = datetime.timedelta(days=7)
 STATS_START_DATE = datetime.datetime(2014,1,1)
-
-STATS_PRUNED = dict()
-DUPS_FOUND = dict()
-
-for stat_type in DB_C.keys():
-    STATS_PRUNED[stat_type]  = 0
-    DUPS_FOUND[stat_type]    = 0
 
 def def_value_zero():
     return 0
@@ -97,8 +93,9 @@ async def main(argv):
     arggroup_action.add_argument( '--snapshot',	action='store_true', default=False, help='Snapshot latest stats from the archive')
     arggroup_action.add_argument( '--archive',	action='store_true', default=False, help='Archive latest stats')
     arggroup_action.add_argument( '--clean',	action='store_true', default=False, help='Clean latest stats from old stats')
-    
-    parser.add_argument('--opt_tanks', default=None, nargs='*', type=str, help='List of tank_ids for other options. Use "tank_id+" to start from a tank_id')
+    arggroup_action.add_argument( '--reset', 	action='store_true', default=False, help='Reset the analyzed duplicates')
+
+    parser.add_argument('--opt_tanks',   default=None, nargs='*', type=str, help='List of tank_ids for other options. Use "tank_id+" to start from a tank_id')
     parser.add_argument('--opt_archive', action='store_true', default=False, help='Process stats archive (--mode=tank_stats only)')
 
     arggroup_verbosity = parser.add_mutually_exclusive_group()
@@ -155,23 +152,23 @@ async def main(argv):
             updates = list()
 
         if args.analyze:
-            bu.verbose_std('Starting to ANALYZE stats for duplicates in 3 seconds. Press CTRL + C to CANCEL')
+            bu.verbose_std('Starting to ANALYZE duplicates in 3 seconds. Press CTRL + C to CANCEL')
             bu.wait(3)
             await analyze_stats(db, updates, args)
         
         elif args.check:
-            bu.verbose_std('Starting to check duplicates in 3 seconds. Press CTRL + C to CANCEL')
+            bu.verbose_std('Starting to CHECK duplicates in 3 seconds. Press CTRL + C to CANCEL')
             bu.wait(3)         
             await check_stats(db, updates, args)
                     
         elif args.prune:
             # do the actual pruning and DELETE DATA
-            bu.verbose_std('Starting to prune in 3 seconds. Press CTRL + C to CANCEL')
+            bu.verbose_std('Starting to PRUNE in 3 seconds. Press CTRL + C to CANCEL')
             bu.wait(3)
             await prune_stats(db, args)
         
         elif args.snapshot:
-            bu.verbose_std('Starting to snapshot stats in 3 seconds. Press CTRL + C to CANCEL')
+            bu.verbose_std('Starting to SNAPSHOT stats in 3 seconds. Press CTRL + C to CANCEL')
             bu.wait(3)
             if MODE_PLAYER_ACHIEVEMENTS in args.mode:
                 await snapshot_player_achivements(db, args)
@@ -179,7 +176,7 @@ async def main(argv):
                 await snapshot_tank_stats(db, args)
 
         elif args.archive:
-            bu.verbose_std('Starting to archive stats in 3 seconds')
+            bu.verbose_std('Starting to ARCHIVE stats in 3 seconds')
             bu.verbose_std('Run ANALYZE + PRUNE before archive')
             bu.verbose_std('Press CTRL + C to CANCEL')
             bu.wait(3)
@@ -187,6 +184,12 @@ async def main(argv):
                 await archive_player_achivements(db, args)
             if MODE_TANK_STATS in args.mode:
                 await archive_tank_stats(db, args)
+        
+        elif args.reset:
+            bu.verbose_std('Starting to RESET duplicates in 3 seconds. Press CTRL + C to CANCEL')
+            bu.wait(3)         
+            await reset_duplicates(db, updates, args)
+
              
     except KeyboardInterrupt:
         bu.finish_progress_bar()
@@ -346,31 +349,31 @@ async def mk_account_tankQ(db: motor.motor_asyncio.AsyncIOMotorDatabase,
     return retQ
 
 
-def print_stats_analyze(stat_types : list = list()):
-    for stat_type in stat_types:
-        if DUPS_FOUND[stat_type] == 0:
-            bu.verbose_std(stat_type + ': No duplicates found')
-        else:    
-            bu.verbose_std(stat_type + ': ' + str(DUPS_FOUND[stat_type]) + ' new duplicates found')
-        DUPS_FOUND[stat_type] = 0
+# def print_stats_analyze(stat_types : list = list()):
+#     for stat_type in stat_types:
+#         if DUPS_FOUND[stat_type] == 0:
+#             bu.verbose_std(stat_type + ': No duplicates found')
+#         else:    
+#             bu.verbose_std(stat_type + ': ' + str(DUPS_FOUND[stat_type]) + ' new duplicates found')
+#         DUPS_FOUND[stat_type] = 0
     
 
-def print_stats_prune(stats_pruned : dict):
-    """Print end statistics of the pruning operation"""
-    try:
-        for stat_type in stats_pruned:
-            bu.verbose_std(stat_type + ': ' + str(stats_pruned[stat_type]) + ' duplicates removed')
-            stats_pruned[stat_type] = 0
-    except Exception as err:
-        bu.error(exception=err)
-    return None    
+# def print_stats_prune(stats_pruned : dict):
+#     """Print end statistics of the pruning operation"""
+#     try:
+#         for stat_type in stats_pruned:
+#             bu.verbose_std(stat_type + ': ' + str(stats_pruned[stat_type]) + ' duplicates removed')
+#             stats_pruned[stat_type] = 0
+#     except Exception as err:
+#         bu.error(exception=err)
+#     return None    
 
 
 async def analyze_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
                         updates: list, args: argparse.Namespace = None) -> RecordLogger:
     """--analyze: top-level func for analyzing stats for duplicates"""
     try:
-        rl = RecordLogger('Analyze stats')
+        rl = RecordLogger('Analyze')
         if MODE_TANK_STATS in args.mode:
             rl.merge(await analyze_tank_stats(db, updates, args))
         
@@ -379,15 +382,41 @@ async def analyze_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
 
     except Exception as err:
         bu.error(exception=err)
-    bu.verbose_std(rl.print(False))
-    return rl     
+    bu.log(rl.print(do_print=False))
+    rl.print()
+    return None     
+
+
+async def reset_duplicates(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
+                        updates: list, args: argparse.Namespace = None) -> RecordLogger:
+    """--reset: reset/delete duplicates info from the DB"""
+    try:
+        rl = RecordLogger('Reset')
+        archive = args.opt_archive
+        dbc = db[DB_C_STATS_2_DEL]
+
+        for stat_type in args.mode:
+            if archive:
+                stat_type = stat_type + MODE_ARCHIVE
+            rl_mode = RecordLogger(get_mode_str(stat_type) + ' duplicates')
+            res = await dbc.delete_many({'type': stat_type})
+            if res != None:
+                rl_mode.log('OK', res.deleted_count)
+            else:
+                rl_mode.log('FAILED')
+            rl.merge(rl_mode)  
+
+    except Exception as err:
+        bu.error(exception=err)
+    bu.log(rl.print(do_print=False))
+    rl.print()
+    return None
 
 
 async def analyze_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
                              updates: list = None, args: argparse.Namespace = None)  -> RecordLogger:
     """--analyze: top-level func for analyzing stats for duplicates. DOES NOT PRUNE"""
-    try:
-        rl = RecordLogger('Analyze tank stats')
+    try:        
         archive = args.opt_archive
         stat_type = MODE_TANK_STATS
 
@@ -396,6 +425,7 @@ async def analyze_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
         else:
             db_str = 'latest'
         
+        rl = RecordLogger(get_mode_str(stat_type, archive))
         dupsQ = asyncio.Queue(QUEUE_LEN)
         dups_saver = asyncio.create_task(save_dups_worker(db, stat_type, dupsQ, archive))
         
@@ -409,7 +439,7 @@ async def analyze_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                     bu.verbose_std('Analyzing ' + db_str + ' tank stats for duplicates. Update ' + update_str)
                     
                 account_tankQ = await mk_account_tankQ(db)                
-                bu.set_progress_bar('Stats processed:', account_tankQ.qsize(), step=10, slow=True)   
+                bu.set_progress_bar('Stats processed:', account_tankQ.qsize(), step=50, slow=True)   
                 
                 tasks = []
                 for workerID in range(0, N_WORKERS):
@@ -440,23 +470,18 @@ async def analyze_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
 async def analyze_player_achievements(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                                       updates: list, args: argparse.Namespace = None) -> RecordLogger:
     try:
-        rl = RecordLogger('Analyze player achievements')
-        archive = args.opt_archive
-        stat_type = MODE_PLAYER_ACHIEVEMENTS
-        if archive:
-            db_str = 'archived'
-        else:
-            db_str = 'latest'
-        
-        dupsQ = asyncio.Queue(QUEUE_LEN)
-        dups_saver = asyncio.create_task(save_dups_worker(db, stat_type, dupsQ, archive))
+        archive     = args.opt_archive
+        stat_type   = MODE_PLAYER_ACHIEVEMENTS
+        rl          = RecordLogger(get_mode_str(stat_type, archive))
+        dupsQ       = asyncio.Queue(QUEUE_LEN)
+        dups_saver  = asyncio.create_task(save_dups_worker(db, stat_type, dupsQ, archive))
         
         for u in updates: 
             try:
                 if u == None:
-                    bu.verbose_std('Analyzing ' + db_str + ' player achivements for duplicates. (ALL DATA)')
+                    bu.verbose_std('Analyzing ' + get_mode_str(stat_type, archive) + ' for duplicates. (ALL DATA)')
                 else:
-                    bu.verbose_std('Analyzing ' + db_str + ' player achivements for duplicates. Update ' + u['update'])
+                    bu.verbose_std('Analyzing ' + get_mode_str(stat_type, archive) + ' for duplicates. Update ' + u['update'])
                 accountQ = await mk_accountQ()
                 lenQ = accountQ.qsize()                
                 bu.set_progress_bar('Stats processed:', lenQ, step=5, slow=True)  
@@ -491,16 +516,17 @@ async def save_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
     """Save duplicates information to the DB"""
     try:
         dbc = db[DB_C_STATS_2_DEL]
-        rl = RecordLogger('Save duplicate info to DB')
+        rl = RecordLogger('Save duplicate info')
         if archive:
             stat_type = stat_type + MODE_ARCHIVE
         while True:
             dups = await dupsQ.get()
             try:                
                 res = await dbc.insert_many( [ mk_dup_db_entry(stat_type, dup_id) for dup_id in dups['ids'] ] )
-                rl.log('Duplicates saved', len(res.inserted_ids))
+                rl.log('Saved', len(res.inserted_ids))
             except Exception as err:
                 bu.error(exception=err)
+                rl.log('Errors')
             dupsQ.task_done()
     
     except asyncio.CancelledError:
@@ -516,9 +542,10 @@ async def get_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
     """Read duplicates info from the DB"""
     try:
         dbc = db[DB_C_STATS_2_DEL]
+        count = 0
         if archive:
             stat_type = stat_type + MODE_ARCHIVE
-        rl = RecordLogger('Fetch ' + stat_type)
+        rl = RecordLogger('Fetch ' + get_mode_str(stat_type))
 
         pipeline = [  { '$match': {'type' : stat_type} } ]
         if (sample != None) and (sample > 0):
@@ -526,11 +553,13 @@ async def get_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
 
         cursor = dbc.aggregate(pipeline, allowDiskUse=True )
         dups = await cursor.to_list(DEFAULT_BATCH)
+        
         while dups:
             try:
                 ids  =  [ dup['id']   for dup in dups ]
                 _ids =  [ dup['_id']  for dup in dups ]
                 await dupsQ.put( mk_dups_Q_entry( ids, _ids ) )
+                count += len(dups)
                 rl.log('Read', len(dups))
             except Exception as err:
                 rl.log('Errors')
@@ -542,6 +571,7 @@ async def get_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
         bu.debug('Cancelled before finishing')
     except Exception as err:
         bu.error(exception=err)
+    bu.debug('Exiting. Added ' + str(count) + ' duplicates')
     return rl
 
 
@@ -657,7 +687,7 @@ async def check_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                       updates: list, args: argparse.Namespace = None) -> RecordLogger:
     """Parallel check for the analyzed player achivements duplicates"""
     try:
-        rl      = RecordLogger('Check duplicates')        
+        rl      = RecordLogger('Check')        
         archive = args.opt_archive
         sample  = args.sample
         if sample == None:
@@ -666,14 +696,13 @@ async def check_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
         for stat_type in args.mode:
             for u in updates:
                 try:
-                    mode_str = get_mode_str(stat_type)    
                     if u == None:
-                        bu.verbose_std('Checking ' + mode_str +  ' duplicates. (ALL DATA)')                         
+                        bu.verbose_std('Checking ' + get_mode_str(stat_type) +  ' duplicates. (ALL DATA)')                         
                     else:
-                        bu.verbose_std('Checking ' + mode_str +  ' duplicates for update ' + u['update'])
+                        bu.verbose_std('Checking ' + get_mode_str(stat_type) +  ' duplicates for update ' + u['update'])
         
                     bu.verbose_std('Counting duplicates ... ', eol=False)
-                    N_dups = await count_dups2prune(stat_type, archive)
+                    N_dups = await count_dups2prune(db, stat_type, archive)
                     bu.verbose_std(str(N_dups) + ' found')
                     dupsQ = asyncio.Queue(QUEUE_LEN)
                     fetcher = asyncio.create_task(get_dups_worker(db, stat_type, dupsQ, sample, archive))
@@ -698,6 +727,8 @@ async def check_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                         rl.merge(rl_task)
 
                     await dupsQ.join()
+                    for task in tasks:
+                        task.cancel()
                     for rl_task in await asyncio.gather(*tasks):
                         rl.merge(rl_task)
 
@@ -706,14 +737,16 @@ async def check_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                     bu.error(exception=err)
     except Exception as err:
         bu.error(exception=err)
-    return rl
+    bu.log(rl.print(do_print=False))
+    rl.print()
+    return None
 
 
-def get_mode_str(stat_type: str, archive : bool = None) -> str:
+def get_mode_str(stat_type: str, archive : bool = False) -> str:
     try:
         ret = STR_MODES[stat_type]
-        if archive != None:
-            return ret + ' (Archive)' if archive else ' (Latest)'
+        if archive == True:
+            return ret + ' (Archive)'
         else:
             return ret
     except Exception as err:
@@ -882,13 +915,13 @@ async def check_dup_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabas
                                      ID: int = 1, archive = False,) -> RecordLogger:
     """Worker to check Tank Stats duplicates. Returns results in a dict"""
     try:
-        rl = RecordLogger('Check ' + get_mode_str(MODE_TANK_STATS, archive) + ' duplicates')
+        rl = RecordLogger(get_mode_str(MODE_TANK_STATS, archive) + ' duplicates')
         if archive:
             dbc = db[DB_C_ARCHIVE[MODE_TANK_STATS]]
         else:
             dbc = db[DB_C[MODE_TANK_STATS]]
         
-        if update != None:
+        if update_record != None:
             update  = update_record['update']
             start   = update_record['start']
             end     = update_record['end']            
@@ -903,7 +936,7 @@ async def check_dup_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabas
 
         while True:
             dups = await dupsQ.get()
-
+            bu.debug(str(len(dups['ids'])) + ' duplicates fetched from queue', id=ID)
             for _id in dups['ids']:
                 try:
                     bu.print_progress()
@@ -919,8 +952,7 @@ async def check_dup_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabas
                     if last_battle_time > end or last_battle_time <= start:
                         bu.verbose('The duplicate is not within update ' +  update + '. Skipping')
                         rl.log('Skipped')
-                        continue
-                
+                        continue                
                     
                     newer_stat = await dbc.find_one({ '$and': [ {'tank_id': tank_id}, 
                                                                 {'account_id': account_id},
@@ -932,13 +964,12 @@ async def check_dup_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabas
                         bu.verbose(str_dups_tank_stats(update, account_id, tank_id, last_battle_time, status='INVALID DUPLICATE: _id=' + _id))                    
                     else:
                         rl.log('OK')
-                        if bu.is_verbose():
-                            bu.verbose(str_dups_tank_stats(update, account_id, tank_id, last_battle_time, is_dup=True))
-                            last_battle_time= newer_stat['last_battle_time']
-                            account_id      = newer_stat['account_id']
-                            tank_id         = newer_stat['tank_id']
-                            bu.verbose(str_dups_tank_stats(update, account_id, tank_id, last_battle_time, is_dup=None))
-
+                        bu.verbose(str_dups_tank_stats(update, account_id, tank_id, last_battle_time, is_dup=True))
+                        last_battle_time= newer_stat['last_battle_time']
+                        account_id      = newer_stat['account_id']
+                        tank_id         = newer_stat['tank_id']
+                        bu.verbose(str_dups_tank_stats(update, account_id, tank_id, last_battle_time, is_dup=None))
+                    bu.debug('A duplicate processed', id=ID)
                 except Exception as err:
                     rl.log('Errors')
                     bu.error('Error checking ' + get_mode_str(MODE_TANK_STATS, archive) + ' duplicates. _id=' + _id, err, id=ID)
@@ -947,7 +978,7 @@ async def check_dup_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabas
     except asyncio.CancelledError as err:
         bu.debug('Cancelling', id=ID)
     except Exception as err:
-        bu.error('Mode=' + stat_type + ' _id=' + _id, err)
+        bu.error('Mode=' + stat_type, exception=err, id=ID)
 
     total = rl.sum(['OK', 'Invalid', 'Skipped'])
     rl.log('Total', total)
@@ -959,11 +990,12 @@ async def check_dup_player_achievements_worker(db: motor.motor_asyncio.AsyncIOMo
                                                ID: int = 1, archive = False,) -> RecordLogger:
     """Worker to check Player Achivement duplicates. Returns results in a dict"""
     try:
-        rl = RecordLogger('Check ' + get_mode_str(MODE_PLAYER_ACHIEVEMENTS, archive))
+        stat_type   = MODE_PLAYER_ACHIEVEMENTS
+        rl          = RecordLogger(get_mode_str(stat_type, archive))
         if archive:
-            dbc = db[DB_C_ARCHIVE[MODE_PLAYER_ACHIEVEMENTS]]
+            dbc = db[DB_C_ARCHIVE[stat_type]]
         else:
-            dbc = db[DB_C[MODE_PLAYER_ACHIEVEMENTS]]
+            dbc = db[DB_C[stat_type]]
         
         if update != None:
             update  = update_record['update']
@@ -1046,14 +1078,14 @@ def split_int(total:int, N: int) -> list:
     return res
 
 
-def print_dups_stats(stat_type: str, dups_total: int, sample: int, dups_ok: int = 0, dups_nok: int = 0, dups_skipped: int= 0):
-    try:
-        sample_str = (str(sample)  +  " (" + '{:.2f}'.format(sample/dups_total*100) + "%)") if sample > 0 else "all"        
-        bu.verbose_std('Total ' + str(dups_total) + ' ' + stat_type +' duplicates. Checked ' + sample_str + " duplicates, skipped " + str(dups_skipped))
-        bu.verbose_std("OK: " + str(dups_ok) + " Errors: " + str(dups_nok))
-        return dups_nok == 0
-    except Exception as err:
-        bu.error(exception=err)
+# def print_dups_stats(stat_type: str, dups_total: int, sample: int, dups_ok: int = 0, dups_nok: int = 0, dups_skipped: int= 0):
+#     try:
+#         sample_str = (str(sample)  +  " (" + '{:.2f}'.format(sample/dups_total*100) + "%)") if sample > 0 else "all"        
+#         bu.verbose_std('Total ' + str(dups_total) + ' ' + stat_type +' duplicates. Checked ' + sample_str + " duplicates, skipped " + str(dups_skipped))
+#         bu.verbose_std("OK: " + str(dups_ok) + " Errors: " + str(dups_nok))
+#         return dups_nok == 0
+#     except Exception as err:
+#         bu.error(exception=err)
 
 
 async def find_update(db: motor.motor_asyncio.AsyncIOMotorDatabase, updates : list = None, time: int = -1):
@@ -1090,7 +1122,7 @@ def str_dups_player_achievements(update : str, account_id: int,  updated: int,
         return "ERROR"
 
 
-def str_dups_tank_stats(update : str, account_id: int, tank_id: int, last_battle_time: int, is_dup: bool = None, status: str = ''):
+def str_dups_tank_stats(update : str, account_id: int, tank_id: int, last_battle_time: int, is_dup: bool = None, status: str = None):
     try:
         if status == None:
             if is_dup == None:
@@ -1160,18 +1192,22 @@ async def add_stat2del(db: motor.motor_asyncio.AsyncIOMotorDatabase, stat_type: 
 #         bu.error(exception=err)
 #     return None
 
-async def count_dups2prune(db, stat_type:str, archive: bool = False) -> int:
-    dbc = db[DB_C_STATS_2_DEL]
-    if archive:
-        stat_type = stat_type + MODE_ARCHIVE
-    return await dbc.count_documents({'type' : stat_type})            
+async def count_dups2prune(db: motor.motor_asyncio.AsyncIOMotorDatabase, stat_type:str, archive: bool = False) -> int:
+    try:
+        dbc = db[DB_C_STATS_2_DEL]
+        if archive:
+            stat_type = stat_type + MODE_ARCHIVE
+        return await dbc.count_documents({'type' : stat_type})
+    except Exception as err:
+        bu.error(exception=err)
+    return None
 
 
 async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argparse.Namespace):
     """Parellen DB pruning, DELETES DATA. Does NOT verify whether there are newer stats"""
     #global STATS_PRUNED
     try:
-        rl = RecordLogger('Prune stats')
+        rl = RecordLogger('Prune')
         archive = args.opt_archive
         sample = args.sample
 
@@ -1180,8 +1216,8 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argpa
 
         for stat_type in args.mode:
             N_stats2prune = await count_dups2prune(db, stat_type, archive)
-            bu.debug('Pruning ' + str(N_stats2prune) + ' ' + stat_type)            
-            bu.set_progress_bar(stat_type + ' pruned: ', N_stats2prune, step = 1000, slow=True)
+            bu.debug('Pruning ' + str(N_stats2prune) + ' ' + get_mode_str(stat_type, archive))            
+            bu.set_progress_bar(get_mode_str(stat_type, archive) + ' pruned: ', N_stats2prune, step = 1000, slow=True)
             pruneQ = asyncio.Queue(QUEUE_LEN)
             fetcher = asyncio.create_task(get_dups_worker(db, stat_type, pruneQ, sample, archive=archive))
             workers = list()
@@ -1202,8 +1238,9 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argpa
 
     except Exception as err:
         bu.error(exception=err)
+    bu.log(rl.print(do_print=False))
     rl.print()
-    return rl
+    return None
 
 
 # async def prune_stats_worker_OLD(db: motor.motor_asyncio.AsyncIOMotorDatabase, pruneQ: asyncio.Queue, ID: int = 1) -> dict:
@@ -1254,7 +1291,7 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase,
     
     try:
         bu.debug('Started', id=ID)
-        rl              = RecordLogger('Prune ' + stat_type)
+        rl              = RecordLogger(get_mode_str(stat_type, archive))
         dbc_prunelist   = db[DB_C_STATS_2_DEL]       
         if archive:
             dbc_2_prune = db[DB_C_ARCHIVE[stat_type]]
@@ -1275,25 +1312,25 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                     res = await cursor.to_list(DEFAULT_BATCH)
                     if len(ids) != len(res):
                         bu.error('Not all stats to be pruned can be found from ' + get_mode_str(stat_type, True))
-                        rl.log('Error: Archive check failed', len(ids))
+                        rl.log('Archive check failed', len(ids))
                         pruneQ.task_done()
                         continue
 
                 res = await dbc_2_prune.delete_many( { '_id': { '$in': ids } } )
 
                 not_deleted = len(ids) - res.deleted_count
-                rl.log(stat_type + ' pruned', res.deleted_count)
+                rl.log('Pruned', res.deleted_count)
                 bu.print_progress(res.deleted_count)
                 if not_deleted != 0:                    
-                    bu.error('Could not prune all ' + stat_type + ': pruned=' + str(res.deleted_count) + ' NOT pruned=' + str(not_deleted))
-                    rl.log('Error: NOT pruned', not_deleted)
+                    bu.error('Could not prune all ' + get_mode_str(stat_type, archive) + ': pruned=' + str(res.deleted_count) + ' NOT pruned=' + str(not_deleted))
+                    rl.log('NOT pruned', not_deleted)
     
                 if prune_ids != None:
                     await dbc_prunelist.delete_many({ '$and': [ {'type': stat_type}, {'_id': { '$in': prune_ids } } ]})
                 
             except Exception as err:
                 bu.error(exception=err, id=ID)
-                rl.log('Error: ' + stat_type + ' failure')
+                rl.log('Error')
             
             pruneQ.task_done()        # is executed even when 'continue' is called
 
@@ -1367,7 +1404,7 @@ async def archive_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args:
         dbc                 = db[DB_C[MODE_TANK_STATS]]
         archive_collection  = DB_C_ARCHIVE[MODE_TANK_STATS]
         
-        rl = RecordLogger('Archive tank stats')
+        rl = RecordLogger('Archive Tank stats')
         N_updated_stats = await dbc.count_documents({ FIELD_UPDATED : True })
         bu.set_progress_bar('Archiving tank stats', N_updated_stats, step = 1000, slow=True )  ## After MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
         pipeline = [ {'$match': { FIELD_UPDATED : { '$exists': True } } },
@@ -1378,7 +1415,7 @@ async def archive_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args:
         async for _ in cursor:      ## This one does not work yet until MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
             bu.print_progress()
             s +=1
-        rl.log('Tank stats archived', s) 
+        rl.log('Archived', s) 
 
         ## Clean the latest stats # TO DO  
         
@@ -1606,15 +1643,15 @@ async def snapshot_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args
                         pass
                         # bu.print_progress()
                         # s +=1
-                    rl.log('Tank stats snapshotted', s)
+                    rl.log('Snapshotted', s)
                 except Exception as err:
                     bu.error(exception=err)
             bu.finish_progress_bar()
             rl.log('Tanks processed')
-        bu.log(rl.print(do_print=False))
-        rl.print()
     except Exception as err:
         bu.error(exception=err)
+    bu.log(rl.print(do_print=False))
+    rl.print()
     return None
 
 
