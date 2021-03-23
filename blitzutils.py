@@ -315,12 +315,18 @@ def is_debug() -> bool:
     return _log_level == DEBUG
 
 
-def is_verbose() -> bool:
-    return _log_level == VERBOSE
+def is_verbose(or_higher: bool = False) -> bool:
+    if or_higher:
+        return _log_level >= VERBOSE
+    else:
+        return _log_level == VERBOSE
 
 
-def is_normal() -> bool:
-    return _log_level == NORMAL
+def is_normal(or_higher: bool = False) -> bool:
+    if or_higher:
+        return _log_level >= NORMAL
+    else:
+        return _log_level == NORMAL
 
 
 def is_silent() -> bool:
