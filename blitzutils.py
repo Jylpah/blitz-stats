@@ -212,17 +212,22 @@ def def_value_zero():
 ## -----------------------------------------------------------
 class RecordLogger():
     """Count stats for categories"""
-    def __init__(self, name: str = ''):
+    def __init__(self, name: str = '', errors = None):
         self.logger = collections.defaultdict(def_value_zero)
         self.name = name
+        self.error_cats = errors
+        self.error_status = False
 
 
     def log(self, category: str, count: int = 1) -> None:
-        self.logger[self._get_long_cat(category)] += count
+        #self.logger[self._get_long_cat(category)] += count
+        self.logger[category] += count
+        if (self.error_cats != None) and (category in self.error_cats):
+            self.error_status = True
         return None
 
 
-    def _get_long_cat(self, cat) -> str:
+    def get_long_cat(self, cat) -> str:
         return self.name + ': ' + cat
 
 
@@ -233,11 +238,20 @@ class RecordLogger():
     def get_value(self, category) -> int:
         if category in self.logger:
             return self.logger[category]
-        elif self._get_long_cat(category) in self.logger:
-            return self.logger[self._get_long_cat(category)]
+        # elif self._get_long_cat(category) in self.logger:
+        #     return self.logger[self._get_long_cat(category)]
         else:
             return None
 
+
+    def sum(self, categories: list) -> int:
+        ret = 0
+        for cat in categories:
+            val = self.get_value(cat)
+            if val != None:
+                ret += val
+        return ret
+        
 
     def get_categories(self) -> list:
         return list(self.logger.keys())
@@ -245,21 +259,26 @@ class RecordLogger():
     
     def get_values(self) -> dict():
         return self.logger
+
+    
+    def get_error_status(self) -> bool:
+        return self.error_status
     
 
     def merge(self, B):
         if not isinstance(B, RecordLogger):
-            error('input is not a RecordLogger object')
+            error('input is not a RecordLogger object: ' + str(type(B)))
             return None 
         for cat in B.get_categories():
-            self.logger[cat] += B.get_value(cat)
+            self.logger[B.get_long_cat(cat)] += B.get_value(cat)
+            self.error_status = self.error_status or B.get_error_status()
 
 
-    def print(self, do_print : bool = False): 
+    def print(self, do_print : bool = True): 
         if do_print:
-            print(self.name + ':')
+            verbose_std(self.name + ': ' + ('ERROR occured' if self.get_error_status() else '-----------'))
             for cat in self.logger:
-                print(self._get_str(cat))
+                verbose_std(self._get_str(cat))
             return None
         else:
             ret = self.name + ':'
@@ -296,12 +315,18 @@ def is_debug() -> bool:
     return _log_level == DEBUG
 
 
-def is_verbose() -> bool:
-    return _log_level == VERBOSE
+def is_verbose(or_higher: bool = False) -> bool:
+    if or_higher:
+        return _log_level >= VERBOSE
+    else:
+        return _log_level == VERBOSE
 
 
-def is_normal() -> bool:
-    return _log_level == NORMAL
+def is_normal(or_higher: bool = False) -> bool:
+    if or_higher:
+        return _log_level >= NORMAL
+    else:
+        return _log_level == NORMAL
 
 
 def is_silent() -> bool:
@@ -438,63 +463,75 @@ def get_progress_step():
     return _progress_N
 
 
-def set_progress_bar(heading: str, max_value: int, step: int = None, slow: bool = False, id: str = None):
+def set_progress_bar(heading: str, max_value: int, step: int = None, slow: bool = False, id: str = None) -> bool:
     global _progress_obj, _progress_N, _progress_i, _progress_id, _progress_steps
-    _progress_id = id
-    if step == None:
-        _progress_N = int(max_value / 1000) if (max_value > 1000) else 2
-    else:
-        _progress_N = step
-    if _progress_obj != None:
-        finish_progress_bar()
-    if slow:
-        _progress_obj = SlowBar(heading, max=max_value)
-    else:
-        _progress_obj = IncrementalBar(heading, max=max_value, suffix='%(index)d/%(max)d %(percent)d%%')
-    _progress_i     = 0
-    _progress_steps = 0
+    try:
+        if not is_normal():
+            return False
+        _progress_id = id
+        if step == None:
+            _progress_N = int(max_value / 1000) if (max_value > 1000) else 2
+        else:
+            _progress_N = step
+        if _progress_obj != None:
+            finish_progress_bar()
+        if slow:
+            _progress_obj = SlowBar(heading, max=max_value)
+        else:
+            _progress_obj = IncrementalBar(heading, max=max_value, suffix='%(index)d/%(max)d %(percent)d%%')
+        _progress_i     = 0
+        _progress_steps = 0
 
-    _log_msg(heading + str(max_value))
-    return
+        _log_msg(heading + str(max_value))
+        return True
+    except Exception as err:
+        error(exception=err)
+    return False
 
 
-def set_counter(heading: str, rate = False):
+def set_counter(heading: str, rate = False) -> bool:
     global _progress_obj, _progress_i, _progress_steps
-    _progress_i = 0
-    _progress_steps = 0
-    if _progress_obj != None:
-        finish_progress_bar()
-    if rate:
-        _progress_obj = RateCounter(heading)
-    else:
-        _progress_obj = Counter(heading)
-    return 
+    try:
+        if not is_normal():
+            return None
+        _progress_i = 0
+        _progress_steps = 0
+        if _progress_obj != None:
+            finish_progress_bar()
+        if rate:
+            _progress_obj = RateCounter(heading)
+        else:
+            _progress_obj = Counter(heading)
+        return True
+    except Exception as err:
+        error(exception=err)
+    return False
 
 
 def print_progress(step: int = 1, force = False, id : str = None) -> bool:
     """Print progress bar/dots. Returns True if the dot is being printed."""
     global _progress_i, _progress_steps
-    
-    if (_log_level == SILENT) or (_log_level == DEBUG):
-        return False
-
-    _progress_i +=  step
-    steps = _progress_i // _progress_N
-    new_steps = steps - _progress_steps
-    _progress_steps += new_steps
-    if (new_steps> 0):
-        if (_log_level > SILENT) and ( force or (_log_level < DEBUG ) ):
-            if (_progress_obj != None):
-                if (_progress_id == id):
-                    _progress_obj.next(_progress_N * new_steps)
-                    return True
+    try:
+        if not is_normal():
+            return False
+        _progress_i +=  step
+        steps = _progress_i // _progress_N
+        new_steps = steps - _progress_steps
+        _progress_steps += new_steps
+        if (new_steps> 0):
+            if (_log_level > SILENT) and ( force or (_log_level < DEBUG ) ):
+                if (_progress_obj != None):
+                    if (_progress_id == id):
+                        _progress_obj.next(_progress_N * new_steps)
+                        return True
+                    else:
+                        return False
                 else:
-                    return False
-            else:
-                print('.', end='', flush=True)
-                return True
-    return False    
-
+                    print('.', end='', flush=True)
+                    return True
+    except Exception as err:
+        error(exception=err)
+    return False
 
 def finish_progress_bar(print_nl: bool = False):
     """Finish and close progress bar object"""
@@ -746,7 +783,7 @@ class WG:
     CACHE_DB_FILE           = '.blitzutils_cache.sqlite3' 
     CACHE_GRACE_TIME        =  30*24*3600  # 30 days cache
 
-    TIME_SYNC_THRESHOLD     = 24*3600
+    TIME_SYNC_THRESHOLD     = 3*3600
 
     # sql_create_player_stats_tbl = """CREATE TABLE IF NOT EXISTS player_stats (
     #                             account_id INTEGER NOT NULL,
@@ -881,12 +918,14 @@ class WG:
         }
 
     ACCOUNT_ID_SERVER= {
-        'ru'    : range(0, int(5e8)),
-        'eu'    : range(int(5e8), int(10e8)),
-        'na'    : range(int(1e9),int(2e9)),
-        'asia'  : range(int(2e9),int(31e8)),
-        'china' : range(int(31e8),int(4e9))
+        'ru'    : [ 0, int(5e8)],
+        'eu'    : [ int(5e8), int(10e8) ],
+        'na'    : [ int(1e9),int(2e9) ],
+        'asia'  : [ int(2e9),int(31e8) ],
+        'china' : [ int(31e8),int(4e9)]
         }
+
+    ACCOUNT_ID_MAX = max(ACCOUNT_ID_SERVER['asia'])
 
     def __init__(self, WG_app_id : str = None, tankopedia_fn : str =  None, maps_fn : str = None, 
                 stats_cache: bool = False, rate_limit: int = 10, global_rate_limit = True):
