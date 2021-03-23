@@ -168,12 +168,17 @@ async def main(argv):
             await prune_stats(db, args)
         
         elif args.snapshot:
-            bu.verbose_std('Starting to SNAPSHOT stats in 3 seconds. Press CTRL + C to CANCEL')
+            bu.verbose_std('Starting to SNAPSHOT ' + ', '.join(args.mode) + ' in 3 seconds. Press CTRL + C to CANCEL')
             bu.wait(3)
-            if MODE_PLAYER_ACHIEVEMENTS in args.mode:
-                await snapshot_player_achivements(db, args)
-            if MODE_TANK_STATS in args.mode:
-                await snapshot_tank_stats(db, args)
+            if input('Write "SNAPSHOT" if you prefer to snapshot stats: ') == 'SNAPSHOT':
+                if MODE_PLAYER_ACHIEVEMENTS in args.mode:
+                    bu.verbose_std('Starting to SNAPSHOT PLAYER ACHIEVEMENTS')
+                    await snapshot_player_achivements(db, args)
+                if MODE_TANK_STATS in args.mode:
+                    bu.verbose_std('Starting to SNAPSHOT TANK STATS')
+                    await snapshot_tank_stats(db, args)
+            else:
+                bu.error('Invalid input given. Exiting...')
 
         elif args.archive:
             bu.verbose_std('Starting to ARCHIVE stats in 3 seconds')
@@ -189,7 +194,6 @@ async def main(argv):
             bu.verbose_std('Starting to RESET duplicates in 3 seconds. Press CTRL + C to CANCEL')
             bu.wait(3)         
             await reset_duplicates(db, updates, args)
-
              
     except KeyboardInterrupt:
         bu.finish_progress_bar()
@@ -1590,13 +1594,15 @@ async def snapshot_player_achivements(db: motor.motor_asyncio.AsyncIOMotorDataba
         bu.verbose_std('Creating a snapshot of the latest player achievements')
         rl = RecordLogger('Snapshot')
         
-        accountQ = await mk_accountQ(db)
+        accountQ = await mk_accountQ()
+        bu.set_progress_bar('Stats processed:', accountQ.qsize(), step=50, slow=True)  
         workers = list()
         for workerID in range(0, N_WORKERS):
             workers.append(asyncio.create_task(snapshot_player_achivements_worker(db, accountQ, workerID)))
 
         await accountQ.join()
 
+        bu.finish_progress_bar()
         for worker in workers:  
             worker.cancel()
         for rl_worker in await asyncio.gather(*workers):
@@ -1654,12 +1660,14 @@ async def snapshot_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args
         else:
             tank_ids = None
         account_tankQ = await mk_account_tankQ(db, tank_ids, archive=True)
+        bu.set_progress_bar('Stats processed:', account_tankQ.qsize(), step=50, slow=True)  
         workers = list()
         for workerID in range(0, N_WORKERS):
             workers.append(asyncio.create_task(snapshot_tank_stats_worker(db, account_tankQ, workerID)))
 
         await account_tankQ.join()
 
+        bu.finish_progress_bar()
         for worker in workers:  
             worker.cancel()
         for rl_worker in await asyncio.gather(*workers):
@@ -1683,7 +1691,6 @@ async def snapshot_tank_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabas
         while not account_tankQ.empty():
             try:
                 wp = await account_tankQ.get()
-                bu.print_progress()
                 account_id_min = wp['account_id']['min']
                 account_id_max = wp['account_id']['max']
                 tank_id        = wp['tank_id']
@@ -1707,7 +1714,7 @@ async def snapshot_tank_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabas
                     # s += 1   ## This one does not work yet until MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
                     pass
                 # rl.log('Snapshotted', s)
-
+                bu.print_progress()
             except Exception as err:
                 bu.error(exception=err, id=ID)
             account_tankQ.task_done()
