@@ -54,7 +54,7 @@ for mode in DB_C:
 
 CACHE_VALID     = 7*24*3600   # 7 days
 DEFAULT_SAMPLE  = 1000
-QUEUE_LEN       = 1000
+QUEUE_LEN       = 10000
 DEFAULT_BATCH   = 1000
 
 bs = None
@@ -195,7 +195,7 @@ async def main(argv):
         bu.error('Queue gets cancelled while still working.')
     except Exception as err:
         bu.error('Unexpected Exception', exception=err)
-    bu.verbose_std(time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
+    bu.verbose_std('Total execution time: ' + time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time)))
     return None
 
 
@@ -377,6 +377,7 @@ async def analyze_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                 accountQ = await mk_accountQ()
                 lenQ = accountQ.qsize()
                 tanks = len(await get_tanks_DB(db, archive))
+
                 bu.set_progress_bar('Stats processed:', lenQ*tanks, step=10, slow=True)   
                 
                 tasks = []
@@ -385,18 +386,21 @@ async def analyze_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                     tasks.append(asyncio.create_task(find_dup_tank_stats_worker(db, accountQ, dupsQ, u, workerID, archive)))
                 
                 await accountQ.join()
+                bu.finish_progress_bar()
                 bu.debug('Waiting for workers to finish')
                 if len(tasks) > 0:
+                    i = 0
                     for res in await asyncio.gather(*tasks, return_exceptions=True):
-                        rl.merge(res) 
-                bu.finish_progress_bar()
+                        bu.debug('Merging find_dup_tank_stats_worker\'s RecordLogger', id=i)
+                        rl.merge(res)                
         
             except Exception as err:
                 bu.error(exception=err)    
         
         await dupsQ.join()
         dups_saver.cancel()
-        rl.merge(await asyncio.gather(*[dups_saver], return_exceptions=True))
+        for rl_task in await asyncio.gather(*[dups_saver], return_exceptions=True):
+            rl.merge(rl_task)
     
     except Exception as err:
         bu.error(exception=err)
@@ -444,8 +448,8 @@ async def analyze_player_achievements(db: motor.motor_asyncio.AsyncIOMotorDataba
         
         await dupsQ.join()
         dups_saver.cancel()
-        dups_rl = await asyncio.gather(*[dups_saver], return_exceptions=True)
-        rl.merge(dups_rl)
+        for rl_task in await asyncio.gather(*[dups_saver], return_exceptions=True):
+            rl.merge(rl_task)
     
     except Exception as err:
         bu.error(exception=err)
@@ -469,7 +473,7 @@ async def save_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
                 bu.error(exception=err)
             dupsQ.task_done()
     
-    except (asyncio.CancelledError):
+    except asyncio.CancelledError:
         bu.debug('Duplicate queue is empty')
     except Exception as err:
         bu.error(exception=err)
@@ -649,11 +653,8 @@ async def check_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                     else:
                         sample = N_dups
                         header = 'Checking ALL duplicates: '
-                    
-                    if bu.is_normal():
-                        bu.set_progress_bar(header, sample, 100, slow=True)            
-                    else:
-                        bu.verbose_std(header)
+                    bu.set_progress_bar(header, sample, 100, slow=True)            
+                    bu.verbose(header)
                             
                     tasks = []
                     for workerID in range(0, N_WORKERS):
@@ -663,14 +664,14 @@ async def check_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                             tasks.append(asyncio.create_task( check_dup_player_achievements_worker(db, dupsQ, u, workerID, archive )))
                     
                     await asyncio.wait([fetcher])
-                    rl.merge(await asyncio.gather(*[fetcher]))
-                    await dupsQ.join()
+                    for rl_task in await asyncio.gather(*[fetcher]):
+                        rl.merge(rl_task)
 
+                    await dupsQ.join()
                     for rl_task in await asyncio.gather(*tasks):
                         rl.merge(rl_task)
 
-                    if bu.is_normal():
-                        bu.finish_progress_bar()
+                    bu.finish_progress_bar()
                 except Exception as err:
                     bu.error(exception=err)
     except Exception as err:
@@ -1157,7 +1158,8 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argpa
                 workers.append(asyncio.create_task(prune_stats_worker(db, stat_type, pruneQ, workerID, archive=archive)))                    
 
             await asyncio.wait([fetcher])
-            rl.merge(await asyncio.gather(*[fetcher]))
+            for rl_task in await asyncio.gather(*[fetcher], return_exceptions=True):
+                rl.merge(rl_task)
         
             await pruneQ.join()
             if len(workers) > 0:
@@ -1374,7 +1376,7 @@ async def clean_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase):
         scanners = list()
         for workerID in range(0,N_WORKERS):
             scanners.append(asyncio.create_task(find_dup_tank_stats_worker(db, accountQ, pruneQ, None, workerID, archive=False)))
-            workers.append(asyncio.create_task(prune_stats_worker(db, MODE_TANK_STATS, pruneQ, workerID)))        
+            workers.append(asyncio.create_task(prune_stats_worker(db, MODE_TANK_STATS, pruneQ, workerID, check=True)))        
 
         bu.debug('Waiting for workers to finish')
         await accountQ.join()
