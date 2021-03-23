@@ -321,9 +321,13 @@ async def mk_accountQ(step: int = int(5e7)) -> asyncio.Queue:
     """Create ACCOUNT_ID queue for database queries"""    
     accountQ = asyncio.Queue()
     try:
-        id_max      = int(31e8)        
+        id_max  = WG.ACCOUNT_ID_MAX
+        res     = list()        
         for min in range(0,id_max-step, step):
-            await accountQ.put({'min': min, 'max': min + step})            
+            res.append({'min': min, 'max': min + step})
+        random.shuffle(res) # randomize the results for better ETA estimate.
+        for item in res:
+            await accountQ.put(item)     
     except Exception as err:
         bu.error(exception=err)
     bu.debug('Account_id queue created')    
@@ -1595,7 +1599,7 @@ async def snapshot_player_achivements(db: motor.motor_asyncio.AsyncIOMotorDataba
         rl = RecordLogger('Snapshot')
         
         accountQ = await mk_accountQ()
-        bu.set_progress_bar('Stats processed:', accountQ.qsize(), step=50, slow=True)  
+        bu.set_progress_bar('Stats processed:', accountQ.qsize(), step=2, slow=True)  
         workers = list()
         for workerID in range(0, N_WORKERS):
             workers.append(asyncio.create_task(snapshot_player_achivements_worker(db, accountQ, workerID)))
@@ -1603,8 +1607,6 @@ async def snapshot_player_achivements(db: motor.motor_asyncio.AsyncIOMotorDataba
         await accountQ.join()
 
         bu.finish_progress_bar()
-        for worker in workers:  
-            worker.cancel()
         for rl_worker in await asyncio.gather(*workers):
             rl.merge(rl_worker)
 
@@ -1628,7 +1630,7 @@ async def snapshot_player_achivements_worker(db: motor.motor_asyncio.AsyncIOMoto
                 wp = await accountQ.get()
                 account_id_min = wp['min']
                 account_id_max = wp['max']
-                                
+                
                 pipeline = [ {'$match': { '$and': [  {'account_id': {'$gte': account_id_min}}, {'account_id': {'$lt': account_id_max}} ] }},
                              {'$sort': {'updated': pymongo.DESCENDING}},
                              {'$group': { '_id': '$account_id',
@@ -1640,7 +1642,9 @@ async def snapshot_player_achivements_worker(db: motor.motor_asyncio.AsyncIOMoto
                 async for _ in cursor:      
                     # s += 1   ## This one does not work yet until MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
                     pass
-                # rl.log('Snapshotted', s)
+                n = await dbc_archive.count_documents({'$match': { '$and': [  {'account_id': {'$gte': account_id_min}}, {'account_id': {'$lt': account_id_max}} ] }} )                
+                rl.log('Snapshotted', n)
+                bu.debug('account_id range: ' + str(account_id_min) + '-' + str(account_id_max) + ' processed', id=ID)
                 bu.print_progress()
             except Exception as err:
                 bu.error(exception=err, id=ID)
@@ -1668,8 +1672,6 @@ async def snapshot_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args
         await account_tankQ.join()
 
         bu.finish_progress_bar()
-        for worker in workers:  
-            worker.cancel()
         for rl_worker in await asyncio.gather(*workers):
             rl.merge(rl_worker)
 
@@ -1714,6 +1716,8 @@ async def snapshot_tank_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabas
                     # s += 1   ## This one does not work yet until MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
                     pass
                 # rl.log('Snapshotted', s)
+                n = await dbc_archive.count_documents({'$match': { '$and': [ {'tank_id': tank_id }, {'account_id': {'$gte': account_id_min}}, {'account_id': {'$lt': account_id_max}} ] }} )                
+                rl.log('Snapshotted', n)
                 bu.print_progress()
             except Exception as err:
                 bu.error(exception=err, id=ID)
