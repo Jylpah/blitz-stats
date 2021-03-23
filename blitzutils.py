@@ -266,7 +266,7 @@ class RecordLogger():
 
     def merge(self, B):
         if not isinstance(B, RecordLogger):
-            error('input is not a RecordLogger object')
+            error('input is not a RecordLogger object: ' + str(type(B)))
             return None 
         for cat in B.get_categories():
             self.logger[cat] += B.get_value(cat)
@@ -456,63 +456,75 @@ def get_progress_step():
     return _progress_N
 
 
-def set_progress_bar(heading: str, max_value: int, step: int = None, slow: bool = False, id: str = None):
+def set_progress_bar(heading: str, max_value: int, step: int = None, slow: bool = False, id: str = None) -> bool:
     global _progress_obj, _progress_N, _progress_i, _progress_id, _progress_steps
-    _progress_id = id
-    if step == None:
-        _progress_N = int(max_value / 1000) if (max_value > 1000) else 2
-    else:
-        _progress_N = step
-    if _progress_obj != None:
-        finish_progress_bar()
-    if slow:
-        _progress_obj = SlowBar(heading, max=max_value)
-    else:
-        _progress_obj = IncrementalBar(heading, max=max_value, suffix='%(index)d/%(max)d %(percent)d%%')
-    _progress_i     = 0
-    _progress_steps = 0
+    try:
+        if not is_normal():
+            return False
+        _progress_id = id
+        if step == None:
+            _progress_N = int(max_value / 1000) if (max_value > 1000) else 2
+        else:
+            _progress_N = step
+        if _progress_obj != None:
+            finish_progress_bar()
+        if slow:
+            _progress_obj = SlowBar(heading, max=max_value)
+        else:
+            _progress_obj = IncrementalBar(heading, max=max_value, suffix='%(index)d/%(max)d %(percent)d%%')
+        _progress_i     = 0
+        _progress_steps = 0
 
-    _log_msg(heading + str(max_value))
-    return
+        _log_msg(heading + str(max_value))
+        return True
+    except Exception as err:
+        error(exception=err)
+    return False
 
 
-def set_counter(heading: str, rate = False):
+def set_counter(heading: str, rate = False) -> bool:
     global _progress_obj, _progress_i, _progress_steps
-    _progress_i = 0
-    _progress_steps = 0
-    if _progress_obj != None:
-        finish_progress_bar()
-    if rate:
-        _progress_obj = RateCounter(heading)
-    else:
-        _progress_obj = Counter(heading)
-    return 
+    try:
+        if not is_normal():
+            return None
+        _progress_i = 0
+        _progress_steps = 0
+        if _progress_obj != None:
+            finish_progress_bar()
+        if rate:
+            _progress_obj = RateCounter(heading)
+        else:
+            _progress_obj = Counter(heading)
+        return True
+    except Exception as err:
+        error(exception=err)
+    return False
 
 
 def print_progress(step: int = 1, force = False, id : str = None) -> bool:
     """Print progress bar/dots. Returns True if the dot is being printed."""
     global _progress_i, _progress_steps
-    
-    if (_log_level == SILENT) or (_log_level == DEBUG):
-        return False
-
-    _progress_i +=  step
-    steps = _progress_i // _progress_N
-    new_steps = steps - _progress_steps
-    _progress_steps += new_steps
-    if (new_steps> 0):
-        if (_log_level > SILENT) and ( force or (_log_level < DEBUG ) ):
-            if (_progress_obj != None):
-                if (_progress_id == id):
-                    _progress_obj.next(_progress_N * new_steps)
-                    return True
+    try:
+        if not is_normal():
+            return False
+        _progress_i +=  step
+        steps = _progress_i // _progress_N
+        new_steps = steps - _progress_steps
+        _progress_steps += new_steps
+        if (new_steps> 0):
+            if (_log_level > SILENT) and ( force or (_log_level < DEBUG ) ):
+                if (_progress_obj != None):
+                    if (_progress_id == id):
+                        _progress_obj.next(_progress_N * new_steps)
+                        return True
+                    else:
+                        return False
                 else:
-                    return False
-            else:
-                print('.', end='', flush=True)
-                return True
-    return False    
-
+                    print('.', end='', flush=True)
+                    return True
+    except Exception as err:
+        error(exception=err)
+    return False
 
 def finish_progress_bar(print_nl: bool = False):
     """Finish and close progress bar object"""
