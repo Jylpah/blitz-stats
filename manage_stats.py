@@ -4,10 +4,10 @@
 
 import sys, os, argparse, datetime, json, inspect, pprint, aiohttp, asyncio, aiofiles
 import aioconsole, re, logging, time, xmltodict, collections, pymongo, motor.motor_asyncio
-import ssl, configparser
+import ssl, configparser, random
 from datetime import date
 import blitzutils as bu
-from blitzutils import BlitzStars, RecordLogger
+from blitzutils import BlitzStars, RecordLogger, WG
 
 N_WORKERS = 4
 
@@ -147,7 +147,7 @@ async def main(argv):
         db = client[DB_NAME]
         bu.debug(str(type(db)))
 
-        await db[DB_C_STATS_2_DEL].create_index('id')	
+        await db[DB_C_STATS_2_DEL].create_index('id', background=True)	
 
         if  args.analyze or args.check or args.prune:
             updates = await mk_update_list(db, args.updates)
@@ -331,11 +331,14 @@ async def mk_account_tankQ(db: motor.motor_asyncio.AsyncIOMotorDatabase,
     try:
         if tank_ids == None:
             tank_ids = await get_tanks_DB(db)
-        #id_max = WG.ACCOUNT_ID_MAX
-        id_max = int(31e8)
+        id_max = WG.ACCOUNT_ID_MAX
+        res = list()       
         for min in range(0,id_max-account_id_step, account_id_step):
             for tank_id in tank_ids:
-                await retQ.put( { 'tank_id': tank_id, 'account_id': {'min': min, 'max': min + account_id_step } } )            
+                res.append( { 'tank_id': tank_id, 'account_id': {'min': min, 'max': min + account_id_step } } )
+        random.shuffle(res)   # randomize the results for better ETA estimate.
+        for item in res: 
+            await retQ.put(item)
     except Exception as err:
         bu.error('Failed to create account_id * tank_id queue', exception=err)
         return None
