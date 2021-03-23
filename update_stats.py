@@ -762,7 +762,6 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 
 				if (last_battle_time > latest_battle) and (last_battle_time < now): ## Filter out broken stats
 					latest_battle = last_battle_time 
-			# RECOMMENDATION TO USE SINGLE INSERTS OVER MANY
 			try: 
 				res = await dbc.insert_many(tank_stats, ordered=False)
 				added = len(res.inserted_ids)
