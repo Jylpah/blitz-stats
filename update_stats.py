@@ -150,6 +150,7 @@ async def main(argv):
 		await db[DB_C_TANK_STATS].create_index([('tank_id', pymongo.ASCENDING), ('account_id', pymongo.ASCENDING) ])	
 		await db[DB_C_TANK_STATS].create_index([('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
 		await db[DB_C_PLAYER_ACHIVEMENTS].create_index([('account_id', pymongo.ASCENDING), ('updated', pymongo.DESCENDING) ])	
+		await db[DB_C_PLAYER_ACHIVEMENTS].create_index([('account_id', pymongo.ASCENDING) ])	
 		await db[DB_C_TANKS].create_index([('tank_id', pymongo.ASCENDING), ('tier', pymongo.DESCENDING) ])	
 		await db[DB_C_TANKS].create_index([ ('name', pymongo.TEXT)])	
 		await db[DB_C_ERROR_LOG].create_index([('account_id', pymongo.ASCENDING), ('time', pymongo.DESCENDING), ('type', pymongo.ASCENDING) ])	
@@ -925,7 +926,7 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 					stat['account_id'] 	= account_id
 					stat['updated'] 	= NOW
 					## Needed for stats archiving. Not yet implemented for player_achievements
-					# stat[FIELD_UPDATED] = True
+					stat[FIELD_UPDATED] = True
 					stat['_id'] 		= mk_id(account_id, 0, NOW)
 					
 					# RECOMMENDATION TO USE SINGLE INSERTS OVER MANY
