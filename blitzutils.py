@@ -275,16 +275,20 @@ class RecordLogger():
 
 
     def print(self, do_print : bool = True): 
-        if do_print:
-            verbose_std(self.name + ': ' + ('ERROR occured' if self.get_error_status() else '-----------'))
-            for cat in self.logger:
-                verbose_std(self._get_str(cat))
-            return None
-        else:
-            ret = self.name + ':'
-            for cat in self.logger:
-                ret = ret + '\n' + self._get_str(cat)
-            return ret
+        try:
+            if do_print:
+                verbose_std(self.name + ': ' + ('ERROR occured' if self.get_error_status() else '-----------'))
+                for cat in self.logger:
+                    verbose_std(self._get_str(cat))
+                return None
+            else:
+                ret = self.name + ':'
+                for cat in self.logger:
+                    ret = ret + '\n' + self._get_str(cat)
+                return ret
+        except Exception as err:
+            error(exception=err)
+        return None 
 
 
 ## -----------------------------------------------------------
