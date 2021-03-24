@@ -171,12 +171,12 @@ async def main(argv):
 
 			## set progress bar
 			tmp_progress_max = 0
-			for mode in set(args.mode) & set(UPDATE_FIELD.keys()):
+			for mode in get_stat_modes(args.mode):
 				tmp_progress_max += len(active_players[mode])
 			# bu.print_new_line()
 			bu.set_progress_bar('Fetching stats:', tmp_progress_max, 200, True)
 
-			for mode in UPDATE_FIELD:
+			for mode in get_stat_modes(args.mode):
 				Q[mode] = asyncio.Queue()
 			
 			if 'tank_stats' in args.mode:
@@ -218,7 +218,7 @@ async def main(argv):
 				await asyncio.wait(Qcreator_tasks)
 
 			bu.log('All active players added to the queue. Waiting for stat workers to finish')
-			for mode in UPDATE_FIELD:
+			for mode in get_stat_modes(args.mode):
 				await Q[mode].join()		
 
 			bu.finish_progress_bar()
@@ -301,9 +301,10 @@ def print_date(msg : str = '', start_time : datetime.datetime = None ) -> dateti
 	except Exception as err:
 		bu.error('Unexpected Exception', err)
 
+
 def get_stat_modes(mode_list: list) -> list:
 	"""Return modes of fetching stats (i.e. NOT tankopedia)"""
-	return list(set(mode_list) & set(UPDATE_FIELD.keys()))
+	return list(set(mode_list) & set(UPDATE_FIELD.keys() - set(['default'])))
 
 
 def get_stat_modes_WG(mode_list: list) -> list:
@@ -559,24 +560,24 @@ async def del_account_id(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_i
 	return None
 
 ## DEPRECIATED
-async def is_account_valid(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int) -> bool: 
-	"""Check whether the account is valid. Returns None if the account is not found"""
-	try:
-		dbc = db[DB_C_ACCOUNTS]
-		res = await dbc.find_one( { '_id' : account_id })
-		if res == None:
-			bu.debug('account_id: ' + str(account_id) + ' not found fromn account DB')
-			return None
-		elif ('invalid' in res):
-			bu.debug('account_id: ' + str(account_id) + ' is invalid')
-			return False
-		elif ('inactive' in res) and (res['inactive'] == True):
-			return False
-		else:
-			return True		
-	except Exception as err:
-		error_account_id(account_id, 'Error checking account', exception=err)	
-	return False
+# async def is_account_valid(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int) -> bool: 
+# 	"""Check whether the account is valid. Returns None if the account is not found"""
+# 	try:
+# 		dbc = db[DB_C_ACCOUNTS]
+# 		res = await dbc.find_one( { '_id' : account_id })
+# 		if res == None:
+# 			bu.debug('account_id: ' + str(account_id) + ' not found fromn account DB')
+# 			return None
+# 		elif ('invalid' in res):
+# 			bu.debug('account_id: ' + str(account_id) + ' is invalid')
+# 			return False
+# 		elif ('inactive' in res) and (res['inactive'] == True):
+# 			return False
+# 		else:
+# 			return True		
+# 	except Exception as err:
+# 		error_account_id(account_id, 'Error checking account', exception=err)	
+# 	return False
 
 
 async def update_account(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int, stat_type: str = None, set_fields: dict = dict(), unset_fields : dict = dict()) -> bool:
@@ -591,6 +592,7 @@ async def update_account(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_i
 		if stat_type != None:
 			set_fields[UPDATE_FIELD[stat_type]] = bu.NOW()
 		else:
+			## IS this really sensible
 			set_fields[UPDATE_FIELD['default']] = bu.NOW()
 
 		if len(unset_fields) > 0:
