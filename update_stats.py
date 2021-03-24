@@ -159,6 +159,7 @@ async def main(argv):
 		## get active player list ------------------------------
 		active_players = {}
 		start_time = 0
+		stat_logger = RecordLogger('Update stats')
 		if 'tankopedia' in args.mode:
 			await update_tankopedia(db, args.file, args.force)
 		else:
@@ -226,7 +227,7 @@ async def main(argv):
 			for task in worker_tasks:
 				task.cancel()
 			bu.log('Waiting for workers to cancel')
-			stat_logger = RecordLogger('Update stats')
+			
 			if len(worker_tasks) > 0:				
 				for stats_logged in await asyncio.gather(*worker_tasks, return_exceptions=True):
 					stat_logger.merge(stats_logged)
@@ -237,7 +238,7 @@ async def main(argv):
 
 			wg.print_request_stats()
 			bu.print_new_line(True)
-			print_update_stats(args.mode, args.run_error_log, stat_logger)
+			stat_logger.print()
 			bu.print_new_line(True)
 			print_date('DB update ended', start_time)
 			bu.print_new_line(True)
@@ -287,16 +288,18 @@ async def get_active_players(db : motor.motor_asyncio.AsyncIOMotorDatabase, args
 
 
 def print_date(msg : str = '', start_time : datetime.datetime = None ) -> datetime.datetime:
-	timenow = datetime.datetime.now()
-	bu.verbose_std(msg + ': ' + timenow.replace(microsecond=0).isoformat(sep=' '))
-	if start_time != None:
-		delta = timenow - start_time
-		secs = delta.total_seconds()
-		hours = int(secs // 3600)
-		minutes = int(secs // 60)
-		bu.verbose_std('The processing took ' + str(hours) + 'h ' + str(minutes) + 'min')
-	return timenow
-
+	try:
+		timenow = datetime.datetime.now()
+		bu.verbose_std(msg + ': ' + timenow.replace(microsecond=0).isoformat(sep=' '))
+		if start_time != None:
+			delta = timenow - start_time
+			secs = delta.total_seconds()
+			hours = int(secs // 3600)
+			minutes = int(secs // 60)
+			bu.verbose_std('The processing took ' + str(hours) + 'h ' + str(minutes) + 'min')
+		return timenow
+	except Exception as err:
+		bu.error('Unexpected Exception', err)
 
 def get_stat_modes(mode_list: list) -> list:
 	"""Return modes of fetching stats (i.e. NOT tankopedia)"""
@@ -447,7 +450,7 @@ async def get_players_errorlog(db : motor.motor_asyncio.AsyncIOMotorDatabase, mo
 
 def print_update_stats(mode: list, error_log : bool = False, stat_logger: RecordLogger = None):
 	if stat_logger != None:
-		bu.verbose_std(stat_logger.print())
+		stat_logger.print()
 		return True
 	# if len(get_stat_modes(mode)) > 0:
 	# 	bu.verbose_std('Total ' + str(stats_added) + ' stats updated')
