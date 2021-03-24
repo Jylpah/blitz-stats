@@ -476,7 +476,7 @@ def set_progress_bar(heading: str, max_value: int, step: int = None, slow: bool 
         if step == None:
             _progress_N = int(max_value / 1000) if (max_value > 1000) else 2
         else:
-            _progress_N = step
+            _progress_N = max(1, min(step, max_value / 100))
         if _progress_obj != None:
             finish_progress_bar()
         if slow:
