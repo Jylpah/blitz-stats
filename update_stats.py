@@ -236,9 +236,8 @@ async def main(argv):
 				# only for full stats
 				log_update_time(db, args.mode)
 
-			wg.print_request_stats()
-			bu.print_new_line(True)
-			stat_logger.print()
+
+			
 			bu.print_new_line(True)
 			print_date('DB update ended', start_time)
 			bu.print_new_line(True)
@@ -246,7 +245,10 @@ async def main(argv):
 		bu.error('Queue got cancelled while still working.')
 	except Exception as err:
 		bu.error('Unexpected Exception', err)
-	finally:		
+	finally:
+		wg.print_request_stats()
+		bu.print_new_line(True)
+		stat_logger.print()		
 		await bs.close()
 		await wg.close()
 		if args.log:
