@@ -680,10 +680,10 @@ async def get_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
 #     return rl
 
 
-async def analyze_player_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
-                                      update: dict, workerID: int, prune : bool = False) -> RecordLogger:
-    bu.error('NOT IMPLEMENTED YET')
-    sys.exit(1)
+# async def analyze_player_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
+#                                       update: dict, workerID: int, prune : bool = False) -> RecordLogger:
+#     bu.error('NOT IMPLEMENTED YET')
+#     sys.exit(1)
 
 
 async def check_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
