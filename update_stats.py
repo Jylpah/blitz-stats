@@ -32,6 +32,13 @@ DB_C_TANK_STR			= 'WG_TankStrs'
 DB_C_ERROR_LOG			= 'ErrorLog'
 DB_C_UPDATE_LOG			= 'UpdateLog'
 
+MODE_TANK_STATS         = 'tank_stats'
+MODE_PLAYER_STATS       = 'player_stats'
+MODE_PLAYER_ACHIEVEMENTS= 'player_achievements'
+MODE_TANKOPEDIA			= 'tankopedia'
+MODE_BS_PLAYER_STATS 	= 'player_stats_BS'
+MODE_BS_TANK_STATS		= 'tank_stats_BS'
+
 FIELD_UPDATED = '_updated'
 
 ## Matches --mode param
@@ -59,7 +66,7 @@ async def main(argv):
 	## Default options:
 	
 	# WG_APP_ID		= WG_APP_ID
-	WG_RATE_LIMIT	= 20  ## WG standard. Do not edit unless you have your
+	WG_RATE_LIMIT	= 10  ## WG standard. Do not edit unless you have your
 						  ## own server app ID, it will REDUCE the performance
 	
 	# DB defaults
@@ -100,7 +107,7 @@ async def main(argv):
 		bu.warning(FILE_CONFIG + ' Config file not found')
 
 	parser = argparse.ArgumentParser(description='Analyze Blitz replay JSONs from WoTinspector.com')
-	parser.add_argument('--mode', default='help', nargs=1, choices=list(UPDATE_FIELD.keys()) + [ 'tankopedia' ], help='Choose what to update')
+	parser.add_argument('--mode', default='help', nargs='+', choices=get_modes(), help='Choose what to update')
 	parser.add_argument('--file', default=None, help='JSON file to read')
 	parser.add_argument('--force', action='store_true', default=False, help='Force refreshing the active player list')
 	parser.add_argument('--workers', type=int, default=N_WORKERS, help='Number of asynchronous workers')
@@ -138,58 +145,50 @@ async def main(argv):
 			client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
 		else:
 			client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, username=DB_USER, password=DB_PASSWD, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
-
 		db = client[DB_NAME]
 		bu.debug(str(type(db)))	
-
-		await db[DB_C_BS_PLAYER_STATS].create_index([('account_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
-		await db[DB_C_BS_TANK_STATS].create_index([('account_id', pymongo.ASCENDING), ('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
-		await db[DB_C_BS_TANK_STATS].create_index([('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
-		#await db[DB_C_TANK_STATS].create_index([('account_id', pymongo.ASCENDING), ('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
-		await db[DB_C_TANK_STATS].create_index([('account_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])
-		await db[DB_C_TANK_STATS].create_index([('tank_id', pymongo.ASCENDING), ('account_id', pymongo.ASCENDING) ])	
-		await db[DB_C_TANK_STATS].create_index([('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
-		await db[DB_C_PLAYER_ACHIVEMENTS].create_index([('account_id', pymongo.ASCENDING), ('updated', pymongo.DESCENDING) ])	
-		await db[DB_C_PLAYER_ACHIVEMENTS].create_index([('account_id', pymongo.ASCENDING) ])	
-		await db[DB_C_TANKS].create_index([('tank_id', pymongo.ASCENDING), ('tier', pymongo.DESCENDING) ])	
-		await db[DB_C_TANKS].create_index([ ('name', pymongo.TEXT)])	
-		await db[DB_C_ERROR_LOG].create_index([('account_id', pymongo.ASCENDING), ('time', pymongo.DESCENDING), ('type', pymongo.ASCENDING) ])	
-		
+		await init_db_indices(db)
 
 		## get active player list ------------------------------
 		active_players = {}
 		start_time = 0
 		stat_logger = RecordLogger('Update stats')
-		if 'tankopedia' in args.mode:
-			await update_tankopedia(db, args.file, args.force)
-		else:
-			start_time = print_date('DB update started')
-			active_players  = await get_active_players(db, args)			
-			Qcreator_tasks 	= []
-			worker_tasks 	= []
-			Q = {}
+		for mode in get_modes(args.mode):
+			
+			if mode == MODE_TANKOPEDIA:
+				await update_tankopedia(db, args.file, args.force)
+			else:
+				start_time = print_date('DB update started: ' + mode)
+				active_players  = await get_active_players(db, mode, args)
+				bu.set_progress_bar('Fetching stats:', tmp_progress_max, 200, True)
+				accountQ = asyncio.Queue()
+				Qcreator.append(asyncio.create_task(mk_accountQ(accountQ, active_players)))
+				worker_tasks 	= []
+
+			elif mode == MODE_TANK_STATS:
+				Q = {}
 
 			## set progress bar
 			tmp_progress_max = 0
 			for mode in get_stat_modes(args.mode):
 				tmp_progress_max += len(active_players[mode])
 			# bu.print_new_line()
-			bu.set_progress_bar('Fetching stats:', tmp_progress_max, 200, True)
+			
 
 			for mode in get_stat_modes(args.mode):
 				Q[mode] = asyncio.Queue()
 			
 			if 'tank_stats' in args.mode:
 				mode = 'tank_stats'
-				Qcreator_tasks.append(asyncio.create_task(mk_playerQ(Q[mode], active_players[mode])))
-				for i in range(args.workers):
+				Qcreator_tasks.append(asyncio.create_task(mk_accountQ(Q[mode], active_players[mode])))
+				for i in range(max(args.workers, Q[mode].qsize())):
 					worker_tasks.append(asyncio.create_task(WG_tank_stat_worker( db, Q[mode], i, args )))
 					bu.debug('WG Tank stat Task started', id=i)	
 		
 			elif 'player_achievements' in args.mode:
 				mode = 'player_achievements'
-				Qcreator_tasks.append(asyncio.create_task(mk_playerQ(Q[mode], active_players[mode])))
-				for i in range(args.workers):
+				Qcreator_tasks.append(asyncio.create_task(mk_accountQ(Q[mode], active_players[mode])))
+				for i in range(max(args.workers, Q[mode].qsize())):
 					worker_tasks.append(asyncio.create_task(WG_player_achivements_worker(db, Q[mode], i, args )))
 					bu.debug('WG Player achievement stat Task started', id=i)
 
@@ -199,15 +198,15 @@ async def main(argv):
 
 			elif 'tank_stats_BS' in args.mode:
 				mode = 'tank_stats_BS'
-				Qcreator_tasks.append(asyncio.create_task(mk_playerQ(Q[mode], active_players[mode])))
-				for i in range(args.workers):
+				Qcreator_tasks.append(asyncio.create_task(mk_accountQ(Q[mode], active_players[mode])))
+				for i in range(max(args.workers, Q[mode].qsize())):
 					worker_tasks.append(asyncio.create_task(BS_tank_stat_worker(db, Q[mode], i, args )))
 					bu.debug('BlitzStars Tank stat Task ' + str(i) + ' started')	
 			
 			elif 'player_stats_BS' in args.mode:
 				mode = 'player_stats_BS'
-				Qcreator_tasks.append(asyncio.create_task(mk_playerQ(Q[mode], active_players[mode])))
-				for i in range(args.workers):
+				Qcreator_tasks.append(asyncio.create_task(mk_accountQ(Q[mode], active_players[mode])))
+				for i in range(max(args.workers, Q[mode].qsize())):
 					worker_tasks.append(asyncio.create_task(BS_player_stat_worker(db, Q[mode], i, args )))
 					bu.debug('BlitzStars Player stat Task ' + str(i) + ' started')
 					
@@ -235,8 +234,6 @@ async def main(argv):
 			if (args.sample == 0) and (not args.run_error_log):
 				# only for full stats
 				log_update_time(db, args.mode)
-
-
 			
 			bu.print_new_line(True)
 			print_date('DB update ended', start_time)
@@ -257,36 +254,55 @@ async def main(argv):
 	return None
 
 
-async def get_active_players(db : motor.motor_asyncio.AsyncIOMotorDatabase, args : argparse.Namespace):
-	"""Get activbe player list from the sources (DB, BlitzStars)"""
-	active_players = {}
-	if args.run_error_log:
-		for mode in get_stat_modes(args.mode):
-			active_players[mode] = await get_players_errorlog(db, mode)
-	elif args.player_src == 'blitzstars':
-		bu.debug('src BlitzStars')
-		tmp_players = await get_active_players_BS(args)
-		if args.sample > 0:
-			tmp_players = random.sample(tmp_players, args.sample)		
-		for mode in get_stat_modes(args.mode): 
-			active_players[mode] = tmp_players
-	elif args.player_src == 'db':
-		bu.debug('src DB')
-		for mode in get_stat_modes_WG(args.mode):
+async def init_db_indices(db: motor.motor_asyncio.AsyncIOMotorDatabase):
+	"""Create DB indices"""
+	try:
+		await db[DB_C_BS_PLAYER_STATS].create_index([('account_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
+		await db[DB_C_BS_TANK_STATS].create_index([('account_id', pymongo.ASCENDING), ('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
+		await db[DB_C_BS_TANK_STATS].create_index([('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
+		#await db[DB_C_TANK_STATS].create_index([('account_id', pymongo.ASCENDING), ('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
+		await db[DB_C_TANK_STATS].create_index([('account_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])
+		await db[DB_C_TANK_STATS].create_index([('tank_id', pymongo.ASCENDING), ('account_id', pymongo.ASCENDING) ])	
+		await db[DB_C_TANK_STATS].create_index([('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
+		await db[DB_C_PLAYER_ACHIVEMENTS].create_index([('account_id', pymongo.ASCENDING), ('updated', pymongo.DESCENDING) ])	
+		await db[DB_C_PLAYER_ACHIVEMENTS].create_index([('account_id', pymongo.ASCENDING) ])	
+		await db[DB_C_TANKS].create_index([('tank_id', pymongo.ASCENDING), ('tier', pymongo.DESCENDING) ])	
+		await db[DB_C_TANKS].create_index([ ('name', pymongo.TEXT)])	
+		await db[DB_C_ERROR_LOG].create_index([('account_id', pymongo.ASCENDING), ('time', pymongo.DESCENDING), ('type', pymongo.ASCENDING) ])	
+		return True
+	except Exception as err:
+		bu.error('Unexpected Exception', err)
+	return False
+
+
+async def get_active_players(db : motor.motor_asyncio.AsyncIOMotorDatabase, 
+							 mode: str, args : argparse.Namespace) -> list:
+	"""Get active player list from the sources (DB, BlitzStars)"""
+	try:
+		sample 			= args.sample
+		player_src 		= args.player_src
+		run_error_log 	= args.run_error_log
+
+		if run_error_log:
+			bu.debug('Getting players from the Error Log: ' + mode)
+			players = await get_players_errorlog(db, mode)
+		elif player_src == 'blitzstars':
+			bu.debug('Getting players from BlitzStars: ' + mode)
+			players = await get_active_players_BS(args)
+		elif player_src == 'db':
 			bu.debug('Getting players from DB: ' + mode)
-			active_players[mode] = await get_active_players_DB(db, mode, args)			
-		if (len(get_stat_modes_BS(args.mode)) > 0):
-			tmp_players = await get_active_players_BS(args)
-			if args.sample > 0:
-				tmp_players = random.sample(tmp_players, args.sample)
-			for mode in get_stat_modes_BS(args.mode):
-				bu.debug('Getting players from BS: ' + mode)
-				active_players[mode] = tmp_players
-		
-		for mode in active_players.keys():
-			random.shuffle(active_players[mode])
-	
-	return active_players
+			if mode in get_stat_modes_BS():
+				bu.error('Cannot user DB as the player source for mode=' + mode)
+				return None
+			players = await get_active_players_DB(db, mode, args)			
+
+		if sample > 0:
+			players = random.sample(players, sample)
+		random.shuffle(players)  # randomize
+		return players
+	except Exception as err:
+		bu.error('Unexpected Exception', err)
+	return None
 
 
 def print_date(msg : str = '', start_time : datetime.datetime = None ) -> datetime.datetime:
@@ -304,25 +320,49 @@ def print_date(msg : str = '', start_time : datetime.datetime = None ) -> dateti
 		bu.error('Unexpected Exception', err)
 
 
-def get_stat_modes(mode_list: list) -> list:
+def get_modes(mode_list: list = None) -> list:
 	"""Return modes of fetching stats (i.e. NOT tankopedia)"""
-	return list(set(mode_list) & set(UPDATE_FIELD.keys() - set(['default'])))
+	try:
+		modes = set(UPDATE_FIELD.keys()) + set([MODE_TANKOPEDIA]) - set(['default'])
+		if mode_list != None:
+			modes = modes & set(mode_list)
+		return list(modes)
+	except Exception as err:
+		bu.error('Unexpected Exception', err)
+	return None
 
 
-def get_stat_modes_WG(mode_list: list) -> list:
+def get_stat_modes(mode_list: list = None) -> list:
+	"""Return modes of fetching stats (i.e. NOT tankopedia)"""
+	try:
+		return list( set(get_modes(mode_list)) - set([MODE_TANKOPEDIA]) )
+	except Exception as err:
+		bu.error('Unexpected Exception', err)
+	return None
+
+
+def get_stat_modes_WG(mode_list: list = None) -> list:
 	"""Return modes of fetching stats from WG API"""
-	return list(set(mode_list) & set( [ 'tank_stats', 'player_stats', 'player_achievements'] ))
+	try:
+		return list(set(get_modes(mode_list)) & set( [ MODE_TANK_STATS, MODE_PLAYER_STATS, MODE_PLAYER_ACHIEVEMENTS] ))
+	except Exception as err:
+		bu.error('Unexpected Exception', err)
+	return None
 
 
-def get_stat_modes_BS(mode_list: list) -> list:
+def get_stat_modes_BS(mode_list: list = None) -> list:
 	"""Return modes of fetching stats from BlitzStars"""
-	return list(set(mode_list) & set( [ 'tank_stats_BS', 'player_stats_BS' ] ))
+	try:
+		return list(set(get_modes(mode_list)) & set( [ MODE_BS_TANK_STATS, MODE_BS_PLAYER_STATS ] ))
+	except Exception as err:
+		bu.error('Unexpected Exception', err)
+	return None
 
 
 def log_update_time(db : motor.motor_asyncio.AsyncIOMotorDatabase, mode : list):
 	"""Log successfully finished status update"""
-	dbc = db[DB_C_UPDATE_LOG]
 	try:
+		dbc = db[DB_C_UPDATE_LOG]
 		now = bu.NOW()
 		for m in mode:
 			dbc.insert_one( { 'mode': m, 'updated': now } )
@@ -334,7 +374,6 @@ def log_update_time(db : motor.motor_asyncio.AsyncIOMotorDatabase, mode : list):
 
 def mk_account(account_id: int, inactive: bool = False ) -> dict:
 	return { 'account_id': account_id, 'inactive': inactive }
-
 
 
 async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, mode: str, args : argparse.Namespace):
@@ -442,10 +481,8 @@ async def get_players_errorlog(db : motor.motor_asyncio.AsyncIOMotorDatabase, mo
 		res = list()
 		for account_id in account_ids:
 			res.append(mk_account(account_id, False))
-		bu.verbose_std('Re-checking ' + str(len(res)) + ' account_ids')
-		
+		bu.verbose_std('Re-checking ' + str(len(res)) + ' account_ids')		
 		return res
-
 	except Exception as err:
 		bu.error('Unexpected error', err)	
 	return None
@@ -537,7 +574,7 @@ async def update_tankopedia( db: motor.motor_asyncio.AsyncIOMotorDatabase, filen
 	return False
 
 
-async def mk_playerQ(queue : asyncio.Queue, account_ids : list):
+async def mk_accountQ(queue : asyncio.Queue, account_ids : list):
 	"""Create queue of replays to post"""
 	for account_id in account_ids:
 		try:
