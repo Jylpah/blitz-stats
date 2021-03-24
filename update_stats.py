@@ -15,7 +15,7 @@ N_WORKERS = 50
 MAX_RETRIES = 3
 CACHE_VALID = 7   # days
 MAX_UPDATE_INTERVAL = 4*30*24*60*60 # 4 months
-INACTIVE_THRESHOLD 	= 2*30*24*60*60
+INACTIVE_THRESHOLD 	= 2*30*24*60*60 # 2 months
 SLEEP = 0.1
 WG_APP_ID = 'cd770f38988839d7ab858d1cbe54bdd0'
 
@@ -290,7 +290,7 @@ def print_date(msg : str = '', start_time : datetime.datetime = None ) -> dateti
 def get_modes(mode_list: list = None) -> list:
 	"""Return modes of fetching stats (i.e. NOT tankopedia)"""
 	try:
-		modes = set(su.UPDATE_FIELD.keys()) + set([su.MODE_TANKOPEDIA]) - set(['default'])
+		modes = set(su.UPDATE_FIELD.keys()) | set([su.MODE_TANKOPEDIA]) - set(['default'])
 		if mode_list != None:
 			modes = modes & set(mode_list)
 		return list(modes)
@@ -800,6 +800,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 								rl.log('accounts marked inactive')
 								inactive = True
 					else:
+						rl.log('accounts with new stats')
 						if inactive:
 							rl.log('accounts marked active')						
 						inactive = False
@@ -815,7 +816,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 				await log_error(db, account_id, stat_type, clr_error_log, chk_invalid)
 			finally:
 				playerQ.task_done()	
-				
+
 	except asyncio.CancelledError:
 		bu.debug('Cancelled')
 	return rl
@@ -893,7 +894,6 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 		players[server] = list()
 
 	while True:
-		
 		try:
 			while not playerQ.empty():
 				player = await playerQ.get()
@@ -905,9 +905,11 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 						account_ids = players[server]
 						players[server] = list()
 						break
+				else:
+					playerQ.task_done()
 			
 			if (account_ids == None) and playerQ.empty():
-				for server in WG.URL_WG_SERVER.keys():
+				for server in players:
 					if len(players[server]) > 0:
 						account_ids = players[server]
 						players[server] = list()
