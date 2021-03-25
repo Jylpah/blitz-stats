@@ -233,18 +233,6 @@ def mk_dup_db_entry(stat_type: str, _id=str) -> dict:
     return  {'type': stat_type, 'id': _id} 
 
 
-def is_in_update(stat: dict, stat_type: str,  start: int, end: int):
-    """Check whether a stat is within an update"""
-    try:
-        if stat_type == su.MODE_TANK_STATS:
-            return (stat['last_battle_time'] > start) and (stat['last_battle_time'] <= end) 
-        elif stat_type == su.MODE_PLAYER_ACHIEVEMENTS:
-            return (stat['updated'] > start) and (stat['updated'] <= end) 
-    except Exception as err:
-        bu.error(exception=err)
-    return False
-
-
 async def get_latest_update(db: motor.motor_asyncio.AsyncIOMotorDatabase) -> dict:
     try:
         dbc = db[DB_C_UPDATES]
@@ -1369,11 +1357,11 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                     if stat_type == su.MODE_TANK_STATS:
                         res = await dbc_2_prune.delete_many({ '$and': [ { '_id': { '$in':  ids} }, 
                                                             { 'last_battle_time': { '$gt': start }} , 
-                                                            { 'last_battle_time': { '$lte': end }}  ] })
+                                                            { 'last_battle_time': { '$lte': end }} ] })
                     elif stat_type == su.MODE_PLAYER_ACHIEVEMENTS:
                         res = await dbc_2_prune.delete_many({ '$and': [ { '_id': { '$in':  ids} }, 
                                                             { 'updated': { '$gt': start }} , 
-                                                            { 'updated': { '$lte': end }}  ] })
+                                                            { 'updated': { '$lte': end }} ] })
                     else:
                         bu.error('Unsupported stat_type')
                         sys.exit(1)
