@@ -960,7 +960,7 @@ async def check_dup_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabas
                     newer_stat = await dbc.find_one({ '$and': [ {'tank_id': tank_id}, 
                                                                 {'account_id': account_id},
                                                                 {'last_battle_time': { '$gt': last_battle_time }}, 
-                                                                { 'last_battle_time': { '$lte': end }}
+                                                                {'last_battle_time': { '$lte': end }}
                                                                 ] })
                     if newer_stat == None:
                         rl.log('Invalid')
@@ -1036,7 +1036,7 @@ async def check_dup_player_achievements_worker(db: motor.motor_asyncio.AsyncIOMo
                 
                     newer_stat = await dbc.find_one({ '$and': [ {'account_id': account_id},
                                                                 {'updated': { '$gt': updated }}, 
-                                                                { 'updated': { '$lte': end }}
+                                                                {'updated': { '$lte': end }}
                                                                 ] })
                     if newer_stat == None:
                         rl.log('Invalid')
