@@ -734,7 +734,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 	global stats_added
 	
 	dbc = db[su.DB_C_TANK_STATS]
-	stat_type = 'tank_stats'
+	stat_type = su.MODE_TANK_STATS
 
 	chk_invalid		= args.chk_invalid
 	clr_error_log 	= args.run_error_log
@@ -742,8 +742,6 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 	mark_inactive = True
 	if 'sample' in args:
 		mark_inactive = False
-	now = bu.NOW()
-	
 	rl = RecordLogger('Tank stats')
 
 	try:
@@ -762,16 +760,17 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 				stats = await wg.get_player_tank_stats(account_id, cache=False)
 				if stats == None:				
 					raise bu.StatsNotFound('WG API return NULL stats for ' + str(account_id))
+				now = bu.NOW()
 				tank_stats = []
 				latest_battle = 0
 				for tank_stat in stats:
 					tank_id 			= tank_stat['tank_id']
-					last_battle_time 	= wg.chk_last_battle_time(tank_stat['last_battle_time'], bu.NOW())				
+					last_battle_time 	= wg.chk_last_battle_time(tank_stat['last_battle_time'], now)				
 					tank_stat['_id']  	= mk_id(account_id, tank_id, last_battle_time)
 					tank_stat[su.FIELD_UPDATED] = now  						## Needed for stats archiving
 					tank_stats.append(tank_stat)
 
-					if (last_battle_time > latest_battle) and (last_battle_time < now): ## Filter out broken stats
+					if (last_battle_time > latest_battle): ## Filter out broken stats
 						latest_battle = last_battle_time 
 				try: 
 					res = await dbc.insert_many(tank_stats, ordered=False)
