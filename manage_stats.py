@@ -690,7 +690,7 @@ async def check_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                       updates: list, args: argparse.Namespace = None) -> RecordLogger:
     """Parallel check for the analyzed player achivements duplicates"""
     try:
-        rl      = RecordLogger('Check')        
+        rl      = RecordLogger('Check duplicates')        
         archive = args.opt_archive
         sample  = args.sample
         if sample == None:
@@ -1000,7 +1000,7 @@ async def check_dup_player_achievements_worker(db: motor.motor_asyncio.AsyncIOMo
         else:
             dbc = db[DB_C[stat_type]]
         
-        if update != None:
+        if update_record != None:
             update  = update_record['update']
             start   = update_record['start']
             end     = update_record['end']            
@@ -1015,9 +1015,10 @@ async def check_dup_player_achievements_worker(db: motor.motor_asyncio.AsyncIOMo
 
         while True:
             dups = await dupsQ.get()
-
+            bu.debug('Duplicate candidate read from the queue', id=ID)
             for _id in dups['ids']:
                 try:
+                    bu.debug('Checking _id=' + _id, id=ID)
                     bu.print_progress()
                     dup_stat  = await dbc.find_one({'_id': _id})
                     if dup_stat == None:
@@ -1039,7 +1040,7 @@ async def check_dup_player_achievements_worker(db: motor.motor_asyncio.AsyncIOMo
                                                                 ] })
                     if newer_stat == None:
                         rl.log('Invalid')
-                        bu.verbose(str_dups_player_achievements(update, account_id, updated, status='INVALID DUPLICATE: _id=' + _id))                    
+                        bu.error(str_dups_player_achievements(update, account_id, updated, status='INVALID DUPLICATE: _id=' + _id))                    
                     else:
                         rl.log('OK')
                         if bu.is_verbose():
@@ -1056,7 +1057,7 @@ async def check_dup_player_achievements_worker(db: motor.motor_asyncio.AsyncIOMo
     except asyncio.CancelledError as err:
         bu.debug('Cancelling', id=ID)
     except Exception as err:
-        bu.error('Mode=' + stat_type + ' _id=' + _id, err)
+        bu.error('Mode=' + stat_type, err)
 
     total = rl.sum(['OK', 'Invalid', 'Skipped'])
     rl.log('Total', total)
@@ -1474,7 +1475,12 @@ async def clean_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase):
         rl.print()
         return rl
     
-
+## REVISE ALGO: 
+# 1) find only stats with (FIELD_UPDATE)
+# 2) make a account_tankQ (not range). use set()
+# 3) Find older stats and put to the pruce Q
+# 4) Prune
+# 5) Unset FIELD_UPDATE
 async def find_dup_tank_stats_worker(  db: motor.motor_asyncio.AsyncIOMotorDatabase, 
                                         account_tankQ: asyncio.Queue, dupsQ: asyncio.Queue, 
                                         update_record: dict = None, ID: int = 0, archive = False) -> RecordLogger:
