@@ -7,6 +7,7 @@ import aioconsole, re, logging, time, xmltodict, collections, pymongo, motor.mot
 import ssl, configparser, random
 from datetime import date
 import blitzutils as bu
+import blitzstatsutils as su
 from blitzutils import BlitzStars, RecordLogger, WG
 
 N_WORKERS = 4
@@ -29,7 +30,7 @@ DB_C_TANK_STR			= 'WG_TankStrs'
 DB_C_ERROR_LOG			= 'ErrorLog'
 DB_C_UPDATE_LOG			= 'UpdateLog'
 
-FIELD_UPDATED = '_updated'
+FIELD_NEW_STATS = '_updated'
 
 MODE_TANK_STATS         = 'tank_stats'
 MODE_PLAYER_STATS       = 'player_stats'
@@ -165,7 +166,7 @@ async def main(argv):
             # do the actual pruning and DELETE DATA
             bu.verbose_std('Starting to PRUNE in 3 seconds. Press CTRL + C to CANCEL')
             bu.wait(3)
-            await prune_stats(db, args)
+            await prune_stats(db, updates, args)
         
         elif args.snapshot:
             bu.verbose_std('Starting to SNAPSHOT ' + ', '.join(args.mode) + ' in 3 seconds. Press CTRL + C to CANCEL')
@@ -252,7 +253,7 @@ async  def mk_update_list(db : motor.motor_asyncio.AsyncIOMotorDatabase, updates
     if (len(updates2process) == 0):
         bu.verbose_std('Processing the latest update')
         return [ await get_latest_update(db) ]
-    elif (len(updates2process) == 1) and (updates2process[0] == 'all'):
+    elif (len(updates2process) == 1) and (updates2process[0] == su.UPDATE_ALL):
         bu.verbose_std('Processing ALL data')
         return [ None ]
     bu.debug(str(updates2process))
@@ -422,7 +423,7 @@ async def reset_duplicates(db: motor.motor_asyncio.AsyncIOMotorDatabase,
 
 
 async def analyze_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
-                             updates: list = None, args: argparse.Namespace = None)  -> RecordLogger:
+                             updates: list = list(), args: argparse.Namespace = None)  -> RecordLogger:
     """--analyze: top-level func for analyzing stats for duplicates. DOES NOT PRUNE"""
     try:        
         archive = args.opt_archive
@@ -434,7 +435,7 @@ async def analyze_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
         for u in updates: 
             try:
                 if u == None:
-                    update_str = 'ALL'
+                    update_str = su.UPDATE_ALL
                     bu.verbose_std('Analyzing ' + get_mode_str(stat_type, archive) + ' for duplicates. (ALL DATA)')
                 else:
                     update_str = u['update']
@@ -1207,7 +1208,7 @@ async def count_dups2prune(db: motor.motor_asyncio.AsyncIOMotorDatabase, stat_ty
     return None
 
 
-async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argparse.Namespace):
+async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, updates: list = list(), args : argparse.Namespace = None, stat_type: str = None, pruneQ: asyncio.Queue = None):
     """Parellen DB pruning, DELETES DATA. Does NOT verify whether there are newer stats"""
     #global STATS_PRUNED
     try:
@@ -1218,7 +1219,25 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argpa
         ## TWO MODES: from DB, real-time? 
         ## MAKE SURE ARCHIVE IS NEVER EVER PRUNED WITHOUT UPDATE LIMIT
 
-        for stat_type in args.mode:
+        bu.error('NOT FINALIZED YET')
+        sys.exit(1)
+
+        if stat_type == None:
+            modes = args.mode
+        else:
+            modes = [ stat_type ]
+
+        # for u in updates: 
+        #     try:
+        #         if u == None:
+        #             update_str = 'ALL'
+        #             bu.verbose_std('Analyzing ' + get_mode_str(stat_type, archive) + ' for duplicates. (ALL DATA)')
+        #         else:
+        #             update_str = u['update']
+        #             bu.verbose_std('Analyzing ' + get_mode_str(stat_type, archive) + ' for duplicates. Update ' + update_str)
+                    
+
+        for stat_type in modes:
             N_stats2prune = await count_dups2prune(db, stat_type, archive)
             bu.debug('Pruning ' + str(N_stats2prune) + ' ' + get_mode_str(stat_type, archive))            
             bu.set_progress_bar(get_mode_str(stat_type, archive) + ' pruned: ', N_stats2prune, step = 1000, slow=True)
@@ -1413,10 +1432,10 @@ async def archive_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args:
         archive_collection  = DB_C_ARCHIVE[MODE_TANK_STATS]
         
         rl = RecordLogger('Archive Tank stats')
-        N_updated_stats = await dbc.count_documents({ FIELD_UPDATED : True })
+        N_updated_stats = await dbc.count_documents({ FIELD_NEW_STATS : { '$exists': True } })
         bu.set_progress_bar('Archiving tank stats', N_updated_stats, step = 1000, slow=True )  ## After MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
-        pipeline = [ {'$match': { FIELD_UPDATED : { '$exists': True } } },
-                    { '$unset': FIELD_UPDATED },                                  
+        pipeline = [ {'$match': { FIELD_NEW_STATS : { '$exists': True } } },
+                    { '$unset': FIELD_NEW_STATS },                                  
                     { '$merge': { 'into': archive_collection, 'on': '_id', 'whenMatched': 'keepExisting' }} ]
         cursor = dbc.aggregate(pipeline, allowDiskUse=True)
         s = 0
@@ -1441,7 +1460,7 @@ async def clean_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase):
     try: 
         dbc      = db[DB_C[MODE_TANK_STATS]]
         rl       = RecordLogger('Clean tank stats')
-        q_dirty  = {FIELD_UPDATED: { '$exists': True}}
+        q_dirty  = {FIELD_NEW_STATS: { '$exists': True}}
         n_dirty  = await dbc.count_documents(q_dirty)
         
         bu.set_progress_bar('Finding stats to clean', n_dirty, slow=True)

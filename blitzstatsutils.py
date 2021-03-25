@@ -16,6 +16,14 @@ logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
 FILE_CONFIG = 'blitzstats.ini'
 
+MODE_TANK_STATS         = 'tank_stats'
+MODE_PLAYER_STATS       = 'player_stats'
+MODE_PLAYER_ACHIEVEMENTS= 'player_achievements'
+MODE_TANKOPEDIA			= 'tankopedia'
+MODE_BS_PLAYER_STATS 	= 'player_stats_BS'
+MODE_BS_TANK_STATS		= 'tank_stats_BS'
+
+MODE_ARCHIVE            = '_archive'
 DB_STR_ARCHIVE          = '_Archive'
 DB_C_ACCOUNTS   		= 'WG_Accounts'
 DB_C_UPDATES            = 'WG_Releases'
@@ -30,16 +38,14 @@ DB_C_TANK_STR			= 'WG_TankStrs'
 DB_C_ERROR_LOG			= 'ErrorLog'
 DB_C_UPDATE_LOG			= 'UpdateLog'
 
-FIELD_UPDATED           = '_updated'
+DB_C = {    MODE_TANK_STATS             : DB_C_TANK_STATS, 
+            MODE_PLAYER_STATS           : DB_C_PLAYER_STATS,
+            MODE_PLAYER_ACHIEVEMENTS    : DB_C_PLAYER_ACHIVEMENTS 
+        }
 
-MODE_TANK_STATS         = 'tank_stats'
-MODE_PLAYER_STATS       = 'player_stats'
-MODE_PLAYER_ACHIEVEMENTS= 'player_achievements'
-MODE_TANKOPEDIA			= 'tankopedia'
-MODE_BS_PLAYER_STATS 	= 'player_stats_BS'
-MODE_BS_TANK_STATS		= 'tank_stats_BS'
-
-MODE_ARCHIVE            = '_archive'
+DB_C_ARCHIVE = dict()
+for mode in DB_C:
+    DB_C_ARCHIVE[mode] = DB_C[mode] + DB_STR_ARCHIVE
 
 STR_MODES = {    
     MODE_TANK_STATS             : 'Tank Stats', 
@@ -54,15 +60,6 @@ for stat_type in modes:
     STR_MODES[stat_type + MODE_ARCHIVE] = STR_MODES[stat_type] + ' (Archive)'
 
 
-DB_C = {    MODE_TANK_STATS             : DB_C_TANK_STATS, 
-            MODE_PLAYER_STATS           : DB_C_PLAYER_STATS,
-            MODE_PLAYER_ACHIEVEMENTS    : DB_C_PLAYER_ACHIVEMENTS 
-        }
-
-DB_C_ARCHIVE = dict()
-for mode in DB_C:
-    DB_C_ARCHIVE[mode] = DB_C[mode] + DB_STR_ARCHIVE
-
 UPDATE_FIELD = { MODE_TANK_STATS			: 'updated_WGtankstats',
 				 MODE_PLAYER_STATS			: 'updated_WGplayerstats',
 				 MODE_PLAYER_ACHIEVEMENTS	: 'updated_WGplayerachievements',				 
@@ -70,6 +67,11 @@ UPDATE_FIELD = { MODE_TANK_STATS			: 'updated_WGtankstats',
 				 MODE_BS_TANK_STATS			: 'updated_BStankstats',
                  'default'					: 'updated'
 				}
+
+FIELD_NEW_STATS   = '_updated'
+
+
+UPDATE_ALL = 'ALL'
 
 CACHE_VALID     = 7*24*3600   # 7 days
 DEFAULT_SAMPLE  = 1000

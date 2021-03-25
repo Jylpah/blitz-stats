@@ -34,7 +34,7 @@ FILE_ACTIVE_PLAYERS='activeinlast30days.json'
 # su.DB_C_ERROR_LOG			= 'ErrorLog'
 # su.DB_C_UPDATE_LOG			= 'UpdateLog'
 
-# FIELD_UPDATED = '_updated'
+# FIELD_NEW_STATS = '_updated'
 
 # ## Matches --mode param
 # UPDATE_FIELD = { su.MODE_TANK_STATS				: 'updated_WGtankstats',
@@ -767,7 +767,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 					tank_id 			= tank_stat['tank_id']
 					last_battle_time 	= wg.chk_last_battle_time(tank_stat['last_battle_time'], now)				
 					tank_stat['_id']  	= mk_id(account_id, tank_id, last_battle_time)
-					tank_stat[su.FIELD_UPDATED] = now  						## Needed for stats archiving
+					tank_stat[su.FIELD_NEW_STATS] = now  						## Needed for stats archiving
 					tank_stats.append(tank_stat)
 
 					if (last_battle_time > latest_battle): ## Filter out broken stats
@@ -940,7 +940,7 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 					stat['account_id'] 	= account_id
 					stat['updated'] 	= NOW
 					## Needed for stats archiving. Not yet implemented for player_achievements
-					stat[su.FIELD_UPDATED] = True
+					stat[su.FIELD_NEW_STATS] = True
 					stat['_id'] 		= mk_id(account_id, 0, NOW)
 					
 					# RECOMMENDATION TO USE SINGLE INSERTS OVER MANY
