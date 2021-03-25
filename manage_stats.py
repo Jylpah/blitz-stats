@@ -233,6 +233,18 @@ def mk_dup_db_entry(stat_type: str, _id=str) -> dict:
     return  {'type': stat_type, 'id': _id} 
 
 
+def is_in_update(stat: dict, stat_type: str,  start: int, end: int):
+    """Check whether a stat is within an update"""
+    try:
+        if stat_type == su.MODE_TANK_STATS:
+            return (stat['last_battle_time'] > start) and (stat['last_battle_time'] <= end) 
+        elif stat_type == su.MODE_PLAYER_ACHIEVEMENTS:
+            return (stat['updated'] > start) and (stat['updated'] <= end) 
+    except Exception as err:
+        bu.error(exception=err)
+    return False
+
+
 async def get_latest_update(db: motor.motor_asyncio.AsyncIOMotorDatabase) -> dict:
     try:
         dbc = db[DB_C_UPDATES]
@@ -482,7 +494,7 @@ async def analyze_player_achievements(db: motor.motor_asyncio.AsyncIOMotorDataba
         for u in updates: 
             try:
                 if u == None:
-                    update_str = 'ALL'
+                    update_str = su.UPDATE_ALL
                     bu.verbose_std('Analyzing ' + get_mode_str(stat_type, archive) + ' for duplicates. (ALL DATA)')
                 else:
                     update_str = u['update']
@@ -820,7 +832,7 @@ def get_mode_str(stat_type: str, archive : bool = False) -> str:
 #             start   = update_record['start']
 #             end     = update_record['end']        
 #         else:
-#             update = 'ALL'
+#             update = su.UPDATE_ALL
 #             start  = 0
 #             end    = bu.NOW()
 
@@ -934,7 +946,7 @@ async def check_dup_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabas
                 bu.error('Trying to check duplicates in the whole Archieve. Must define an update.', id=ID)
                 rl.log('CRITICAL ERROR')
                 return rl
-            update = 'ALL'
+            update = su.UPDATE_ALL
             start  = 0
             end    = bu.NOW()
 
@@ -1010,7 +1022,7 @@ async def check_dup_player_achievements_worker(db: motor.motor_asyncio.AsyncIOMo
                 bu.error('Trying to check duplicates in the whole Archieve. Must define an update.', id=ID)
                 rl.log('CRITICAL ERROR')
                 return rl
-            update = 'ALL'
+            update = su.UPDATE_ALL
             start  = 0
             end    = bu.NOW()           
 
@@ -1227,37 +1239,37 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, updates: lis
         else:
             modes = [ stat_type ]
 
-        # for u in updates: 
-        #     try:
-        #         if u == None:
-        #             update_str = 'ALL'
-        #             bu.verbose_std('Analyzing ' + get_mode_str(stat_type, archive) + ' for duplicates. (ALL DATA)')
-        #         else:
-        #             update_str = u['update']
-        #             bu.verbose_std('Analyzing ' + get_mode_str(stat_type, archive) + ' for duplicates. Update ' + update_str)
-                    
+        for u in updates: 
+            try:
+                if u == None:                    
+                    update_str = '(ALL DATA)'
+                else:
+                    update_str = u['update']
+                bu.verbose_std('Analyzing ' + get_mode_str(stat_type, archive) + ' for duplicates. Update ' + update_str)
+   
+                for stat_type in modes:
+                    N_stats2prune = await count_dups2prune(db, stat_type, archive)
+                    bu.debug('Pruning ' + str(N_stats2prune) + ' ' + get_mode_str(stat_type, archive))            
+                    bu.set_progress_bar(get_mode_str(stat_type, archive) + ' pruned: ', N_stats2prune, step = 1000, slow=True)
+                    pruneQ = asyncio.Queue(QUEUE_LEN)
+                    fetcher = asyncio.create_task(get_dups_worker(db, stat_type, pruneQ, sample, archive=archive))
+                    workers = list()
+                    for workerID in range(0, N_WORKERS):
+                        workers.append(asyncio.create_task(prune_stats_worker(db, stat_type, pruneQ, workerID, archive=archive)))                    
 
-        for stat_type in modes:
-            N_stats2prune = await count_dups2prune(db, stat_type, archive)
-            bu.debug('Pruning ' + str(N_stats2prune) + ' ' + get_mode_str(stat_type, archive))            
-            bu.set_progress_bar(get_mode_str(stat_type, archive) + ' pruned: ', N_stats2prune, step = 1000, slow=True)
-            pruneQ = asyncio.Queue(QUEUE_LEN)
-            fetcher = asyncio.create_task(get_dups_worker(db, stat_type, pruneQ, sample, archive=archive))
-            workers = list()
-            for workerID in range(0, N_WORKERS):
-                workers.append(asyncio.create_task(prune_stats_worker(db, stat_type, pruneQ, workerID, archive=archive)))                    
-
-            await asyncio.wait([fetcher])
-            for rl_task in await asyncio.gather(*[fetcher], return_exceptions=True):
-                rl.merge(rl_task)
-        
-            await pruneQ.join()
-            if len(workers) > 0:
-                for worker in workers:
-                    worker.cancel()
-                for res_rl in await asyncio.gather(*workers):
-                    rl.merge(res_rl)
-            bu.finish_progress_bar()
+                    await asyncio.wait([fetcher])
+                    for rl_task in await asyncio.gather(*[fetcher], return_exceptions=True):
+                        rl.merge(rl_task)
+                
+                    await pruneQ.join()
+                    if len(workers) > 0:
+                        for worker in workers:
+                            worker.cancel()
+                        for res_rl in await asyncio.gather(*workers):
+                            rl.merge(res_rl)
+                    bu.finish_progress_bar()
+            except Exception as err:
+                bu.error(exception=err)
 
     except Exception as err:
         bu.error(exception=err)
@@ -1309,7 +1321,8 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, updates: lis
 
 async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
                              stat_type : str, pruneQ: asyncio.Queue, 
-                             ID: int = 0, archive: bool = False, check=False) -> dict:
+                             update_record: dict = None, ID: int = 0, 
+                             archive: bool = False, check=False) -> dict:
     """Paraller Worker for pruning stats"""
     
     try:
@@ -1323,6 +1336,19 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase,
         else:
             dbc_2_prune = db[DB_C[stat_type]]
             dbc_check   = db[DB_C_ARCHIVE[stat_type]]
+        
+        if update_record != None:
+            update  = update_record['update']
+            start   = update_record['start']
+            end     = update_record['end']            
+        else:
+            if archive:
+                bu.error('Trying to check duplicates in the whole Archieve. Must define an update.', id=ID)
+                rl.log('CRITICAL ERROR')
+                return rl
+            update = None
+            start  = 0
+            end    = bu.NOW()
 
         while True:
             prune_task  = await pruneQ.get()
@@ -1339,7 +1365,20 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                         pruneQ.task_done()
                         continue
 
-                res = await dbc_2_prune.delete_many( { '_id': { '$in': ids } } )
+                if update != None:
+                    if stat_type == su.MODE_TANK_STATS:
+                        res = await dbc_2_prune.delete_many({ '$and': [ { '_id': { '$in':  ids} }, 
+                                                            { 'last_battle_time': { '$gt': start }} , 
+                                                            { 'last_battle_time': { '$lte': end }}  ] })
+                    elif stat_type == su.MODE_PLAYER_ACHIEVEMENTS:
+                        res = await dbc_2_prune.delete_many({ '$and': [ { '_id': { '$in':  ids} }, 
+                                                            { 'updated': { '$gt': start }} , 
+                                                            { 'updated': { '$lte': end }}  ] })
+                    else:
+                        bu.error('Unsupported stat_type')
+                        sys.exit(1)
+                else:
+                    res = await dbc_2_prune.delete_many( { '_id': { '$in': ids } } )
 
                 not_deleted = len(ids) - res.deleted_count
                 rl.log('Pruned', res.deleted_count)
@@ -1517,11 +1556,11 @@ async def find_dup_tank_stats_worker(  db: motor.motor_asyncio.AsyncIOMotorDatab
             start   = update_record['start']
             end     = update_record['end']        
         else:
-            update = 'ALL'
             if archive:
                 bu.error('CRITICAL !!!! TRYING TO PRUNE OLD TANK STATS FROM ARCHIVE !!!! EXITING...')
                 sys.exit(1)
-        
+            update = su.UPDATE_ALL
+
         while not account_tankQ.empty():
             try:
                 wp = await account_tankQ.get()
@@ -1578,10 +1617,10 @@ async def find_dup_player_achivements_worker(db: motor.motor_asyncio.AsyncIOMoto
             start   = update_record['start']
             end     = update_record['end']        
         else:
-            update = 'ALL'
             if archive:
                 bu.error('CRITICAL !!!! TRYING TO PRUNE OLD TANK STATS FROM ARCHIVE !!!! EXITING...')
                 sys.exit(1)
+            update = su.UPDATE_ALL
         
         while not accountQ.empty():
             try:
