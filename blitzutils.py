@@ -730,21 +730,32 @@ def sort_dict(d: dict) -> dict:
 ## -----------------------------------------------------------
 
 class SlowBar(IncrementalBar):
-    suffix = '%(index)d/%(max)d %(percent)d%% AVG %(avg_rate).1f/sec ETA %(remaining_hours).0f h %(remaining_mins).0f mins'
+    suffix = '%(index)d/%(max)d %(percent)d%%%(avg_rate)s %(remaining_hours).0f h %(remaining_mins).0f m %(remaining_secs).0f s'
     @property
     def remaining_hours(self):
         return self.eta // 3600
+
 
     @property
     def remaining_mins(self):
         return (self.eta - (self.eta // 3600)*3600) // 60
 
+
+    @property
+    def remaining_secs(self):
+        return self.eta // 60
+
+
     @property
     def avg_rate(self):
-        if self.avg > 0:
-            return  1 / self.avg
+        if self.avg > .1:
+            return  " AVG {:.1f}/sec".format(1 / self.avg)
+        elif self.avg*60 > .1:
+            return  " AVG {:.1f}/min".format(60 / self.avg)
+        elif self.avg*3600 > .1:
+            return  " AVG {:.1f}/h".format(3600 / self.avg)
         else:
-            return 0
+            return ""
  
 
 ## -----------------------------------------------------------
