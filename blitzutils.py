@@ -730,7 +730,7 @@ def sort_dict(d: dict) -> dict:
 ## -----------------------------------------------------------
 
 class SlowBar(IncrementalBar):
-    suffix = '%(index)d/%(max)d %(percent)d%%%(avg_rate)s %(remaining_hours).0f h %(remaining_mins).0f m %(remaining_secs).0f s'
+    suffix = '%(index)d/%(max)d %(percent)d%%%(avg_rate)s %(remaining_hours).0fh %(remaining_mins).0fm %(remaining_secs).0fs'
     @property
     def remaining_hours(self):
         return self.eta // 3600
@@ -750,16 +750,13 @@ class SlowBar(IncrementalBar):
     def avg_rate(self):
         if self.avg == 0:
             return " AVG N/A"
-        elif 1 / self.avg > .1:
+        elif 1 / self.avg > 1:
             return  " AVG {:.1f}/sec".format(1 / self.avg)
-        elif 1 / self.avg*60 > .1:
+        elif 1 / self.avg*60 > 1:
             return  " AVG {:.1f}/min".format(60 / self.avg)
-        elif 1 / self.avg*3600 > .1:
-            return  " AVG {:.1f}/h".format(3600 / self.avg)
         else:
-            return "AVG N/A"
- 
-
+            return  " AVG {:.1f}/h".format(3600 / self.avg)
+        
 ## -----------------------------------------------------------
 #### Class RateCounter 
 ## -----------------------------------------------------------
