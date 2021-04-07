@@ -345,9 +345,9 @@ async def mk_account_tankQ(db: motor.motor_asyncio.AsyncIOMotorDatabase,
             tank_ids = await get_tanks_DB(db, archive)
         id_max = WG.ACCOUNT_ID_MAX
         res = list()       
-        for min in range(0,id_max-account_id_step, account_id_step):
+        for min_id in range(0,id_max-account_id_step, account_id_step):
             for tank_id in tank_ids:
-                res.append( { 'tank_id': tank_id, 'account_id': {'min': min, 'max': min + account_id_step } } )
+                res.append( { 'tank_id': tank_id, 'account_id_min': min_id, 'account_id_max': min_id + account_id_step } )
         random.shuffle(res)   # randomize the results for better ETA estimate.
         for item in res: 
             await retQ.put(item)
@@ -359,6 +359,7 @@ async def mk_account_tankQ(db: motor.motor_asyncio.AsyncIOMotorDatabase,
 
 
 async def mk_account_tankQ_uniq(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
+                            update_record: dict = None,
                             tank_ids: list = None, archive: bool = False) -> asyncio.Queue:
     """Create a queue of ACCOUNT_ID + TANK_ID queue for database queries"""    
     retQ = asyncio.Queue()
@@ -366,23 +367,30 @@ async def mk_account_tankQ_uniq(db: motor.motor_asyncio.AsyncIOMotorDatabase,
         if archive:
             dbc      = db[DB_C_ARCHIVE[MODE_TANK_STATS]]
         else:
-            dbc      = db[DB_C[MODE_TANK_STATS]]
+            bu.error('Does not work for the archive DB')
+            return retQ
+        update_match = list()
+        if update_record != None:
+            update_match.append({ 'last_battle_time': { '$gt': update_record['start']}})
+            update_match.append({ 'last_battle_time': { '$lte': update_record['end']}})
+
         if tank_ids == None:
-            tank_ids = await get_tanks_DB(db, archive)
+            tank_ids = await get_tanks_DB(db)
         res = set()
 
         bu.set_progress_bar('Finding updated account_id/tank_id pairs', max_value=len(tank_ids), step=1, slow=True)    
         for tank_id in tank_ids:
         #for tank_id in [ 1, 17 ]:
-            cursor = dbc.find( { '$and': [ { 'tank_id': tank_id} , {FIELD_NEW_STATS: { '$exists': True }} ]}, 
-                               {'account_id': True, 'tank_id': True, '_id': False})
+            match = [ { 'tank_id': tank_id} ]  + update_match + [ { FIELD_NEW_STATS: { '$exists': True }} ]
+            cursor = dbc.find( { '$and': match }, 
+                               { 'account_id': True, 'tank_id': True, '_id': False})
             async for stat in cursor:
                 res.add( json.dumps(stat))
             bu.print_progress()
         res = list(res)
         random.shuffle(res)   # randomize the results for better ETA estimate.
         for item in res: 
-            await retQ.put(item)
+            await retQ.put(json.loads(item))
     except Exception as err:
         bu.error('Failed to create account_id + tank_id queue', exception=err)
         return None
@@ -473,13 +481,13 @@ async def analyze_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                     bu.verbose_std('Analyzing ' + get_mode_str(stat_type, archive) + ' for duplicates. Update ' + update_str)
                     
                 # account_tankQ = await mk_account_tankQ(db)
-                account_tankQ = await mk_account_tankQ_uniq(db)                
+                account_tankQ = await mk_account_tankQ_uniq(db, u)                
 
                 bu.set_progress_bar('Stats processed:', account_tankQ.qsize(), step=200, slow=True)   
                 
                 workers = []
                 for workerID in range(0, N_WORKERS):
-                    workers.append(asyncio.create_task(find_dup_tank_stats_worker_new(db, account_tankQ, dupsQ, u, workerID, archive)))
+                    workers.append(asyncio.create_task(find_dup_tank_stats_worker(db, account_tankQ, dupsQ, u, workerID, archive)))
                 
                 await account_tankQ.join()
                 bu.finish_progress_bar()
@@ -1584,8 +1592,7 @@ async def find_dup_tank_stats_worker_new(  db: motor.motor_asyncio.AsyncIOMotorD
 
         while not account_tankQ.empty():
             try:
-                json_str = await account_tankQ.get()
-                wp = json.loads(json_str)
+                wp = await account_tankQ.get()
                 account_id = wp['account_id']                
                 tank_id    = wp['tank_id']
 
@@ -1612,6 +1619,7 @@ async def find_dup_tank_stats_worker_new(  db: motor.motor_asyncio.AsyncIOMotorD
 
             except Exception as err:
                 bu.error('Update=' + update, exception=err)
+                rl.log('Error')
             account_tankQ.task_done()
 
     except Exception as err:
@@ -1644,14 +1652,19 @@ async def find_dup_tank_stats_worker(  db: motor.motor_asyncio.AsyncIOMotorDatab
         while not account_tankQ.empty():
             try:
                 wp = await account_tankQ.get()
-                account_id_min = wp['account_id']['min']
-                account_id_max = wp['account_id']['max']
-                tank_id        = wp['tank_id']
-
-                bu.debug('tank_id=' + str(tank_id) + ' account_id=' + str(account_id_min) + '-' + str(account_id_max), id=ID)
-                match_stage = [ { 'tank_id': tank_id }, 
-                                {'account_id': { '$gte': account_id_min}}, 
-                                {'account_id': { '$lt' : account_id_max}} ]
+                tank_id  = wp['tank_id']
+                match_stage = [ { 'tank_id': tank_id } ]
+                if 'account_id' in wp:
+                    account_id = wp['account_id']
+                    match_stage.append({'account_id': account_id })
+                    bu.debug('tank_id=' + str(tank_id) + ' account_id=' + str(account_id), id=ID)
+                else:
+                    account_id_min = wp['account_id_min']
+                    account_id_max = wp['account_id_max']
+                    match_stage.append({'account_id': { '$gte': account_id_min}})
+                    match_stage.append({'account_id': { '$lt': account_id_max}})
+                    bu.debug('tank_id=' + str(tank_id) + ' account_id=' + str(account_id_min) + '-' + str(account_id_max), id=ID)
+                
                 if update_record != None:
                     match_stage.append( {'last_battle_time': {'$gt': start}} )
                     match_stage.append( {'last_battle_time': {'$lte': end}} )
@@ -1837,8 +1850,8 @@ async def snapshot_tank_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabas
         while not account_tankQ.empty():
             try:
                 wp = await account_tankQ.get()
-                account_id_min = wp['account_id']['min']
-                account_id_max = wp['account_id']['max']
+                account_id_min = wp['account_id_min']
+                account_id_max = wp['account_id_max']
                 tank_id        = wp['tank_id']
 
                 if bu.is_verbose(True):                                        
@@ -1848,7 +1861,10 @@ async def snapshot_tank_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabas
                     info_str = 'Processing tank (' + tank_name + ' (' +  str(tank_id) + '):'
                     bu.log(info_str)
                 
-                pipeline = [ {'$match': { '$and': [ {'tank_id': tank_id }, {'account_id': {'$gte': account_id_min}}, {'account_id': {'$lt': account_id_max}} ] }},
+                pipeline = [ {'$match': { '$and': [ {'tank_id': tank_id }, 
+                                                    {'account_id': {'$gte': account_id_min}}, 
+                                                    {'account_id': {'$lt': account_id_max}} 
+                                                ] }},
                              {'$sort': {'last_battle_time': pymongo.DESCENDING}},
                              {'$group': { '_id': '$account_id',
                                           'doc': {'$first': '$$ROOT'}}},
@@ -1865,6 +1881,7 @@ async def snapshot_tank_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabas
                 bu.print_progress()
             except Exception as err:
                 bu.error(exception=err, id=ID)
+                rl.log('Error')
             account_tankQ.task_done()
 
     except Exception as err:
