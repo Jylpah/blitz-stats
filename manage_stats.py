@@ -357,7 +357,12 @@ async def mk_account_tankQ(db: motor.motor_asyncio.AsyncIOMotorDatabase,
     bu.debug('account_id * tank_id queue created')    
     return retQ
 
-
+## REVISE ALGO: 
+# 1) find only stats with (FIELD_UPDATE)
+# 2) make a account_tankQ (not range). use set()
+# 3) Find older stats and put to the pruce Q
+# 4) Prune
+# 5) Unset FIELD_UPDATE
 async def mk_account_tankQ_uniq(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
                             update_record: dict = None,
                             tank_ids: list = None, archive: bool = False) -> asyncio.Queue:
@@ -499,7 +504,8 @@ async def analyze_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                     i = 0
                     for rl_worker in await asyncio.gather(*workers, return_exceptions=True):
                         bu.debug('Merging find_dup_tank_stats_worker\'s RecordLogger', id=i)
-                        rl.merge(rl_worker)                
+                        rl.merge(rl_worker)
+                        i = +1                
         
             except Exception as err:
                 bu.error('Update: ' + update_str, exception=err)    
@@ -1565,69 +1571,64 @@ async def clean_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase):
         rl.print()
         return rl
     
-## REVISE ALGO: 
-# 1) find only stats with (FIELD_UPDATE)
-# 2) make a account_tankQ (not range). use set()
-# 3) Find older stats and put to the pruce Q
-# 4) Prune
-# 5) Unset FIELD_UPDATE
-async def find_dup_tank_stats_worker_new(  db: motor.motor_asyncio.AsyncIOMotorDatabase, 
-                                        account_tankQ: asyncio.Queue, dupsQ: asyncio.Queue, 
-                                        update_record: dict = None, ID: int = 0, archive = False) -> RecordLogger:
-    """Worker to find duplicates to prune"""
-    try:
-        rl       = RecordLogger('Find tank stat duplicates')
-        update = 'N/A'
-        if archive:
-            dbc      = db[DB_C_ARCHIVE[MODE_TANK_STATS]]
-        else:
-            dbc      = db[DB_C[MODE_TANK_STATS]]
+
+# async def find_dup_tank_stats_worker_new(  db: motor.motor_asyncio.AsyncIOMotorDatabase, 
+#                                         account_tankQ: asyncio.Queue, dupsQ: asyncio.Queue, 
+#                                         update_record: dict = None, ID: int = 0, archive = False) -> RecordLogger:
+#     """Worker to find duplicates to prune"""
+#     try:
+#         rl       = RecordLogger('Find tank stat duplicates')
+#         update = 'N/A'
+#         if archive:
+#             dbc      = db[DB_C_ARCHIVE[MODE_TANK_STATS]]
+#         else:
+#             dbc      = db[DB_C[MODE_TANK_STATS]]
         
-        if update_record != None:
-            update  = update_record['update']
-            start   = update_record['start']
-            end     = update_record['end']        
-        else:
-            if archive:
-                bu.error('CRITICAL !!!! TRYING TO PRUNE OLD TANK STATS FROM ARCHIVE !!!! EXITING...')
-                sys.exit(1)
-            update = su.UPDATE_ALL
+#         if update_record != None:
+#             update  = update_record['update']
+#             start   = update_record['start']
+#             end     = update_record['end']        
+#         else:
+#             if archive:
+#                 bu.error('CRITICAL !!!! TRYING TO PRUNE OLD TANK STATS FROM ARCHIVE !!!! EXITING...')
+#                 sys.exit(1)
+#             update = su.UPDATE_ALL
 
-        while not account_tankQ.empty():
-            try:
-                wp = await account_tankQ.get()
-                account_id = wp['account_id']                
-                tank_id    = wp['tank_id']
+#         while not account_tankQ.empty():
+#             try:
+#                 wp = await account_tankQ.get()
+#                 account_id = wp['account_id']                
+#                 tank_id    = wp['tank_id']
 
-                bu.debug('tank_id=' + str(tank_id) + ' account_id=' + str(account_id), id=ID)
-                match_stage = [ { 'tank_id': tank_id }, 
-                                { 'account_id': account_id } ]
-                if update_record != None:
-                    match_stage.append( {'last_battle_time': {'$gt': start}} )
-                    match_stage.append( {'last_battle_time': {'$lte': end}} )
+#                 bu.debug('tank_id=' + str(tank_id) + ' account_id=' + str(account_id), id=ID)
+#                 match_stage = [ { 'tank_id': tank_id }, 
+#                                 { 'account_id': account_id } ]
+#                 if update_record != None:
+#                     match_stage.append( {'last_battle_time': {'$gt': start}} )
+#                     match_stage.append( {'last_battle_time': {'$lte': end}} )
 
-                pipeline = [{ '$match': { '$and': match_stage } }, 
-                            { '$sort': { 'last_battle_time': pymongo.DESCENDING } }, 
-                            { '$group': { '_id': '$account_id', 
-                                            'all_ids': {'$push': '$_id' },
-                                            'len': { "$sum": 1 } } },                           
-                            { '$match': { 'len': { '$gt': 1 } } }, 
-                            { '$project': { 'ids': {  '$slice': [  '$all_ids', 1, '$len' ] } } }
-                        ]
-                cursor = dbc.aggregate(pipeline, allowDiskUse=True)
-                async for res in cursor:
-                    await dupsQ.put(mk_dups_Q_entry(res['ids']))
-                    rl.log('Found', len(res['ids']))
-                bu.print_progress()                    
+#                 pipeline = [{ '$match': { '$and': match_stage } }, 
+#                             { '$sort': { 'last_battle_time': pymongo.DESCENDING } }, 
+#                             { '$group': { '_id': '$account_id', 
+#                                             'all_ids': {'$push': '$_id' },
+#                                             'len': { "$sum": 1 } } },                           
+#                             { '$match': { 'len': { '$gt': 1 } } }, 
+#                             { '$project': { 'ids': {  '$slice': [  '$all_ids', 1, '$len' ] } } }
+#                         ]
+#                 cursor = dbc.aggregate(pipeline, allowDiskUse=True)
+#                 async for res in cursor:
+#                     await dupsQ.put(mk_dups_Q_entry(res['ids']))
+#                     rl.log('Found', len(res['ids']))
+#                 bu.print_progress()                    
 
-            except Exception as err:
-                bu.error('Update=' + update, exception=err)
-                rl.log('Error')
-            account_tankQ.task_done()
+#             except Exception as err:
+#                 bu.error('Update=' + update, exception=err)
+#                 rl.log('Error')
+#             account_tankQ.task_done()
 
-    except Exception as err:
-        bu.error(exception=err)
-    return rl    
+#     except Exception as err:
+#         bu.error(exception=err)
+#     return rl    
 
 
 async def find_dup_tank_stats_worker(  db: motor.motor_asyncio.AsyncIOMotorDatabase, 
@@ -1657,7 +1658,7 @@ async def find_dup_tank_stats_worker(  db: motor.motor_asyncio.AsyncIOMotorDatab
                 wp = await account_tankQ.get()
                 tank_id  = wp['tank_id']
                 match_stage = [ { 'tank_id': tank_id } ]
-                
+
                 if 'account_id' in wp:
                     account_id = wp['account_id']
                     match_stage.append({'account_id': account_id })
