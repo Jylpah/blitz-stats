@@ -1015,7 +1015,7 @@ async def check_dup_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabas
                                                                 ] })
                     if newer_stat == None:
                         rl.log('Invalid')
-                        bu.verbose(str_dups_tank_stats(update, account_id, tank_id, last_battle_time, status='INVALID DUPLICATE: _id=' + _id))                    
+                        bu.verbose_std(str_dups_tank_stats(update, account_id, tank_id, last_battle_time, status='INVALID DUPLICATE: _id=' + _id))                    
                     else:
                         rl.log('OK')
                         bu.verbose(str_dups_tank_stats(update, account_id, tank_id, last_battle_time, is_dup=True))
