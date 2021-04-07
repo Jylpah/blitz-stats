@@ -365,10 +365,11 @@ async def mk_account_tankQ_uniq(db: motor.motor_asyncio.AsyncIOMotorDatabase,
     retQ = asyncio.Queue()
     try:
         if archive:
-            dbc      = db[DB_C_ARCHIVE[MODE_TANK_STATS]]
-        else:
             bu.error('Does not work for the archive DB')
-            return retQ
+            return retQ            
+        else:            
+            dbc      = db[DB_C[MODE_TANK_STATS]]
+        
         update_match = list()
         if update_record != None:
             update_match.append({ 'last_battle_time': { '$gt': update_record['start']}})
