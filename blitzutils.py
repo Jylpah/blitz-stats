@@ -748,14 +748,16 @@ class SlowBar(IncrementalBar):
 
     @property
     def avg_rate(self):
-        if self.avg > .1:
+        if self.avg == 0:
+            return " AVG N/A"
+        elif 1 / self.avg > .1:
             return  " AVG {:.1f}/sec".format(1 / self.avg)
-        elif self.avg*60 > .1:
+        elif 1 / self.avg*60 > .1:
             return  " AVG {:.1f}/min".format(60 / self.avg)
-        elif self.avg*3600 > .1:
+        elif 1 / self.avg*3600 > .1:
             return  " AVG {:.1f}/h".format(3600 / self.avg)
         else:
-            return ""
+            return "AVG N/A"
  
 
 ## -----------------------------------------------------------
