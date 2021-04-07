@@ -737,13 +737,12 @@ class SlowBar(IncrementalBar):
 
 
     @property
-    def remaining_mins(self):
-        return (self.eta - (self.eta // 3600)*3600) // 60
-
+    def remaining_mins(self):        
+        return (self.eta // 60) % 60
 
     @property
     def remaining_secs(self):
-        return self.eta // 60
+        return self.eta % 60
 
 
     @property
