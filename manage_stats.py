@@ -481,8 +481,10 @@ async def analyze_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                     update_str = u['update']
                     bu.verbose_std('Analyzing ' + get_mode_str(stat_type, archive) + ' for duplicates. Update ' + update_str)
                     
-                # account_tankQ = await mk_account_tankQ(db)
-                account_tankQ = await mk_account_tankQ_uniq(db, u)                
+                if archive:
+                    account_tankQ = await mk_account_tankQ(db)
+                else:
+                    account_tankQ = await mk_account_tankQ_uniq(db, u)                
 
                 bu.set_progress_bar('Stats processed:', account_tankQ.qsize(), step=200, slow=True)   
                 
@@ -1655,6 +1657,7 @@ async def find_dup_tank_stats_worker(  db: motor.motor_asyncio.AsyncIOMotorDatab
                 wp = await account_tankQ.get()
                 tank_id  = wp['tank_id']
                 match_stage = [ { 'tank_id': tank_id } ]
+                
                 if 'account_id' in wp:
                     account_id = wp['account_id']
                     match_stage.append({'account_id': account_id })
