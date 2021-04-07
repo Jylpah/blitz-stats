@@ -758,7 +758,7 @@ async def check_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                     else:
                         sample = N_dups
                         header = 'Checking ALL duplicates: '
-                    bu.set_progress_bar(header, sample, 100, slow=True)            
+                    bu.set_progress_bar(header, sample, 1000, slow=True)            
                     bu.verbose(header)
                             
                     workers = []
