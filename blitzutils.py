@@ -148,6 +148,52 @@ class ThrottledClientSession(aiohttp.ClientSession):
 
 
 ## -----------------------------------------------------------
+#### Class Timer()
+## -----------------------------------------------------------
+class Timer():
+    """Stopwatch for measuring time"""
+    def __init__(self, name: str= None) -> None: 
+        self.name = name
+        self.time_elapsed = 0
+        self.start_time = time.time()
+
+
+    def start(self) -> None:
+        self.start_time = time.time()
+
+
+    def stop(self) -> float:
+        try:
+            lap = time.time() - self.start_time
+            self.time_elapsed += lap
+            return lap
+        except:
+            error('End() called before start()')
+            return None
+
+
+    def elapsed(self) -> float:
+        return self.time_elapsed
+
+
+    def get_name(self) -> str:
+        return self.name
+
+
+    def time_str(self, name: bool = False) -> str:
+        res = '{:.2f}s'.format(self.time_elapsed % 60)
+        if self.time_elapsed >= 60:
+            mins = (self.time_elapsed / 60) % 60
+            res = '{:.0d}m '.format(mins) + res
+        if self.time_elapsed >= 3600:
+            hours = self.time_elapsed // 3600
+            res = '{:.0d}h '.format(hours) + res
+        if name:
+            res = self.name + ': ' + res
+        return res
+
+
+## -----------------------------------------------------------
 #### Class AsyncLogger()
 ## -----------------------------------------------------------
 class AsyncLogger():
