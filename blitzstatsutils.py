@@ -76,7 +76,7 @@ UPDATE_ALL = 'ALL'
 CACHE_VALID     = 7*24*3600   # 7 days
 DEFAULT_SAMPLE  = 1000
 QUEUE_LEN       = 10000
-DEFAULT_BATCH   = 1000
+DEFAULT_BATCH   = 500
 
 TODAY               = datetime.datetime.utcnow().date()
 DEFAULT_DAYS_DELTA  = datetime.timedelta(days=90)
