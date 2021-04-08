@@ -278,7 +278,10 @@ class RecordLogger():
 
 
     def _get_str(self, cat: str) -> str:
-        return '{:40}: {}'.format(cat, self.get_value(cat))
+        if isinstance(self.get_value(cat), int):
+            return '{:40}: {}'.format(cat, self.get_value(cat))
+        else:
+            return '{:40}: {:.2f}'.format(cat, self.get_value(cat))
     
 
     def get_value(self, category) -> int:
