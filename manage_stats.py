@@ -610,8 +610,8 @@ async def get_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
         if (sample != None) and (sample > 0):
             pipeline.append({ '$sample': { 'size': sample } })
 
-        cursor = dbc.aggregate(pipeline, allowDiskUse=True )
-        dups = await cursor.to_list(DEFAULT_BATCH)
+        cursor  = dbc.aggregate(pipeline)
+        dups    = await cursor.to_list(DEFAULT_BATCH)
         
         while dups:
             try:
@@ -1273,10 +1273,9 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, updates: lis
         sample = args.sample
 
         ## TWO MODES: from DB, real-time? 
-        ## MAKE SURE ARCHIVE IS NEVER EVER PRUNED WITHOUT UPDATE LIMIT
 
-        bu.error('NOT FINALIZED YET')
-        sys.exit(1)
+        # bu.error('NOT FINALIZED YET')
+        # sys.exit(1)
 
         if stat_type == None:
             modes = args.mode
@@ -1285,14 +1284,17 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, updates: lis
 
         for u in updates: 
             try:
-                if u == None:                    
-                    update = None
-                    bu.verbose_std('Analyzing ' + get_mode_str(stat_type, archive) + ' for duplicates. ALL updates.')
-                else:
-                    update = u['update']
-                    bu.verbose_std('Analyzing ' + get_mode_str(stat_type, archive) + ' for duplicates. Update ' + update)
-   
                 for stat_type in modes:
+                    if u == None:
+                        if archive:
+                            bu.error('Pruning the archive requires an defined update')
+                            sys.exit(1)                    
+                        update = None
+                        bu.verbose_std('PRUNING ' + get_mode_str(stat_type, archive) + ' for duplicates. ALL updates.')
+                    else:
+                        update = u['update']
+                        bu.verbose_std('PRUNING ' + get_mode_str(stat_type, archive) + ' for duplicates. Update ' + update)
+                
                     N_stats2prune = await count_dups2prune(db, stat_type, archive)
                     bu.debug('Pruning ' + str(N_stats2prune) + ' ' + get_mode_str(stat_type, archive))            
                     bu.set_progress_bar(get_mode_str(stat_type, archive) + ' pruned: ', N_stats2prune, step = 1000, slow=True)
@@ -1300,7 +1302,7 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, updates: lis
                     fetcher = asyncio.create_task(get_dups_worker(db, stat_type, pruneQ, sample, archive=archive, update=update))
                     workers = list()
                     for workerID in range(0, N_WORKERS):
-                        workers.append(asyncio.create_task(prune_stats_worker(db, stat_type, pruneQ, workerID, archive=archive)))                    
+                        workers.append(asyncio.create_task(prune_stats_worker(db, stat_type, pruneQ, u , workerID, archive=archive)))                    
 
                     await asyncio.wait([fetcher])
                     for rl_task in await asyncio.gather(*[fetcher], return_exceptions=True):
@@ -1400,6 +1402,7 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase,
             try:
                 ids     = prune_task['ids']
                 from_db = prune_task['from_db']
+                # task_update = prune_task['update']
                 
                 if check and dbc_check != None:
                     cursor = dbc_check.find( {'_id': { '$in': ids }}) 
@@ -1437,7 +1440,7 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                 else:
                     docs_deleted = ids
                 if from_db:
-                    await dbc_prunelist.delete_many({ '$and': [ {'type': stat_type}, {'id': { '$in': docs_deleted } } ]})
+                    await dbc_prunelist.delete_many({ '$and': [ {'id': { '$in': docs_deleted }}, {'type': stat_type} ]})
                 
             except Exception as err:
                 bu.error(exception=err, id=ID)
