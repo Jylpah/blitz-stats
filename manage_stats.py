@@ -8,7 +8,7 @@ import ssl, configparser, random
 from datetime import date
 import blitzutils as bu
 import blitzstatsutils as su
-from blitzutils import BlitzStars, RecordLogger, WG
+from blitzutils import BlitzStars, RecordLogger, WG, Timer
 
 N_WORKERS = 4
 
@@ -610,13 +610,17 @@ async def get_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
         if (sample != None) and (sample > 0):
             pipeline.append({ '$sample': { 'size': sample } })
 
+        work_timer  = Timer('Execution time')
+        total_timer = Timer('Total time')
         cursor  = dbc.aggregate(pipeline)
         dups    = await cursor.to_list(DEFAULT_BATCH)
         
         while dups:
             try:
-                ids  =  [ dup['id']   for dup in dups ]                
+                ids  =  [ dup['id']   for dup in dups ] 
+                work_timer.stop()               
                 await dupsQ.put( mk_dups_Q_entry( ids, from_db=True ) )
+                work_timer.start()
                 count += len(dups)
                 rl.log('Read', len(dups))
             except Exception as err:
@@ -625,6 +629,10 @@ async def get_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
             finally:
                 dups = await cursor.to_list(DEFAULT_BATCH)
     
+        total_timer.stop()
+        work_timer.stop()
+        rl.log('Execution time', work_timer.elapsed())
+        rl.log('Total time', total_timer.elapsed())
     except (asyncio.CancelledError):
         bu.debug('Cancelled before finishing')
     except Exception as err:
@@ -1296,6 +1304,7 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, updates: lis
                         bu.verbose_std('PRUNING ' + get_mode_str(stat_type, archive) + ' for duplicates. Update ' + update)
                 
                     N_stats2prune = await count_dups2prune(db, stat_type, archive)
+                    N_stats2prune = min(sample, N_stats2prune) if sample > 0 else N_stats2prune 
                     bu.debug('Pruning ' + str(N_stats2prune) + ' ' + get_mode_str(stat_type, archive))            
                     bu.set_progress_bar(get_mode_str(stat_type, archive) + ' pruned: ', N_stats2prune, step = 1000, slow=True)
                     pruneQ = asyncio.Queue(QUEUE_LEN)
@@ -1396,9 +1405,12 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase,
             update = None
             start  = 0
             end    = bu.NOW()
-
+        work_timer = Timer('Execution time')
+        total_timer = Timer('Total time')
         while True:
+            work_timer.stop()
             prune_task  = await pruneQ.get()
+            work_timer.start()
             try:
                 ids     = prune_task['ids']
                 from_db = prune_task['from_db']
@@ -1452,6 +1464,9 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase,
         bu.debug('Prune queue is empty', id=ID)
     except Exception as err:
         bu.error(exception=err, id=ID)
+    
+    rl.log('Execution time', work_timer.elapsed())
+    rl.log('Total time', total_timer.elapsed())
     return rl
 
 
