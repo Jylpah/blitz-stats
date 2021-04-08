@@ -601,7 +601,6 @@ async def get_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
         if archive:
             stat_type = stat_type + MODE_ARCHIVE
         rl = RecordLogger('Fetch ' + get_mode_str(stat_type))
-
         match = [{'type' : stat_type} ]
         if update != None:
             match.append({ 'update': update} )
@@ -609,7 +608,6 @@ async def get_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
         pipeline = [  { '$match': { '$and': match } } ]
         if (sample != None) and (sample > 0):
             pipeline.append({ '$sample': { 'size': sample } })
-
         work_timer  = Timer('Execution time')
         total_timer = Timer('Total time')
         cursor  = dbc.aggregate(pipeline)
@@ -628,7 +626,6 @@ async def get_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
                 bu.error(exception=err)
             finally:
                 dups = await cursor.to_list(DEFAULT_BATCH)
-    
         total_timer.stop()
         work_timer.stop()
         rl.log('Execution time', work_timer.elapsed())
@@ -1446,9 +1443,11 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                 if not_deleted != 0:
                     cursor = dbc_2_prune.find({ '_id': { '$in': ids }}, { '_id': True } ) 
                     docs_not_deleted = set( await cursor.to_list(DEFAULT_BATCH))
+                    still_in_db = len(docs_not_deleted)
                     docs_deleted = list(set(ids) - docs_not_deleted)
-                    bu.error('Could not prune all ' + get_mode_str(stat_type, archive) + ': pruned=' + str(res.deleted_count) + ' NOT pruned=' + str(not_deleted))
-                    rl.log('NOT pruned', not_deleted)
+                    bu.debug('Could not prune all ' + get_mode_str(stat_type, archive) + ': pruned=' + str(res.deleted_count) + ' NOT pruned=' + str(still_in_db) + ' attempted, but not found=' + str(not_deleted - still_in_db))
+                    rl.log('NOT pruned', still_in_db)
+                    rl.log('Not found', not_deleted - still_in_db)
                 else:
                     docs_deleted = ids
                 if from_db:
