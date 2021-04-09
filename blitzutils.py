@@ -150,44 +150,86 @@ class ThrottledClientSession(aiohttp.ClientSession):
 ## -----------------------------------------------------------
 #### Class Timer()
 ## -----------------------------------------------------------
+
+## CHANGE:
+# * define event types
+# * start/stop per event type
+# * automatic Total 
 class Timer():
     """Stopwatch for measuring time"""
-    def __init__(self, name: str= None) -> None: 
-        self.name = name
-        self.time_elapsed = 0
-        self.start_time = time.time()
+    TOTAL = 'Total'
+    def __init__(self, name: str= None, modes: list = list(), start: bool =False ): 
+        self.name           = name
+        self.time_elapsed   = collections.defaultdict(def_value_zero)
+        self.start_time     = dict()
+        self.on             = dict()
+
+        modes.append(self.TOTAL)
+        self.modes = modes
+        for mode in modes:
+            self.on[mode] = False
+        self.start(all=start)
+        
+
+    def start(self, mode: str = TOTAL, all: bool = False) -> None:
+        if all:
+            for mode in self.modes:
+                self.start(mode)
+        if self._chk_mode(mode) and not self.on[mode]:
+            self.start_time[mode] = time.time()
+            self.on[mode]         = True
 
 
-    def start(self) -> None:
-        self.start_time = time.time()
-
-
-    def stop(self) -> float:
-        try:
-            lap = time.time() - self.start_time
-            self.time_elapsed += lap
+    def stop(self, mode: str = TOTAL, all:bool = False) -> float:
+        if all:
+            for mode in self.modes:
+                self.stop(mode)
+        if self._chk_mode(mode) and self.on[mode]:
+            lap = time.time() - self.start_time[mode]
+            self.time_elapsed[mode] += lap
+            self.on[mode]  = False
             return lap
+        return -1
+
+
+    def _chk_mode(self, mode: str = None) -> bool:
+        try:
+            return mode in self.modes
         except:
-            error('End() called before start()')
-            return None
+            error(str(mode) + ' is not in Timer.modes: ' + ', '.join(self.modes))
+        return False
 
 
-    def elapsed(self) -> float:
-        return self.time_elapsed
+    def elapsed(self, mode: str = TOTAL, all: bool = False):
+        """Return time elapsed. Stop timer(s) by default"""
+        res = dict()
+        if all:
+            for mode in self.modes:
+                res[mode] = self.elapsed(mode)
+            return res
+        if self._chk_mode(mode):
+            return self.time_elapsed[mode]
+        return None
 
 
     def get_name(self) -> str:
         return self.name
 
+    
+    def get_mode_name(self, mode: str = TOTAL) -> str:
+        if self._chk_mode(mode):
+            return mode + self.name
+        return None
 
-    def time_str(self, name: bool = False) -> str:
-        res = '{:.2f}s'.format(self.time_elapsed % 60)
-        if self.time_elapsed >= 60:
-            mins = (self.time_elapsed / 60) % 60
-            res = '{:.0d}m '.format(mins) + res
-        if self.time_elapsed >= 3600:
-            hours = self.time_elapsed // 3600
-            res = '{:.0d}h '.format(hours) + res
+    
+    def get_modes(self) -> list:
+        return self.modes
+
+
+    def time_str(self, mode: str = TOTAL, name: bool = False) -> str:
+        if not self._chk_mode(mode):
+            return None
+        res = mode + ':' + time.strftime("%H:%M:%S", time.gmtime(self.elapsed(mode)))
         if name:
             res = self.name + ': ' + res
         return res
