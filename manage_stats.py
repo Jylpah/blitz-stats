@@ -80,7 +80,7 @@ def def_value_zero():
 
 async def main(argv):
     # set the directory for the script
-    start_time = time.time()
+    timer = Timer('Execution time')
     current_dir = os.getcwd()
     os.chdir(os.path.dirname(sys.argv[0]))
 
@@ -203,16 +203,17 @@ async def main(argv):
         bu.error('Queue gets cancelled while still working.')
     except Exception as err:
         bu.error('Unexpected Exception', exception=err)
-    bu.verbose_std(time_elapsed(start_time, 'Total execution time'))
+    timer.stop()
+    bu.verbose_std(timer.time_str(name=True))
     return None
 
 
-def time_elapsed(start: float, prefix: str = 'Time elapsed') -> str:
-    try:
-        return prefix + ': ' + time.strftime("%H:%M:%S", time.gmtime(time.time() - start))
-    except Exception as err:
-        bu.error(exception=err)
-        return 'time_elapsed(): ERROR'
+# def time_elapsed(start: float, prefix: str = 'Time elapsed') -> str:
+#     try:
+#         return prefix + ': ' + time.strftime("%H:%M:%S", time.gmtime(time.time() - start))
+#     except Exception as err:
+#         bu.error(exception=err)
+#         return None
 
 
 def mk_update_entry(update: str, start: int, end: int)  -> dict:
@@ -222,11 +223,13 @@ def mk_update_entry(update: str, start: int, end: int)  -> dict:
     return {'update': update, 'start': start, 'end': end }
 
 
-def mk_dups_Q_entry(ids: list, update: str = None, from_db: bool = False) -> dict:
+def mk_dups_Q_entry(ids: list, update: str = None, 
+                    stat_type: str = None,  
+                    from_db: bool = False) -> dict:
     """Make a prune task for prune queue"""
     if (ids == None) or (len(ids) == 0):
         return None
-    return { 'ids': ids, 'update': update, 'from_db': from_db }
+    return { 'ids': ids, 'update': update, 'from_db': from_db, 'stat_type': stat_type }
 
 
 def mk_dup_db_entry(stat_type: str, _id=str) -> dict:
@@ -471,10 +474,10 @@ async def analyze_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                              updates: list = list(), args: argparse.Namespace = None)  -> RecordLogger:
     """--analyze: top-level func for analyzing stats for duplicates. DOES NOT PRUNE"""
     try:        
-        archive = args.opt_archive
-        stat_type = MODE_TANK_STATS
-        rl = RecordLogger(get_mode_str(stat_type, archive))
-        dupsQ = asyncio.Queue(QUEUE_LEN)
+        archive     = args.opt_archive
+        stat_type   = MODE_TANK_STATS
+        rl          = RecordLogger(get_mode_str(stat_type, archive))
+        dupsQ       = asyncio.Queue(QUEUE_LEN)
         dups_saver = asyncio.create_task(save_dups_worker(db, stat_type, dupsQ, archive))
         
         for u in updates: 
@@ -576,8 +579,12 @@ async def save_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
             stat_type = stat_type + MODE_ARCHIVE
         while True:
             dups = await dupsQ.get()
+            if dups['stat_type'] != stat_type:
+                dupsQ.task_done()
+                bu.error('Received wrong stat_type from queue: ' + dups['stat_type'])
+                continue
             try:                
-                res = await dbc.insert_many( [ mk_dup_db_entry(stat_type, dup_id) for dup_id in dups['ids'] ] )
+                res = await dbc.insert_many( [ mk_dup_db_entry(dups['stat_type'], dup_id) for dup_id in dups['ids'] ] )
                 rl.log('Saved', len(res.inserted_ids))
             except Exception as err:
                 bu.error(exception=err)
@@ -596,6 +603,7 @@ async def get_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
                             sample: int = 0, archive = False, update: str = None)  -> RecordLogger:
     """Read duplicates info from the DB"""
     try:
+        #bu.debug('Started', force=True)
         dbc = db[DB_C_STATS_2_DEL]
         count = 0
         if archive:
@@ -608,17 +616,18 @@ async def get_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
         pipeline = [  { '$match': { '$and': match } } ]
         if (sample != None) and (sample > 0):
             pipeline.append({ '$sample': { 'size': sample } })
-        work_timer  = Timer('Execution time')
-        total_timer = Timer('Total time')
+        timer  = Timer('Execution time', ['Active'], start=True)
+        
         cursor  = dbc.aggregate(pipeline)
         dups    = await cursor.to_list(DEFAULT_BATCH)
         
+        #bu.debug('Starting while loop', force=True)
         while dups:
             try:
                 ids  =  [ dup['id']   for dup in dups ] 
-                work_timer.stop()               
-                await dupsQ.put( mk_dups_Q_entry( ids, from_db=True ) )
-                work_timer.start()
+                timer.stop('Active')               
+                await dupsQ.put( mk_dups_Q_entry( ids, stat_type=stat_type, from_db=True ) )
+                timer.start('Active')
                 count += len(dups)
                 rl.log('Read', len(dups))
             except Exception as err:
@@ -626,10 +635,11 @@ async def get_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
                 bu.error(exception=err)
             finally:
                 dups = await cursor.to_list(DEFAULT_BATCH)
-        total_timer.stop()
-        work_timer.stop()
-        rl.log('Execution time', work_timer.elapsed())
-        rl.log('Total time', total_timer.elapsed())
+                # bu.debug('while-iteration complete', force=True)
+        #bu.debug('While-loop done', force=True)
+        timer.stop(all=True)
+        for mode in timer.get_modes():
+            rl.log(timer.get_mode_name(mode), timer.elapsed(mode))
     except (asyncio.CancelledError):
         bu.debug('Cancelled before finishing')
     except Exception as err:
@@ -982,9 +992,10 @@ async def check_dup_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabas
     try:
         rl = RecordLogger(get_mode_str(MODE_TANK_STATS, archive) + ' duplicates')
         if archive:
-            dbc = db[DB_C_ARCHIVE[MODE_TANK_STATS]]
+            stat_type = MODE_TANK_STATS + MODE_ARCHIVE
         else:
-            dbc = db[DB_C[MODE_TANK_STATS]]
+            stat_type = MODE_TANK_STATS    
+        dbc = db[DB_C[stat_type]]
         
         if update_record != None:
             update  = update_record['update']
@@ -1001,6 +1012,11 @@ async def check_dup_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabas
 
         while True:
             dups = await dupsQ.get()
+            if dups['stat_type'] != stat_type:
+                bu.error('Invalid stat_type read from duplicate queue: ' + dups['stat_type'])
+                dupsQ.task_done()
+                continue
+
             bu.debug(str(len(dups['ids'])) + ' duplicates fetched from queue', id=ID)
             for _id in dups['ids']:
                 try:
@@ -1055,12 +1071,14 @@ async def check_dup_player_achievements_worker(db: motor.motor_asyncio.AsyncIOMo
                                                ID: int = 0, archive = False,) -> RecordLogger:
     """Worker to check Player Achivement duplicates. Returns results in a dict"""
     try:
-        stat_type   = MODE_PLAYER_ACHIEVEMENTS
-        rl          = RecordLogger(get_mode_str(stat_type, archive))
+        
+        rl = RecordLogger(get_mode_str(MODE_PLAYER_ACHIEVEMENTS, archive))
         if archive:
-            dbc = db[DB_C_ARCHIVE[stat_type]]
+            stat_type = MODE_PLAYER_ACHIEVEMENTS + MODE_ARCHIVE
         else:
-            dbc = db[DB_C[stat_type]]
+            stat_type   = MODE_PLAYER_ACHIEVEMENTS
+
+        dbc = db[DB_C[stat_type]]
         
         if update_record != None:
             update  = update_record['update']
@@ -1077,6 +1095,11 @@ async def check_dup_player_achievements_worker(db: motor.motor_asyncio.AsyncIOMo
 
         while True:
             dups = await dupsQ.get()
+            if dups['stat_type'] != stat_type:
+                bu.error('Invalid stat_type read from duplicate queue: ' + dups['stat_type'])
+                dupsQ.task_done()
+                continue
+
             bu.debug('Duplicate candidate read from the queue', id=ID)
             for _id in dups['ids']:
                 try:
@@ -1375,7 +1398,7 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, updates: lis
 async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
                              stat_type : str, pruneQ: asyncio.Queue, 
                              update_record: dict = None, ID: int = 0, 
-                             archive: bool = False, check=False) -> dict:
+                             archive: bool = False, check: bool = False) -> dict:
     """Paraller Worker for pruning stats"""
     
     try:
@@ -1383,13 +1406,12 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase,
         rl              = RecordLogger(get_mode_str(stat_type, archive))
         dbc_prunelist   = db[DB_C_STATS_2_DEL]       
         if archive:
-            dbc_2_prune = db[DB_C_ARCHIVE[stat_type]]
             stat_type   = stat_type + MODE_ARCHIVE
             dbc_check   = None
         else:
-            dbc_2_prune = db[DB_C[stat_type]]
             dbc_check   = db[DB_C_ARCHIVE[stat_type]]
-        
+        dbc_2_prune = db[DB_C[stat_type]]
+
         if update_record != None:
             update  = update_record['update']
             start   = update_record['start']
@@ -1402,12 +1424,16 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase,
             update = None
             start  = 0
             end    = bu.NOW()
-        work_timer = Timer('Execution time')
-        total_timer = Timer('Total time')
+        timer = Timer('Execution time', ['Active', 'Prune DB', 'Prunelist DB'], start=True)
         while True:
-            work_timer.stop()
+            timer.stop(['Active', 'Prune DB', 'Prunelist DB'])
             prune_task  = await pruneQ.get()
-            work_timer.start()
+            if prune_task['stat_type'] != stat_type:
+                pruneQ.task_done()
+                bu.error('Received wrong stat_type from prune queue: ' + prune_task['stat_type'])
+                continue
+
+            timer.start(['Active', 'Prune DB'])
             try:
                 ids     = prune_task['ids']
                 from_db = prune_task['from_db']
@@ -1436,7 +1462,8 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                         sys.exit(1)
                 else:
                     res = await dbc_2_prune.delete_many( { '_id': { '$in': ids } } )
-
+                timer.stop(['Prune DB'])
+                timer.start(['Prunelist DB'])
                 not_deleted = len(ids) - res.deleted_count
                 rl.log('Pruned', res.deleted_count)
                 bu.print_progress(res.deleted_count)
@@ -1450,9 +1477,10 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                     rl.log('Not found', not_deleted - still_in_db)
                 else:
                     docs_deleted = ids
+
                 if from_db:
                     await dbc_prunelist.delete_many({ '$and': [ {'id': { '$in': docs_deleted }}, {'type': stat_type} ]})
-                
+
             except Exception as err:
                 bu.error(exception=err, id=ID)
                 rl.log('Error')
@@ -1463,9 +1491,9 @@ async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase,
         bu.debug('Prune queue is empty', id=ID)
     except Exception as err:
         bu.error(exception=err, id=ID)
-    
-    rl.log('Execution time', work_timer.elapsed())
-    rl.log('Total time', total_timer.elapsed())
+    timer.stop(all=True)
+    for mode in timer.get_modes():
+        rl.log(timer.get_mode_name(mode), timer.elapsed(mode))    
     return rl
 
 
@@ -1664,9 +1692,11 @@ async def find_dup_tank_stats_worker(  db: motor.motor_asyncio.AsyncIOMotorDatab
         update = 'N/A'
         if archive:
             dbc      = db[DB_C_ARCHIVE[MODE_TANK_STATS]]
+            stat_type = MODE_TANK_STATS + MODE_ARCHIVE
         else:
             dbc      = db[DB_C[MODE_TANK_STATS]]
-        
+            stat_type = MODE_TANK_STATS
+
         if update_record != None:
             update  = update_record['update']
             start   = update_record['start']
@@ -1708,7 +1738,7 @@ async def find_dup_tank_stats_worker(  db: motor.motor_asyncio.AsyncIOMotorDatab
                         ]
                 cursor = dbc.aggregate(pipeline, allowDiskUse=True)
                 async for res in cursor:
-                    await dupsQ.put(mk_dups_Q_entry(res['ids'], update=update))
+                    await dupsQ.put(mk_dups_Q_entry(res['ids'], update=update, stat_type=stat_type))
                     rl.log('Found', len(res['ids']))
                 bu.print_progress()                    
 
@@ -1732,11 +1762,12 @@ async def find_dup_player_achivements_worker(db: motor.motor_asyncio.AsyncIOMoto
     try:
         rl       = RecordLogger('Find player achivement duplicates')
         update = 'N/A'
-        if archive:
-            dbc      = db[DB_C_ARCHIVE[MODE_PLAYER_ACHIEVEMENTS]]
+        if archive:            
+            stat_type = MODE_PLAYER_ACHIEVEMENTS + MODE_ARCHIVE
         else:
-            dbc      = db[DB_C[MODE_PLAYER_ACHIEVEMENTS]]
-        
+            stat_type = MODE_PLAYER_ACHIEVEMENTS
+        dbc = db[DB_C[stat_type]]
+
         if update_record != None:
             update  = update_record['update']
             start   = update_record['start']
@@ -1768,7 +1799,7 @@ async def find_dup_player_achivements_worker(db: motor.motor_asyncio.AsyncIOMoto
                 cursor = dbc.aggregate(pipeline, allowDiskUse=True)
                 async for res in cursor:
                     n = len(res['ids'])
-                    await dupsQ.put(mk_dups_Q_entry(res['ids'], update=update))
+                    await dupsQ.put(mk_dups_Q_entry(res['ids'], update=update, stat_type=stat_type))
                     # bu.print_progress(n)
                     rl.log('Found', n)                    
                 bu.print_progress()
@@ -1819,6 +1850,7 @@ async def snapshot_player_achivements_worker(db: motor.motor_asyncio.AsyncIOMoto
 
         while not accountQ.empty():
             try:
+                ## FIX: use accounts collection? 
                 wp = await accountQ.get()
                 account_id_min = wp['min']
                 account_id_max = wp['max']
