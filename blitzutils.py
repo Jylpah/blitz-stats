@@ -159,38 +159,57 @@ class Timer():
     """Stopwatch for measuring time"""
     TOTAL = 'Total'
     def __init__(self, name: str= None, modes: list = list(), start: bool =False ): 
-        self.name           = name
-        self.time_elapsed   = collections.defaultdict(def_value_zero)
-        self.start_time     = dict()
-        self.on             = dict()
+        try:
+            self.name           = name
+            self.time_elapsed   = collections.defaultdict(def_value_zero)
+            self.start_time     = dict()
+            self.on             = dict()
 
-        modes.append(self.TOTAL)
-        self.modes = modes
-        for mode in modes:
-            self.on[mode] = False
-        self.start(all=start)
+            modes.append(self.TOTAL)
+            self.modes = modes
+            for mode in self.modes:
+                self.on[mode] = False
+            self.start(all=start)
+        except Exception as err:
+            error(exception=err)
         
 
-    def start(self, mode: str = TOTAL, all: bool = False) -> None:
-        if all:
-            for mode in self.modes:
-                self.start(mode)
-        if self._chk_mode(mode) and not self.on[mode]:
-            self.start_time[mode] = time.time()
-            self.on[mode]         = True
+    def start(self, modes: list = [ TOTAL ], all: bool = False) -> None:
+        try:
+            if isinstance(modes, str):
+                modes = [modes]
+            elif all:
+                modes = self.modes
+            start_time = time.time()
+            for mode in modes:
+                if self._chk_mode(mode) and not self.on[mode]:
+                    self.start_time[mode] = start_time
+                    self.on[mode]         = True
+        except Exception as err:
+            error(exception=err)
 
 
-    def stop(self, mode: str = TOTAL, all:bool = False) -> float:
-        if all:
-            for mode in self.modes:
-                self.stop(mode)
-        if self._chk_mode(mode) and self.on[mode]:
-            lap = time.time() - self.start_time[mode]
-            self.time_elapsed[mode] += lap
-            self.on[mode]  = False
-            return lap
-        return -1
-
+    def stop(self, modes: list = [ TOTAL ], all: bool = False):
+        try:
+            if isinstance(modes, str):
+                modes = [modes]
+            elif all:
+                modes = self.modes
+            res = dict()
+            stop_time = time.time()
+            for mode in modes:
+                if self._chk_mode(mode) and self.on[mode]:
+                    lap = stop_time - self.start_time[mode]
+                    self.time_elapsed[mode] += lap
+                    self.on[mode]  = False
+                    res[mode] = lap
+            if (len(res)) == 1:
+                next(iter(res.values()))            
+            else:
+                return res
+        except Exception as err:
+            error(exception=err)
+        return None
 
     def _chk_mode(self, mode: str = None) -> bool:
         try:
@@ -200,15 +219,13 @@ class Timer():
         return False
 
 
-    def elapsed(self, mode: str = TOTAL, all: bool = False):
+    def elapsed(self, mode: str = TOTAL) -> float:
         """Return time elapsed. Stop timer(s) by default"""
-        res = dict()
-        if all:
-            for mode in self.modes:
-                res[mode] = self.elapsed(mode)
-            return res
-        if self._chk_mode(mode):
-            return self.time_elapsed[mode]
+        try:
+            if self._chk_mode(mode):
+                return self.time_elapsed[mode]
+        except Exception as err:
+            error(exception=err)
         return None
 
 
@@ -217,8 +234,11 @@ class Timer():
 
     
     def get_mode_name(self, mode: str = TOTAL) -> str:
-        if self._chk_mode(mode):
-            return mode + self.name
+        try:
+            if self._chk_mode(mode):
+                return mode + ' ' + self.name
+        except Exception as err:
+            error(exception=err)
         return None
 
     
@@ -227,12 +247,15 @@ class Timer():
 
 
     def time_str(self, mode: str = TOTAL, name: bool = False) -> str:
-        if not self._chk_mode(mode):
-            return None
-        res = mode + ':' + time.strftime("%H:%M:%S", time.gmtime(self.elapsed(mode)))
-        if name:
-            res = self.name + ': ' + res
-        return res
+        try:
+            if self._chk_mode(mode):
+                res = mode + ':' + time.strftime("%H:%M:%S", time.gmtime(self.elapsed(mode)))
+                if name:
+                    res = self.name + ': ' + res
+                return res
+        except Exception as err:
+            error(exception=err)
+        return None
 
 
 ## -----------------------------------------------------------
