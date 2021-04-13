@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import sys, os, json, time,  base64, urllib, inspect, hashlib, re, string, random
+import sys, os, json, time,  base64, urllib, inspect, hashlib, re, string, random, pymongo, motor.motor_asyncio
 import asyncio, aiofiles, aiohttp, aiosqlite, lxml, collections,  datetime, logging
 import blitzutils as bu
 
@@ -27,9 +27,9 @@ MODE_ARCHIVE            = '_archive'
 DB_STR_ARCHIVE          = '_Archive'
 DB_C_ACCOUNTS   		= 'WG_Accounts'
 DB_C_UPDATES            = 'WG_Releases'
-DB_C_PLAYER_STATS		= 'WG_PlayerStats'
+DB_C_PLAYER_STATS		= 'WG_PlayerStats_OID'
 DB_C_PLAYER_ACHIVEMENTS	= 'WG_PlayerAchievements'
-DB_C_TANK_STATS     	= 'WG_TankStats'
+DB_C_TANK_STATS     	= 'WG_TankStats_OID'
 DB_C_STATS_2_DEL        = 'Stats2Delete'
 DB_C_BS_PLAYER_STATS   	= 'BS_PlayerStats'
 DB_C_BS_TANK_STATS     	= 'BS_PlayerTankStats'
@@ -107,3 +107,47 @@ def get_mode_str(stat_type: str, archive : bool = False) -> str:
             return ret
     except Exception as err:
         bu.error(exception=err)
+
+
+async def init_db_indices(db: motor.motor_asyncio.AsyncIOMotorDatabase):
+    """Create DB indices"""
+    try:
+        bu.verbose_std('Adding index: ' + DB_C_BS_PLAYER_STATS + ': account_id: 1, last_battle_time: -1')
+        await db[DB_C_BS_PLAYER_STATS].create_index([('account_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING)], background=True)
+        
+        bu.verbose_std('Adding index: ' + DB_C_BS_TANK_STATS + ': account_id: 1, tank_id: 1, last_battle_time: -1')
+        await db[DB_C_BS_TANK_STATS].create_index([('account_id', pymongo.ASCENDING), ('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING)], background=True)
+        
+        bu.verbose_std('Adding index: ' + DB_C_BS_TANK_STATS + ': tank_id: 1, last_battle_time: -1')
+        await db[DB_C_BS_TANK_STATS].create_index([('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING)], background=True)
+
+        bu.verbose_std('Adding index: ' + DB_C_ERROR_LOG + ': type: 1')
+        await db[DB_C_ERROR_LOG].create_index([ ('type', pymongo.ASCENDING), ('account_id', pymongo.ASCENDING)], background=True)
+
+        bu.verbose_std('Adding index: ' + DB_C_STATS_2_DEL + ': type: 1, id: 1')
+        await db[DB_C_STATS_2_DEL].create_index([('type', pymongo.ASCENDING), ('id', pymongo.ASCENDING)], background=True)
+
+        ## WG Tank Stats
+        bu.verbose_std('Adding index: ' + DB_C_TANK_STATS + ': tank_id: 1, account_id: 1, last_battle_time: -1')
+        await db[DB_C_TANK_STATS].create_index([('tank_id', pymongo.ASCENDING), ('account_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING)], unique=True, background=True)
+        
+        bu.verbose_std('Adding index: ' + DB_C_TANK_STATS + ': tank_id: 1, last_battle_time: -1')
+        await db[DB_C_TANK_STATS].create_index([('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING)], background=True)
+        
+        bu.verbose_std('Adding index: ' + DB_C_TANK_STATS + ': tank_id: 1, ' + FIELD_NEW_STATS + ': 1 (partial)')
+        await db[DB_C_TANK_STATS].create_index([('tank_id', pymongo.ASCENDING), (FIELD_NEW_STATS, pymongo.ASCENDING)], partialFilterExpression={FIELD_NEW_STATS:  {'$exists': True}}, background=True)
+
+        ## WG Player Achievements
+        bu.verbose_std('Adding index: ' + DB_C_PLAYER_ACHIVEMENTS + ': account_id: 1, updated: -1')
+        await db[DB_C_PLAYER_ACHIVEMENTS].create_index([('account_id', pymongo.ASCENDING), ('updated', pymongo.DESCENDING)], background=True)
+
+        bu.verbose_std('Adding index: ' + DB_C_TANKS + ': tank_id: 1, tier: -1')
+        await db[DB_C_TANKS].create_index([('tank_id', pymongo.ASCENDING), ('tier', pymongo.DESCENDING)], background=True)
+        
+        bu.verbose_std('Adding index: ' + DB_C_TANKS + ': name: TEXT')
+        await db[DB_C_TANKS].create_index([('name', pymongo.TEXT)], background=True)
+
+        return True
+    except Exception as err:
+        bu.error('Unexpected Exception', err)
+    return False
