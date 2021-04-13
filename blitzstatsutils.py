@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import sys, os, json, time,  base64, urllib, inspect, hashlib, re, string, random, pymongo, motor.motor_asyncio
-import asyncio, aiofiles, aiohttp, aiosqlite, lxml, collections,  datetime, logging
+import asyncio, aiofiles, aiohttp, aiosqlite, lxml, collections,  datetime, logging, bson
 import blitzutils as bu
 
 #####################################################################
@@ -151,3 +151,7 @@ async def init_db_indices(db: motor.motor_asyncio.AsyncIOMotorDatabase):
     except Exception as err:
         bu.error('Unexpected Exception', err)
     return False
+
+
+def mk_id(account_id: int, tank_id: int, last_battle_time: int) -> str:
+	return bson.objectid.ObjectId(hex(account_id)[2:].zfill(10) + hex(tank_id)[2:].zfill(6) + hex(last_battle_time)[2:].zfill(8))

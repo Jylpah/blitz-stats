@@ -22,28 +22,6 @@ WG_APP_ID = 'cd770f38988839d7ab858d1cbe54bdd0'
 FILE_CONFIG = 'blitzstats.ini'
 FILE_ACTIVE_PLAYERS='activeinlast30days.json'
 
-# # MongoDB collections for storing stats
-# su.DB_C_ACCOUNTS   		= 'WG_Accounts'
-# su.DB_C_PLAYER_STATS		= 'WG_PlayerStats'
-# su.DB_C_PLAYER_ACHIVEMENTS	= 'WG_PlayerAchievements'
-# su.DB_C_TANK_STATS     	= 'WG_TankStats'
-# su.DB_C_BS_PLAYER_STATS   	= 'BS_PlayerStats'
-# su.DB_C_BS_TANK_STATS     	= 'BS_PlayerTankStats'
-# su.DB_C_TANKS     			= 'Tankopedia'
-# su.DB_C_TANK_STR			= 'WG_TankStrs'
-# su.DB_C_ERROR_LOG			= 'ErrorLog'
-# su.DB_C_UPDATE_LOG			= 'UpdateLog'
-
-# FIELD_NEW_STATS = '_updated'
-
-# ## Matches --mode param
-# UPDATE_FIELD = { su.MODE_TANK_STATS				: 'updated_WGtankstats',
-# 				 su.MODE_PLAYER_STATS			: 'updated_WGplayerstats',
-# 				 su.MODE_PLAYER_ACHIEVEMENTS	: 'updated_WGplayerachievements',				 
-# 				'default'						: 'updated'
-# 				# 'player_stats_BS' 		: 'updated_BSplayerstats',
-# 				# 'tank_stats_BS'			: 'updated_BStankstats'
-# 				}
 bs = None
 wg = None
 stats_added = 0
@@ -142,7 +120,7 @@ async def main(argv):
 			client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, username=DB_USER, password=DB_PASSWD, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
 		db = client[DB_NAME]
 		bu.debug(str(type(db)))	
-		await init_db_indices(db)
+		await su.init_db_indices(db)
 
 		## get active player list ------------------------------
 		active_players = {}
@@ -219,27 +197,6 @@ async def main(argv):
 			await bu.close_file_logging()
 
 	return None
-
-
-async def init_db_indices(db: motor.motor_asyncio.AsyncIOMotorDatabase):
-	"""Create DB indices"""
-	try:
-		await db[su.DB_C_BS_PLAYER_STATS].create_index([('account_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
-		await db[su.DB_C_BS_TANK_STATS].create_index([('account_id', pymongo.ASCENDING), ('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
-		await db[su.DB_C_BS_TANK_STATS].create_index([('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
-		#await db[su.DB_C_TANK_STATS].create_index([('account_id', pymongo.ASCENDING), ('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
-		await db[su.DB_C_TANK_STATS].create_index([('account_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])
-		await db[su.DB_C_TANK_STATS].create_index([('tank_id', pymongo.ASCENDING), ('account_id', pymongo.ASCENDING) ])	
-		await db[su.DB_C_TANK_STATS].create_index([('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING) ])	
-		await db[su.DB_C_PLAYER_ACHIVEMENTS].create_index([('account_id', pymongo.ASCENDING), ('updated', pymongo.DESCENDING) ])	
-		await db[su.DB_C_PLAYER_ACHIVEMENTS].create_index([('account_id', pymongo.ASCENDING) ])	
-		await db[su.DB_C_TANKS].create_index([('tank_id', pymongo.ASCENDING), ('tier', pymongo.DESCENDING) ])	
-		await db[su.DB_C_TANKS].create_index([ ('name', pymongo.TEXT)])	
-		await db[su.DB_C_ERROR_LOG].create_index([('account_id', pymongo.ASCENDING), ('time', pymongo.DESCENDING), ('type', pymongo.ASCENDING) ])	
-		return True
-	except Exception as err:
-		bu.error('Unexpected Exception', err)
-	return False
 
 
 async def get_active_players(db : motor.motor_asyncio.AsyncIOMotorDatabase, 
@@ -705,7 +662,7 @@ async def BS_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 					account_id 			= tank_stat['account_id'] 
 					tank_id 			= tank_stat['tank_id']
 					last_battle_time 	= tank_stat['last_battle_time']
-					tank_stat['_id']  	= mk_id(account_id, tank_id, last_battle_time)
+					tank_stat['_id']  	= su.mk_id(account_id, tank_id, last_battle_time)
 					tank_stats.append(tank_stat)
 				try: 
 					## Add functionality to filter out those stats that aretoo close to existing stats
@@ -770,7 +727,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 					if last_battle_time > now:  # do not add "newer" than today (broken last_bvattle_time_field)
 						rl.log('invalid')
 						continue
-					tank_stat['_id']  	= mk_id(account_id, tank_id, last_battle_time)
+					tank_stat['_id']  	= su.mk_id(account_id, tank_id, last_battle_time)
 					tank_stat[su.FIELD_NEW_STATS] = now  						## Needed for stats archiving
 					tank_stats.append(tank_stat)
 					if (last_battle_time > latest_battle): 
@@ -945,7 +902,7 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 					stat['updated'] 	= NOW
 					## Needed for stats archiving. Not yet implemented for player_achievements
 					stat[su.FIELD_NEW_STATS] = True
-					stat['_id'] 		= mk_id(account_id, 0, NOW)
+					stat['_id'] 		= su.mk_id(account_id, 0, NOW)
 					
 					# RECOMMENDATION TO USE SINGLE INSERTS OVER MANY
 					await dbc.insert_one(stat)					
@@ -1007,7 +964,7 @@ async def log_error(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id: i
 async def clear_error_log(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int, stat_type: str):
 	"""Delete ErrorLog entry for account_id, stat_type"""
 	dbc = db[su.DB_C_ERROR_LOG]
-	await dbc.delete_many({ '$and': [ {'account_id': account_id}, {'type': stat_type }]})
+	await dbc.delete_many({ '$and': [ {'type': stat_type }, {'account_id': account_id}]})
 
 
 def log_account_id(account_id: int, msg: str = '', id: int = None, exception: Exception = None):
@@ -1020,10 +977,6 @@ def debug_account_id(account_id: int, msg: str = '', id: int = None, exception: 
 
 def error_account_id(account_id: int, msg: str = '', id: int = None, exception: Exception = None):
 	return bu.error('account_id=' + str(account_id).ljust(10) + ': ' + msg, id=id, exception=exception)
-
-
-def mk_id(account_id: int, tank_id: int, last_battle_time: int) -> str:
-	return hex(account_id)[2:].zfill(10) + hex(tank_id)[2:].zfill(6) + hex(last_battle_time)[2:].zfill(8)
 
 
 ### main()
