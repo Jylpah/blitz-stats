@@ -1002,12 +1002,12 @@ async def check_dup_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabas
                     account_id      = dup_stat['account_id']
                     tank_id         = dup_stat['tank_id']
 
-                    if last_battle_time > end or last_battle_time <= start:
+                    if (update_record != None) and (last_battle_time > end or last_battle_time <= start):
                         bu.verbose('The duplicate is not within update ' +  update_str + '. Skipping')
                         rl.log('Skipped')
                         continue                
                     match = [ {'tank_id': tank_id}, {'account_id': account_id}]
-                    if update != None:
+                    if update_record != None:
                         match.append({'last_battle_time': { '$gt': last_battle_time }} )
                         match.append({'last_battle_time': { '$lte': end }} )
 
@@ -1061,7 +1061,7 @@ async def check_dup_player_achievements_worker(db: motor.motor_asyncio.AsyncIOMo
                 bu.error('Trying to check duplicates in the whole Archieve. Must define an update.', id=ID)
                 rl.log('CRITICAL ERROR')
                 return rl
-            update = su.UPDATE_ALL
+            update = None
             start  = 0
             end    = bu.NOW()           
 
@@ -1075,18 +1075,18 @@ async def check_dup_player_achievements_worker(db: motor.motor_asyncio.AsyncIOMo
             bu.debug('Duplicate candidate read from the queue', id=ID)
             for _id in dups['ids']:
                 try:
-                    bu.debug('Checking _id=' + _id, id=ID)
+                    bu.debug('Checking _id=' + str(_id), id=ID)
                     bu.print_progress()
                     dup_stat  = await dbc.find_one({'_id': _id})
                     if dup_stat == None:
                         rl.log('Not Found')
-                        bu.error('Could not find duplicate _id=' + _id, id=ID)
+                        bu.error('Could not find duplicate _id=' + str(_id), id=ID)
                         continue
 
                     updated         = dup_stat['updated']
                     account_id      = dup_stat['account_id']
                     
-                    if updated > end or updated <= start:
+                    if (update_record != None) and (updated > end or updated <= start):
                         bu.verbose('The duplicate is not within update ' +  update + '. Skipping')
                         rl.log('Skipped')
                         continue
@@ -1097,14 +1097,14 @@ async def check_dup_player_achievements_worker(db: motor.motor_asyncio.AsyncIOMo
                                                                 ] })
                     if newer_stat == None:
                         rl.log('Invalid')
-                        bu.error(str_dups_player_achievements(update, account_id, updated, status='INVALID DUPLICATE: _id=' + _id))                    
+                        bu.error(str_dups_player_achievements(update, account_id, updated, status='INVALID DUPLICATE: _id=' + str(_id)))                    
                     else:
                         rl.log('OK')
                         if bu.is_verbose():
-                            bu.verbose(str_dups_player_achievements(update, account_id, updated, is_dup=True))
+                            bu.verbose(str_dups_player_achievements(update, account_id, updated, 'Analyzed duplicate'))
                             updated         = newer_stat['updated']
                             account_id      = newer_stat['account_id']                    
-                            bu.verbose(str_dups_player_achievements(update, account_id, updated, is_dup=None))
+                            bu.verbose(str_dups_player_achievements(update, account_id, updated, 'Newer stat found'))
 
                 except Exception as err:
                     rl.log('Errors')
@@ -1164,20 +1164,12 @@ async def find_update(db: motor.motor_asyncio.AsyncIOMotorDatabase, updates : li
         bu.error(exception=err)   
 
 
-def str_dups_player_achievements(update : str, account_id: int,  updated: int, 
-                                 is_dup: bool = None, status: str = None):
+def str_dups_player_achievements(update : str, account_id: int,  updated: int, status: str = None):
     """Return string of duplicate status of player achivement stat"""
     try:
         if status == None:
-            if is_dup == None:
-                status = 'Newer stat'
-            if is_dup:
-                status = 'Duplicate' 
-            else:
-                status = 'NOT DUPLICATE'    
-        
+            status = ''    
         return('Update: {:s} account_id={:<10d} updated={:d} : {:s}'.format(update, account_id, updated, status) )
-        
     except Exception as err:
         bu.error(exception=err)
         return "ERROR"
@@ -1186,10 +1178,8 @@ def str_dups_player_achievements(update : str, account_id: int,  updated: int,
 def str_tank_stat(update : str, account_id: int, tank_id: int, last_battle_time: int, status: str = None):
     try:
         if status == None:
-            status = ''    
-        
+            status = ''        
         return('Update: {:s} account_id={:<10d} tank_id={:<5d} latest_battle_time={:d} : {:s}'.format(update, account_id, tank_id, last_battle_time, status) )
-    
     except Exception as err:
         bu.error(exception=err)
         return "ERROR"
