@@ -1201,43 +1201,6 @@ async def add_stat2del(db: motor.motor_asyncio.AsyncIOMotorDatabase, stat_type: 
     return 0
 
 
-# async def prune_stats_serial(db: motor.motor_asyncio.AsyncIOMotorDatabase, args : argparse.Namespace):
-#     """Execute DB pruning and DELETING DATA. Does NOT verify whether there are newer stats"""
-#     global STATS_PRUNED
-#     try:
-#         batch_size = 200
-#         dbc_prunelist = db[su.DB_C_STATS_2_DEL]
-#         for stat_type in args.mode:
-#             dbc_2_prune = db[su.DB_C[stat_type]]
-#             #su.DB_FILTER = {'type' : stat_type}
-#             stats2prune = await dbc_prunelist.count_documents({'type' : stat_type})
-#             bu.debug('Pruning ' + str(stats2prune) + ' ' + stat_type)
-#             bu.set_progress_bar(stat_type + ' pruned: ', stats2prune, slow=True)
-#             time.sleep(2)
-#             cursor = dbc_prunelist.find({'type' : stat_type}).batch_size(batch_size)
-#             docs = await cursor.to_list(batch_size)
-#             while docs:
-#                 ids = set()
-#                 for doc in docs:
-#                     ids.add(doc['id'])
-#                     bu.print_progress()
-#                 if len(ids) > 0:
-#                     try:
-#                         res = await dbc_2_prune.delete_many( { '_id': { '$in': list(ids) } } )
-#                         STATS_PRUNED[stat_type] += res.deleted_count
-#                     except Exception as err:
-#                         bu.error('Failure in deleting ' + stat_type, exception=err)
-#                     try:
-#                         await dbc_prunelist.delete_many({ 'type': stat_type, 'id': { '$in': list(ids) } })
-#                     except Exception as err:
-#                         bu.error('Failure in clearing stats-to-be-pruned table')
-#                 docs = await cursor.to_list(batch_size)
-#             bu.finish_progress_bar()
-
-#     except Exception as err:
-#         bu.error(exception=err)
-#     return None
-
 async def count_dups2prune(db: motor.motor_asyncio.AsyncIOMotorDatabase, stat_type:str, archive: bool = False, update: str = None) -> int:
     try:
         dbc = db[su.DB_C_STATS_2_DEL]
@@ -1258,14 +1221,10 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                       stat_type: str = None, 
                       pruneQ: asyncio.Queue = None):
     """Parellen DB pruning, DELETES DATA. Does NOT verify whether there are newer stats"""
-    #global STATS_PRUNED
     try:
         rl = RecordLogger('Prune')
         archive = args.opt_archive
         sample = args.sample
-        # if sample == None:
-        #     sample = DEFAULT_SAMPLE
-        ## TWO MODES: from DB, real-time? 
 
         if stat_type == None:
             modes = args.mode
@@ -1314,47 +1273,6 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
     bu.log(rl.print(do_print=False))
     rl.print()
     return None
-
-
-# async def prune_stats_worker_OLD(db: motor.motor_asyncio.AsyncIOMotorDatabase, pruneQ: asyncio.Queue, ID: int = 1) -> dict:
-#     """Paraller Worker for pruning stats"""
-    
-#     bu.error('DEPRECIATED')
-#     sys.exit(1)
-
-#     bu.debug('Started', id=ID)
-#     rl = RecordLogger('Prune stats')
-#     try:
-#         dbc_prunelist = db[su.DB_C_STATS_2_DEL]       
-        
-#         while True:
-#             prune_task  = await pruneQ.get()
-#             try:                 
-#                 stat_type   = prune_task['stat_type']
-#                 ids         = prune_task['ids']
-#                 dbc_2_prune = db[su.DB_C[stat_type]]
-
-#                 for _id in ids:
-#                     try:
-#                         res = await dbc_2_prune.delete_one( { '_id': _id } )
-#                         if res.deleted_count == 1:                        
-#                             rl.log(stat_type + ' pruned')
-#                             bu.print_progress()
-#                         else:
-#                             bu.error('Could not find ' + stat_type + ' _id=' + _id)
-#                             rl.log('Error: Not found ' + stat_type)
-#                         await dbc_prunelist.delete_one({ '$and': [ {'type': stat_type}, {'id': _id }]})
-#                     except Exception as err:
-#                         rl.log('Error pruning ' + stat_type)
-#                         bu.error(exception=err, id=ID)
-#             except Exception as err:
-#                 bu.error(exception=err, id=ID)
-#             pruneQ.task_done()        
-#     except (asyncio.CancelledError):
-#         bu.debug('Prune queue is empty', id=ID)
-#     except Exception as err:
-#         bu.error(exception=err, id=ID)
-#     return rl
 
 
 async def prune_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
