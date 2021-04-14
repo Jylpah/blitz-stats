@@ -130,7 +130,7 @@ async def init_db_indices(db: motor.motor_asyncio.AsyncIOMotorDatabase):
         ## WG Tank Stats
         for db_collection in [ DB_C_TANK_STATS , DB_C_TANK_STATS + DB_STR_ARCHIVE]:
             bu.verbose_std('Adding index: ' + db_collection + ': tank_id: 1, account_id: 1, last_battle_time: -1')
-            await db[db_collection].create_index([('tank_id', pymongo.ASCENDING), ('account_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING)], unique=True, background=True)
+            await db[db_collection].create_index([('tank_id', pymongo.ASCENDING), ('account_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING)], background=True, unique=True)
             
             bu.verbose_std('Adding index: ' + db_collection + ': tank_id: 1, last_battle_time: -1')
             await db[db_collection].create_index([('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING)], background=True)
@@ -138,11 +138,14 @@ async def init_db_indices(db: motor.motor_asyncio.AsyncIOMotorDatabase):
             bu.verbose_std('Adding index: ' + db_collection + ': tank_id: 1, ' + FIELD_NEW_STATS + ': 1 (partial)')
             await db[db_collection].create_index([('tank_id', pymongo.ASCENDING), (FIELD_NEW_STATS, pymongo.ASCENDING)], partialFilterExpression={FIELD_NEW_STATS:  {'$exists': True}}, background=True)
 
-
-
         ## WG Player Achievements
-        bu.verbose_std('Adding index: ' + DB_C_PLAYER_ACHIVEMENTS + ': account_id: 1, updated: -1')
-        await db[DB_C_PLAYER_ACHIVEMENTS].create_index([('account_id', pymongo.ASCENDING), ('updated', pymongo.DESCENDING)], background=True)
+        for db_collection in [ DB_C_PLAYER_ACHIVEMENTS , DB_C_PLAYER_ACHIVEMENTS + DB_STR_ARCHIVE]:
+            bu.verbose_std('Adding index: ' + db_collection + ': account_id: 1, updated: -1')
+            await db[db_collection].create_index([('account_id', pymongo.ASCENDING), ('updated', pymongo.DESCENDING)], background=True, unique=True)
+
+            bu.verbose_std('Adding index: ' + db_collection + ': updated: -1')
+            await db[db_collection].create_index([('updated', pymongo.DESCENDING)], background=True)
+
 
         bu.verbose_std('Adding index: ' + DB_C_TANKS + ': tank_id: 1, tier: -1')
         await db[DB_C_TANKS].create_index([('tank_id', pymongo.ASCENDING), ('tier', pymongo.DESCENDING)], background=True)
