@@ -333,6 +333,7 @@ class RecordLogger():
     def log(self, category: str, count: int = 1) -> None:
         #self.logger[self._get_long_cat(category)] += count
         self.logger[category] += count
+        # debug(category + ': +' + str(count))
         if (self.error_cats != None) and (category in self.error_cats):
             self.error_status = True
         return None
