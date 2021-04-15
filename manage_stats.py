@@ -20,7 +20,7 @@ CACHE_VALID     = 7*24*3600   # 7 days
 DEFAULT_SAMPLE  = 1000
 QUEUE_LEN       = 10000
 DEFAULT_BATCH   = 1000
-
+MODES = [ su.MODE_TANK_STATS, su.MODE_PLAYER_ACHIEVEMENTS ]
 bs = None
 
 TODAY               = datetime.datetime.utcnow().date()
@@ -45,7 +45,7 @@ async def main(argv):
     os.chdir(os.path.dirname(sys.argv[0]))
 
     parser = argparse.ArgumentParser(description='Manage DB stats')
-    parser.add_argument('--mode', default=['tank_stats'], nargs='+', choices=su.DB_C.keys(), help='Select type of stats to process')
+    parser.add_argument('--mode', default=[su.MODE_TANK_STATS], nargs='+', choices=MODES, help='Select type of stats to process')
     
     arggroup_action = parser.add_mutually_exclusive_group(required=True)
     arggroup_action.add_argument( '--analyze',  action='store_true', default=False, help='Analyze the database for duplicates')
@@ -115,6 +115,7 @@ async def main(argv):
             bu.verbose_std('Starting to ANALYZE duplicates in 3 seconds. Press CTRL + C to CANCEL')
             bu.wait(3)
             await analyze_stats(db, updates, args)
+
         
         elif args.check:
             bu.verbose_std('Starting to CHECK duplicates in 3 seconds. Press CTRL + C to CANCEL')
@@ -137,6 +138,7 @@ async def main(argv):
                 if su.MODE_TANK_STATS in args.mode:
                     bu.verbose_std('Starting to SNAPSHOT TANK STATS')
                     await snapshot_tank_stats(db, args)
+                await update_log(db, 'snapshot', None, args)
             else:
                 bu.error('Invalid input given. Exiting...')
 
@@ -150,6 +152,7 @@ async def main(argv):
                 await archive_player_achivements(db, args)
             if su.MODE_TANK_STATS in args.mode:
                 await archive_tank_stats(db, args)
+            await update_log(db, 'archive', None, args)
         
         elif args.reset:
             bu.verbose_std('Starting to RESET duplicates in 3 seconds. Press CTRL + C to CANCEL')
@@ -178,6 +181,35 @@ async def main(argv):
 #     except Exception as err:
 #         bu.error(exception=err)
 #         return None
+
+
+async def update_log(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
+                     action: str, 
+                     updates: list, 
+                     args: argparse.Namespace, 
+                     stat_types: list = None):
+    try:
+        sample = args.sample
+        archive = args.opt_archive
+        
+        if sample != None:
+            return False
+        if updates == None:
+            updates = [ { 'update': None } ]
+        modes = args.mode
+        if stat_types != None:
+            modes = stat_types
+
+        for update in updates:
+            for mode in modes:
+                mode_str = mode
+                if archive:
+                    mode_str = mode_str + su.MODE_ARCHIVE
+                await su.update_log(db, action, mode_str, update['update'])
+        return True
+    except Exception as err:
+        bu.error(exception=err) 
+    return False
 
 
 def mk_update_entry(update: str, start: int, end: int)  -> dict:
@@ -383,7 +415,7 @@ async def analyze_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
         
         if su.MODE_PLAYER_ACHIEVEMENTS in args.mode:
             rl.merge(await analyze_player_achievements(db, updates, args))            
-
+        await update_log(db, 'analyze', updates, args)
     except Exception as err:
         bu.error(exception=err)
     bu.log(rl.print(do_print=False))
@@ -409,7 +441,7 @@ async def reset_duplicates(db: motor.motor_asyncio.AsyncIOMotorDatabase,
             else:
                 rl_mode.log('FAILED')
             rl.merge(rl_mode)  
-
+        await update_log(db, 'reset dups', updates, args)   
     except Exception as err:
         bu.error(exception=err)
     bu.log(rl.print(do_print=False))
@@ -655,6 +687,7 @@ async def check_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                     bu.finish_progress_bar()
                 except Exception as err:
                     bu.error(exception=err)
+        await update_log(db, 'check', updates, args)
     except Exception as err:
         bu.error(exception=err)
     bu.log(rl.print(do_print=False))
@@ -989,7 +1022,7 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                     bu.finish_progress_bar()
                 except Exception as err:
                     bu.error(exception=err)
-
+        await update_log(db, 'prune', updates, args, modes)
     except Exception as err:
         bu.error(exception=err)
     bu.log(rl.print(do_print=False))
@@ -1213,6 +1246,7 @@ async def archive_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args:
         async for _ in cursor:      ## This one does not work yet until MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
             bu.print_progress()
             s +=1
+        rl.log('Found', sample)
         rl.log('Archived', s) 
 
         ## Clean the latest stats # TO DO  
