@@ -22,8 +22,8 @@ MODE_PLAYER_ACHIEVEMENTS= 'player_achievements'
 MODE_TANKOPEDIA			= 'tankopedia'
 MODE_BS_PLAYER_STATS 	= 'player_stats_BS'
 MODE_BS_TANK_STATS		= 'tank_stats_BS'
-
 MODE_ARCHIVE            = '_archive'
+
 DB_STR_ARCHIVE          = '_Archive'
 DB_C_ACCOUNTS   		= 'WG_Accounts'
 DB_C_UPDATES            = 'WG_Releases'
