@@ -37,6 +37,7 @@ DB_C_TANKS     			= 'Tankopedia'
 DB_C_TANK_STR			= 'WG_TankStrs'
 DB_C_ERROR_LOG			= 'ErrorLog'
 DB_C_UPDATE_LOG			= 'UpdateLog'
+DB_C_REPLAYS            = 'Replays'
 
 DB_C = {    MODE_TANK_STATS             : DB_C_TANK_STATS, 
             MODE_PLAYER_STATS           : DB_C_PLAYER_STATS,
@@ -121,11 +122,21 @@ async def init_db_indices(db: motor.motor_asyncio.AsyncIOMotorDatabase):
         bu.verbose_std('Adding index: ' + DB_C_BS_TANK_STATS + ': tank_id: 1, last_battle_time: -1')
         await db[DB_C_BS_TANK_STATS].create_index([('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING)], background=True)
 
-        bu.verbose_std('Adding index: ' + DB_C_ERROR_LOG + ': type: 1')
+        # Error log
+        bu.verbose_std('Adding index: ' + DB_C_ERROR_LOG + ': type: 1, account_id: 1')
         await db[DB_C_ERROR_LOG].create_index([ ('type', pymongo.ASCENDING), ('account_id', pymongo.ASCENDING)], background=True)
 
+        # Prune list
         bu.verbose_std('Adding index: ' + DB_C_STATS_2_DEL + ': type: 1, id: 1')
         await db[DB_C_STATS_2_DEL].create_index([('type', pymongo.ASCENDING), ('id', pymongo.ASCENDING)], background=True)
+
+        # Accounts
+        bu.verbose_std('Adding index: ' + DB_C_ACCOUNTS + ': last_battle_time: -1')
+        await db[DB_C_ACCOUNTS].create_index([ ('last_battle_time', pymongo.DESCENDING) ], background=True)
+
+        # Replays
+        bu.verbose_std('Adding index: ' + DB_C_REPLAYS + ': data.summary.battle_start_timestamp: 1, data.summary.vehicle_tie: 1')
+        await db[DB_C_REPLAYS].create_index([('data.summary.battle_start_timestamp', pymongo.ASCENDING), ('data.summary.vehicle_tier', pymongo.ASCENDING)], background=True)	
 
         ## WG Tank Stats
         for db_collection in [ DB_C_TANK_STATS , DB_C_TANK_STATS + DB_STR_ARCHIVE]:
@@ -135,6 +146,9 @@ async def init_db_indices(db: motor.motor_asyncio.AsyncIOMotorDatabase):
             bu.verbose_std('Adding index: ' + db_collection + ': tank_id: 1, last_battle_time: -1')
             await db[db_collection].create_index([('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING)], background=True)
             
+            bu.verbose_std('Adding index: ' + db_collection + ': account_id: 1, last_battle_time: -1')
+            await db[db_collection].create_index([('account_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING)], background=True)
+
             bu.verbose_std('Adding index: ' + db_collection + ': tank_id: 1, ' + FIELD_NEW_STATS + ': 1 (partial)')
             await db[db_collection].create_index([('tank_id', pymongo.ASCENDING), (FIELD_NEW_STATS, pymongo.ASCENDING)], partialFilterExpression={FIELD_NEW_STATS:  {'$exists': True}}, background=True)
 
@@ -146,12 +160,13 @@ async def init_db_indices(db: motor.motor_asyncio.AsyncIOMotorDatabase):
             bu.verbose_std('Adding index: ' + db_collection + ': updated: -1')
             await db[db_collection].create_index([('updated', pymongo.DESCENDING)], background=True)
 
-
+        # Tankopedia
         bu.verbose_std('Adding index: ' + DB_C_TANKS + ': tank_id: 1, tier: -1')
         await db[DB_C_TANKS].create_index([('tank_id', pymongo.ASCENDING), ('tier', pymongo.DESCENDING)], background=True)
         
         bu.verbose_std('Adding index: ' + DB_C_TANKS + ': name: TEXT')
         await db[DB_C_TANKS].create_index([('name', pymongo.TEXT)], background=True)
+
 
         return True
     except Exception as err:
