@@ -175,10 +175,6 @@ async def main(argv):
 					bu.log('Waiting for workers to cancel')
 					for rl_worker in await asyncio.gather(*workers, return_exceptions=True):
 						rl.merge(rl_worker)
-
-				if (args.sample == 0) and (not args.run_error_log):
-					# only for full stats
-					log_update_time(db, args.mode)
 				
 				bu.print_new_line(True)
 				print_date('DB update ended', start_time)
@@ -188,6 +184,11 @@ async def main(argv):
 	except Exception as err:
 		bu.error('Unexpected Exception', err)
 	finally:
+		if (args.sample == 0) and (not args.run_error_log):
+			# only for full stats
+			for mode in args.mode:
+				su.update_log(db, 'update', stat_type=mode)
+		
 		wg.print_request_stats()
 		bu.print_new_line(True)
 		rl.print()		
@@ -281,19 +282,6 @@ def get_stat_modes_BS(mode_list: list = None) -> list:
 	except Exception as err:
 		bu.error('Unexpected Exception', err)
 	return None
-
-
-def log_update_time(db : motor.motor_asyncio.AsyncIOMotorDatabase, mode : list):
-	"""Log successfully finished status update"""
-	try:
-		dbc = db[su.DB_C_UPDATE_LOG]
-		now = bu.NOW()
-		for m in mode:
-			dbc.insert_one( { 'mode': m, 'updated': now } )
-	except Exception as err:
-		bu.error('Unexpected Exception', err)
-		return False
-	return True
 
 
 def mk_account(account_id: int, inactive: bool = False ) -> dict:
@@ -426,8 +414,7 @@ async def get_players_errorlog(db : motor.motor_asyncio.AsyncIOMotorDatabase, mo
 async def update_stats_update_time(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int, stat_type: str, last_battle_time: int = None, inactive: bool = None) -> bool:
 	"""Update su.DB_C_ACCOUNTS table with the update time of the player's stats"""
 
-	# dbc = db[su.DB_C_ACCOUNTS]
-	dbc_update_log = db[su.DB_C_UPDATE_LOG]
+	dbc_update_log = db[su.DB_C_ACCOUNT_LOG]
 	try:
 		#await dbc.update_one( { '_id' : account_id }, { '$set': { 'last_battle_time': last_battle_time, su.UPDATE_FIELD[stat_type] : bu.NOW(), 'inactive': inactive }} )
 		#await dbc.update_one( { '_id' : account_id }, { '$set': { 'last_battle_time': last_battle_time, su.UPDATE_FIELD[stat_type] : bu.NOW() }} )
