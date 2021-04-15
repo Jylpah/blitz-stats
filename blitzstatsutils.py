@@ -37,6 +37,7 @@ DB_C_TANKS     			= 'Tankopedia'
 DB_C_TANK_STR			= 'WG_TankStrs'
 DB_C_ERROR_LOG			= 'ErrorLog'
 DB_C_UPDATE_LOG			= 'UpdateLog'
+DB_C_ACCOUNT_LOG        = 'AccountLog'
 DB_C_REPLAYS            = 'Replays'
 
 DB_C = {    MODE_TANK_STATS             : DB_C_TANK_STATS, 
@@ -122,10 +123,6 @@ async def init_db_indices(db: motor.motor_asyncio.AsyncIOMotorDatabase):
         bu.verbose_std('Adding index: ' + DB_C_BS_TANK_STATS + ': tank_id: 1, last_battle_time: -1')
         await db[DB_C_BS_TANK_STATS].create_index([('tank_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING)], background=True)
 
-        # Error log
-        bu.verbose_std('Adding index: ' + DB_C_ERROR_LOG + ': type: 1, account_id: 1')
-        await db[DB_C_ERROR_LOG].create_index([ ('type', pymongo.ASCENDING), ('account_id', pymongo.ASCENDING)], background=True)
-
         # Prune list
         bu.verbose_std('Adding index: ' + DB_C_STATS_2_DEL + ': type: 1, id: 1')
         await db[DB_C_STATS_2_DEL].create_index([('type', pymongo.ASCENDING), ('id', pymongo.ASCENDING)], background=True)
@@ -167,11 +164,35 @@ async def init_db_indices(db: motor.motor_asyncio.AsyncIOMotorDatabase):
         bu.verbose_std('Adding index: ' + DB_C_TANKS + ': name: TEXT')
         await db[DB_C_TANKS].create_index([('name', pymongo.TEXT)], background=True)
 
+        # Update Log
+        bu.verbose_std('Adding index: ' + DB_C_UPDATE_LOG + ': mode: 1, account_id: 1, updated: -1')
+        await db[DB_C_ACCOUNT_LOG].create_index([ ('mode', pymongo.ASCENDING), ('account_id', pymongo.ASCENDING), ('updated', pymongo.DESCENDING)], background=True)
+        
+
+        # Account Log
+        bu.verbose_std('Adding index: ' + DB_C_ACCOUNT_LOG + ': mode: 1, account_id: 1, updated: -1')
+        await db[DB_C_ACCOUNT_LOG].create_index([ ('mode', pymongo.ASCENDING), ('account_id', pymongo.ASCENDING), ('updated', pymongo.DESCENDING)], background=True)
+        
+        # Error log
+        bu.verbose_std('Adding index: ' + DB_C_ERROR_LOG + ': type: 1, account_id: 1')
+        await db[DB_C_ERROR_LOG].create_index([ ('type', pymongo.ASCENDING), ('account_id', pymongo.ASCENDING)], background=True)
+
 
         return True
     except Exception as err:
         bu.error('Unexpected Exception', err)
     return False
+
+
+async def update_log(db : motor.motor_asyncio.AsyncIOMotorDatabase, action: str, stat_type : str, update: str = None):
+	"""Log successfully finished status update"""
+	try:
+		dbc = db[DB_C_UPDATE_LOG]
+		await dbc.insert_one( { 'action': action, 'stat_type': stat_type, 'update': update,  'updated': bu.NOW() } )
+	except Exception as err:
+		bu.error('Unexpected Exception', err)
+		return False
+	return True
 
 
 def mk_id(account_id: int, tank_id: int, last_battle_time: int) -> str:
