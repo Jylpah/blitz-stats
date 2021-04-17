@@ -311,6 +311,28 @@ async def mk_tankQ(db : motor.motor_asyncio.AsyncIOMotorDatabase, archive: bool 
     return tankQ
 
 
+async def mk_accountQ(db : motor.motor_asyncio.AsyncIOMotorDatabase, sample: int = None, active_time: int = None) -> asyncio.Queue:
+    """Create ACCOUNT_ID queue for database queries"""    
+    try:
+        accountQ = asyncio.Queue()
+        dbc         = db[su.DB_C_ACCOUNTS]
+
+        match       = { '_id' : {  '$lt' : WG.ACCOUNT_ID_MAX}} 
+        pipeline    = [ { '$match' :  match } ]
+        if sample != None:
+            pipeline.append({'$sample': {'size' : sample} })
+        pipeline.append({ '$project': { '_id':  True }})
+
+        cursor = dbc.aggregate(pipeline)
+        async for account in cursor:
+            # bu.debug('account_id: ' + str(account['_id']), force=True)
+            await accountQ.put({ 'account_id': account['_id']})
+    except Exception as err:
+        bu.error(exception=err)
+    bu.debug('Account_id queue created')    
+    return accountQ
+
+
 async def mk_account_rangeQ(step: int = int(5e7)) -> asyncio.Queue:
     """Create ACCOUNT_ID queue for database queries"""    
     accountQ = asyncio.Queue()
@@ -461,7 +483,8 @@ async def analyze_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                     bu.verbose_std('Analyzing ' + get_mode_str(stat_type, archive) + ' for duplicates. Update ' + update_str)
                     
                 if archive:
-                    account_tankQ = await mk_account_tankQ(db)
+                    #account_tankQ = await mk_account_tankQ(db)
+                    account_tankQ = await mk_accountQ(db, args.sample)
                 else:
                     account_tankQ = await mk_account_tankQ_uniq(db, u)                
 
