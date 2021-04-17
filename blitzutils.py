@@ -594,6 +594,7 @@ def set_progress_bar(heading: str, max_value: int, step: int = None, slow: bool 
             _progress_N = max(1, min(step, max_value / 100))
         if _progress_obj != None:
             finish_progress_bar()
+        heading = heading + ': '
         if slow:
             _progress_obj = SlowBar(heading, max=max_value)
         else:
