@@ -136,7 +136,7 @@ async def main(argv):
 				accountQ 		= asyncio.Queue()
 				Qcreator 		= asyncio.create_task(mk_accountQ(accountQ, active_players))
 				workers 		= []
-				bu.set_progress_bar('Fetching stats:', len(active_players), 200, True)
+				bu.set_progress_bar('Fetching stats', len(active_players), 200, True)
 
 				if mode == su.MODE_TANK_STATS:
 					for i in range(args.workers):
@@ -300,7 +300,7 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 		update_field 	= su.UPDATE_FIELD[mode]
 		NOW = bu.NOW()
 
-		match = [ { '_id' : {  '$lt' : 31e8}}, { 'invalid': { '$exists': chk_invalid }} ]
+		match = [ { '_id' : {  '$lt' : WG.ACCOUNT_ID_MAX}}, { 'invalid': { '$exists': chk_invalid }} ]
 		if not force:
 			match.append( { '$or': [ { update_field : None }, { update_field : { '$lt': NOW - cache_valid}} ] } )
 			
