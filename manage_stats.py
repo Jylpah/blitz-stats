@@ -182,7 +182,7 @@ async def update_log(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                      stat_types: list = None):
     try:
         sample = args.sample
-        archive = args.opt_archive
+        latest = args.opt_latest
         
         if sample != None:
             return False
@@ -195,8 +195,8 @@ async def update_log(db: motor.motor_asyncio.AsyncIOMotorDatabase,
         for update in updates:
             for mode in modes:
                 mode_str = mode
-                if archive:
-                    mode_str = mode_str + su.MODE_ARCHIVE
+                if latest:
+                    mode_str = mode_str + su.MODE_LATEST
                 await su.update_log(db, action, mode_str, update['update'])
         return True
     except Exception as err:
