@@ -52,13 +52,14 @@ async def main(argv):
     arggroup_action.add_argument( '--check', 	action='store_true', default=False, help='Check the analyzed duplicates')
     arggroup_action.add_argument( '--prune', 	action='store_true', default=False, help='Prune database for the analyzed duplicates i.e. DELETE DATA')
     arggroup_action.add_argument( '--snapshot',	action='store_true', default=False, help='Snapshot latest stats from the archive')
-    arggroup_action.add_argument( '--archive',	action='store_true', default=False, help='Archive latest stats')
+    arggroup_action.add_argument( '--update',	action='store_true', default=False, help='Update archive with the latest stats')
     arggroup_action.add_argument( '--clean',	action='store_true', default=False, help='Clean latest stats from old stats')
     arggroup_action.add_argument( '--reset', 	action='store_true', default=False, help='Reset the analyzed duplicates')
     arggroup_action.add_argument( '--initdb', 	action='store_true', default=False, help='Initialize database indexes')
 
     parser.add_argument('--opt_tanks',   default=None, nargs='*', type=str, help='List of tank_ids for other options. Use "tank_id+" to start from a tank_id')
-    parser.add_argument('--opt_archive', action='store_true', default=False, help='Process stats archive')
+    parser.add_argument('--opt_latest', action='store_true', default=False, help='Process latest stats')
+    #parser.add_argument('--opt_archive', action='store_true', default=False, help='Process stats archive')
 
     arggroup_verbosity = parser.add_mutually_exclusive_group()
     arggroup_verbosity.add_argument( '-d', '--debug', 	action='store_true', default=False, help='Debug mode')
@@ -142,17 +143,16 @@ async def main(argv):
             else:
                 bu.error('Invalid input given. Exiting...')
 
-        elif args.archive:
-            bu.verbose_std('Starting to ARCHIVE stats in 3 seconds')
+        elif args.update:
+            bu.verbose_std('Starting to UPDATE stats with the latest in 3 seconds')
             bu.wait(1)
-            bu.verbose_std('Run ANALYZE + PRUNE before archive')
             bu.verbose_std('Press CTRL + C to CANCEL')
             bu.wait(2)
             if su.MODE_PLAYER_ACHIEVEMENTS in args.mode:
                 await archive_player_achivements(db, args)
             if su.MODE_TANK_STATS in args.mode:
                 await archive_tank_stats(db)
-            await update_log(db, 'archive', None, args)
+            await update_log(db, 'update', None, args)
         
         elif args.reset:
             bu.verbose_std('Starting to RESET duplicates in 3 seconds. Press CTRL + C to CANCEL')
