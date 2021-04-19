@@ -509,26 +509,6 @@ async def del_account_id(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_i
 		debug_account_id(account_id, 'Removed account_id from the DB')
 	return None
 
-## DEPRECIATED
-# async def is_account_valid(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int) -> bool: 
-# 	"""Check whether the account is valid. Returns None if the account is not found"""
-# 	try:
-# 		dbc = db[su.DB_C_ACCOUNTS]
-# 		res = await dbc.find_one( { '_id' : account_id })
-# 		if res == None:
-# 			bu.debug('account_id: ' + str(account_id) + ' not found fromn account DB')
-# 			return None
-# 		elif ('invalid' in res):
-# 			bu.debug('account_id: ' + str(account_id) + ' is invalid')
-# 			return False
-# 		elif ('inactive' in res) and (res['inactive'] == True):
-# 			return False
-# 		else:
-# 			return True		
-# 	except Exception as err:
-# 		error_account_id(account_id, 'Error checking account', exception=err)	
-# 	return False
-
 
 async def update_account(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int, stat_type: str = None, set_fields: dict = dict(), unset_fields : dict = dict()) -> bool:
 	"""Low-level helper function to update account collection"""
@@ -557,10 +537,8 @@ async def update_account(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_i
 
 async def set_account_invalid(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int, stat_type: str = None):
 	"""Set account_id invalid"""
-	# dbc = db[su.DB_C_ACCOUNTS]
 	try: 
 		FIELDS = { 'invalid': True }
-		#await dbc.update_one({ '_id': account_id }, { '$set': {'invalid': True }} )
 		await update_account(db, account_id, stat_type, set_fields=FIELDS )
 	except Exception as err:
 		error_account_id(account_id, 'Unexpected error', exception=err)
@@ -571,9 +549,7 @@ async def set_account_invalid(db: motor.motor_asyncio.AsyncIOMotorDatabase, acco
 
 async def set_account_valid(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int):
 	"""Set account_id valid"""
-	#dbc = db[su.DB_C_ACCOUNTS]
 	try: 
-		# await dbc.update_one({ '_id': account_id }, { '$unset': {'invalid': "" }} )		
 		await update_account(db, account_id, unset_fields={'invalid': "" })
 	except Exception as err:
 		error_account_id(account_id, 'Unexpected error', exception=err)
