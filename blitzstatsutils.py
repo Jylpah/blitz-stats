@@ -22,9 +22,12 @@ MODE_PLAYER_ACHIEVEMENTS= 'player_achievements'
 MODE_TANKOPEDIA			= 'tankopedia'
 MODE_BS_PLAYER_STATS 	= 'player_stats_BS'
 MODE_BS_TANK_STATS		= 'tank_stats_BS'
-MODE_ARCHIVE            = '_archive'
+#MODE_ARCHIVE            = '_archive'
+MODE_LATEST             = '_latest'
 
-DB_STR_ARCHIVE          = '_Archive'
+#DB_STR_ARCHIVE          = '_Archive'
+DB_STR_LATEST          = '_Latest'
+
 DB_C_ACCOUNTS   		= 'WG_Accounts'
 DB_C_UPDATES            = 'WG_Releases'
 DB_C_PLAYER_STATS		= 'WG_PlayerStats'
@@ -46,11 +49,11 @@ DB_C = {    MODE_TANK_STATS             : DB_C_TANK_STATS,
         }
 modes_tmp = list(DB_C.keys())
 for mode in modes_tmp:
-    DB_C[mode + MODE_ARCHIVE] = DB_C[mode] + DB_STR_ARCHIVE
+    DB_C[mode + MODE_LATEST] = DB_C[mode] + DB_STR_LATEST
 
-DB_C_ARCHIVE = dict()
+DB_C_LATEST = dict()
 for mode in DB_C:
-    DB_C_ARCHIVE[mode] = DB_C[mode] + DB_STR_ARCHIVE
+    DB_C_LATEST[mode] = DB_C[mode] + DB_STR_LATEST
 
 STR_MODES = {    
     MODE_TANK_STATS             : 'Tank Stats', 
@@ -62,7 +65,7 @@ STR_MODES = {
 }
 modes = list(STR_MODES.keys())
 for stat_type in modes:
-    STR_MODES[stat_type + MODE_ARCHIVE] = STR_MODES[stat_type] + ' (Archive)'
+    STR_MODES[stat_type + MODE_LATEST] = STR_MODES[stat_type] + ' (Archive)'
 
 
 UPDATE_FIELD = { MODE_TANK_STATS			: 'updated_WGtankstats',
@@ -136,7 +139,7 @@ async def init_db_indices(db: motor.motor_asyncio.AsyncIOMotorDatabase):
         await db[DB_C_REPLAYS].create_index([('data.summary.battle_start_timestamp', pymongo.ASCENDING), ('data.summary.vehicle_tier', pymongo.ASCENDING)], background=True)	
 
         ## WG Tank Stats
-        for db_collection in [ DB_C_TANK_STATS , DB_C_TANK_STATS + DB_STR_ARCHIVE]:
+        for db_collection in [ DB_C_TANK_STATS , DB_C_TANK_STATS + DB_STR_LATEST]:
             bu.verbose_std('Adding index: ' + db_collection + ': tank_id: 1, account_id: 1, last_battle_time: -1')
             await db[db_collection].create_index([('tank_id', pymongo.ASCENDING), ('account_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING)], background=True, unique=True)
             
@@ -150,7 +153,7 @@ async def init_db_indices(db: motor.motor_asyncio.AsyncIOMotorDatabase):
             await db[db_collection].create_index([ ('tank_id', pymongo.ASCENDING), (FIELD_NEW_STATS, pymongo.ASCENDING), ('account_id', pymongo.ASCENDING)], partialFilterExpression={FIELD_NEW_STATS:  {'$exists': True}}, background=True)
 
         ## WG Player Achievements
-        for db_collection in [ DB_C_PLAYER_ACHIVEMENTS , DB_C_PLAYER_ACHIVEMENTS + DB_STR_ARCHIVE]:
+        for db_collection in [ DB_C_PLAYER_ACHIVEMENTS , DB_C_PLAYER_ACHIVEMENTS + DB_STR_LATEST]:
             bu.verbose_std('Adding index: ' + db_collection + ': account_id: 1, updated: -1')
             await db[db_collection].create_index([('account_id', pymongo.ASCENDING), ('updated', pymongo.DESCENDING)], background=True, unique=True)
 
