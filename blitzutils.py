@@ -148,6 +148,117 @@ class ThrottledClientSession(aiohttp.ClientSession):
 
 
 ## -----------------------------------------------------------
+#### Class Timer()
+## -----------------------------------------------------------
+
+## CHANGE:
+# * define event types
+# * start/stop per event type
+# * automatic Total 
+class Timer():
+    """Stopwatch for measuring time"""
+    TOTAL = 'Total'
+    def __init__(self, name: str= None, modes: list = list(), start: bool =False ): 
+        try:
+            self.name           = name
+            self.time_elapsed   = collections.defaultdict(def_value_zero)
+            self.start_time     = dict()
+            self.on             = dict()
+
+            modes.append(self.TOTAL)
+            self.modes = modes
+            for mode in self.modes:
+                self.on[mode] = False
+            self.start(all=start)
+        except Exception as err:
+            error(exception=err)
+        
+
+    def start(self, modes: list = [ TOTAL ], all: bool = False) -> None:
+        try:
+            if isinstance(modes, str):
+                modes = [modes]
+            elif all:
+                modes = self.modes
+            start_time = time.time()
+            for mode in modes:
+                if self._chk_mode(mode) and not self.on[mode]:
+                    self.start_time[mode] = start_time
+                    self.on[mode]         = True
+        except Exception as err:
+            error(exception=err)
+
+
+    def stop(self, modes: list = [ TOTAL ], all: bool = False):
+        try:
+            if isinstance(modes, str):
+                modes = [modes]
+            elif all:
+                modes = self.modes
+            res = dict()
+            stop_time = time.time()
+            for mode in modes:
+                if self._chk_mode(mode) and self.on[mode]:
+                    lap = stop_time - self.start_time[mode]
+                    self.time_elapsed[mode] += lap
+                    self.on[mode]  = False
+                    res[mode] = lap
+            if (len(res)) == 1:
+                next(iter(res.values()))            
+            else:
+                return res
+        except Exception as err:
+            error(exception=err)
+        return None
+
+    def _chk_mode(self, mode: str = None) -> bool:
+        try:
+            return mode in self.modes
+        except:
+            error(str(mode) + ' is not in Timer.modes: ' + ', '.join(self.modes))
+        return False
+
+
+    def elapsed(self, mode: str = TOTAL) -> float:
+        """Return time elapsed. Stop timer(s) by default"""
+        try:
+            if self._chk_mode(mode):
+                return self.time_elapsed[mode]
+        except Exception as err:
+            error(exception=err)
+        return None
+
+
+    def get_name(self) -> str:
+        return self.name
+
+    
+    def get_mode_name(self, mode: str = TOTAL) -> str:
+        try:
+            if self._chk_mode(mode):
+                return mode + ' ' + self.name
+        except Exception as err:
+            error(exception=err)
+        return None
+
+    
+    def get_modes(self) -> list:
+        return self.modes
+
+
+    def time_str(self, mode: str = TOTAL, name: bool = False) -> str:
+        try:
+            if self._chk_mode(mode):
+                res = mode + ':' + time.strftime("%H:%M:%S", time.gmtime(self.elapsed(mode)))
+                if name:
+                    res = self.name + ': ' + res
+                return res
+        except Exception as err:
+            error(exception=err)
+        return None
+
+
+## -----------------------------------------------------------
 #### Class AsyncLogger()
 ## -----------------------------------------------------------
 class AsyncLogger():
@@ -222,6 +333,7 @@ class RecordLogger():
     def log(self, category: str, count: int = 1) -> None:
         #self.logger[self._get_long_cat(category)] += count
         self.logger[category] += count
+        # debug(category + ': +' + str(count))
         if (self.error_cats != None) and (category in self.error_cats):
             self.error_status = True
         return None
@@ -232,7 +344,10 @@ class RecordLogger():
 
 
     def _get_str(self, cat: str) -> str:
-        return '{:40}: {}'.format(cat, self.get_value(cat))
+        if isinstance(self.get_value(cat), int):
+            return '{:40}: {}'.format(cat, self.get_value(cat))
+        else:
+            return '{:40}: {:.2f}'.format(cat, self.get_value(cat))
     
 
     def get_value(self, category) -> int:
@@ -476,9 +591,10 @@ def set_progress_bar(heading: str, max_value: int, step: int = None, slow: bool 
         if step == None:
             _progress_N = int(max_value / 1000) if (max_value > 1000) else 2
         else:
-            _progress_N = step
+            _progress_N = max(1, min(step, max_value / 100))
         if _progress_obj != None:
             finish_progress_bar()
+        heading = heading + ': '
         if slow:
             _progress_obj = SlowBar(heading, max=max_value)
         else:
@@ -730,23 +846,32 @@ def sort_dict(d: dict) -> dict:
 ## -----------------------------------------------------------
 
 class SlowBar(IncrementalBar):
-    suffix = '%(index)d/%(max)d %(percent)d%% AVG %(avg_rate).1f/sec ETA %(remaining_hours).0f h %(remaining_mins).0f mins'
+    suffix = '%(index)d/%(max)d %(percent)d%%%(avg_rate)s %(remaining_hours).0fh %(remaining_mins).0fm %(remaining_secs).0fs'
     @property
     def remaining_hours(self):
         return self.eta // 3600
 
+
     @property
-    def remaining_mins(self):
-        return (self.eta - (self.eta // 3600)*3600) // 60
+    def remaining_mins(self):        
+        return (self.eta // 60) % 60
+
+    @property
+    def remaining_secs(self):
+        return self.eta % 60
+
 
     @property
     def avg_rate(self):
-        if self.avg > 0:
-            return  1 / self.avg
+        if self.avg == 0:
+            return " AVG N/A"
+        elif 1 / self.avg > 1:
+            return  " AVG {:.1f}/sec".format(1 / self.avg)
+        elif 1 / self.avg*60 > 1:
+            return  " AVG {:.1f}/min".format(60 / self.avg)
         else:
-            return 0
- 
-
+            return  " AVG {:.1f}/h".format(3600 / self.avg)
+        
 ## -----------------------------------------------------------
 #### Class RateCounter 
 ## -----------------------------------------------------------

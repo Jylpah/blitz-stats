@@ -6,14 +6,13 @@ import sys, argparse, json, os, inspect, pprint, aiohttp, asyncio, aiofiles, aio
 import motor.motor_asyncio, ssl, lxml, re, logging, time, xmltodict, collections, pymongo
 import configparser
 import blitzutils as bu
+import blitzstatsutils as su
 from bs4 import BeautifulSoup
 from blitzutils import BlitzStars, WG, WoTinspector, RecordLogger
 
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
 N_WORKERS = 20
-
-
 MAX_RETRIES = 3
 CACHE_VALID = 24*3600*5   # 5 days
 SLEEP = 1
@@ -21,11 +20,8 @@ REPLAY_N = 0
 
 WG_appID = 'cd770f38988839d7ab858d1cbe54bdd0'
 
-FILE_ACTIVE_PLAYERS='activeinlast30days.json'
-FILE_CONFIG = 'blitzstats.ini'
-
-DB_C_ACCOUNTS   = 'WG_Accounts'
-DB_C_REPLAYS   = 'Replays'
+FILE_ACTIVE_PLAYERS	= 'activeinlast30days.json'
+FILE_CONFIG 		= 'blitzstats.ini'
 
 wi = None
 bs = None
@@ -111,10 +107,7 @@ async def main(argv):
 			client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, username=DB_USER, password=DB_PASSWD, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
 
 		db = client[DB_NAME]
-		await db[DB_C_ACCOUNTS].create_index([ ('last_battle_time', pymongo.DESCENDING) ], background=True)	
-		await db[DB_C_REPLAYS].create_index([('data.summary.battle_start_timestamp', pymongo.ASCENDING)], background=True)	
-		await db[DB_C_REPLAYS].create_index([('data.summary.battle_start_timestamp', pymongo.ASCENDING), ('data.summary.vehicle_tier', pymongo.ASCENDING)], background=True)	
-
+		
 		if not args.remove:
 			if args.blitzstars:
 				players.update(await get_players_BS(args.force))
@@ -145,7 +138,6 @@ async def main(argv):
 
 async def invalidate_account_ids(db: motor.motor_asyncio.AsyncIOMotorDatabase, files: list):
 	"""Invalidate account_ids from the DB to prevent further requests"""
-	# dbc = db[DB_C_ACCOUNTS]
 	
 	bu.verbose_std('INVALIDATING ACCOUNT_IDs FROM THE DATABASE * * * * * * * * * * * ')
 	await asyncio.sleep(5)
@@ -161,8 +153,7 @@ async def invalidate_account_ids(db: motor.motor_asyncio.AsyncIOMotorDatabase, f
 		try:
 			# mark the account invalid to prevent further requests
 			await set_account_invalid(db, account_id)
-			# manually check data in the DB
-			
+			# manually check data in the DB			
 			invalidated += 1 
 		except Exception as err:
 			bu.error('Unexpected Exception: ' + str(type(err)) + ' : '+ str(err))
@@ -174,7 +165,7 @@ async def invalidate_account_ids(db: motor.motor_asyncio.AsyncIOMotorDatabase, f
 
 async def set_account_invalid(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int):
 	"""Set account_id invalid"""
-	dbc = db[DB_C_ACCOUNTS]
+	dbc = db[su.DB_C_ACCOUNTS]
 	try: 
 		await dbc.update_one({ '_id': account_id }, { '$set': {'invalid': True }} )		
 	except Exception as err:
@@ -186,12 +177,11 @@ async def set_account_invalid(db: motor.motor_asyncio.AsyncIOMotorDatabase, acco
 
 async def update_account_ids(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_ids: set):
 		"""Update / add account_ids to the database"""
-
-		dbc = db[DB_C_ACCOUNTS]
+		dbc = db[su.DB_C_ACCOUNTS]
 				
 		player_list = list()
 		for account_id in account_ids:
-			if account_id < 31e8:
+			if account_id < WG.ACCOUNT_ID_MAX:
 				player_list.append(mk_player_JSON(account_id))
 		
 		count_old = await dbc.count_documents({})
@@ -224,7 +214,7 @@ def mk_player_JSON(account_id: int):
 	return player
 
 async def get_players_DB(db, args):
-	dbc = db[DB_C_REPLAYS]
+	dbc = db[su.DB_C_REPLAYS]
 	players = set()
 
 	cursor = dbc.find({}, { 'data.summary.allies' : 1, 'data.summary.enemies' : 1, '_id' : 0 } )
@@ -411,7 +401,7 @@ async def WI_old_replay_found():
 
 async def WI_replay_fetcher(db : motor.motor_asyncio.AsyncIOMotorDatabase, queue : asyncio.Queue, workerID : int, force : bool):
 	players = set()
-	dbc = db[DB_C_REPLAYS]
+	dbc = db[su.DB_C_REPLAYS]
 
 	replays = 0 
 	while True:
