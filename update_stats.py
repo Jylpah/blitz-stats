@@ -120,7 +120,7 @@ async def main(argv):
 			client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, username=DB_USER, password=DB_PASSWD, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
 		db = client[DB_NAME]
 		bu.debug(str(type(db)))	
-		await su.init_db_indices(db)
+		# await su.init_db_indices(db)
 
 		## get active player list ------------------------------
 		active_players = {}
