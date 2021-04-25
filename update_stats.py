@@ -13,7 +13,7 @@ logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
 N_WORKERS = 50
 MAX_RETRIES = 3
-CACHE_VALID = 7   # days
+CACHE_VALID = 3   # days
 MAX_UPDATE_INTERVAL = 4*30*24*60*60 # 4 months
 INACTIVE_THRESHOLD 	= 2*30*24*60*60 # 2 months
 SLEEP = 0.1
@@ -120,7 +120,7 @@ async def main(argv):
 			client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, username=DB_USER, password=DB_PASSWD, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
 		db = client[DB_NAME]
 		bu.debug(str(type(db)))	
-		# await su.init_db_indices(db)
+		#await su.init_db_indices(db)
 
 		## get active player list ------------------------------
 		active_players = {}
@@ -221,7 +221,7 @@ async def get_active_players(db : motor.motor_asyncio.AsyncIOMotorDatabase,
 				return None
 			players = await get_active_players_DB(db, mode, args)			
 
-		if sample > 0:
+		if sample > 0 and sample < len(players):
 			players = random.sample(players, sample)
 		random.shuffle(players)  # randomize
 		return players
@@ -728,7 +728,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 							rl.log('accounts marked active')						
 						inactive = False
 					await update_stats_update_time(db, account_id, stat_type, latest_battle, inactive)
-					debug_account_id(account_id, str(added) + 'Tank stats added', id=worker_id)			
+					debug_account_id(account_id, str(added) + ' Tank stats added', id=worker_id)			
 			except bu.StatsNotFound as err:
 				rl.log('accounts without stats')
 				log_account_id(account_id, exception=err, id=worker_id)

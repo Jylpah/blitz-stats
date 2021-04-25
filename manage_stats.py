@@ -73,7 +73,7 @@ async def main(argv):
     try:
         bu.set_log_level(args.silent, args.verbose, args.debug)
         bu.set_progress_step(100)
-        if args.snapshot or args.archive:
+        if args.snapshot or args.update:
             args.log = True
         if args.log:
             datestr = datetime.datetime.now().strftime("%Y%m%d_%H%M")
@@ -518,7 +518,7 @@ async def analyze_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
 async def analyze_player_achievements(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                                       updates: list, args: argparse.Namespace = None) -> RecordLogger:
     try:
-        latest     = args.opt_latest
+        latest      = args.opt_latest
         stat_type   = su.MODE_PLAYER_ACHIEVEMENTS
         rl          = RecordLogger(get_mode_str(stat_type, latest))
         dupsQ       = asyncio.Queue(QUEUE_LEN)
@@ -532,9 +532,10 @@ async def analyze_player_achievements(db: motor.motor_asyncio.AsyncIOMotorDataba
                 else:
                     update_str = u['update']
                     bu.verbose_std('Analyzing ' + get_mode_str(stat_type, latest) + ' for duplicates. Update ' + u['update'])
-                accountQ = await mk_account_rangeQ()
+                # accountQ = await mk_account_rangeQ()
+                accountQ = await mk_accountQ(db)
                 lenQ = accountQ.qsize()                
-                bu.set_progress_bar('Stats processed', lenQ, step=5, slow=True)  
+                bu.set_progress_bar('Stats processed', lenQ, step=1000, slow=True)  
                 # bu.set_counter('Stats processed: ')   
                 workers = []
 
@@ -1344,10 +1345,12 @@ async def clean_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase):
 
 async def find_dup_tank_stats_worker(  db: motor.motor_asyncio.AsyncIOMotorDatabase, 
                                         account_tankQ: asyncio.Queue, dupsQ: asyncio.Queue, 
-                                        update_record: dict = None, ID: int = 0, latest = False) -> RecordLogger:
+                                        update_record: dict = None, 
+                                        ID: int = 0, latest = False) -> RecordLogger:
     """Worker to find duplicates to prune"""
     try:
-        rl       = RecordLogger('Find tank stat duplicates')
+        rl = RecordLogger('Find tank stat duplicates')
+        rl.log('Found', 0)
         update = None
         if latest:            
             stat_type = su.MODE_TANK_STATS + su.MODE_LATEST
@@ -1364,8 +1367,8 @@ async def find_dup_tank_stats_worker(  db: motor.motor_asyncio.AsyncIOMotorDatab
             sys.exit(1)           
 
         while not account_tankQ.empty():
-            try:
-                wp = await account_tankQ.get()
+            wp = await account_tankQ.get()
+            try:                
                 match_stage = list()
                 if 'tank_id' in wp:
                     tank_id  = wp['tank_id']
@@ -1382,7 +1385,7 @@ async def find_dup_tank_stats_worker(  db: motor.motor_asyncio.AsyncIOMotorDatab
                     if group_by != '$account_id':
                         bu.error('CRITICAL ERROR: Wrong arguments given')
                         rl.log('CRITICAL ERROR')
-                        return rl
+                        break
                     account_id_min = wp['account_id_min']
                     account_id_max = wp['account_id_max']
                     match_stage.append({'account_id': { '$gte': account_id_min}})
@@ -1412,7 +1415,8 @@ async def find_dup_tank_stats_worker(  db: motor.motor_asyncio.AsyncIOMotorDatab
                     bu.error('Update=' + update, exception=err)
                 else:
                     bu.error('Update=ALL', exception=err)
-            account_tankQ.task_done()
+            finally:
+                account_tankQ.task_done()
 
     except Exception as err:
         bu.error(exception=err)
@@ -1425,7 +1429,8 @@ async def find_dup_player_achivements_worker(db: motor.motor_asyncio.AsyncIOMoto
                                         latest = False) -> RecordLogger:
     """Worker to find player achivement duplicates to prune"""
     try:
-        rl       = RecordLogger('Find player achivement duplicates')
+        rl = RecordLogger('Find player achivement duplicates')
+        rl.log('Found', 0)
         update = None
         if latest:            
             stat_type = su.MODE_PLAYER_ACHIEVEMENTS + su.MODE_LATEST
@@ -1444,8 +1449,11 @@ async def find_dup_player_achivements_worker(db: motor.motor_asyncio.AsyncIOMoto
         while not accountQ.empty():
             accounts = await accountQ.get()
             try:
-                match_stage = [ {'account_id': { '$gte': accounts['min']}}, 
-                                {'account_id': { '$lt' : accounts['max'] }} ]
+                if 'account_id' in accounts:
+                    match_stage = [ { 'account_id': accounts['account_id']} ]
+                else:
+                    match_stage = [ {'account_id': { '$gte': accounts['min']}}, 
+                                    {'account_id': { '$lt' : accounts['max'] }} ]
                 if update_record != None:
                     match_stage.append( {'updated': {'$gt': start}} )
                     match_stage.append( {'updated': {'$lte': end}} )
