@@ -31,7 +31,6 @@ STATS_START_DATE    = datetime.datetime(2014,1,1)
 def def_value_zero():
     return 0
 
-
 #####################################################################
 #                                                                   #
 # main()                                                            #
@@ -309,7 +308,8 @@ async def mk_tankQ(db : motor.motor_asyncio.AsyncIOMotorDatabase, latest: bool =
     return tankQ
 
 
-async def mk_accountQ(db : motor.motor_asyncio.AsyncIOMotorDatabase, sample: int = None, active_time: int = None) -> asyncio.Queue:
+async def mk_accountQ(db : motor.motor_asyncio.AsyncIOMotorDatabase, 
+                      sample: int = None, active_time: int = None) -> asyncio.Queue:
     """Create ACCOUNT_ID queue for database queries"""    
     try:
         accountQ = asyncio.Queue()
@@ -568,7 +568,7 @@ async def save_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
         dbc = db[su.DB_C_STATS_2_DEL]
         rl = RecordLogger('Save duplicate info')
         if latest:
-            stat_type = stat_type + su.MODE_ARCHIVE
+            stat_type = stat_type + su.MODE_LATEST
         while True:
             dups = await dupsQ.get()
             if dups['stat_type'] != stat_type:
@@ -603,7 +603,7 @@ async def get_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
         dbc = db[su.DB_C_STATS_2_DEL]
         count = 0
         if latest:
-            stat_type = stat_type + su.MODE_ARCHIVE
+            stat_type = stat_type + su.MODE_LATEST
         rl = RecordLogger('Fetch ' + get_mode_str(stat_type))
         match = [{'type' : stat_type} ]
         if update != None:
@@ -730,7 +730,7 @@ async def check_dup_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabas
     try:
         rl = RecordLogger(get_mode_str(su.MODE_TANK_STATS, latest) + ' duplicates')
         if latest:
-            stat_type = su.MODE_TANK_STATS + su.MODE_ARCHIVE
+            stat_type = su.MODE_TANK_STATS + su.MODE_LATEST
         else:
             stat_type = su.MODE_TANK_STATS    
         dbc = db[su.DB_C[stat_type]]
@@ -814,7 +814,7 @@ async def check_dup_player_achievements_worker(db: motor.motor_asyncio.AsyncIOMo
         
         rl = RecordLogger(get_mode_str(su.MODE_PLAYER_ACHIEVEMENTS, latest))
         if latest:
-            stat_type = su.MODE_PLAYER_ACHIEVEMENTS + su.MODE_ARCHIVE
+            stat_type = su.MODE_PLAYER_ACHIEVEMENTS + su.MODE_LATEST
         else:
             stat_type   = su.MODE_PLAYER_ACHIEVEMENTS
 
@@ -980,7 +980,7 @@ async def count_dups2prune(db: motor.motor_asyncio.AsyncIOMotorDatabase, stat_ty
     try:
         dbc = db[su.DB_C_STATS_2_DEL]
         if latest:
-            stat_type = stat_type + su.MODE_ARCHIVE
+            stat_type = stat_type + su.MODE_LATEST
         if update != None:
             return await dbc.count_documents({ '$and': [ {'type' : stat_type}, { 'update': update} ] } )
         else:
