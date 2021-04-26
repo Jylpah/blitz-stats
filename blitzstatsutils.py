@@ -140,6 +140,7 @@ async def init_db_indices(db: motor.motor_asyncio.AsyncIOMotorDatabase):
 
         ## WG Tank Stats
         for db_collection in [ DB_C_TANK_STATS , DB_C_TANK_STATS + DB_STR_LATEST]:
+            
             bu.verbose_std('Adding index: ' + db_collection + ': tank_id: 1, account_id: 1, last_battle_time: -1')
             await db[db_collection].create_index([('tank_id', pymongo.ASCENDING), ('account_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING)], background=True, unique=True)
             
