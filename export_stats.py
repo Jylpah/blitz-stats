@@ -96,8 +96,7 @@ async def main(argv):
 
         db = client[DB_NAME]
         bu.debug(str(type(db)))
-        tasks = []
-        
+        tasks = []        
         
         if args.mode == 'tankopedia':
             if args.filename == None:
@@ -348,7 +347,7 @@ async def q_tank_stats_WG(workerID: int, db: motor.motor_asyncio.AsyncIOMotorDat
                     else:
                         pipeline = [ {'$match': { '$and': [{'last_battle_time': {'$lte': timeB}}, {'last_battle_time': {'$gt': timeA}}, {'tank_id': tank_id } ] }},
                                 {'$sort': {'last_battle_time': pymongo.DESCENDING}},
-                                {'$group': { '_id': '$account_id',
+                                {'$group': { '_id': {"account_id": '$account_id'},
                                             'doc': {'$first': '$$ROOT'}}},
                                 {'$replaceRoot': {'newRoot': '$doc'}}, 
                                 {'$project': {'_id': False}} ]

@@ -13,7 +13,7 @@ logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
 N_WORKERS = 50
 MAX_RETRIES = 3
-CACHE_VALID = 7   # days
+CACHE_VALID = 3   # days
 MAX_UPDATE_INTERVAL = 4*30*24*60*60 # 4 months
 INACTIVE_THRESHOLD 	= 2*30*24*60*60 # 2 months
 SLEEP = 0.1
@@ -120,7 +120,7 @@ async def main(argv):
 			client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, username=DB_USER, password=DB_PASSWD, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
 		db = client[DB_NAME]
 		bu.debug(str(type(db)))	
-		await su.init_db_indices(db)
+		#await su.init_db_indices(db)
 
 		## get active player list ------------------------------
 		active_players = {}
@@ -221,7 +221,7 @@ async def get_active_players(db : motor.motor_asyncio.AsyncIOMotorDatabase,
 				return None
 			players = await get_active_players_DB(db, mode, args)			
 
-		if sample > 0:
+		if sample > 0 and sample < len(players):
 			players = random.sample(players, sample)
 		random.shuffle(players)  # randomize
 		return players
@@ -298,6 +298,7 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 		sample 			= args.sample
 		chk_invalid 	= args.chk_invalid
 		update_field 	= su.UPDATE_FIELD[mode]
+		DB_SAMPLE_FACTOR = 2 # > share of inactive players
 		NOW = bu.NOW()
 
 		match = [ { '_id' : {  '$lt' : WG.ACCOUNT_ID_MAX}}, { 'invalid': { '$exists': chk_invalid }} ]
@@ -306,7 +307,7 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 			
 		pipeline = [ { '$match' : { '$and' : match } } ]
 		if sample > 0:
-			pipeline.append({'$sample': {'size' : sample} })
+			pipeline.append({'$sample': {'size' : sample * DB_SAMPLE_FACTOR} })
 
 		cursor = dbc.aggregate(pipeline, allowDiskUse=False)
 		
@@ -398,17 +399,6 @@ async def get_players_errorlog(db : motor.motor_asyncio.AsyncIOMotorDatabase, mo
 	except Exception as err:
 		bu.error('Unexpected error', err)	
 	return None
-
-
-# def print_update_stats(mode: list, error_log : bool = False, rl: RecordLogger = None):
-# 	if rl != None:
-# 		rl.print()
-# 		return True
-# 	# if len(get_stat_modes(mode)) > 0:
-# 	# 	bu.verbose_std('Total ' + str(stats_added) + ' stats updated')
-# 	# 	return True
-# 	else:
-# 		return False
 
 
 async def update_stats_update_time(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int, stat_type: str, last_battle_time: int = None, inactive: bool = None) -> bool:
@@ -509,26 +499,6 @@ async def del_account_id(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_i
 		debug_account_id(account_id, 'Removed account_id from the DB')
 	return None
 
-## DEPRECIATED
-# async def is_account_valid(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int) -> bool: 
-# 	"""Check whether the account is valid. Returns None if the account is not found"""
-# 	try:
-# 		dbc = db[su.DB_C_ACCOUNTS]
-# 		res = await dbc.find_one( { '_id' : account_id })
-# 		if res == None:
-# 			bu.debug('account_id: ' + str(account_id) + ' not found fromn account DB')
-# 			return None
-# 		elif ('invalid' in res):
-# 			bu.debug('account_id: ' + str(account_id) + ' is invalid')
-# 			return False
-# 		elif ('inactive' in res) and (res['inactive'] == True):
-# 			return False
-# 		else:
-# 			return True		
-# 	except Exception as err:
-# 		error_account_id(account_id, 'Error checking account', exception=err)	
-# 	return False
-
 
 async def update_account(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int, stat_type: str = None, set_fields: dict = dict(), unset_fields : dict = dict()) -> bool:
 	"""Low-level helper function to update account collection"""
@@ -557,10 +527,8 @@ async def update_account(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_i
 
 async def set_account_invalid(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int, stat_type: str = None):
 	"""Set account_id invalid"""
-	# dbc = db[su.DB_C_ACCOUNTS]
 	try: 
 		FIELDS = { 'invalid': True }
-		#await dbc.update_one({ '_id': account_id }, { '$set': {'invalid': True }} )
 		await update_account(db, account_id, stat_type, set_fields=FIELDS )
 	except Exception as err:
 		error_account_id(account_id, 'Unexpected error', exception=err)
@@ -571,9 +539,7 @@ async def set_account_invalid(db: motor.motor_asyncio.AsyncIOMotorDatabase, acco
 
 async def set_account_valid(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int):
 	"""Set account_id valid"""
-	#dbc = db[su.DB_C_ACCOUNTS]
 	try: 
-		# await dbc.update_one({ '_id': account_id }, { '$unset': {'invalid': "" }} )		
 		await update_account(db, account_id, unset_fields={'invalid': "" })
 	except Exception as err:
 		error_account_id(account_id, 'Unexpected error', exception=err)
@@ -752,7 +718,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 							rl.log('accounts marked active')						
 						inactive = False
 					await update_stats_update_time(db, account_id, stat_type, latest_battle, inactive)
-					debug_account_id(account_id, str(added) + 'Tank stats added', id=worker_id)			
+					debug_account_id(account_id, str(added) + ' Tank stats added', id=worker_id)			
 			except bu.StatsNotFound as err:
 				rl.log('accounts without stats')
 				log_account_id(account_id, exception=err, id=worker_id)

@@ -482,8 +482,8 @@ async def mk_playerQ(queue : asyncio.Queue, account_id_list : list):
 def NOW() -> int:
 	return int(time.time())
 
-def mk_id(account_id: int, tank_id: int, last_battle_time: int):
-	return hex(account_id)[2:].zfill(10) + hex(tank_id)[2:].zfill(6) + hex(last_battle_time)[2:].zfill(8)
+# def mk_id(account_id: int, tank_id: int, last_battle_time: int):
+# 	return hex(account_id)[2:].zfill(10) + hex(tank_id)[2:].zfill(6) + hex(last_battle_time)[2:].zfill(8)
 
     ### main()
 if __name__ == "__main__":
