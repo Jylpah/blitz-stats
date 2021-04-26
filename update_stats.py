@@ -11,7 +11,7 @@ from blitzutils import BlitzStars, WG, RecordLogger
 
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
-N_WORKERS = 50
+N_WORKERS = 60
 MAX_RETRIES = 3
 CACHE_VALID = 3   # days
 MAX_UPDATE_INTERVAL = 4*30*24*60*60 # 4 months
