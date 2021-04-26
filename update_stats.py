@@ -298,6 +298,7 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 		sample 			= args.sample
 		chk_invalid 	= args.chk_invalid
 		update_field 	= su.UPDATE_FIELD[mode]
+		DB_SAMPLE_FACTOR = 2 # > share of inactive players
 		NOW = bu.NOW()
 
 		match = [ { '_id' : {  '$lt' : WG.ACCOUNT_ID_MAX}}, { 'invalid': { '$exists': chk_invalid }} ]
@@ -306,7 +307,7 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 			
 		pipeline = [ { '$match' : { '$and' : match } } ]
 		if sample > 0:
-			pipeline.append({'$sample': {'size' : sample} })
+			pipeline.append({'$sample': {'size' : sample * DB_SAMPLE_FACTOR} })
 
 		cursor = dbc.aggregate(pipeline, allowDiskUse=False)
 		
@@ -398,17 +399,6 @@ async def get_players_errorlog(db : motor.motor_asyncio.AsyncIOMotorDatabase, mo
 	except Exception as err:
 		bu.error('Unexpected error', err)	
 	return None
-
-
-# def print_update_stats(mode: list, error_log : bool = False, rl: RecordLogger = None):
-# 	if rl != None:
-# 		rl.print()
-# 		return True
-# 	# if len(get_stat_modes(mode)) > 0:
-# 	# 	bu.verbose_std('Total ' + str(stats_added) + ' stats updated')
-# 	# 	return True
-# 	else:
-# 		return False
 
 
 async def update_stats_update_time(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int, stat_type: str, last_battle_time: int = None, inactive: bool = None) -> bool:
