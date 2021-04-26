@@ -50,9 +50,9 @@ async def main(argv):
     arggroup_action.add_argument( '--analyze',  action='store_true', default=False, help='Analyze the database for duplicates')
     arggroup_action.add_argument( '--check', 	action='store_true', default=False, help='Check the analyzed duplicates')
     arggroup_action.add_argument( '--prune', 	action='store_true', default=False, help='Prune database for the analyzed duplicates i.e. DELETE DATA')
-    arggroup_action.add_argument( '--snapshot',	action='store_true', default=False, help='Snapshot latest stats from the archive')
+    # arggroup_action.add_argument( '--snapshot',	action='store_true', default=False, help='Snapshot latest stats from the archive')
     arggroup_action.add_argument( '--update',	action='store_true', default=False, help='Update archive with the latest stats')
-    arggroup_action.add_argument( '--clean',	action='store_true', default=False, help='Clean latest stats from old stats')
+    # arggroup_action.add_argument( '--clean',	action='store_true', default=False, help='Clean latest stats from old stats')
     arggroup_action.add_argument( '--reset', 	action='store_true', default=False, help='Reset the analyzed duplicates')
     arggroup_action.add_argument( '--initdb', 	action='store_true', default=False, help='Initialize database indexes')
 
@@ -73,7 +73,8 @@ async def main(argv):
     try:
         bu.set_log_level(args.silent, args.verbose, args.debug)
         bu.set_progress_step(100)
-        if args.snapshot or args.update:
+        #if args.snapshot or args.update:
+        if args.update:
             args.log = True
         if args.log:
             datestr = datetime.datetime.now().strftime("%Y%m%d_%H%M")
@@ -106,7 +107,7 @@ async def main(argv):
         db = client[DB_NAME]
         bu.debug(str(type(db)))
 
-        if  args.analyze or args.check or args.prune:
+        if  args.analyze or args.check or args.prune or args.reset:
             updates = await mk_update_list(db, args.updates)
         else:
             updates = list()
@@ -128,19 +129,19 @@ async def main(argv):
             bu.wait(3)
             await prune_stats(db, updates, args)
         
-        elif args.snapshot:
-            bu.verbose_std('Starting to SNAPSHOT ' + ', '.join(args.mode) + ' in 3 seconds. Press CTRL + C to CANCEL')
-            bu.wait(3)
-            if input('Write "SNAPSHOT" if you prefer to snapshot stats: ') == 'SNAPSHOT':
-                if su.MODE_PLAYER_ACHIEVEMENTS in args.mode:
-                    bu.verbose_std('Starting to SNAPSHOT PLAYER ACHIEVEMENTS')
-                    await snapshot_player_achivements(db, args)
-                if su.MODE_TANK_STATS in args.mode:
-                    bu.verbose_std('Starting to SNAPSHOT TANK STATS')
-                    await snapshot_tank_stats(db, args)
-                await update_log(db, 'snapshot', None, args)
-            else:
-                bu.error('Invalid input given. Exiting...')
+        # elif args.snapshot:
+        #     bu.verbose_std('Starting to SNAPSHOT ' + ', '.join(args.mode) + ' in 3 seconds. Press CTRL + C to CANCEL')
+        #     bu.wait(3)
+        #     if input('Write "SNAPSHOT" if you prefer to snapshot stats: ') == 'SNAPSHOT':
+        #         if su.MODE_PLAYER_ACHIEVEMENTS in args.mode:
+        #             bu.verbose_std('Starting to SNAPSHOT PLAYER ACHIEVEMENTS')
+        #             await snapshot_player_achivements(db, args)
+        #         if su.MODE_TANK_STATS in args.mode:
+        #             bu.verbose_std('Starting to SNAPSHOT TANK STATS')
+        #             await snapshot_tank_stats(db, args)
+        #         await update_log(db, 'snapshot', None, args)
+        #     else:
+        #         bu.error('Invalid input given. Exiting...')
 
         elif args.update:
             bu.verbose_std('Starting to UPDATE stats with the latest in 3 seconds')
@@ -448,15 +449,21 @@ async def reset_duplicates(db: motor.motor_asyncio.AsyncIOMotorDatabase,
         dbc = db[su.DB_C_STATS_2_DEL]
 
         for stat_type in args.mode:
-            if latest:
-                stat_type = stat_type + su.MODE_LATEST
-            rl_mode = RecordLogger(get_mode_str(stat_type) + ' duplicates')
-            res = await dbc.delete_many({'type': stat_type})
-            if res != None:
-                rl_mode.log('OK', res.deleted_count)
-            else:
-                rl_mode.log('FAILED')
-            rl.merge(rl_mode)  
+            for update in updates:
+                if latest:
+                    stat_type = stat_type + su.MODE_LATEST
+                rl_mode = RecordLogger(get_mode_str(stat_type) + ' duplicates')
+                if update != None:
+                    # bu.debug('type: ' + stat_type + ' update: ' + update['update'], force=True)
+                    res = await dbc.delete_many( { '$and' : [{'type': stat_type}, { 'update': update['update'] } ]})
+                else:
+                    res = await dbc.delete_many({'type': stat_type})
+                
+                if res != None:
+                    rl_mode.log(get_mode_str(stat_type) + ' OK', res.deleted_count)
+                else:
+                    rl_mode.log(get_mode_str(stat_type) + ' FAILED')
+                rl.merge(rl_mode)  
         await update_log(db, 'reset dups', updates, args)   
     except Exception as err:
         bu.error(exception=err)
@@ -1379,9 +1386,9 @@ async def find_dup_tank_stats_worker(  db: motor.motor_asyncio.AsyncIOMotorDatab
                 if 'tank_id' in wp:
                     tank_id  = wp['tank_id']
                     match_stage.append({ 'tank_id': tank_id })
-                    group_by = '$account_id'
+                    group_by = {  'account_id':'$account_id'}
                 else:
-                    group_by = '$tank_id'
+                    group_by = { 'tank_id': '$tank_id' }
 
                 if 'account_id' in wp:
                     account_id = wp['account_id']
@@ -1466,7 +1473,7 @@ async def find_dup_player_achivements_worker(db: motor.motor_asyncio.AsyncIOMoto
 
                 pipeline = [{ '$match': { '$and': match_stage } }, 
                             { '$sort': { 'updated': pymongo.DESCENDING } }, 
-                            { '$group': { '_id': '$account_id', 
+                            { '$group': { '_id': { 'account_id': '$account_id'}, 
                                             'all_ids': {'$push': '$_id' },
                                             'len': { "$sum": 1 } } },                           
                             { '$match': { 'len': { '$gt': 1 } } }, 
@@ -1539,7 +1546,7 @@ async def snapshot_player_achivements_worker(db: motor.motor_asyncio.AsyncIOMoto
                 
                 pipeline = [ {'$match': match},
                              {'$sort': {'updated': pymongo.DESCENDING}},
-                             {'$group': { '_id': '$account_id',
+                             {'$group': { '_id': { 'account_id' :'$account_id'} ,
                                           'doc': {'$first': '$$ROOT'}}},
                              {'$replaceWith': '$doc'}, 
                              {'$merge': { 'into': target_collection, 'on': '_id', 'whenMatched': 'keepExisting' }} ]
