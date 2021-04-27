@@ -332,7 +332,7 @@ async def mk_accountQ(db : motor.motor_asyncio.AsyncIOMotorDatabase,
     return accountQ
 
 ## DEPRECIATED
-async def mk_account_rangeQ(step: int = int(5e7)) -> asyncio.Queue:
+async def mk_account_rangeQ_DEPRECIATED(step: int = int(5e7)) -> asyncio.Queue:
     """Create ACCOUNT_ID queue for database queries"""    
     accountQ = asyncio.Queue()
     try:
@@ -440,45 +440,13 @@ async def analyze_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
     return None     
 
 
-async def reset_duplicates(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
-                        updates: list, args: argparse.Namespace = None) -> RecordLogger:
-    """--reset: reset/delete duplicates info from the DB"""
-    try:
-        rl = RecordLogger('Reset')
-        latest = args.opt_latest
-        dbc = db[su.DB_C_STATS_2_DEL]
-
-        for stat_type in args.mode:
-            for update in updates:
-                if latest:
-                    stat_type = stat_type + su.MODE_LATEST
-                rl_mode = RecordLogger(get_mode_str(stat_type) + ' duplicates')
-                if update != None:
-                    # bu.debug('type: ' + stat_type + ' update: ' + update['update'], force=True)
-                    res = await dbc.delete_many( { '$and' : [{'type': stat_type}, { 'update': update['update'] } ]})
-                else:
-                    res = await dbc.delete_many({'type': stat_type})
-                
-                if res != None:
-                    rl_mode.log(get_mode_str(stat_type) + ' OK', res.deleted_count)
-                else:
-                    rl_mode.log(get_mode_str(stat_type) + ' FAILED')
-                rl.merge(rl_mode)  
-        await update_log(db, 'reset dups', updates, args)   
-    except Exception as err:
-        bu.error(exception=err)
-    bu.log(rl.print(do_print=False))
-    rl.print()
-    return None
-
-
 async def analyze_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
                              updates: list = list(), args: argparse.Namespace = None)  -> RecordLogger:
     """--analyze: top-level func for analyzing stats for duplicates. DOES NOT PRUNE"""
     try:        
         latest     = args.opt_latest
         stat_type   = su.MODE_TANK_STATS
-        rl          = RecordLogger(get_mode_str(stat_type, latest))
+        rl_main     = RecordLogger(get_mode_str(stat_type, latest))
         dupsQ       = asyncio.Queue(QUEUE_LEN)
         dups_saver = asyncio.create_task(save_dups_worker(db, stat_type, dupsQ, latest))
         
@@ -490,7 +458,7 @@ async def analyze_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                 else:
                     update_str = u['update']
                     bu.verbose_std('Analyzing ' + get_mode_str(stat_type, latest) + ' for duplicates. Update ' + update_str)
-                    
+                rl = RecordLogger(update_str)    
                 account_tankQ = await mk_accountQ(db, args.sample)
 
                 bu.set_progress_bar('Stats processed', account_tankQ.qsize(), step=200, slow=True)   
@@ -506,20 +474,22 @@ async def analyze_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                     i = 0
                     for rl_worker in await asyncio.gather(*workers, return_exceptions=True):
                         bu.debug('Merging find_dup_tank_stats_worker\'s RecordLogger', id=i)
-                        rl.merge(rl_worker)
-                        i = +1                
-        
+                        rl.merge(rl_worker, merge_cats='yes')
+                        i = +1
             except Exception as err:
                 bu.error('Update: ' + update_str, exception=err)    
-        
+            
+            rl.print()
+            rl_main.merge(rl, merge_cats='both')
+
         await dupsQ.join()
         dups_saver.cancel()
-        for rl_task in await asyncio.gather(*[dups_saver], return_exceptions=True):
-            rl.merge(rl_task)
+        for rl_saver in await asyncio.gather(*[dups_saver], return_exceptions=True):
+            rl_main.merge(rl_saver)
     
     except Exception as err:
         bu.error(exception=err)
-    return rl
+    return rl_main
 
 
 async def analyze_player_achievements(db: motor.motor_asyncio.AsyncIOMotorDatabase,
@@ -527,7 +497,7 @@ async def analyze_player_achievements(db: motor.motor_asyncio.AsyncIOMotorDataba
     try:
         latest      = args.opt_latest
         stat_type   = su.MODE_PLAYER_ACHIEVEMENTS
-        rl          = RecordLogger(get_mode_str(stat_type, latest))
+        rl_main     = RecordLogger(get_mode_str(stat_type, latest))
         dupsQ       = asyncio.Queue(QUEUE_LEN)
         dups_saver  = asyncio.create_task(save_dups_worker(db, stat_type, dupsQ, latest))
         
@@ -539,34 +509,35 @@ async def analyze_player_achievements(db: motor.motor_asyncio.AsyncIOMotorDataba
                 else:
                     update_str = u['update']
                     bu.verbose_std('Analyzing ' + get_mode_str(stat_type, latest) + ' for duplicates. Update ' + u['update'])
-                # accountQ = await mk_account_rangeQ()
+                rl = RecordLogger(update_str)
                 accountQ = await mk_accountQ(db)
                 lenQ = accountQ.qsize()                
                 bu.set_progress_bar('Stats processed', lenQ, step=1000, slow=True)  
-                # bu.set_counter('Stats processed: ')   
                 workers = []
-
                 for workerID in range(0, N_WORKERS):
                     workers.append(asyncio.create_task(find_dup_player_achivements_worker(db, accountQ, dupsQ, u, workerID, latest)))
                 
                 await accountQ.join()
                 bu.debug('Waiting for workers to finish')
                 if len(workers) > 0:
-                    for res in await asyncio.gather(*workers, return_exceptions=True):
-                        rl.merge(res) 
+                    for rl_worker in await asyncio.gather(*workers, return_exceptions=True):
+                        rl.merge(rl_worker, merge_cats='yes') 
                 bu.finish_progress_bar()
         
             except Exception as err:
-                bu.error('Update: ' + update_str, exception=err)    
+                bu.error('Update: ' + update_str, exception=err)
+
+            rl.print()
+            rl_main.merge(rl, merge_cats='both')
         
         await dupsQ.join()
         dups_saver.cancel()
-        for rl_task in await asyncio.gather(*[dups_saver], return_exceptions=True):
-            rl.merge(rl_task)
+        for rl_saver in await asyncio.gather(*[dups_saver], return_exceptions=True):
+            rl_main.merge(rl_saver)
     
     except Exception as err:
         bu.error(exception=err)
-    return rl
+    return rl_main
 
 
 async def save_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase, 
@@ -589,7 +560,7 @@ async def save_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
                 update = None
             try:                
                 res = await dbc.insert_many( [ mk_dup_db_entry(dups['stat_type'], dup_id, update) for dup_id in dups['ids'] ] )
-                rl.log('Saved', len(res.inserted_ids))
+                rl.log(get_mode_str(stat_type) + ' saved', len(res.inserted_ids))
             except Exception as err:
                 bu.error(exception=err)
                 rl.log('Errors')
@@ -604,7 +575,7 @@ async def save_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase,
 
 async def get_dups_worker( db: motor.motor_asyncio.AsyncIOMotorDatabase, 
                             stat_type: str, dupsQ: asyncio.Queue, 
-                            sample: int = 0, latest = False, update: str = None)  -> RecordLogger:
+                            sample: int = None, latest = False, update: str = None)  -> RecordLogger:
     """Read duplicates info from the DB"""
     try:
         #bu.debug('Started', force=True)
@@ -658,38 +629,39 @@ async def check_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                       updates: list, args: argparse.Namespace = None) -> RecordLogger:
     """Parallel check for the analyzed player achivements duplicates"""
     try:
-        rl      = RecordLogger('Check duplicates')        
-        latest = args.opt_latest
+        rl_main = RecordLogger('Check duplicates')        
+        latest  = args.opt_latest
         sample  = args.sample
         if sample == None:
             sample = DEFAULT_SAMPLE
 
-        for stat_type in args.mode:
-            for u in updates:
+        for u in updates:
+            if u == None:
+                update = None
+                update_str = su.UPDATE_ALL
+            else:
+                update = u['update']
+                update_str = update
+            rl_update = RecordLogger(update_str)
+            for stat_type in args.mode:            
                 try:
-                    if u == None:
-                        bu.verbose_std('Checking ' + get_mode_str(stat_type, latest) +  ' duplicates. (ALL DATA)')
-                        update = None                         
-                    else:
-                        update = u['update']
-                        bu.verbose_std('Checking ' + get_mode_str(stat_type, latest) +  ' duplicates for update ' + update)
-        
+                    bu.verbose_std('Checking ' + get_mode_str(stat_type, latest) +  ' duplicates. Update: ' + update_str)                    
                     bu.verbose_std('Counting duplicates ... ', eol=False)
+                    rl = RecordLogger(get_mode_str(stat_type, latest))
                     N_dups = await count_dups2prune(db, stat_type, latest, update)
                     bu.verbose_std(str(N_dups) + ' found')
                     dupsQ = asyncio.Queue(QUEUE_LEN)
                     fetcher = asyncio.create_task(get_dups_worker(db, stat_type, dupsQ, sample, latest, update))
 
                     if (sample > 0) and (sample < N_dups):            
-                        header = 'Checking sample of duplicates' 
+                        header = 'Checking sample of duplicates'
+                        bar_len = sample 
                     else:
-                        sample = N_dups
+                        bar_len = N_dups
                         header = 'Checking ALL duplicates'
                     if bu.is_normal():
-                        bu.set_progress_bar(header, sample, 1000, slow=True)            
-                    
+                        bu.set_progress_bar(header, bar_len, 1000, slow=True)
                     bu.verbose(header)
-                            
                     workers = []
                     for workerID in range(0, N_WORKERS):
                         if stat_type == su.MODE_TANK_STATS:
@@ -699,24 +671,29 @@ async def check_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                     
                     await asyncio.wait([fetcher])
                     for rl_task in await asyncio.gather(*[fetcher]):
-                        rl.merge(rl_task)
+                        rl.merge(rl_task, 'yes')
 
                     await dupsQ.join()
                     for worker in workers:
                         worker.cancel()
                     for rl_worker in await asyncio.gather(*workers):
-                        rl.merge(rl_worker)
+                        rl.merge(rl_worker, 'yes')
 
                     bu.finish_progress_bar()
+                    await su.update_log(db, 'check', stat_type, update)
                 except Exception as err:
                     bu.error(exception=err)
 
-        await update_log(db, 'check', updates, args)
+                rl.print()
+                rl_update.merge(rl)
+        # await update_log(db, 'check', updates, args)
+            rl_main.merge(rl_update, merge_cats='both')
 
     except Exception as err:
         bu.error(exception=err)
-    bu.log(rl.print(do_print=False))
-    rl.print()
+    
+    bu.log(rl_main.print(do_print=False))
+    rl_main.print()
     return None
 
 
@@ -736,7 +713,7 @@ async def check_dup_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabas
                                      ID: int = 0, latest = False,) -> RecordLogger:
     """Worker to check Tank Stats duplicates. Returns results in a dict"""
     try:
-        rl = RecordLogger(get_mode_str(su.MODE_TANK_STATS, latest) + ' duplicates')
+        rl = RecordLogger(get_mode_str(su.MODE_TANK_STATS, latest))
         if latest:
             stat_type = su.MODE_TANK_STATS + su.MODE_LATEST
         else:
@@ -793,6 +770,7 @@ async def check_dup_tank_stat_worker(db: motor.motor_asyncio.AsyncIOMotorDatabas
                         bu.error(str_tank_stat(update, account_id, tank_id, last_battle_time, 'INVALID DUPLICATE: _id=' + str(_id)))                    
                     else:
                         rl.log('OK')
+                        bu.verbose('-------------------------------------------------')
                         bu.verbose(str_tank_stat(update, account_id, tank_id, last_battle_time, 'Analyzed duplicate', pretty_date=True))
                         last_battle_time= newer_stat['last_battle_time']
                         account_id      = newer_stat['account_id']
@@ -1005,7 +983,7 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
                       pruneQ: asyncio.Queue = None):
     """Parellen DB pruning, DELETES DATA. Does NOT verify whether there are newer stats"""
     try:
-        rl = RecordLogger('Prune')
+        rl_main= RecordLogger('Prune')
         latest = args.opt_latest
         sample = args.sample
 
@@ -1014,21 +992,28 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
         else:
             modes = [ stat_type ]
 
-        for u in updates: 
+        for u in updates:
+            if u == None:
+                if not latest:
+                    bu.error('Pruning the archive requires an defined update')
+                    sys.exit(1)                    
+                update = None
+                update_str = su.UPDATE_ALL
+                
+            else:
+                update = u['update']
+                update_str = update
+            
+            rl_update = RecordLogger(update_str)
+            
             for stat_type in modes:
                 try:
-                    if u == None:
-                        if not latest:
-                            bu.error('Pruning the archive requires an defined update')
-                            sys.exit(1)                    
-                        update = None
-                        bu.verbose_std('PRUNING ' + get_mode_str(stat_type, latest) + ' for duplicates. ALL updates.')
-                    else:
-                        update = u['update']
-                        bu.verbose_std('PRUNING ' + get_mode_str(stat_type, latest) + ' for duplicates. Update ' + update)
-                
+                    bu.verbose_std('PRUNING ' + get_mode_str(stat_type, latest) + ' for duplicates. Update: ' + update_str)
+                    rl = RecordLogger(get_mode_str(stat_type, latest))
+
                     N_stats2prune = await count_dups2prune(db, stat_type, latest, update)
-                    N_stats2prune = min(sample, N_stats2prune) if (sample != None) and (sample > 0) else N_stats2prune 
+                    if (sample != None) and (sample > 0):
+                        N_stats2prune = min(sample, N_stats2prune)                      
                     bu.debug('Pruning ' + str(N_stats2prune) + ' ' + get_mode_str(stat_type, latest))            
                     bu.set_progress_bar(get_mode_str(stat_type, latest) + ' pruned', N_stats2prune, step = 1000, slow=True)
                     pruneQ = asyncio.Queue(QUEUE_LEN)
@@ -1039,22 +1024,25 @@ async def prune_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase,
 
                     await asyncio.wait([fetcher])
                     for rl_task in await asyncio.gather(*[fetcher], return_exceptions=True):
-                        rl.merge(rl_task)
+                        rl.merge(rl_task, 'yes')
                 
                     await pruneQ.join()
                     if len(workers) > 0:
                         for worker in workers:
                             worker.cancel()
                         for res_rl in await asyncio.gather(*workers):
-                            rl.merge(res_rl)
+                            rl.merge(res_rl, 'yes')
                     bu.finish_progress_bar()
                 except Exception as err:
                     bu.error(exception=err)
-        await update_log(db, 'prune', updates, args, modes)
+                rl.print()
+                rl_update.merge(rl, merge_cats='both')
+                await su.update_log(db, 'prune', update, stat_type)
+            rl_main.merge(rl_update, merge_cats='both')
     except Exception as err:
         bu.error(exception=err)
     bu.log(rl.print(do_print=False))
-    rl.print()
+    rl_main.print()
     return None
 
 
@@ -1215,32 +1203,30 @@ async def get_tanks_opt(db: motor.motor_asyncio.AsyncIOMotorDatabase, option: li
     return list()
 
 
-async def update_player_achivements(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace = None):
+async def update_player_achievements(db: motor.motor_asyncio.AsyncIOMotorDatabase):
     """Update player achivements from the Latest collection"""
     try:
         stat_type   = su.MODE_PLAYER_ACHIEVEMENTS
 
         dbc_latest  = db[su.DB_C_LATEST[stat_type]]
         dbc_archive = su.DB_C[stat_type]
-        sample      = args.sample
+        #sample      = args.sample
         rl = RecordLogger('Archive Player Achievements')
 
-        pipeline = [ {'$match': { su.FIELD_NEW_STATS : { '$exists': True } } } ]
-        if sample != None:
-            pipeline.append( { '$sample': { 'size': sample }})
-        else:
-            bu.verbose_std('Counting documents...')
-            sample = await dbc_latest.count_documents({ su.FIELD_NEW_STATS : { '$exists': True } })
+        pipeline = [ {'$match': { } } ]
         
-        bu.set_progress_bar('Archiving ' + get_mode_str(stat_type), sample, step = 250, slow=True )  ## After MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
-        pipeline.append({ '$unset': su.FIELD_NEW_STATS })
+        bu.verbose_std('Counting documents...')
+        n_docs = await dbc_latest.estimated_document_count()
+        
+        bu.set_progress_bar('Archiving ' + get_mode_str(stat_type), n_docs, step = 1000, slow=True )  ## After MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
+        # pipeline.append({ '$unset': su.FIELD_NEW_STATS })
         pipeline.append({ '$merge': { 'into': dbc_archive, 'on': '_id', 'whenMatched': 'keepExisting' }})
         cursor = dbc_latest.aggregate(pipeline, allowDiskUse=True)
         s = 0
         async for _ in cursor:      ## This one does not work yet until MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
             bu.print_progress()
             s +=1
-        rl.log('Updated stats found', sample)
+        rl.log('Updated stats found', n_docs)
         rl.log('Updated', s)   # does not work until MongoDB fixes $merge cursor
 
         ## Clean the latest stats # TO DO  
@@ -1254,19 +1240,22 @@ async def update_player_achivements(db: motor.motor_asyncio.AsyncIOMotorDatabase
     return None
 
 
-async def update_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase):
+async def update_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace = None):
     """Update tank stats from the Latest collection"""
     try:
         stat_type   = su.MODE_TANK_STATS
-
+        sample = None
+        if args != None: 
+            sample      = args.sample
         rl = RecordLogger('Update Tank stats')
-        tankQ = await mk_tankQ(db, latest=True)        
-        bu.set_progress_bar('Updating ' + get_mode_str(stat_type), tankQ.qsize(), step = 1, slow=True )
+        # tankQ = await mk_tankQ(db, latest=True)
+        accountQ = await mk_accountQ(db, sample=sample)
+        bu.set_progress_bar('Updating ' + get_mode_str(stat_type), accountQ.qsize(), step = 1000, slow=True )
         workers = []
         for workerID in range(0, N_WORKERS):
-            workers.append(asyncio.create_task(update_tank_stats_worker(db, tankQ, workerID)))
+            workers.append(asyncio.create_task(update_tank_stats_worker(db, accountQ, workerID)))
         
-        await tankQ.join()
+        await accountQ.join()
         bu.finish_progress_bar()
         bu.debug('Waiting for workers to finish')
         if len(workers) > 0:
@@ -1287,19 +1276,18 @@ async def update_tank_stats(db: motor.motor_asyncio.AsyncIOMotorDatabase):
     return None
 
 
-async def update_tank_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, tankQ: asyncio.Queue, ID: int = 0):
+async def update_tank_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase, accountQ: asyncio.Queue, ID: int = 0):
     """Worker for archieving tank stats"""
     stat_type   = su.MODE_TANK_STATS
-
     dbc_latest  = db[su.DB_C_LATEST[stat_type]]
     dbc_archive = su.DB_C[stat_type]
     rl = RecordLogger('Tank stats')
-    while not tankQ.empty():
-        tank_id = await tankQ.get()
-        try:
-            match = { '$and': [  { 'tank_id': tank_id }, { su.FIELD_NEW_STATS : { '$exists': True } } ] }
-            pipeline = [ {'$match': match } ]
-            pipeline.append({ '$unset': su.FIELD_NEW_STATS })
+
+    while not accountQ.empty():
+        wp = await accountQ.get()
+        try:            
+            pipeline = [ { '$match': {  'account_id': wp['account_id'] } } ]
+            # pipeline.append({ '$unset': su.FIELD_NEW_STATS })
             pipeline.append({ '$merge': { 'into': dbc_archive, 'on': '_id', 'whenMatched': 'keepExisting' }})
             cursor = dbc_latest.aggregate(pipeline, allowDiskUse=True)
             s = 0
@@ -1312,7 +1300,7 @@ async def update_tank_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabase,
             bu.error(exception=err, id=ID)
         finally:
             bu.print_progress()
-            tankQ.task_done()
+            accountQ.task_done()
     return rl
 
 # ## NOT NEEDED
@@ -1362,8 +1350,7 @@ async def find_dup_tank_stats_worker(  db: motor.motor_asyncio.AsyncIOMotorDatab
                                         ID: int = 0, latest = False) -> RecordLogger:
     """Worker to find duplicates to prune"""
     try:
-        rl = RecordLogger('Find tank stat duplicates')
-        rl.log('Found', 0)
+        rl = RecordLogger('Find tank stat duplicates', categories=['Found'])
         update = None
         if latest:            
             stat_type = su.MODE_TANK_STATS + su.MODE_LATEST
@@ -1442,8 +1429,7 @@ async def find_dup_player_achivements_worker(db: motor.motor_asyncio.AsyncIOMoto
                                         latest = False) -> RecordLogger:
     """Worker to find player achivement duplicates to prune"""
     try:
-        rl = RecordLogger('Find player achivement duplicates')
-        rl.log('Found', 0)
+        rl = RecordLogger('Find player achivement duplicates', categories=['Found'])
         update = None
         if latest:            
             stat_type = su.MODE_PLAYER_ACHIEVEMENTS + su.MODE_LATEST
@@ -1498,6 +1484,38 @@ async def find_dup_player_achivements_worker(db: motor.motor_asyncio.AsyncIOMoto
         bu.error(exception=err)
     # rl.print()
     return rl  
+
+
+async def reset_duplicates(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
+                        updates: list, args: argparse.Namespace = None) -> RecordLogger:
+    """--reset: reset/delete duplicates info from the DB"""
+    try:
+        rl = RecordLogger('Reset')
+        latest = args.opt_latest
+        dbc = db[su.DB_C_STATS_2_DEL]
+
+        for stat_type in args.mode:
+            for update in updates:
+                if latest:
+                    stat_type = stat_type + su.MODE_LATEST
+                rl_mode = RecordLogger(get_mode_str(stat_type) + ' duplicates')
+                if update != None:
+                    # bu.debug('type: ' + stat_type + ' update: ' + update['update'], force=True)
+                    res = await dbc.delete_many( { '$and' : [{'type': stat_type}, { 'update': update['update'] } ]})
+                else:
+                    res = await dbc.delete_many({'type': stat_type})
+                
+                if res != None:
+                    rl_mode.log(get_mode_str(stat_type) + ' OK', res.deleted_count)
+                else:
+                    rl_mode.log(get_mode_str(stat_type) + ' FAILED')
+                rl.merge(rl_mode)  
+        await update_log(db, 'reset dups', updates, args)   
+    except Exception as err:
+        bu.error(exception=err)
+    bu.log(rl.print(do_print=False))
+    rl.print()
+    return None
 
 
 async def snapshot_player_achivements(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace = None):
