@@ -90,7 +90,6 @@ async def main(argv):
 	
 	parser.add_argument('--run-error-log', dest='run_error_log', action='store_true', default=False, help='Re-try previously failed requests and clear errorlog')
 	parser.add_argument('--check-invalid', dest='chk_invalid', action='store_true', default=False, help='Re-check invalid accounts')
-	
 	parser.add_argument('-l', '--log', action='store_true', default=False, help='Enable file logging')
 	arggroup = parser.add_mutually_exclusive_group()
 	arggroup.add_argument('-d', '--debug', 		action='store_true', default=False, help='Debug mode')
@@ -187,7 +186,7 @@ async def main(argv):
 		if (args.sample == 0) and (not args.run_error_log):
 			# only for full stats
 			for mode in args.mode:
-				su.update_log(db, 'update', stat_type=mode)
+				await su.update_log(db, 'update', stat_type=mode)
 		
 		wg.print_request_stats()
 		bu.print_new_line(True)
@@ -615,7 +614,7 @@ async def BS_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 					account_id 			= tank_stat['account_id'] 
 					tank_id 			= tank_stat['tank_id']
 					last_battle_time 	= tank_stat['last_battle_time']
-					tank_stat['_id']  	= su.mk_id(account_id, tank_id, last_battle_time)
+					tank_stat['_id']  	= su.mk_id(account_id, last_battle_time, tank_id)
 					tank_stats.append(tank_stat)
 				try: 
 					## Add functionality to filter out those stats that aretoo close to existing stats
@@ -680,8 +679,8 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 					if last_battle_time > now:  # do not add "newer" than today (broken last_bvattle_time_field)
 						rl.log('invalid')
 						continue
-					tank_stat['_id']  	= su.mk_id(account_id, tank_id, last_battle_time)
-					tank_stat[su.FIELD_NEW_STATS] = now  						## Needed for stats archiving
+					tank_stat['_id']  	= su.mk_id(account_id, last_battle_time, tank_id)
+					#tank_stat[su.FIELD_NEW_STATS] = now  						## Needed for stats archiving
 					tank_stats.append(tank_stat)
 					if (last_battle_time > latest_battle): 
 						latest_battle = last_battle_time 
@@ -854,8 +853,8 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 					stat['account_id'] 	= account_id
 					stat['updated'] 	= NOW
 					## Needed for stats archiving. Not yet implemented for player_achievements
-					stat[su.FIELD_NEW_STATS] = True
-					stat['_id'] 		= su.mk_id(account_id, 0, NOW)
+					#stat[su.FIELD_NEW_STATS] = True
+					stat['_id'] 		= su.mk_id(account_id, NOW)
 					
 					# RECOMMENDATION TO USE SINGLE INSERTS OVER MANY
 					await dbc.insert_one(stat)					
