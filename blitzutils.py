@@ -323,11 +323,14 @@ def def_value_zero():
 ## -----------------------------------------------------------
 class RecordLogger():
     """Count stats for categories"""
-    def __init__(self, name: str = '', errors = None):
+    def __init__(self, name: str = '', errors = None, categories: list() = list()):
         self.logger = collections.defaultdict(def_value_zero)
         self.name = name
         self.error_cats = errors
         self.error_status = False
+        # init categories
+        for cat in categories:
+            self.log(cat, 0)
 
 
     def log(self, category: str, count: int = 1) -> None:
@@ -353,10 +356,12 @@ class RecordLogger():
     def get_value(self, category) -> int:
         if category in self.logger:
             return self.logger[category]
-        # elif self._get_long_cat(category) in self.logger:
-        #     return self.logger[self._get_long_cat(category)]
         else:
             return None
+
+    
+    def get_values(self) -> dict():
+        return self.logger
 
 
     def sum(self, categories: list) -> int:
@@ -372,33 +377,41 @@ class RecordLogger():
         return list(self.logger.keys())
 
     
-    def get_values(self) -> dict():
-        return self.logger
-
-    
     def get_error_status(self) -> bool:
         return self.error_status
     
 
-    def merge(self, B):
-        if not isinstance(B, RecordLogger):
-            error('input is not a RecordLogger object: ' + str(type(B)))
-            return None 
-        for cat in B.get_categories():
-            self.logger[B.get_long_cat(cat)] += B.get_value(cat)
-            self.error_status = self.error_status or B.get_error_status()
-
+    def merge(self, B, merge_cats: str = 'no', totals = 'Total'):
+        """Merge two RecordLogger instances together"""
+        try:
+            if not isinstance(B, RecordLogger):
+                error('input is not a RecordLogger object: ' + str(type(B)))
+                return None 
+            for cat in B.get_categories():
+                if merge_cats == 'no':
+                    self.log(B.get_long_cat(cat), B.get_value(cat))
+                elif merge_cats == 'yes':
+                    self.log(cat, B.get_value(cat))
+                elif merge_cats == 'both':
+                    self.log(B.get_long_cat(cat), B.get_value(cat))
+                    self.log(totals + ': '+ cat, B.get_value(cat))
+                else:
+                    raise ValueError("merge_cats= is not 'yes', 'no' or 'both'")                    
+                self.error_status = self.error_status or B.get_error_status()
+        except Exception as err:
+            error(exception=err)
+        return None
 
     def print(self, do_print : bool = True): 
         try:
             if do_print:
                 verbose_std(self.name + ': ' + ('ERROR occured' if self.get_error_status() else '-----------'))
-                for cat in self.logger:
+                for cat in sorted(self.logger):
                     verbose_std(self._get_str(cat))
                 return None
             else:
-                ret = self.name + ':'
-                for cat in self.logger:
+                ret = self.name + ': '
+                for cat in sorted(self.logger):
                     ret = ret + '\n' + self._get_str(cat)
                 return ret
         except Exception as err:
