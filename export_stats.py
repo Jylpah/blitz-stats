@@ -186,10 +186,6 @@ def valid_date(s):
         raise argparse.ArgumentTypeError(msg)
 
 
-def NOW() -> int:
-    return int(time.time())
-
-
 async def export_tankopedia(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace):
     """Export Tankopedia from the DB in WG API format"""
     global STATS_EXPORTED
@@ -450,4 +446,6 @@ async def get_tanks_DB_tier(db: motor.motor_asyncio.AsyncIOMotorDatabase, tier: 
 # main()
 if __name__ == "__main__":
     #asyncio.run(main(sys.argv[1:]), debug=True)
+    bu.error('Likely out-dated code. Do not USE')
+    sys.exit(1)
     asyncio.run(main(sys.argv[1:]))
