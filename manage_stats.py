@@ -149,7 +149,7 @@ async def main(argv):
             bu.verbose_std('Press CTRL + C to CANCEL')
             bu.wait(2)
             if su.MODE_PLAYER_ACHIEVEMENTS in args.mode:
-                await update_player_achivements(db, args)
+                await update_player_achievements(db, args)
             if su.MODE_TANK_STATS in args.mode:
                 await update_tank_stats(db)
             await update_log(db, 'update', None, args)
