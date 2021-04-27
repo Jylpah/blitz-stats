@@ -150,8 +150,8 @@ async def init_db_indices(db: motor.motor_asyncio.AsyncIOMotorDatabase):
             bu.verbose_std('Adding index: ' + db_collection + ': account_id: 1, last_battle_time: -1')
             await db[db_collection].create_index([('account_id', pymongo.ASCENDING), ('last_battle_time', pymongo.DESCENDING)], background=True)
 
-            bu.verbose_std('Adding index: ' + db_collection + ': tank_id: 1, ' + FIELD_NEW_STATS + ': 1, account_id: 1')
-            await db[db_collection].create_index([ ('tank_id', pymongo.ASCENDING), (FIELD_NEW_STATS, pymongo.ASCENDING), ('account_id', pymongo.ASCENDING)], partialFilterExpression={FIELD_NEW_STATS:  {'$exists': True}}, background=True)
+            # bu.verbose_std('Adding index: ' + db_collection + ': tank_id: 1, ' + FIELD_NEW_STATS + ': 1, account_id: 1')
+            # await db[db_collection].create_index([ ('tank_id', pymongo.ASCENDING), (FIELD_NEW_STATS, pymongo.ASCENDING), ('account_id', pymongo.ASCENDING)], partialFilterExpression={FIELD_NEW_STATS:  {'$exists': True}}, background=True)
 
         ## WG Player Achievements
         for db_collection in [ DB_C_PLAYER_ACHIVEMENTS , DB_C_PLAYER_ACHIVEMENTS + DB_STR_LATEST]:
