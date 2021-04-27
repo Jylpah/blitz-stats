@@ -209,7 +209,7 @@ async def update_account_ids(db: motor.motor_asyncio.AsyncIOMotorDatabase, accou
 def mk_player_JSON(account_id: int): 
 	player = {}
 	player['_id'] = account_id
-	player['updated'] = NOW()
+	player['updated'] = bu.NOW()
 	player['last_battle_time'] = None
 	return player
 
@@ -460,7 +460,7 @@ async def empty_queue(queue : asyncio.Queue, Qname = ''):
 async def get_players_BS(force = False):
 	"""Get active player list from BlitzStars.com"""
 	active_players = set()
-	if force or not (os.path.exists(FILE_ACTIVE_PLAYERS) and os.path.isfile(FILE_ACTIVE_PLAYERS)) or (NOW() - os.path.getmtime(FILE_ACTIVE_PLAYERS) > CACHE_VALID):
+	if force or not (os.path.exists(FILE_ACTIVE_PLAYERS) and os.path.isfile(FILE_ACTIVE_PLAYERS)) or (bu.NOW() - os.path.getmtime(FILE_ACTIVE_PLAYERS) > CACHE_VALID):
 		url = bs.get_url_active_players()
 		bu.verbose_std('Retrieving active players file from BlitzStars.com')
 		player_list = await bu.get_url_JSON(bs.session, url)
@@ -479,11 +479,6 @@ async def mk_playerQ(queue : asyncio.Queue, account_id_list : list):
 
 	return None
 
-def NOW() -> int:
-	return int(time.time())
-
-# def mk_id(account_id: int, tank_id: int, last_battle_time: int):
-# 	return hex(account_id)[2:].zfill(10) + hex(tank_id)[2:].zfill(6) + hex(last_battle_time)[2:].zfill(8)
 
     ### main()
 if __name__ == "__main__":
