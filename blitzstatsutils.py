@@ -199,5 +199,5 @@ async def update_log(db : motor.motor_asyncio.AsyncIOMotorDatabase, action: str,
 	return True
 
 
-def mk_id(account_id: int, tank_id: int, last_battle_time: int) -> str:
+def mk_id(account_id: int, last_battle_time: int, tank_id: int = 0) -> str:
 	return bson.objectid.ObjectId(hex(account_id)[2:].zfill(10) + hex(tank_id)[2:].zfill(6) + hex(last_battle_time)[2:].zfill(8))
