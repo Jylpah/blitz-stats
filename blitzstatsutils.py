@@ -20,6 +20,7 @@ MODE_TANK_STATS         = 'tank_stats'
 MODE_PLAYER_STATS       = 'player_stats'
 MODE_PLAYER_ACHIEVEMENTS= 'player_achievements'
 MODE_TANKOPEDIA			= 'tankopedia'
+MODE_ACCOUNTS           = 'accounts'
 MODE_BS_PLAYER_STATS 	= 'player_stats_BS'
 MODE_BS_TANK_STATS		= 'tank_stats_BS'
 #MODE_ARCHIVE            = '_archive'
@@ -60,6 +61,7 @@ STR_MODES = {
     MODE_PLAYER_STATS           : 'Player Stats',
     MODE_PLAYER_ACHIEVEMENTS    : 'Player Achievements', 
     MODE_TANKOPEDIA             : 'Tankopedia',
+    MODE_ACCOUNTS               : 'Accounts',
     MODE_BS_TANK_STATS          : 'Blitzstart Tank Stats',
     MODE_BS_PLAYER_STATS        : 'Blitzstars Player Stats'
 }
@@ -158,8 +160,8 @@ async def init_db_indices(db: motor.motor_asyncio.AsyncIOMotorDatabase):
             bu.verbose_std('Adding index: ' + db_collection + ': account_id: 1, updated: -1')
             await db[db_collection].create_index([('account_id', pymongo.ASCENDING), ('updated', pymongo.DESCENDING)], background=True, unique=True)
 
-            bu.verbose_std('Adding index: ' + db_collection + ': ' + FIELD_NEW_STATS + ' : -1 (partial)')
-            await db[db_collection].create_index([(FIELD_NEW_STATS, pymongo.DESCENDING)], partialFilterExpression={FIELD_NEW_STATS:  {'$exists': True}}, background=True)
+            # bu.verbose_std('Adding index: ' + db_collection + ': ' + FIELD_NEW_STATS + ' : -1 (partial)')
+            # await db[db_collection].create_index([(FIELD_NEW_STATS, pymongo.DESCENDING)], partialFilterExpression={FIELD_NEW_STATS:  {'$exists': True}}, background=True)
 
         # Tankopedia
         bu.verbose_std('Adding index: ' + DB_C_TANKS + ': tank_id: 1, tier: -1')
