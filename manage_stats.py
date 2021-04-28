@@ -204,7 +204,7 @@ async def update_log(db: motor.motor_asyncio.AsyncIOMotorDatabase,
     return False
 
 
-def mk_update_entry(update: str, start: int, end: int)  -> dict:
+def mk_update_entry(update: str, start: int, end: int = bu.NOW())  -> dict:
     """Make update entry to the update list to process"""
     if (end == None) or (end == 0):
         end = bu.NOW()
@@ -259,25 +259,25 @@ async  def mk_update_list(db : motor.motor_asyncio.AsyncIOMotorDatabase, updates
         bu.debug('Fetching updates from DB')        
         dbc = db[su.DB_C_UPDATES]
         cursor = dbc.find( {} , { '_id' : 0 }).sort('Date', pymongo.ASCENDING )
+        
         cut_off_prev = 0
-        bu.debug('Iterating over updates')
         first_update_found = False
         last_update_found  = False
+        bu.debug('Iterating over updates')
+        
         async for doc in cursor:
             cut_off = doc['Cut-off']
             update = doc['Release']
             if update + '+' in updates2process:
                 updates2process.remove(update + '+')
                 first_update_found = True
-            if update + '-' in updates2process:
+            elif update + '-' in updates2process:
                 if not first_update_found:
                     bu.error('"update_A-" can only be used in conjuction with "update_B+"')
                 updates2process.remove(update + '-')
                 last_update_found = True
             ## first_update_found has to be set for the update- to work
             if first_update_found or (update in updates2process):
-                if (cut_off == None) or (cut_off == 0):
-                    cut_off = bu.NOW()
                 updates.append(mk_update_entry(update, cut_off_prev, cut_off))
                 try: 
                     if not first_update_found:
@@ -287,6 +287,8 @@ async  def mk_update_list(db : motor.motor_asyncio.AsyncIOMotorDatabase, updates
                 if last_update_found:
                     first_update_found = False
                     last_update_found = False
+            if cut_off == 0:
+                break   # This should be the latest update, but just in case the DB is misconfigured                
             cut_off_prev = cut_off
 
     except Exception as err:
@@ -1558,7 +1560,7 @@ async def snapshot_player_achivements_worker(db: motor.motor_asyncio.AsyncIOMoto
                 if 'account_id' in wp:
                     match = { 'account_id' : wp['account_id'] }
                 elif 'min' in wp:   
-                    match =  { '$and': [  {'account_id': {'$gte': wp['min']}}, {'account_id': {'$lt': account_id_max}} ] }
+                    match =  { '$and': [  {'account_id': {'$gte': wp['min']}}, {'account_id': {'$lt': wp['max']}} ] }
                 else:
                     raise Exception('AccountQ item with unexpected format')
                 
@@ -1627,13 +1629,6 @@ async def snapshot_tank_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabas
                 wp = await accountQ.get()
                 account_id = wp['account_id']
 
-                if bu.is_verbose(True):                                        
-                    tank_name = await get_tank_name(db, tank_id)
-                    if tank_name == None:
-                        tank_name = 'Tank name not found'                    
-                    info_str = 'Processing tank (' + tank_name + ' (' +  str(tank_id) + '):'
-                    bu.log(info_str)
-                ## BROKEN
                 pipeline = [ {'$match': { 'account_id': account_id }},
                              {'$sort': {'last_battle_time': pymongo.DESCENDING}},
                              {'$group': { '_id': { 'tank_id': '$tank_id'},
@@ -1646,8 +1641,8 @@ async def snapshot_tank_stats_worker(db: motor.motor_asyncio.AsyncIOMotorDatabas
                     # s += 1   ## This one does not work yet until MongoDB fixes $merge cursor: https://jira.mongodb.org/browse/DRIVERS-671
                     pass
                 # rl.log('Snapshotted', s)
-                n = await dbc_archive.count_documents({'$match': { '$and': [ {'tank_id': tank_id }, {'account_id': {'$gte': account_id_min}}, {'account_id': {'$lt': account_id_max}} ] }} )                
-                rl.log('Snapshotted', n)
+                # n = await dbc_archive.count_documents({'$match': { '$and': [ {'tank_id': tank_id }, {'account_id': {'$gte': account_id_min}}, {'account_id': {'$lt': account_id_max}} ] }} )                
+                # rl.log('Snapshotted', n)
                 bu.print_progress()
             except Exception as err:
                 bu.error(exception=err, id=ID)
