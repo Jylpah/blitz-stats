@@ -426,53 +426,51 @@ async def update_stats_update_time(db : motor.motor_asyncio.AsyncIOMotorDatabase
 		return False	
 
 
-async def update_tankopedia( db: motor.motor_asyncio.AsyncIOMotorDatabase, filename: str, force: bool):
+async def update_tankopedia( db: motor.motor_asyncio.AsyncIOMotorDatabase, filename: str = None, force: bool = False):
 	"""Update tankopedia in the database"""
 	dbc = db[su.DB_C_TANKS]
-	if filename != None:
-		async with aiofiles.open(filename, 'rt', encoding="utf8") as fp:
-			# Update Tankopedia
-			tanks = json.loads(await fp.read())
-			inserted = 0
-			updated = 0
-			for tank_id in tanks['data']:
-				try:
-					tank = tanks['data'][tank_id]
-					tank['_id'] = int(tank_id)
-					if not all(field in tank for field in ['tank_id', 'name','nation', 'tier','type' ,'is_premium']):
-						bu.error('Missing fields in: ' + str(tank))
-						continue
-					if force:
-						await dbc.replace_one( { 'tank_id' : int(tank_id) } , tank, upsert=force)
-						updated += 1
-					else:
-						await dbc.insert_one(tank)
-						inserted += 1
-						bu.verbose_std('Added tank: ' + tank['name'])
-				except pymongo.errors.DuplicateKeyError:
-					pass
-				except Exception as err:
-					bu.error('Unexpected error', err)
-			bu.verbose_std('Added ' + str(inserted) + ' tanks, updated ' + str(updated) + ' tanks')
-			## update tank strings
-			dbc = db[su.DB_C_TANK_STR]
-			counter_tank_str = 0
-			for tank_str in tanks['userStr'].keys():
-				try:
-					key = tank_str
-					value = tanks['userStr'][key]
-					res = await dbc.find_one({'_id': key, 'value': value})
-					if res == None:
-						await dbc.update_one({ '_id': key}, { '$set' : { 'value': value}},  upsert=True)
-						counter_tank_str += 1
-				except Exception as err:
-					bu.error('Unexpected error', err)
-			bu.verbose_std('Added/updated ' + str(counter_tank_str) + ' tank strings')	
-			return True			
-	else:
-		bu.error('--file argument not set')
-	return False
-
+	if filename == None:
+		filename = 'tanks.json'
+	async with aiofiles.open(filename, 'rt', encoding="utf8") as fp:
+		# Update Tankopedia
+		tanks = json.loads(await fp.read())
+		inserted = 0
+		updated = 0
+		for tank_id in tanks['data']:
+			try:
+				tank = tanks['data'][tank_id]
+				tank['_id'] = int(tank_id)
+				if not all(field in tank for field in ['tank_id', 'name','nation', 'tier','type' ,'is_premium']):
+					bu.error('Missing fields in: ' + str(tank))
+					continue
+				if force:
+					await dbc.replace_one( { 'tank_id' : int(tank_id) } , tank, upsert=force)
+					updated += 1
+				else:
+					await dbc.insert_one(tank)
+					inserted += 1
+					bu.verbose_std('Added tank: ' + tank['name'])
+			except pymongo.errors.DuplicateKeyError:
+				pass
+			except Exception as err:
+				bu.error('Unexpected error', err)
+		bu.verbose_std('Added ' + str(inserted) + ' tanks, updated ' + str(updated) + ' tanks')
+		## update tank strings
+		dbc = db[su.DB_C_TANK_STR]
+		counter_tank_str = 0
+		for tank_str in tanks['userStr'].keys():
+			try:
+				key = tank_str
+				value = tanks['userStr'][key]
+				res = await dbc.find_one({'_id': key, 'value': value})
+				if res == None:
+					await dbc.update_one({ '_id': key}, { '$set' : { 'value': value}},  upsert=True)
+					counter_tank_str += 1
+			except Exception as err:
+				bu.error('Unexpected error', err)
+		bu.verbose_std('Added/updated ' + str(counter_tank_str) + ' tank strings')	
+	return True			
+	
 
 async def mk_accountQ(queue : asyncio.Queue, account_ids : list):
 	"""Create queue of replays to post"""
