@@ -1433,7 +1433,7 @@ async def find_dup_player_achivements_worker(db: motor.motor_asyncio.AsyncIOMoto
     try:
         rl = RecordLogger('Find player achivement duplicates', categories=['Found'])
         update = None
-        if latest:            
+        if latest:
             stat_type = su.MODE_PLAYER_ACHIEVEMENTS + su.MODE_LATEST
         else:
             stat_type = su.MODE_PLAYER_ACHIEVEMENTS
