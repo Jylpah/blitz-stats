@@ -6,6 +6,7 @@ import sys, os, argparse, datetime, json, inspect, pprint, aiohttp, asyncio, aio
 import aioconsole, re, logging, time, xmltodict, collections, pymongo, motor.motor_asyncio
 import ssl, configparser
 from datetime import date
+import blitzstatsutils as su
 import blitzutils as bu
 from blitzutils import BlitzStars
 
@@ -55,7 +56,7 @@ async def main(argv):
 
     parser = argparse.ArgumentParser(description='Retrieve player stats from the DB')
     parser.add_argument('-f', '--filename', type=str, default=None, help='Filename to write stats into')
-    parser.add_argument('--mode', default='help', choices=['tank_stats', 'tankopedia', 'accounts', 'player_stats_BS'], help='Select type of stats to export')
+    parser.add_argument('--mode', default='help', choices=['tank_stats', 'player_achievements', 'tankopedia', 'accounts', 'player_stats_BS'], help='Select type of stats to export')
     parser.add_argument('--type', default='period', choices=['period', 'cumulative', 'newer', 'auto'], help='Select export type. \'auto\' exports periodic stats, but cumulative for the oldest one')
     parser.add_argument( '-a', '--all', 	action='store_true', default=False, help='Export all the stats instead of the latest per period')
     parser.add_argument('--tier', type=int, default=None, help='Filter tanks based on tier')
@@ -69,7 +70,6 @@ async def main(argv):
 
     args = parser.parse_args()
     bu.set_log_level(args.silent, args.verbose, args.debug)
-    bu.set_progress_step(1000)
     
     try:
 		## Read config
@@ -98,17 +98,19 @@ async def main(argv):
         bu.debug(str(type(db)))
         tasks = []        
         
-        if args.mode == 'tankopedia':
+        if args.mode == su.MODE_TANKOPEDIA:
             if args.filename == None:
                 args.filename = 'tanks.json'
             args.filename = bu.rebase_file_args(current_dir, args.filename)
             await export_tankopedia(db, args)
-        elif args.mode == 'accounts':
+        
+        if args.mode == su.MODE_ACCOUNTS:
             if args.filename == None:
                 args.filename = 'accounts.json'
             args.filename = bu.rebase_file_args(current_dir, args.filename)
             await export_accounts(db, args)
-        else:
+
+        if set(args.mode) & set([ su.MODE_TANK_STATS, su.MODE_PLAYER_ACHIEVEMENTS ]):
             args.filename = bu.rebase_file_args(current_dir, args.filename)
             periodQ = await mk_periodQ(args.dates, args.type)
             if periodQ == None:
@@ -122,9 +124,9 @@ async def main(argv):
                     args.filename = 'player_stats'
                 for i in range(N_WORKERS):
                     tasks.append(asyncio.create_task(q_player_stats_BS(i, db, periodQ, args)))
-            elif args.mode == 'tank_stats':
+            elif args.mode == su.MODE_TANK_STATS:
                 if args.filename == None: 
-                    args.filename = 'tank_stats'                  
+                    args.filename = su.MODE_TANK_STATS                  
                 for i in range(N_WORKERS):
                     tasks.append(asyncio.create_task(q_tank_stats_WG(i, db, periodQ, args)))
                     bu.debug('Task ' + str(i) + ' started')
@@ -189,9 +191,10 @@ def valid_date(s):
 async def export_tankopedia(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace):
     """Export Tankopedia from the DB in WG API format"""
     global STATS_EXPORTED
-    filename = args.filename
+    if args.filename != None:
+        filename = su.MODE_TANKOPEDIA + '.json'
     try:
-        dbc = db[DB_C_TANKOPEDIA]
+        dbc = db[su.DB_C_TANKOPEDIA]
         tank_count = await dbc.count_documents({})
         tank_cursor = dbc.find().sort('tank_id', pymongo.ASCENDING)
         export = {}
@@ -230,7 +233,10 @@ async def export_accounts(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: ar
     try:
         dbc = db[DB_C_ACCOUNTS]
         sample = args.sample
-        filename = args.filename
+        if args.filename != None:
+            filename = args.filename
+        else:
+            filename = su.MODE_ACCOUNTS + '.json'
         
         pipeline = [ 	{'$match': {  '$and' : [ { '_id': { '$lt': 31e8 } }, 
 												{ 'invalid': { '$exists': False} }												 
@@ -241,17 +247,10 @@ async def export_accounts(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: ar
         
         cursor = dbc.aggregate(pipeline, allowDiskUse=False)
         
-        export = dict()
-        export['meta'] = { 'count': 0 }
-        account_ids = list()
-        count = 0
+        export = list()
         async for player in cursor:
-            account_ids.append(int(player['_id']))
-            count += 1
-            STATS_EXPORTED += 1
-        export['account_ids'] = account_ids
-        export['meta']['count'] = count
-
+            export.append(player)
+        
     except Exception as err:
         bu.error(exception=err)
     
