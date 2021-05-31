@@ -426,8 +426,8 @@ async def WI_replay_fetcher(db : motor.motor_asyncio.AsyncIOMotorDatabase, queue
 				continue
 			json_resp['_id'] = replay_id
 			try:
-				replays += 1
 				await dbc.insert_one(json_resp)
+				replays += 1
 				bu.debug('Replay added to database', id=workerID)
 			except Exception as err:
 				bu.error('Unexpected Exception', exception=err, id=workerID) 
