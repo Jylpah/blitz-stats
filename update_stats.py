@@ -13,9 +13,10 @@ logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
 N_WORKERS = 60
 MAX_RETRIES = 3
-CACHE_VALID = 3   # days
+CACHE_VALID = 10   # days
 MAX_UPDATE_INTERVAL = 4*30*24*60*60 # 4 months
 INACTIVE_THRESHOLD 	= 2*30*24*60*60 # 2 months
+MIN_INACTIVITY_PERIOD = 7 # days
 SLEEP = 0.1
 WG_APP_ID = 'cd770f38988839d7ab858d1cbe54bdd0'
 
@@ -645,9 +646,10 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 
 	chk_invalid		= args.chk_invalid
 	clr_error_log 	= args.run_error_log
+	cache_valid		= args.cache_valid
 	force 			= args.force
 	mark_inactive = True
-	if 'sample' in args:
+	if ('sample' in args) or (cache_valid < MIN_INACTIVITY_PERIOD):
 		mark_inactive = False
 	rl = RecordLogger('Tank stats')
 
