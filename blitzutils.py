@@ -852,9 +852,14 @@ def get_JSON_value(json, key : str = None, keys : list = None, keypath = None):
     raise KeyError('Key not found: ' + get_JSON_keypath(keypath, keys[0]))
 
 
-def sort_dict(d: dict) -> dict:
+def sort_dict(d: dict, number: bool = False) -> dict:
     """Sort a dict by keys"""
-    return dict(sorted(d.items(), key=lambda item: item[0]))
+    if number:
+        return dict(sorted(d.items(), key=lambda item: int(item[0])))
+    else:
+        return dict(sorted(d.items(), key=lambda item: item[0]))
+
+
 
 ## -----------------------------------------------------------
 #### Class SlowBar 
