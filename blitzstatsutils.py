@@ -37,7 +37,7 @@ DB_C_TANK_STATS     	= 'WG_TankStats'
 DB_C_STATS_2_DEL        = 'Stats2Delete'
 DB_C_BS_PLAYER_STATS   	= 'BS_PlayerStats'
 DB_C_BS_TANK_STATS     	= 'BS_PlayerTankStats'
-DB_C_TANKS     			= 'Tankopedia'
+DB_C_TANKOPEDIA     			= 'Tankopedia'
 DB_C_TANK_STR			= 'WG_TankStrs'
 DB_C_ERROR_LOG			= 'ErrorLog'
 DB_C_UPDATE_LOG			= 'UpdateLog'
@@ -164,11 +164,11 @@ async def init_db_indices(db: motor.motor_asyncio.AsyncIOMotorDatabase):
             # await db[db_collection].create_index([(FIELD_NEW_STATS, pymongo.DESCENDING)], partialFilterExpression={FIELD_NEW_STATS:  {'$exists': True}}, background=True)
 
         # Tankopedia
-        bu.verbose_std('Adding index: ' + DB_C_TANKS + ': tank_id: 1, tier: -1')
-        await db[DB_C_TANKS].create_index([('tank_id', pymongo.ASCENDING), ('tier', pymongo.DESCENDING)], background=True)
+        bu.verbose_std('Adding index: ' + DB_C_TANKOPEDIA + ': tank_id: 1, tier: -1')
+        await db[DB_C_TANKOPEDIA].create_index([('tank_id', pymongo.ASCENDING), ('tier', pymongo.DESCENDING)], background=True)
         
-        bu.verbose_std('Adding index: ' + DB_C_TANKS + ': name: TEXT')
-        await db[DB_C_TANKS].create_index([('name', pymongo.TEXT)], background=True)
+        bu.verbose_std('Adding index: ' + DB_C_TANKOPEDIA + ': name: TEXT')
+        await db[DB_C_TANKOPEDIA].create_index([('name', pymongo.TEXT)], background=True)
 
         # Update Log
         bu.verbose_std('Adding index: ' + DB_C_UPDATE_LOG + ': mode: 1, account_id: 1, updated: -1')

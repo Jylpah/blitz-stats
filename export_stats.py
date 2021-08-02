@@ -191,7 +191,7 @@ def valid_date(s):
 async def export_tankopedia(db: motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace):
     """Export Tankopedia from the DB in WG API format"""
     global STATS_EXPORTED
-    if args.filename != None:
+    if args.filename == None:
         filename = su.MODE_TANKOPEDIA + '.json'
     try:
         dbc = db[su.DB_C_TANKOPEDIA]
@@ -426,7 +426,7 @@ async def get_tanks_DB(db: motor.motor_asyncio.AsyncIOMotorDatabase):
 
 async def get_tanks_DB_tier(db: motor.motor_asyncio.AsyncIOMotorDatabase, tier: int):
     """Get tank_ids of tanks in a particular tier"""
-    dbc = db[DB_C_TANKOPEDIA]
+    dbc = db[su.DB_C_TANKOPEDIA]
     tanks = list()
     
     if (tier == None):
@@ -445,6 +445,6 @@ async def get_tanks_DB_tier(db: motor.motor_asyncio.AsyncIOMotorDatabase, tier: 
 # main()
 if __name__ == "__main__":
     #asyncio.run(main(sys.argv[1:]), debug=True)
-    bu.error('Likely out-dated code. Do not USE')
-    sys.exit(1)
+    #bu.error('Likely out-dated code. Do not USE')
+    #sys.exit(1)
     asyncio.run(main(sys.argv[1:]))

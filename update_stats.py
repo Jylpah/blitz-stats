@@ -429,7 +429,7 @@ async def update_stats_update_time(db : motor.motor_asyncio.AsyncIOMotorDatabase
 
 async def update_tankopedia( db: motor.motor_asyncio.AsyncIOMotorDatabase, filename: str = None, force: bool = False):
 	"""Update tankopedia in the database"""
-	dbc = db[su.DB_C_TANKS]
+	dbc = db[su.DB_C_TANKOPEDIA]
 	if filename == None:
 		filename = 'tanks.json'
 	async with aiofiles.open(filename, 'rt', encoding="utf8") as fp:
@@ -437,6 +437,7 @@ async def update_tankopedia( db: motor.motor_asyncio.AsyncIOMotorDatabase, filen
 		tanks = json.loads(await fp.read())
 		inserted = 0
 		updated = 0
+		tanks['data'] = bu.sort_dict(tanks['data'], number=True) 
 		for tank_id in tanks['data']:
 			try:
 				tank = tanks['data'][tank_id]
