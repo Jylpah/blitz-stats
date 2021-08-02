@@ -3,8 +3,9 @@ aiohttp
 aioconsole
 aiofiles
 aiosqlite
-beautifulsoup4
+bs4
 lxml
 xmltodict
 progress
 b2
+pymongo
