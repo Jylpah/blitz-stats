@@ -773,17 +773,22 @@ async def get_url_JSON(session: aiohttp.ClientSession, url: str, chk_JSON_func =
         for retry in range(1,max_tries+1):
             try:
                 async with session.get(url) as resp:
-                    json_resp = await resp.json()
-                    if resp.status == 200:
+                    if resp.status == 200:                        
                         debug('HTTP request OK')
-                        if (chk_JSON_func == None) or chk_JSON_func(json_resp):
-                            # debug("Received valid JSON: " + str(json_resp))
-                            return json_resp
+                        json_resp = await resp.json()
+                        if json_resp["status"] == "ok":
+                            if (chk_JSON_func == None) or chk_JSON_func(json_resp):
+                                # debug("Received valid JSON: " + str(json_resp))
+                                return json_resp
+                        else:
+                            wg_error = json_resp["error"]
+                            keys = ['message', 'field', 'value']
+                            error("WG API Error: " + str(wg_error["code"]) + ': ' + [ wg_error.get(key) for key in keys ].join(' : ') )
                         # Sometimes WG API returns JSON error even a retry gives valid JSON
                    # elif resp.status == 407:
                    #     error('WG API returned 407: ' + json_resp['error']['message'])
                     else:
-                        error('WG API returned ' + str(resp.status) + ': ' +  json_resp['error']['message'])
+                        error('WG API returned HTTP error ' + str(resp.status))
                         
                     if retry == max_tries:                        
                         break
