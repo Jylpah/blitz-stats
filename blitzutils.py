@@ -766,6 +766,7 @@ async def get_url_JSON(session: aiohttp.ClientSession, url: str, chk_JSON_func =
             error('Session must be initialized first')
             sys.exit(1)
         if url == None:
+            error('url=None parameter given')
             return None
         
         ## To avoid excessive use of servers            
