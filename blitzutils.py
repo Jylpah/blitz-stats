@@ -1901,7 +1901,7 @@ class WoTinspector:
 
     REPLAY_N = 1
 
-    def __init__(self, rate_limit: int = 20):
+    def __init__(self, rate_limit: int = 10):
         self.session = ThrottledClientSession(rate_limit=rate_limit)
         
 
