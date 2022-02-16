@@ -380,7 +380,14 @@ async def get_active_players_BS(args : argparse.Namespace)  -> list:
 
 async def get_active_players_file(filename: str) -> list:
 	"""Read account_ids from a text file"""
-	return await read_int_list(filename)
+	try:
+		players = list()
+		account_ids = await read_int_list(filename)
+		for account_id in account_ids:
+			players.append(mk_account(account_id=account_id))
+	except Exception as err:
+		bu.error('Unexpected error', err)	
+	return players
 				
 
 async def get_players_errorlog(db : motor.motor_asyncio.AsyncIOMotorDatabase, mode :str) -> list:
