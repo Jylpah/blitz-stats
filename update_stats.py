@@ -7,7 +7,7 @@ import re, logging, time, xmltodict, collections, pymongo
 import motor.motor_asyncio, ssl, configparser, random, datetime
 import blitzstatsutils as su
 import blitzutils as bu
-from blitzutils import BlitzStars, WG, RecordLogger
+from blitzutils import BlitzStars, WG, RecordLogger, read_int_list
 
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
@@ -86,7 +86,7 @@ async def main(argv):
 	parser.add_argument('--force', action='store_true', default=False, help='Force refreshing the active player list')
 	parser.add_argument('--workers', type=int, default=N_WORKERS, help='Number of asynchronous workers')
 	parser.add_argument('--cache-valid', type=int, dest='cache_valid', default=CACHE_VALID, help='Do not update stats newer than N Days')
-	parser.add_argument('--player-src', dest='player_src', default='db', choices=[ 'db', 'blitzstars' ], help='Source for the account list. Default: db')
+	parser.add_argument('--player-src', dest='player_src', default='db', choices=[ 'db', 'blitzstars', 'file' ], help='Source for the account list. Default: db')
 	parser.add_argument('--sample', type=int, default=0, help='Sample size of accounts to update')
 	
 	parser.add_argument('--run-error-log', dest='run_error_log', action='store_true', default=False, help='Re-try previously failed requests and clear errorlog')
@@ -200,36 +200,6 @@ async def main(argv):
 	return None
 
 
-async def get_active_players(db : motor.motor_asyncio.AsyncIOMotorDatabase, 
-							 mode: str, args : argparse.Namespace) -> list:
-	"""Get active player list from the sources (DB, BlitzStars)"""
-	try:
-		sample 			= args.sample
-		player_src 		= args.player_src
-		run_error_log 	= args.run_error_log
-
-		if run_error_log:
-			bu.debug('Getting players from the Error Log: ' + mode)
-			players = await get_players_errorlog(db, mode)
-		elif player_src == 'blitzstars':
-			bu.debug('Getting players from BlitzStars: ' + mode)
-			players = await get_active_players_BS(args)
-		elif player_src == 'db':
-			bu.debug('Getting players from DB: ' + mode)
-			if mode in get_stat_modes_BS():
-				bu.error('Cannot user DB as the player source for mode=' + mode)
-				return None
-			players = await get_active_players_DB(db, mode, args)			
-
-		if sample > 0 and sample < len(players):
-			players = random.sample(players, sample)
-		random.shuffle(players)  # randomize
-		return players
-	except Exception as err:
-		bu.error('Unexpected Exception', err)
-	return None
-
-
 def print_date(msg : str = '', start_time : datetime.datetime = None ) -> datetime.datetime:
 	try:
 		timenow = datetime.datetime.now()
@@ -286,6 +256,38 @@ def get_stat_modes_BS(mode_list: list = None) -> list:
 
 def mk_account(account_id: int, inactive: bool = False ) -> dict:
 	return { 'account_id': account_id, 'inactive': inactive }
+
+
+async def get_active_players(db : motor.motor_asyncio.AsyncIOMotorDatabase, 
+							 mode: str, args : argparse.Namespace) -> list:
+	"""Get active player list from the sources (DB, BlitzStars)"""
+	try:
+		sample 			= args.sample
+		player_src 		= args.player_src
+		run_error_log 	= args.run_error_log
+
+		if run_error_log:
+			bu.debug('Getting players from the Error Log: ' + mode)
+			players = await get_players_errorlog(db, mode)
+		elif player_src == 'blitzstars':
+			bu.debug('Getting players from BlitzStars: ' + mode)
+			players = await get_active_players_BS(args)
+		elif player_src == 'db':
+			bu.debug('Getting players from DB: ' + mode)
+			if mode in get_stat_modes_BS():
+				bu.error('Cannot user DB as the player source for mode=' + mode)
+				return None
+			players = await get_active_players_DB(db, mode, args)
+		elif player_src == 'file':
+			players = await get_active_players_file(args.file)
+
+		if sample > 0 and sample < len(players):
+			players = random.sample(players, sample)
+		random.shuffle(players)  # randomize
+		return players
+	except Exception as err:
+		bu.error('Unexpected Exception', err)
+	return None
 
 
 async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, mode: str, args : argparse.Namespace):
@@ -373,6 +375,11 @@ async def get_active_players_BS(args : argparse.Namespace):
 	for account_id in active_players:
 		account_ids.append(mk_account(account_id, False))
 	return account_ids
+
+
+async def get_active_players_file(filename: str) -> list():
+	"""Read account_ids from a text file"""
+	return await read_int_list(filename)
 				
 
 async def get_players_errorlog(db : motor.motor_asyncio.AsyncIOMotorDatabase, mode :str):
