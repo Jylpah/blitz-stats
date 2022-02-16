@@ -7,7 +7,7 @@ import re, logging, time, xmltodict, collections, pymongo
 import motor.motor_asyncio, ssl, configparser, random, datetime
 import blitzstatsutils as su
 import blitzutils as bu
-from blitzutils import BlitzStars, WG, RecordLogger
+from blitzutils import BlitzStars, WG, RecordLogger, read_int_list
 
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
@@ -86,7 +86,7 @@ async def main(argv):
 	parser.add_argument('--force', action='store_true', default=False, help='Force refreshing the active player list')
 	parser.add_argument('--workers', type=int, default=N_WORKERS, help='Number of asynchronous workers')
 	parser.add_argument('--cache-valid', type=int, dest='cache_valid', default=CACHE_VALID, help='Do not update stats newer than N Days')
-	parser.add_argument('--player-src', dest='player_src', default='db', choices=[ 'db', 'blitzstars' ], help='Source for the account list. Default: db')
+	parser.add_argument('--player-src', dest='player_src', default='db', choices=[ 'db', 'blitzstars', 'file' ], help='Source for the account list. Default: db')
 	parser.add_argument('--sample', type=int, default=0, help='Sample size of accounts to update')
 	
 	parser.add_argument('--run-error-log', dest='run_error_log', action='store_true', default=False, help='Re-try previously failed requests and clear errorlog')
@@ -200,36 +200,6 @@ async def main(argv):
 	return None
 
 
-async def get_active_players(db : motor.motor_asyncio.AsyncIOMotorDatabase, 
-							 mode: str, args : argparse.Namespace) -> list:
-	"""Get active player list from the sources (DB, BlitzStars)"""
-	try:
-		sample 			= args.sample
-		player_src 		= args.player_src
-		run_error_log 	= args.run_error_log
-
-		if run_error_log:
-			bu.debug('Getting players from the Error Log: ' + mode)
-			players = await get_players_errorlog(db, mode)
-		elif player_src == 'blitzstars':
-			bu.debug('Getting players from BlitzStars: ' + mode)
-			players = await get_active_players_BS(args)
-		elif player_src == 'db':
-			bu.debug('Getting players from DB: ' + mode)
-			if mode in get_stat_modes_BS():
-				bu.error('Cannot user DB as the player source for mode=' + mode)
-				return None
-			players = await get_active_players_DB(db, mode, args)			
-
-		if sample > 0 and sample < len(players):
-			players = random.sample(players, sample)
-		random.shuffle(players)  # randomize
-		return players
-	except Exception as err:
-		bu.error('Unexpected Exception', err)
-	return None
-
-
 def print_date(msg : str = '', start_time : datetime.datetime = None ) -> datetime.datetime:
 	try:
 		timenow = datetime.datetime.now()
@@ -288,7 +258,40 @@ def mk_account(account_id: int, inactive: bool = False ) -> dict:
 	return { 'account_id': account_id, 'inactive': inactive }
 
 
-async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, mode: str, args : argparse.Namespace):
+async def get_active_players(db : motor.motor_asyncio.AsyncIOMotorDatabase, 
+							 mode: str, args : argparse.Namespace) -> list:
+	"""Get active player list from the sources (DB, BlitzStars)"""
+	try:
+		sample 			= args.sample
+		player_src 		= args.player_src
+		run_error_log 	= args.run_error_log
+
+		if run_error_log:
+			bu.debug('Getting players from the Error Log: ' + mode)
+			players = await get_players_errorlog(db, mode)
+		elif player_src == 'blitzstars':
+			bu.debug('Getting players from BlitzStars: ' + mode)
+			players = await get_active_players_BS(args)
+		elif player_src == 'db':
+			bu.debug('Getting players from DB: ' + mode)
+			if mode in get_stat_modes_BS():
+				bu.error('Cannot user DB as the player source for mode=' + mode)
+				return None
+			players = await get_active_players_DB(db, mode, args)
+		elif player_src == 'file':
+			players = await get_active_players_file(args.file)
+
+		if sample > 0 and sample < len(players):
+			players = random.sample(players, sample)
+		random.shuffle(players)  # randomize
+		return players
+	except Exception as err:
+		bu.error('Unexpected Exception', err)
+	return None
+
+
+async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, 
+								mode: str, args : argparse.Namespace) -> list:
 	"""Get list of active accounts from the database"""
 	try:
 		dbc = db[su.DB_C_ACCOUNTS]
@@ -346,7 +349,7 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase, m
 		bu.error('Unexpected error', err)
 
 
-async def get_active_players_BS(args : argparse.Namespace):
+async def get_active_players_BS(args : argparse.Namespace)  -> list:
 	"""Get active_players from BlitzStars or local cache file"""
 	global bs, wg
 
@@ -373,9 +376,21 @@ async def get_active_players_BS(args : argparse.Namespace):
 	for account_id in active_players:
 		account_ids.append(mk_account(account_id, False))
 	return account_ids
+
+
+async def get_active_players_file(filename: str) -> list:
+	"""Read account_ids from a text file"""
+	try:
+		players = list()
+		account_ids = await read_int_list(filename)
+		for account_id in account_ids:
+			players.append(mk_account(account_id=account_id))
+	except Exception as err:
+		bu.error('Unexpected error', err)	
+	return players
 				
 
-async def get_players_errorlog(db : motor.motor_asyncio.AsyncIOMotorDatabase, mode :str):
+async def get_players_errorlog(db : motor.motor_asyncio.AsyncIOMotorDatabase, mode :str) -> list:
 	"""Get list of acccount_ids of the previous failed requests"""
 	try:
 		dbc = db[su.DB_C_ERROR_LOG]
@@ -401,7 +416,9 @@ async def get_players_errorlog(db : motor.motor_asyncio.AsyncIOMotorDatabase, mo
 	return None
 
 
-async def update_stats_update_time(db : motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int, stat_type: str, last_battle_time: int = None, inactive: bool = None) -> bool:
+async def update_stats_update_time(db : motor.motor_asyncio.AsyncIOMotorDatabase, 
+									account_id: int, stat_type: str, 
+									last_battle_time: int = None, inactive: bool = None) -> bool:
 	"""Update su.DB_C_ACCOUNTS table with the update time of the player's stats"""
 
 	dbc_update_log = db[su.DB_C_ACCOUNT_LOG]
@@ -427,7 +444,8 @@ async def update_stats_update_time(db : motor.motor_asyncio.AsyncIOMotorDatabase
 		return False	
 
 
-async def update_tankopedia( db: motor.motor_asyncio.AsyncIOMotorDatabase, filename: str = None, force: bool = False):
+async def update_tankopedia( db: motor.motor_asyncio.AsyncIOMotorDatabase, 
+								filename: str = None, force: bool = False) -> bool:
 	"""Update tankopedia in the database"""
 	dbc = db[su.DB_C_TANKOPEDIA]
 	if filename == None:
@@ -474,7 +492,7 @@ async def update_tankopedia( db: motor.motor_asyncio.AsyncIOMotorDatabase, filen
 	return True			
 	
 
-async def mk_accountQ(queue : asyncio.Queue, account_ids : list):
+async def mk_accountQ(queue : asyncio.Queue, account_ids : list) -> None:
 	"""Create queue of replays to post"""
 	for account_id in account_ids:
 		try:
@@ -487,7 +505,7 @@ async def mk_accountQ(queue : asyncio.Queue, account_ids : list):
 	return None
 
 
-async def del_account_id(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int):
+async def del_account_id(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int) -> None:
 	"""Remove account_id from the DB"""
 	dbc = db[su.DB_C_ACCOUNTS]
 	try: 
@@ -499,7 +517,9 @@ async def del_account_id(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_i
 	return None
 
 
-async def update_account(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int, stat_type: str = None, set_fields: dict = dict(), unset_fields : dict = dict()) -> bool:
+async def update_account(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
+						  account_id: int, stat_type: str = None, set_fields: dict = dict(), 
+						  unset_fields : dict = dict()) -> bool:
 	"""Low-level helper function to update account collection"""
 	try:
 		dbc = db[su.DB_C_ACCOUNTS]
@@ -524,7 +544,8 @@ async def update_account(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_i
 	return False
 
 
-async def set_account_invalid(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int, stat_type: str = None):
+async def set_account_invalid(db: motor.motor_asyncio.AsyncIOMotorDatabase, 
+								account_id: int, stat_type: str = None) -> None:
 	"""Set account_id invalid"""
 	try: 
 		FIELDS = { 'invalid': True }
@@ -547,7 +568,9 @@ async def set_account_valid(db: motor.motor_asyncio.AsyncIOMotorDatabase, accoun
 
 
 ## DEPRECIATED
-async def BS_player_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, playerQ : asyncio.Queue, worker_id : int, args : argparse.Namespace):
+async def BS_player_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, 
+								playerQ : asyncio.Queue, worker_id : int, 
+								args : argparse.Namespace):
 	"""Async Worker to process the player queue for BlitzStars.com Player stats"""
 	dbc = db[su.DB_C_BS_PLAYER_STATS]
 	field = 'player_stats_BS'
@@ -587,7 +610,9 @@ async def BS_player_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, p
 
 
 ## DEPRECIATED
-async def BS_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, playerQ : asyncio.Queue, worker_id : int, args : argparse.Namespace):
+async def BS_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, 
+								playerQ : asyncio.Queue, worker_id : int, 
+								args : argparse.Namespace):
 	"""Async Worker to fetch players' tank stats from BlitzStars.com"""
 	global stats_added
 	
@@ -638,7 +663,9 @@ async def BS_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 	return None
 
 
-async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, playerQ : asyncio.Queue, worker_id : int, args : argparse.Namespace):
+async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, 
+								playerQ : asyncio.Queue, worker_id : int, 
+								args : argparse.Namespace) -> RecordLogger:
 	"""Async Worker to process the replay queue: WG player tank stats """
 	global stats_added
 	
@@ -736,7 +763,9 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, pla
 
 
 ## NOT IMPLEMENTED YET
-async def WG_player_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, playerQ : asyncio.Queue, worker_id : int, args : argparse.Namespace):
+async def WG_player_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, 
+								playerQ : asyncio.Queue, worker_id : int, 
+								args : argparse.Namespace):
 	"""Async Worker to process the replay queue: WG player stats """
 	global stats_added
 	#### 
@@ -787,7 +816,9 @@ async def WG_player_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, p
 	return None
 
 
-async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, playerQ : asyncio.Queue, worker_id : int, args : argparse.Namespace):
+async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase, 
+										playerQ : asyncio.Queue, worker_id : int, 
+										args : argparse.Namespace) -> RecordLogger:
 	"""Async Worker to process the replay queue: WG player stats """
 	global stats_added
 	
