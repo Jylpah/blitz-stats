@@ -87,7 +87,7 @@ async def main(argv):
 	parser.add_argument('--workers', type=int, default=N_WORKERS, help='Number of asynchronous workers')
 	parser.add_argument('--cache-valid', type=int, dest='cache_valid', default=CACHE_VALID, help='Do not update stats newer than N Days')
 	parser.add_argument('--player-src', dest='player_src', default='db', choices=[ 'db', 'blitzstars', 'file' ], help='Source for the account list. Default: db')
-	parser.add_argument('--sample', type=int, default=0, help='Sample size of accounts to update')
+	parser.add_argument('--sample', type=float, default=0, help='Sample size of accounts to update')
 	
 	parser.add_argument('--run-error-log', dest='run_error_log', action='store_true', default=False, help='Re-try previously failed requests and clear errorlog')
 	parser.add_argument('--check-invalid', dest='chk_invalid', action='store_true', default=False, help='Re-check invalid accounts')
@@ -281,8 +281,9 @@ async def get_active_players(db : motor.motor_asyncio.AsyncIOMotorDatabase,
 		elif player_src == 'file':
 			players = await get_active_players_file(args.file)
 
-		if sample > 0 and sample < len(players):
-			players = random.sample(players, sample)
+		if sample >= 1 and sample < len(players):
+			players = random.sample(players, int(sample))
+
 		random.shuffle(players)  # randomize
 		return players
 	except Exception as err:
@@ -309,8 +310,12 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase,
 			match.append( { '$or': [ { update_field : None }, { update_field : { '$lt': NOW - cache_valid}} ] } )
 			
 		pipeline = [ { '$match' : { '$and' : match } } ]
-		if sample > 0:
-			pipeline.append({'$sample': {'size' : sample * DB_SAMPLE_FACTOR} })
+		if sample >= 1:
+			# pipeline.append({'$sample': {'size' : sample * DB_SAMPLE_FACTOR} })
+			pipeline.append({'$sample': {'size' : int(sample) } })
+		elif sample > 0:
+			n = await dbc.count_documents({ "$and": match})
+			pipeline.append({'$sample': {'size' : int(n * sample) } })
 
 		cursor = dbc.aggregate(pipeline, allowDiskUse=False)
 		
@@ -727,7 +732,6 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase,
 						await clear_error_log(db, account_id, stat_type)
 					if chk_invalid:
 						rl.log('accounts marked valid')
-						set_account_valid(db, account_id)
 					
 					if added == 0:
 						rl.log('accounts w/o new stats')
@@ -799,7 +803,6 @@ async def WG_player_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase,
 				if clr_error_log:
 					await clear_error_log(db, account_id, stat_type)
 				if chk_invalid:
-					set_account_valid(db, account_id)
 				await update_stats_update_time(db, account_id, stat_type, last_battle_time)
 				debug_account_id(account_id, 'Player stats added', id=worker_id)	
 	
@@ -896,7 +899,6 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 					if clr_error_log:
 						await clear_error_log(db, account_id, stat_type)
 					if chk_invalid:
-						set_account_valid(db, account_id)
 					await update_stats_update_time(db, account_id, stat_type)
 				except bu.StatsNotFound as err:	
 					log_account_id(account_id, exception=err, id=worker_id)
