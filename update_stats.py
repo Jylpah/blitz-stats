@@ -732,6 +732,7 @@ async def WG_tank_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase,
 						await clear_error_log(db, account_id, stat_type)
 					if chk_invalid:
 						rl.log('accounts marked valid')
+						await set_account_valid(db, account_id)
 					
 					if added == 0:
 						rl.log('accounts w/o new stats')
@@ -803,6 +804,7 @@ async def WG_player_stat_worker(db : motor.motor_asyncio.AsyncIOMotorDatabase,
 				if clr_error_log:
 					await clear_error_log(db, account_id, stat_type)
 				if chk_invalid:
+					await set_account_valid(db, account_id)
 				await update_stats_update_time(db, account_id, stat_type, last_battle_time)
 				debug_account_id(account_id, 'Player stats added', id=worker_id)	
 	
@@ -899,6 +901,7 @@ async def WG_player_achivements_worker(db : motor.motor_asyncio.AsyncIOMotorData
 					if clr_error_log:
 						await clear_error_log(db, account_id, stat_type)
 					if chk_invalid:
+						await set_account_valid(db, account_id)
 					await update_stats_update_time(db, account_id, stat_type)
 				except bu.StatsNotFound as err:	
 					log_account_id(account_id, exception=err, id=worker_id)
