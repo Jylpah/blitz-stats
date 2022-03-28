@@ -91,6 +91,7 @@ async def main(argv):
 	
 	parser.add_argument('--run-error-log', dest='run_error_log', action='store_true', default=False, help='Re-try previously failed requests and clear errorlog')
 	parser.add_argument('--check-invalid', dest='chk_invalid', action='store_true', default=False, help='Re-check invalid accounts')
+	parser.add_argument('--check-inactive', dest='chk_inactive', action='store_true', default=False, help='Re-check inactive accounts')
 	parser.add_argument('-l', '--log', action='store_true', default=False, help='Enable file logging')
 	arggroup = parser.add_mutually_exclusive_group()
 	arggroup.add_argument('-d', '--debug', 		action='store_true', default=False, help='Debug mode')
@@ -301,12 +302,17 @@ async def get_active_players_DB(db : motor.motor_asyncio.AsyncIOMotorDatabase,
 		cache_valid 	= args.cache_valid
 		sample 			= args.sample
 		chk_invalid 	= args.chk_invalid
+		chk_inactive	= args.chk_inactive
 		update_field 	= su.UPDATE_FIELD[mode]
-		DB_SAMPLE_FACTOR = 2 # > share of inactive players
+		if chk_invalid or chk_inactive:
+			force = True
+		# DB_SAMPLE_FACTOR = 2 # > share of inactive players
 		NOW = bu.NOW()
 
 		match = [ { '_id' : {  '$lt' : WG.ACCOUNT_ID_MAX}}, { 'invalid': { '$exists': chk_invalid }} ]
-		if not force:
+		if chk_inactive:
+			match.append({ 'inactive': True})
+		elif not force:
 			match.append( { '$or': [ { update_field : None }, { update_field : { '$lt': NOW - cache_valid}} ] } )
 			
 		pipeline = [ { '$match' : { '$and' : match } } ]
