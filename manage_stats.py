@@ -96,11 +96,6 @@ async def main(argv):
         config 	= configparser.ConfigParser()
         config.read(FILE_CONFIG)
         
-        if 'WG' in config.sections():
-            configWG 		= config['WG']
-            WG_APP_ID		= configWG.get('wg_app_id', WG_APP_ID)
-            WG_RATE_LIMIT	= configWG.getint('wg_rate_limit', WG_RATE_LIMIT)
-
         if 'DATABASE' in config.sections():
             configDB 	= config['DATABASE']
             DB_SERVER 	= configDB.get('db_server', DB_SERVER)
