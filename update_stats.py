@@ -46,7 +46,7 @@ async def main(argv):
 	# DB defaults
 	DB_SERVER 	= 'localhost'
 	DB_PORT 	= 27017
-	DB_SSL		= False
+	DB_TLS		= False
 	DB_CERT_REQ = False
 	DB_AUTH 	= 'admin'
 	DB_NAME 	= 'BlitzStats'
@@ -69,14 +69,14 @@ async def main(argv):
 			configDB 	= config['DATABASE']
 			DB_SERVER 	= configDB.get('db_server', DB_SERVER)
 			DB_PORT 	= configDB.getint('db_port', DB_PORT)
-			DB_SSL 		= configDB.getboolean('db_ssl', DB_SSL)
-			DB_CERT_REQ = configDB.getboolean('db_ssl_req', DB_CERT_REQ)
+			DB_TLS 		= configDB.getboolean('db_tls', DB_TLS)
+			DB_CERT_REQ = configDB.getboolean('db_tls_req', DB_CERT_REQ)
 			DB_AUTH 	= configDB.get('db_auth', DB_AUTH)
 			DB_NAME 	= configDB.get('db_name', DB_NAME)
 			DB_USER 	= configDB.get('db_user', DB_USER)
 			DB_PASSWD 	= configDB.get('db_password', DB_PASSWD)
-			DB_CERT		= configDB.get('db_ssl_cert_file', DB_CERT)
-			DB_CA		= configDB.get('db_ssl_ca_file', DB_CA)
+			DB_CERT		= configDB.get('db_tls_cert_file', DB_CERT)
+			DB_CA		= configDB.get('db_tls_ca_file', DB_CA)
 	else:
 		bu.warning(FILE_CONFIG + ' Config file not found')
 
@@ -116,9 +116,9 @@ async def main(argv):
 
 		#### Connect to MongoDB
 		if (DB_USER==None) or (DB_PASSWD==None):
-			client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, tls=DB_SSL, tlsAllowInvalidCertificates=DB_CERT_REQ, tlsCertificateKeyFile=DB_CERT, tlsCAFile=DB_CA)
+			client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, tls=DB_TLS, tlsAllowInvalidCertificates=DB_CERT_REQ, tlsCertificateKeyFile=DB_CERT, tlsCAFile=DB_CA)
 		else:
-			client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, username=DB_USER, password=DB_PASSWD, tls=DB_SSL, tlsAllowInvalidCertificates=DB_CERT_REQ, tlsCertificateKeyFile=DB_CERT, tlsCAFile=DB_CA)
+			client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, username=DB_USER, password=DB_PASSWD, tls=DB_TLS, tlsAllowInvalidCertificates=DB_CERT_REQ, tlsCertificateKeyFile=DB_CERT, tlsCAFile=DB_CA)
 		db = client[DB_NAME]
 		bu.debug(str(type(db)))	
 		#await su.init_db_indices(db)
