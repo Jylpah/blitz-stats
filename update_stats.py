@@ -70,7 +70,7 @@ async def main(argv):
 			DB_SERVER 	= configDB.get('db_server', DB_SERVER)
 			DB_PORT 	= configDB.getint('db_port', DB_PORT)
 			DB_SSL 		= configDB.getboolean('db_ssl', DB_SSL)
-			DB_CERT_REQ = configDB.getint('db_ssl_req', DB_CERT_REQ)
+			DB_CERT_REQ = configDB.getboolean('db_ssl_req', DB_CERT_REQ)
 			DB_AUTH 	= configDB.get('db_auth', DB_AUTH)
 			DB_NAME 	= configDB.get('db_name', DB_NAME)
 			DB_USER 	= configDB.get('db_user', DB_USER)
