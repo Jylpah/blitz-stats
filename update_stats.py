@@ -47,7 +47,7 @@ async def main(argv):
 	DB_SERVER 	= 'localhost'
 	DB_PORT 	= 27017
 	DB_SSL		= False
-	DB_CERT_REQ = ssl.CERT_NONE
+	DB_CERT_REQ = False
 	DB_AUTH 	= 'admin'
 	DB_NAME 	= 'BlitzStats'
 	DB_USER		= 'mongouser'
