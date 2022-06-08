@@ -92,24 +92,24 @@ async def main(argv):
     DB_CA 		= None
     
     ## Read config
-    if os.path.isfile(FILE_CONFIG):
+    try:
         config 	= configparser.ConfigParser()
         config.read(FILE_CONFIG)
+    
+        configDB 	= config['DATABASE']
+        DB_SERVER 	= configDB.get('db_server', DB_SERVER)
+        DB_PORT 	= configDB.getint('db_port', DB_PORT)
+        DB_TLS 		= configDB.getboolean('db_tls', DB_TLS)
+        DB_CERT_REQ = configDB.getboolean('db_tls_req', DB_CERT_REQ)
+        DB_AUTH 	= configDB.get('db_auth', DB_AUTH)
+        DB_NAME 	= configDB.get('db_name', DB_NAME)
+        DB_USER 	= configDB.get('db_user', DB_USER)
+        DB_PASSWD 	= configDB.get('db_password', DB_PASSWD)
+        DB_CERT		= configDB.get('db_tls_cert_file', DB_CERT)
+        DB_CA		= configDB.get('db_tls_ca_file', DB_CA)
+    except Exception as err:
+        bu.error("Error reading config file", exception=err)
         
-        if 'DATABASE' in config.sections():
-            configDB 	= config['DATABASE']
-            DB_SERVER 	= configDB.get('db_server', DB_SERVER)
-            DB_PORT 	= configDB.getint('db_port', DB_PORT)
-            DB_TLS 		= configDB.getboolean('db_tls', DB_TLS)
-            DB_CERT_REQ = configDB.getboolean('db_tls_req', DB_CERT_REQ)
-            DB_AUTH 	= configDB.get('db_auth', DB_AUTH)
-            DB_NAME 	= configDB.get('db_name', DB_NAME)
-            DB_USER 	= configDB.get('db_user', DB_USER)
-            DB_PASSWD 	= configDB.get('db_password', DB_PASSWD)
-            DB_CERT		= configDB.get('db_tls_cert_file', DB_CERT)
-            DB_CA		= configDB.get('db_tls_ca_file', DB_CA)
-    else:
-        bu.warning(FILE_CONFIG + ' Config file not found')
 
     try:
         #### Connect to MongoDB
