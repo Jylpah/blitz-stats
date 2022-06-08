@@ -70,39 +70,58 @@ async def main(argv):
     parser.add_argument('updates', metavar='X.Y [Z.D ...]', type=str, nargs='*', help='List of updates to prune')
     args = parser.parse_args()
 
-    try:
-        bu.set_log_level(args.silent, args.verbose, args.debug)
-        bu.set_progress_step(100)
-        #if args.snapshot or args.update:
-        if args.update:
-            args.log = True
-        if args.log:
-            datestr = datetime.datetime.now().strftime("%Y%m%d_%H%M")
-            await bu.set_file_logging(bu.rebase_file_args(current_dir, 'manage_stats_' + datestr + '.log'))
+    bu.set_log_level(args.silent, args.verbose, args.debug)
+    bu.set_progress_step(100)
+    #if args.snapshot or args.update:
+    if args.update:
+        args.log = True
+    if args.log:
+        datestr = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+        await bu.set_file_logging(bu.rebase_file_args(current_dir, 'manage_stats_' + datestr + '.log'))
 
-		## Read config
-        config = configparser.ConfigParser()
+    # DB defaults
+    DB_SERVER 	= 'localhost'
+    DB_PORT 	= 27017
+    DB_TLS		= False
+    DB_CERT_REQ = False
+    DB_AUTH 	= 'admin'
+    DB_NAME 	= 'BlitzStats'
+    DB_USER		= 'mongouser'
+    DB_PASSWD 	= 'PASSWORD'
+    DB_CERT 	= None
+    DB_CA 		= None
+    
+    ## Read config
+    if os.path.isfile(FILE_CONFIG):
+        config 	= configparser.ConfigParser()
         config.read(FILE_CONFIG)
-        configDB    = config['DATABASE']
-        DB_SERVER   = configDB.get('db_server', 'localhost')
-        DB_PORT     = configDB.getint('db_port', 27017)
-        DB_SSL      = configDB.getboolean('db_ssl', False)
-        DB_CERT_REQ = configDB.getint('db_ssl_req', ssl.CERT_NONE)
-        DB_AUTH     = configDB.get('db_auth', 'admin')
-        DB_NAME     = configDB.get('db_name', 'BlitzStats')
-        DB_USER     = configDB.get('db_user', None)
-        DB_PASSWD   = configDB.get('db_password', None)
-        DB_CERT		= configDB.get('db_ssl_cert_file', None)
-        DB_CA		= configDB.get('db_ssl_ca_file', None)
-    except Exception as err:
-        bu.error('Error reading config file', err)
+        
+        if 'WG' in config.sections():
+            configWG 		= config['WG']
+            WG_APP_ID		= configWG.get('wg_app_id', WG_APP_ID)
+            WG_RATE_LIMIT	= configWG.getint('wg_rate_limit', WG_RATE_LIMIT)
+
+        if 'DATABASE' in config.sections():
+            configDB 	= config['DATABASE']
+            DB_SERVER 	= configDB.get('db_server', DB_SERVER)
+            DB_PORT 	= configDB.getint('db_port', DB_PORT)
+            DB_TLS 		= configDB.getboolean('db_tls', DB_TLS)
+            DB_CERT_REQ = configDB.getboolean('db_tls_req', DB_CERT_REQ)
+            DB_AUTH 	= configDB.get('db_auth', DB_AUTH)
+            DB_NAME 	= configDB.get('db_name', DB_NAME)
+            DB_USER 	= configDB.get('db_user', DB_USER)
+            DB_PASSWD 	= configDB.get('db_password', DB_PASSWD)
+            DB_CERT		= configDB.get('db_tls_cert_file', DB_CERT)
+            DB_CA		= configDB.get('db_tls_ca_file', DB_CA)
+    else:
+        bu.warning(FILE_CONFIG + ' Config file not found')
 
     try:
         #### Connect to MongoDB
         if (DB_USER==None) or (DB_PASSWD==None):
-            client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
+            client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, tls=DB_TLS, tlsAllowInvalidCertificates=DB_CERT_REQ, tlsCertificateKeyFile=DB_CERT, tlsCAFile=DB_CA)
         else:
-            client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, username=DB_USER, password=DB_PASSWD, ssl=DB_SSL, ssl_cert_reqs=DB_CERT_REQ, ssl_certfile=DB_CERT, tlsCAFile=DB_CA)
+            client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, username=DB_USER, password=DB_PASSWD, tls=DB_TLS, tlsAllowInvalidCertificates=DB_CERT_REQ, tlsCertificateKeyFile=DB_CERT, tlsCAFile=DB_CA)
         
         db = client[DB_NAME]
         bu.debug(str(type(db)))
