@@ -46,7 +46,7 @@ async def main(argv):
 	DB_AUTH 	= 'admin'
 	DB_NAME 	= 'BlitzStats'
 	DB_USER		= 'mongouser'
-	DB_PASSWD 	= 'PASSWORD'
+	DB_PASSWD 	= None
 	DB_CERT 	= None
 	DB_CA 		= None
 
