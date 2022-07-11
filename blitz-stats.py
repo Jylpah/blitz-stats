@@ -21,8 +21,8 @@ REPLAY_N = 0
 WG_appID = 'cd770f38988839d7ab858d1cbe54bdd0'
 
 FILE_ACTIVE_PLAYERS	= 'activeinlast30days.json'
-FILE_CONFIG 		= 'blitzstats.ini'
 
+db = None
 wi = None
 bs = None
 WI_STOP_SPIDER = False
@@ -35,10 +35,12 @@ async def main(argv):
 	# set the directory for the script
 	os.chdir(os.path.dirname(sys.argv[0]))
 
-	global wi, bs, MAX_PAGES
+	global db, wi, bs, MAX_PAGES
 
 	# Default params
-	MAX_PAGES = 500
+	MAX_PAGES 	= 500
+	N_WORKERS 	= 20
+	FILE_CONFIG = 'blitzstats.ini'
 	DB_SERVER 	= 'localhost'
 	DB_PORT 	= 27017
 	DB_TLS		= False
@@ -69,37 +71,20 @@ async def main(argv):
 			DB_PASSWD 	= configDB.get('db_password', DB_PASSWD)
 			DB_CERT		= configDB.get('db_tls_cert_file', DB_CERT)
 			DB_CA		= configDB.get('db_tls_ca_file', DB_CA)
-		
-	bu.debug('DB_SERVER: ' + DB_SERVER)
-	bu.debug('DB_PORT: ' + str(DB_PORT))
-	bu.debug('DB_TLS: ' + "True" if DB_TLS else "False")
-	bu.debug('DB_AUTH: ' + DB_AUTH)
-	bu.debug('DB_NAME: ' + DB_NAME)
 
-	parser = argparse.ArgumentParser(description='Fetch WG account_ids')
-	parser.add_argument('--force', action='store_true', default=False, help='Force refreshing the active player list')
-	parser.add_argument('--workers', type=int, default=N_WORKERS, help='Number of asynchronous workers')
-	arggroup = parser.add_mutually_exclusive_group()
-	arggroup.add_argument('-d', '--debug', 		action='store_true', default=False, help='Debug mode')
-	arggroup.add_argument('-v', '--verbose', 	action='store_true', default=False, help='Verbose mode')
-	arggroup.add_argument('-s', '--silent', 	action='store_true', default=False, help='Silent mode')
-	parser.add_argument('-r', '--remove', 		action='store_true', default=False, help='REMOVE account_ids the database. Please give a plain text file with account_ids as cmd line argument.')
-	parser.add_argument('-b', '--blitzstars', 	action='store_true', default=False, help='Get account_ids from blitzstars.com')
-	parser.add_argument('-w', '--wotinspector', action='store_true', default=False, help='Get account_ids from WoTinspector.com')
-	parser.add_argument('--db', 				action='store_true', default=False, help='Get account_ids from the database in case previous runs got interrupted')
+	## DB command line args TBD
 
-	parser.add_argument('--max', '--max_pages', dest='max_pages', type=int, default=MAX_PAGES, help='Maximum number of WoTinspector.com pages to spider')
-	parser.add_argument('--start', '--start_page', dest='start_page', type=int, default=0, help='Start page to start spidering of WoTinspector.com')
-	parser.add_argument('files', metavar='FILE1 [FILE2 ...]', type=str, nargs='*', help='Files to read. Use \'-\' for STDIN')
+	# db_parser = argparse.ArgumentParser(description='Set DB parameters')
+	# db_parser.add_argument('--db_tls', action='store_true', default=DB_TLS, help='Use TLS for DB')
+	# db_args, argv = db_parser.parse_known_args()
 
-	args = parser.parse_args()
-	bu.set_log_level(args.silent, args.verbose, args.debug)
-	bu.set_progress_step(100)
-	
-	players = set()
 	try:
-		bs = BlitzStars()
-
+		bu.debug('DB_SERVER: ' + DB_SERVER)
+		bu.debug('DB_PORT: ' + str(DB_PORT))
+		bu.debug('DB_TLS: ' + "True" if DB_TLS else "False")
+		bu.debug('DB_AUTH: ' + DB_AUTH)
+		bu.debug('DB_NAME: ' + DB_NAME)
+		
 		#### Connect to MongoDB
 		if (DB_TLS==False):
 			if (DB_USER==None) or (DB_PASSWD==None):
@@ -111,8 +96,62 @@ async def main(argv):
 				client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, tls=DB_TLS, tlsAllowInvalidCertificates=DB_CERT_REQ, tlsCertificateKeyFile=DB_CERT, tlsCAFile=DB_CA)
 			else:
 				client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, username=DB_USER, password=DB_PASSWD, tls=DB_TLS, tlsAllowInvalidCertificates=DB_CERT_REQ, tlsCertificateKeyFile=DB_CERT, tlsCAFile=DB_CA)
-        
 		db = client[DB_NAME]
+	except Exception as err:
+		bu.error('Error connecting DB: ' + str(type(err)) + ' : '+ str(err)) 
+		bu.verbose_std('DB_SERVER: ' + DB_SERVER)
+		bu.verbose_std('DB_PORT: ' + str(DB_PORT))
+		bu.verbose_std('DB_TLS: ' + "True" if DB_TLS else "False")
+		bu.verbose_std('DB_AUTH: ' + DB_AUTH)
+		bu.verbose_std('DB_NAME: ' + DB_NAME)	
+
+	parser = argparse.ArgumentParser(description='Fetch and manage WoT Blitz stats')
+	arggroup = parser.add_mutually_exclusive_group()
+	arggroup.add_argument('-d', '--debug', 		action='store_true', default=False, help='Debug mode')
+	arggroup.add_argument('-v', '--verbose', 	action='store_true', default=False, help='Verbose mode')
+	arggroup.add_argument('-s', '--silent', 	action='store_true', default=False, help='Silent mode')
+	parser.add_argument('-l', '--log', action='store_true', default=False, help='Enable file logging')
+	parser.add_argument('--force', action='store_true', default=False, help='Force action')
+	parser.add_argument('--workers', type=int, default=N_WORKERS, help='Number of asynchronous workers')
+
+	subparsers = parser.add_subparsers(title='Actions', dest='action', metavar='fetch | update | prune | export', help='action help')
+	parser_fetch = subparsers.add_parser('fetch', help='fetch help')
+	parser_update = subparsers.add_parser('update', help='fetch help')
+	parser_prune = subparsers.add_parser('prune', help='prune help')
+	parser_export = subparsers.add_parser('export', help='fetch help')
+
+	subparsers_fetch 				= parser_fetch.add_subparsers(title='Modes', dest='mode', metavar='account_ids | tank_stats | player_achievements', help='action help')
+	parser_fetch_account_ids 		= subparsers_fetch.add_parser('account_ids', help='fetch account_ids help')
+	parser_fetch_tank_stats 		= subparsers_fetch.add_parser('tank_stats', help='fetch tank_stats help')
+	parser_fetch_player_achievements= subparsers_fetch.add_parser('player_achievements', help='fetch player_achievements help')
+	
+	parser_fetch_account_ids.add_argument('source', metavar='wi | db | replays', type=str, choices=['wi', 'db', 'replays'] , default='wi')
+	parser_fetch_account_ids.add_argument('--max', '--max_pages', dest='max_pages', type=int, default=MAX_PAGES, help='Maximum number of WoTinspector.com pages to spider')
+	parser_fetch_account_ids.add_argument('--start', '--start_page', dest='start_page', type=int, default=0, help='Start page to start spidering of WoTinspector.com')
+	parser_fetch_account_ids.add_argument('replays', metavar='REPLAY1 [REPLAY ...]', type=str, nargs='*', help='Replay files to read. Use \'-\' for STDIN')
+	parser_fetch_account_ids.set_defaults(func=fetch_account_ids)
+
+	parser_fetch_tank_stats.add_argument('--cache-valid', type=int, dest='cache_valid', default=CACHE_VALID, help='Do not update stats newer than N Days')
+	parser_fetch_tank_stats.add_argument('--player-src', dest='player_src', default='db', choices=[ 'db', 'file' ], help='Source for the account list. Default: db')
+	parser_fetch_tank_stats.add_argument('--sample', type=float, default=0, help='Sample size of accounts to update')
+	parser_fetch_tank_stats.add_argument('--run-error-log', dest='run_error_log', action='store_true', default=False, help='Re-try previously failed requests and clear errorlog')
+	parser_fetch_tank_stats.add_argument('--check-invalid', dest='chk_invalid', action='store_true', default=False, help='Re-check invalid accounts')
+	parser_fetch_tank_stats.add_argument('--check-inactive', dest='chk_inactive', action='store_true', default=False, help='Re-check inactive accounts')
+	parser_fetch_tank_stats.add_argument('--file', default=None, help='File to read')
+	parser_fetch_tank_stats.set_defaults(func=fetch_tank_stats)
+
+	parser.add_argument('-r', '--remove', 		action='store_true', default=False, help='REMOVE account_ids the database. Please give a plain text file with account_ids as cmd line argument.')
+	parser.add_argument('files', metavar='FILE1 [FILE2 ...]', type=str, nargs='*', help='Files to read. Use \'-\' for STDIN')
+
+	args = parser.parse_args()
+	bu.set_log_level(args.silent, args.verbose, args.debug)
+	bu.set_progress_step(100)
+	
+	players = set()
+	try:
+		
+
+
 		
 		if not args.remove:
 			if args.blitzstars:
@@ -181,7 +220,7 @@ async def set_account_invalid(db: motor.motor_asyncio.AsyncIOMotorDatabase, acco
 	return None
 
 
-async def update_account_ids(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_ids: set):
+async def write_account_ids2db(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_ids: set):
 		"""Update / add account_ids to the database"""
 		dbc = db[su.DB_C_ACCOUNTS]
 				
@@ -219,26 +258,110 @@ def mk_player_JSON(account_id: int):
 	player['last_battle_time'] = None
 	return player
 
-async def get_players_DB(db, args):
+async def fetch_account_ids(args: argparse.Namespace):
+	account_ids = set()
+	try:
+		if args.source == 'wi':
+			account_ids.update(await fetch_account_ids_WI(db, args))
+		elif args.source == 'db':
+			account_ids.update(await fetch_account_ids_DB(db, args))
+		elif args.source == 'replays':
+			if len(args.replays) > 0:
+				bu.debug(str(args.files))
+				account_ids.update(await fetch_account_ids_replays(args))
+
+		await write_account_ids2db(db, account_ids)
+	except Exception as err:
+		bu.error('Unexpected error: ' + str(type(err)) + ' : ' + str(err))
+
+
+async def fetch_account_ids_WI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace):
+	"""Get active players from wotinspector.com replays"""
+	global wi
+
+	workers 	= args.workers
+	max_pages 	= args.max_pages
+	start_page 	= args.start_page
+	force 		= args.force
+	account_ids = set()
+	replayQ 	= asyncio.Queue(maxsize=200)
+	wi 			= WoTinspector(rate_limit=15)
+	
+	# Start tasks to process the Queue
+	tasks = []
+
+	for i in range(workers):
+		tasks.append(asyncio.create_task(WI_replay_fetcher(db, replayQ, i, force)))
+		bu.debug('Replay Fetcher ' + str(i) + ' started')
+
+	bu.set_progress_bar('Spidering replays', max_pages, step = 1, id = "spider")		
+
+	for page in range(start_page,(start_page + max_pages)):
+		if WI_STOP_SPIDER: 
+			bu.debug('Stopping spidering WoTispector.com')
+			# await empty_queue(replayQ, 'Replay Queue')
+			break
+		# url = wi.get_url_replay_listing(page)
+		bu.print_progress(id = "spider")
+		try:
+			resp = await wi.get_replay_listing(page)
+			if resp.status != 200:
+				bu.error('Could not retrieve wotinspector.com')
+				continue	
+			bu.debug('HTTP request OK')
+			html = await resp.text()
+			links = wi.get_replay_links(html)
+			if len(links) == 0: 
+				break
+			for link in links:
+				await replayQ.put(link)
+			# await asyncio.sleep(SLEEP)
+		except aiohttp.ClientError as err:
+			bu.error("Could not retrieve replays.WoTinspector.com page " + str(page))
+			bu.error(str(err))
+	
+	n_replays = replayQ.qsize()
+	bu.set_progress_bar('Fetching replays', n_replays, step = 5, id = 'replays')
+
+	bu.debug('Replay links read. Replay Fetchers to finish')
+	await replayQ.join()
+	bu.finish_progress_bar()
+	bu.debug('Replays fetched. Cancelling fetcher workers')
+	for task in tasks:
+		task.cancel()
+	replays = 0	
+	for res in await asyncio.gather(*tasks):
+		account_ids.update(res[0])
+		replays += res[1]		
+	await wi.close()
+	bu.verbose_std('Replays added into DB: ' + str(replays))
+	return account_ids
+
+
+async def fetch_account_ids_DB(db, args: argparse.Namespace):
 	dbc = db[su.DB_C_REPLAYS]
-	players = set()
+	account_ids = set()
 
 	cursor = dbc.find({}, { 'data.summary.allies' : 1, 'data.summary.enemies' : 1, '_id' : 0 } )
 	async for replay in cursor:
 		bu.print_progress()
 		
 		try:
-			players.update(replay['data']['summary']['allies'])
-			players.update(replay['data']['summary']['enemies'])			
+			account_ids.update(replay['data']['summary']['allies'])
+			account_ids.update(replay['data']['summary']['enemies'])			
 		except Exception as err:
 			bu.error('Unexpected error: ' + str(type(err)) + ' : ' + str(err))
-	return players
+	return account_ids
 
-async def get_players_replays(files : list, workers: int):
+
+async def fetch_account_ids_replays(args: argparse.Namespace):
+	#files : list, workers: int):
+	replays = args.replays
+	workers = args.workers
 	replayQ  = asyncio.Queue()	
 	reader_tasks = []
 	# Make replay Queue
-	scanner_task = asyncio.create_task(mk_replayQ(replayQ, files))
+	scanner_task = asyncio.create_task(mk_replayQ(replayQ, replays))
 
 	# Start tasks to process the Queue
 	for i in range(workers):
@@ -252,11 +375,12 @@ async def get_players_replays(files : list, workers: int):
 	bu.debug('Replays read. Cancelling Readers and analyzing results')
 	for task in reader_tasks:
 		task.cancel()	
-	players = set()
+	account_ids = set()
 	for res in await asyncio.gather(*reader_tasks):
-		players.update(res)
+		account_ids.update(res)
 	
-	return players
+	return account_ids
+
 
 async def replay_reader(queue: asyncio.Queue, readerID: int):
 	"""Async Worker to process the replay queue"""
@@ -334,67 +458,6 @@ async def mk_replayQ_item(filename : str) -> list:
 	bu.print_progress()
 	return [filename, REPLAY_N]
 
-async def get_players_WI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: argparse.Namespace):
-	"""Get active players from wotinspector.com replays"""
-	global wi
-
-	workers 	= args.workers
-	max_pages 	= args.max_pages
-	start_page 	= args.start_page
-	force 		= args.force
-	players 	= set()
-	replayQ 	= asyncio.Queue()
-	wi 			= WoTinspector(rate_limit=15)
-	
-	# Start tasks to process the Queue
-	tasks = []
-
-	for i in range(workers):
-		tasks.append(asyncio.create_task(WI_replay_fetcher(db, replayQ, i, force)))
-		bu.debug('Replay Fetcher ' + str(i) + ' started')
-
-	bu.set_progress_bar('Spidering replays', max_pages, step = 1, id = "spider")		
-
-	for page in range(start_page,(start_page + max_pages)):
-		if WI_STOP_SPIDER: 
-			bu.debug('Stopping spidering WoTispector.com')
-			# await empty_queue(replayQ, 'Replay Queue')
-			break
-		# url = wi.get_url_replay_listing(page)
-		bu.print_progress(id = "spider")
-		try:
-			resp = await wi.get_replay_listing(page)
-			if resp.status != 200:
-				bu.error('Could not retrieve wotinspector.com')
-				continue	
-			bu.debug('HTTP request OK')
-			html = await resp.text()
-			links = wi.get_replay_links(html)
-			if len(links) == 0: 
-				break
-			for link in links:
-				await replayQ.put(link)
-			# await asyncio.sleep(SLEEP)
-		except aiohttp.ClientError as err:
-			bu.error("Could not retrieve replays.WoTinspector.com page " + str(page))
-			bu.error(str(err))
-	
-	n_replays = replayQ.qsize()
-	bu.set_progress_bar('Fetching replays', n_replays, step = 5, id = 'replays')
-
-	bu.debug('Replay links read. Replay Fetchers to finish')
-	await replayQ.join()
-	bu.finish_progress_bar()
-	bu.debug('Replays fetched. Cancelling fetcher workers')
-	for task in tasks:
-		task.cancel()
-	replays = 0	
-	for res in await asyncio.gather(*tasks):
-		players.update(res[0])
-		replays += res[1]		
-	await wi.close()
-	bu.verbose_std('Replays added into DB: ' + str(replays))
-	return players
 
 async def WI_old_replay_found():
 	global WI_old_replay_N, WI_STOP_SPIDER
@@ -406,7 +469,7 @@ async def WI_old_replay_found():
 	return False
 
 async def WI_replay_fetcher(db : motor.motor_asyncio.AsyncIOMotorDatabase, queue : asyncio.Queue, workerID : int, force : bool):
-	players = set()
+	account_ids = set()
 	dbc = db[su.DB_C_REPLAYS]
 
 	replays = 0 
@@ -437,7 +500,7 @@ async def WI_replay_fetcher(db : motor.motor_asyncio.AsyncIOMotorDatabase, queue
 				bu.debug('Replay added to database', id=workerID)
 			except Exception as err:
 				bu.error('Unexpected Exception', exception=err, id=workerID) 
-			players.update(await parse_account_ids(json_resp))
+			account_ids.update(await parse_account_ids(json_resp))
 			bu.debug('Processed replay: ' + url , id=workerID)
 			await asyncio.sleep(SLEEP)
 		except asyncio.CancelledError:
@@ -447,7 +510,7 @@ async def WI_replay_fetcher(db : motor.motor_asyncio.AsyncIOMotorDatabase, queue
 		finally:
 			if replay_link != None:
 				queue.task_done()	
-	return players, replays
+	return account_ids, replays
 	
 
 async def empty_queue(queue : asyncio.Queue, Qname = ''):
@@ -462,20 +525,6 @@ async def empty_queue(queue : asyncio.Queue, Qname = ''):
 	except asyncio.QueueEmpty:
 		bu.debug('Queue empty: ' + Qname)
 	return None
-
-async def get_players_BS(force = False):
-	"""Get active player list from BlitzStars.com"""
-	active_players = set()
-	if force or not (os.path.exists(FILE_ACTIVE_PLAYERS) and os.path.isfile(FILE_ACTIVE_PLAYERS)) or (bu.NOW() - os.path.getmtime(FILE_ACTIVE_PLAYERS) > CACHE_VALID):
-		url = bs.get_url_active_players()
-		bu.verbose_std('Retrieving active players file from BlitzStars.com')
-		player_list = await bu.get_url_JSON(bs.session, url)
-		await bu.save_JSON(FILE_ACTIVE_PLAYERS, player_list)
-		active_players.update(player_list)
-	else:
-		async with aiofiles.open(FILE_ACTIVE_PLAYERS, 'rt') as f:
-			active_players.update(json.loads(await f.read()))
-	return active_players
 
 async def mk_playerQ(queue : asyncio.Queue, account_id_list : list):
 	"""Create queue of replays to post"""
