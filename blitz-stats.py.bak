@@ -29,6 +29,16 @@ from blitzutils import BlitzStars, WG, WoTinspector, RecordLogger
 
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
+db = None
+wi = None
+bs = None
+WI_STOP_SPIDER = False
+WI_old_replay_N = 0
+WI_old_replay_limit = 25
+MAX_PAGES 	= 500
+N_WORKERS 	= 20
+FILE_CONFIG = 'blitz-stats.ini'
+
 # main() -------------------------------------------------------------
 
 
@@ -47,18 +57,7 @@ async def main(argv):
 	REPLAY_N = 0
 
 	
-
-
-
-db = None
-wi = None
-bs = None
-WI_STOP_SPIDER = False
-WI_old_replay_N = 0
-WI_old_replay_limit = 25
-	MAX_PAGES 	= 500
-	N_WORKERS 	= 20
-	FILE_CONFIG = 'blitz-stats.ini'
+	
 	DB_SERVER 	= 'localhost'
 	DB_PORT 	= 27017
 	DB_TLS		= False
