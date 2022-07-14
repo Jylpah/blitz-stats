@@ -1,0 +1,10 @@
+*.code-workspace
+*.log
+*.ini
+*.txt
+__pycache__
+ssl/
+tmp/
+.vscode/
+.gitattributes
+!requirements.txt
