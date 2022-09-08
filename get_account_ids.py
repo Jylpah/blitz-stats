@@ -338,7 +338,7 @@ async def get_players_WI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: ar
 	force 		= args.force
 	players 	= set()
 	replayQ 	= asyncio.Queue()
-	wi 			= WoTinspector(rate_limit=15)
+	wi 			= WoTinspector(rate_limit=5)
 	
 	# Start tasks to process the Queue
 	tasks = []
