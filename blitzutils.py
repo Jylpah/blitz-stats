@@ -1900,8 +1900,9 @@ class WoTinspector:
     URL_TANK_DB     = "https://wotinspector.com/static/armorinspector/tank_db_blitz.js"
 
     REPLAY_N = 1
+    DEFAULT_RATE_LIMIT = 5
 
-    def __init__(self, rate_limit: int = 10):
+    def __init__(self, rate_limit: int = DEFAULT_RATE_LIMIT):
         self.session = ThrottledClientSession(rate_limit=rate_limit)
         
 
