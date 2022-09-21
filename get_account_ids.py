@@ -27,7 +27,7 @@ wi = None
 bs = None
 WI_STOP_SPIDER = False
 WI_old_replay_N = 0
-WI_old_replay_limit = 25
+WI_old_replay_limit = 10
 
 ## main() -------------------------------------------------------------
 
@@ -332,13 +332,14 @@ async def get_players_WI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: ar
 	"""Get active players from wotinspector.com replays"""
 	global wi
 
+	RATE_LIMIT = 20/3600
 	workers 	= args.workers
 	max_pages 	= args.max_pages
 	start_page 	= args.start_page
 	force 		= args.force
 	players 	= set()
 	replayQ 	= asyncio.Queue()
-	wi 			= WoTinspector(rate_limit=5)
+	wi 			= WoTinspector(rate_limit=RATE_LIMIT)
 	
 	# Start tasks to process the Queue
 	tasks = []
