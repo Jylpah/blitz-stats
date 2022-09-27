@@ -12,7 +12,7 @@ from blitzutils import BlitzStars, WG, WoTinspector, RecordLogger
 
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
-N_WORKERS = 20
+N_WORKERS = 5
 MAX_RETRIES = 3
 CACHE_VALID = 24*3600*5   # 5 days
 SLEEP = 1
