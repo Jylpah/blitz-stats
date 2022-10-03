@@ -2,43 +2,46 @@
 
 # Script fetch Blitz player stats and tank stats
 
+from audioop import maxpp
 import sys, argparse, json, os, inspect, pprint, aiohttp, asyncio, aiofiles, aioconsole
+from typing import Optional, Dict
 import motor.motor_asyncio, ssl, lxml, re, logging, time, xmltodict, collections, pymongo
 import configparser
 import blitzutils as bu
 import blitzstatsutils as su
 from bs4 import BeautifulSoup
-from blitzutils import BlitzStars, WG, WoTinspector, RecordLogger
+from blitzutils import BlitzStars, WG, RecordLogger
+from import 
 
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
-N_WORKERS = 5
+N_WORKERS = 2
 MAX_RETRIES = 3
-CACHE_VALID = 24*3600*5   # 5 days
-SLEEP = 1
-REPLAY_N = 0
-
+CACHE_VALID : int = 24*3600*5   # 5 days
+SLEEP 		: float = 1
+REPLAY_N 	: int = 0
+MAX_PAGES  	: int = 500
 WG_appID = 'cd770f38988839d7ab858d1cbe54bdd0'
 
 FILE_ACTIVE_PLAYERS	= 'activeinlast30days.json'
 FILE_CONFIG 		= 'blitzstats.ini'
 
-wi = None
-bs = None
-WI_STOP_SPIDER = False
-WI_old_replay_N = 0
-WI_old_replay_limit = 10
+wi : Optional[WoTinspector] = None
+bs : Optional[BlitzStars] = None
+WI_STOP_SPIDER : bool = False
+WI_old_replay_N : int = 0
+WI_old_replay_limit : int = 30
 
 ## main() -------------------------------------------------------------
 
-async def main(argv):
+async def main(argv: list[str]):
 	# set the directory for the script
 	os.chdir(os.path.dirname(sys.argv[0]))
 
 	global wi, bs, MAX_PAGES
 
 	# Default params
-	MAX_PAGES = 500
+	
 	DB_SERVER 	= 'localhost'
 	DB_PORT 	= 27017
 	DB_TLS		= False
@@ -49,6 +52,8 @@ async def main(argv):
 	DB_PASSWD 	= 'PASSWORD'
 	DB_CERT 	= None
 	DB_CA 		= None
+	# RATE_LIMIT : float = 20/3600
+	RATE_LIMIT : float = 10/60
 
 	## Read config
 	if os.path.isfile(FILE_CONFIG):
@@ -57,6 +62,9 @@ async def main(argv):
 		if 'OPTIONS' in config.sections():
 			configOpts	= config['OPTIONS']
 			MAX_PAGES   = configOpts.getint('opt_get_account_ids_max_pages', MAX_PAGES)
+		if 'WOTINSPECTOR' in config.sections():
+			configWI 	= config['WOTINSPECTOR']
+			RATE_LIMIT  = configWI.getint('wi_rate_limit', RATE_LIMIT)
 		if 'DATABASE' in config.sections():
 			configDB 	= config['DATABASE']
 			DB_SERVER 	= configDB.get('db_server', DB_SERVER)
@@ -88,6 +96,7 @@ async def main(argv):
 	parser.add_argument('-w', '--wotinspector', action='store_true', default=False, help='Get account_ids from WoTinspector.com')
 	parser.add_argument('--db', 				action='store_true', default=False, help='Get account_ids from the database in case previous runs got interrupted')
 
+	parser.add_argument('--rate-limit', type=int, default=RATE_LIMIT, help='Rate limit for WoTinspector.com')
 	parser.add_argument('--max', '--max_pages', dest='max_pages', type=int, default=MAX_PAGES, help='Maximum number of WoTinspector.com pages to spider')
 	parser.add_argument('--start', '--start_page', dest='start_page', type=int, default=0, help='Start page to start spidering of WoTinspector.com')
 	parser.add_argument('files', metavar='FILE1 [FILE2 ...]', type=str, nargs='*', help='Files to read. Use \'-\' for STDIN')
@@ -332,51 +341,60 @@ async def get_players_WI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: ar
 	"""Get active players from wotinspector.com replays"""
 	global wi
 
-	RATE_LIMIT = 20/3600
 	workers 	= args.workers
 	max_pages 	= args.max_pages
 	start_page 	= args.start_page
 	force 		= args.force
 	players 	= set()
-	replayQ 	= asyncio.Queue()
-	wi 			= WoTinspector(rate_limit=RATE_LIMIT)
+	replayQ  	: asyncio.Queue = asyncio.Queue()
+	wi 			= WoTinspector(rate_limit=args.rate_limit)
 	
 	# Start tasks to process the Queue
 	tasks = []
 
-	for i in range(workers):
-		tasks.append(asyncio.create_task(WI_replay_fetcher(db, replayQ, i, force)))
-		bu.debug('Replay Fetcher ' + str(i) + ' started')
-
 	bu.set_progress_bar('Spidering replays', max_pages, step = 1, id = "spider")		
 
-	for page in range(start_page,(start_page + max_pages)):
+	step : int = 1
+	if max_pages < 0:
+		step = -1
+	elif max_pages == 0:
+		step = -1
+		max_pages = - start_page
+
+	links : Dict[str, None] = dict()
+
+	for page in range(start_page,(start_page + max_pages), step):
 		if WI_STOP_SPIDER: 
 			bu.debug('Stopping spidering WoTispector.com')
 			# await empty_queue(replayQ, 'Replay Queue')
-			break
-		# url = wi.get_url_replay_listing(page)
-		bu.print_progress(id = "spider")
+			break		
 		try:
+			bu.print_progress(id = "spider")
 			resp = await wi.get_replay_listing(page)
 			if resp.status != 200:
 				bu.error('Could not retrieve wotinspector.com')
 				continue	
 			bu.debug('HTTP request OK')
 			html = await resp.text()
-			links = wi.get_replay_links(html)
-			if len(links) == 0: 
+			new_links = wi.get_replay_links(html)
+			if len(new_links) == 0: 
 				break
-			for link in links:
-				await replayQ.put(link)
-			# await asyncio.sleep(SLEEP)
+			for link in new_links:
+				links[link] = None
+				# await replayQ.put(link)
 		except aiohttp.ClientError as err:
 			bu.error("Could not retrieve replays.WoTinspector.com page " + str(page))
 			bu.error(str(err))
 	
-	n_replays = replayQ.qsize()
-	bu.set_progress_bar('Fetching replays', n_replays, step = 5, id = 'replays')
+	for link in links.keys():
+		await replayQ.put(link)
 
+	n_replays = replayQ.qsize()
+
+	bu.set_progress_bar('Fetching replays', n_replays, step = 5, id = 'replays')
+	for i in range(workers):
+		tasks.append(asyncio.create_task(WI_replay_fetcher(db, replayQ, i, force)))
+		bu.debug('Replay Fetcher ' + str(i) + ' started')
 	bu.debug('Replay links read. Replay Fetchers to finish')
 	await replayQ.join()
 	bu.finish_progress_bar()
@@ -390,6 +408,7 @@ async def get_players_WI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: ar
 	await wi.close()
 	bu.verbose_std('Replays added into DB: ' + str(replays))
 	return players
+
 
 async def WI_old_replay_found():
 	global WI_old_replay_N, WI_STOP_SPIDER
