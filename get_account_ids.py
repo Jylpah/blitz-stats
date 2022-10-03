@@ -10,12 +10,11 @@ import configparser
 import blitzutils as bu
 import blitzstatsutils as su
 from bs4 import BeautifulSoup
-from blitzutils import BlitzStars, WG, RecordLogger
-from import 
+from blitzutils import BlitzStars, WG, RecordLogger, WoTinspector
 
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
-N_WORKERS = 2
+N_WORKERS 	= 2
 MAX_RETRIES = 3
 CACHE_VALID : int = 24*3600*5   # 5 days
 SLEEP 		: float = 1
@@ -64,7 +63,7 @@ async def main(argv: list[str]):
 			MAX_PAGES   = configOpts.getint('opt_get_account_ids_max_pages', MAX_PAGES)
 		if 'WOTINSPECTOR' in config.sections():
 			configWI 	= config['WOTINSPECTOR']
-			RATE_LIMIT  = configWI.getint('wi_rate_limit', RATE_LIMIT)
+			RATE_LIMIT  = configWI.getfloat('wi_rate_limit', RATE_LIMIT)
 		if 'DATABASE' in config.sections():
 			configDB 	= config['DATABASE']
 			DB_SERVER 	= configDB.get('db_server', DB_SERVER)
@@ -107,8 +106,6 @@ async def main(argv: list[str]):
 	
 	players = set()
 	try:
-		bs = BlitzStars()
-
 		#### Connect to MongoDB
 		if (DB_USER==None) or (DB_PASSWD==None):
 			client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, tls=DB_TLS, tlsAllowInvalidCertificates=DB_CERT_REQ, tlsCertificateKeyFile=DB_CERT, tlsCAFile=DB_CA)
@@ -139,8 +136,7 @@ async def main(argv: list[str]):
 		bu.error('Queue gets cancelled while still working.')
 	except Exception as err:
 		bu.error('Unexpected Exception: ' + str(type(err)) + ' : '+ str(err))
-	finally:
-		await bs.close()
+
 
 	return None
 
@@ -345,14 +341,13 @@ async def get_players_WI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: ar
 	max_pages 	= args.max_pages
 	start_page 	= args.start_page
 	force 		= args.force
+	token		: str = 'a5428af49bf7495986577d59b0e5bcff'	# temp fix...
 	players 	= set()
 	replayQ  	: asyncio.Queue = asyncio.Queue()
-	wi 			= WoTinspector(rate_limit=args.rate_limit)
+	wi 			= WoTinspector(rate_limit=args.rate_limit, auth_token=token)
 	
 	# Start tasks to process the Queue
 	tasks = []
-
-	bu.set_progress_bar('Spidering replays', max_pages, step = 1, id = "spider")		
 
 	step : int = 1
 	if max_pages < 0:
@@ -360,6 +355,8 @@ async def get_players_WI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: ar
 	elif max_pages == 0:
 		step = -1
 		max_pages = - start_page
+
+	bu.set_progress_bar('Spidering replays', abs(max_pages), step = 1, id = "spider")
 
 	links : Dict[str, None] = dict()
 
@@ -419,7 +416,8 @@ async def WI_old_replay_found():
 		return True
 	return False
 
-async def WI_replay_fetcher(db : motor.motor_asyncio.AsyncIOMotorDatabase, queue : asyncio.Queue, workerID : int, force : bool):
+async def WI_replay_fetcher(db : motor.motor_asyncio.AsyncIOMotorDatabase, 
+							queue : asyncio.Queue, workerID : int, force : bool):
 	players = set()
 	dbc = db[su.DB_C_REPLAYS]
 
@@ -479,6 +477,7 @@ async def empty_queue(queue : asyncio.Queue, Qname = ''):
 
 async def get_players_BS(force = False):
 	"""Get active player list from BlitzStars.com"""
+	bs = BlitzStars()
 	active_players = set()
 	if force or not (os.path.exists(FILE_ACTIVE_PLAYERS) and os.path.isfile(FILE_ACTIVE_PLAYERS)) or (bu.NOW() - os.path.getmtime(FILE_ACTIVE_PLAYERS) > CACHE_VALID):
 		url = bs.get_url_active_players()
@@ -489,6 +488,7 @@ async def get_players_BS(force = False):
 	else:
 		async with aiofiles.open(FILE_ACTIVE_PLAYERS, 'rt') as f:
 			active_players.update(json.loads(await f.read()))
+	bs.close()
 	return active_players
 
 async def mk_playerQ(queue : asyncio.Queue, account_id_list : list):
