@@ -673,7 +673,7 @@ async def get_url_JSON(session: aiohttp.ClientSession, url: str, chk_JSON_func =
                    # elif resp.status == 407:
                    #     error('WG API returned 407: ' + json_resp['error']['message'])
                     else:
-                        error('WG API returned HTTP error ' + str(resp.status))
+                        error('HTTP error ' + str(resp.status))
                         
                     if retry == max_tries:                        
                         break
@@ -1784,24 +1784,25 @@ class WoTinspector:
     URL_TANK_DB     = "https://wotinspector.com/static/armorinspector/tank_db_blitz.js"
 
     REPLAY_N = 1
-    DEFAULT_RATE_LIMIT = 10/60  # 10 requests / minute
+    DEFAULT_RATE_LIMIT = 20/3600  # 20 requests / hour
 
     def __init__(self, rate_limit: float = DEFAULT_RATE_LIMIT, auth_token: Optional[str] = None):
 
         headers : Optional[dict[str, str]] = None
         if auth_token is not None:
             headers = dict()
-            headers['Authentication'] = 'Token ' + auth_token
+            headers['Authorization'] = 'Token ' + auth_token
 
-        self.session = ThrottledClientSession(rate_limit=rate_limit, filters=[self.URL_REPLAY_DL, self.URL_REPLAY_LIST], 
+        self.session = ThrottledClientSession(rate_limit=rate_limit, 
+                                                filters=[self.URL_REPLAY_LIST, self.URL_REPLAY_INFO], 
                                                 re_filter=False, limit_filtered=True, headers = headers)
-
+        
 
     async def close(self):
-        if self.session != None:
+        if self.session is not None:
             debug('Closing aiohttp session')
             await self.session.close()
-       
+        
 
     async def get_tankopedia(self, filename = 'tanks.json'):
         """Retrieve Tankpedia from WoTinspector.com"""
@@ -1888,7 +1889,7 @@ class WoTinspector:
         for retry in range(MAX_RETRIES):
             debug('Posting: ' + title + ' Try #: ' + str(retry + 1) + '/' + str(MAX_RETRIES), id=N )
             try:
-                async with self.session.post(url, headers=headers, data=payload) as resp:
+                async with self.session_api.post(url, headers=headers, data=payload) as resp:
                     debug('HTTP response: '+ str(resp.status), id=N)
                     if resp.status == 200:								
                         debug('HTTP POST 200 = Success. Reading response data', id=N)
