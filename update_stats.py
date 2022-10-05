@@ -63,7 +63,7 @@ async def main(argv):
 		if 'WG' in config.sections():
 			configWG 		= config['WG']
 			WG_APP_ID		= configWG.get('wg_app_id', WG_APP_ID)
-			WG_RATE_LIMIT	= configWG.getint('wg_rate_limit', WG_RATE_LIMIT)
+			WG_RATE_LIMIT	= configWG.getfloat('wg_rate_limit', WG_RATE_LIMIT)
 
 		if 'DATABASE' in config.sections():
 			configDB 	= config['DATABASE']
