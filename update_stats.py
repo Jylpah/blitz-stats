@@ -438,9 +438,9 @@ async def update_stats_update_time(db : motor.motor_asyncio.AsyncIOMotorDatabase
 		#await dbc.update_one( { '_id' : account_id }, { '$set': { 'last_battle_time': last_battle_time, su.UPDATE_FIELD[stat_type] : bu.NOW() }} )
 		FIELDS = dict()
 
-		if last_battle_time != None:
+		if last_battle_time is not None:
 			FIELDS['last_battle_time'] = last_battle_time
-		if inactive != None:
+		if inactive is not None:
 			FIELDS['inactive'] = inactive
 
 		# await dbc.update_one( { '_id' : account_id }, { '$set': FIELDS } )
@@ -559,7 +559,7 @@ async def set_account_invalid(db: motor.motor_asyncio.AsyncIOMotorDatabase,
 								account_id: int, stat_type: str = None) -> None:
 	"""Set account_id invalid"""
 	try: 
-		FIELDS = { 'invalid': True }
+		FIELDS = { 'invalid': True, 'inactive': True }
 		await update_account(db, account_id, stat_type, set_fields=FIELDS )
 	except Exception as err:
 		error_account_id(account_id, 'Unexpected error', exception=err)
@@ -571,7 +571,7 @@ async def set_account_invalid(db: motor.motor_asyncio.AsyncIOMotorDatabase,
 async def set_account_valid(db: motor.motor_asyncio.AsyncIOMotorDatabase, account_id: int):
 	"""Set account_id valid"""
 	try: 
-		await update_account(db, account_id, unset_fields={'invalid': "" })
+		await update_account(db, account_id, set_fields={'inactive': False }, unset_fields={'invalid': "" })
 	except Exception as err:
 		error_account_id(account_id, 'Unexpected error', exception=err)
 	finally:
