@@ -12,7 +12,7 @@ from blitzutils import BlitzStars, WG, WoTinspector, RecordLogger
 
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 
-N_WORKERS = 20
+N_WORKERS = 5
 MAX_RETRIES = 3
 CACHE_VALID = 24*3600*5   # 5 days
 SLEEP = 1
@@ -27,7 +27,7 @@ wi = None
 bs = None
 WI_STOP_SPIDER = False
 WI_old_replay_N = 0
-WI_old_replay_limit = 25
+WI_old_replay_limit = 10
 
 ## main() -------------------------------------------------------------
 
@@ -344,13 +344,14 @@ async def get_players_WI(db : motor.motor_asyncio.AsyncIOMotorDatabase, args: ar
 	"""Get active players from wotinspector.com replays"""
 	global wi
 
+	RATE_LIMIT = 20/3600
 	workers 	= args.workers
 	max_pages 	= args.max_pages
 	start_page 	= args.start_page
 	force 		= args.force
 	players 	= set()
 	replayQ 	= asyncio.Queue()
-	wi 			= WoTinspector(rate_limit=15)
+	wi 			= WoTinspector(rate_limit=RATE_LIMIT)
 	
 	# Start tasks to process the Queue
 	tasks = []
