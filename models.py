@@ -12,12 +12,12 @@ class Region(str, Enum):
 
 @dataclass
 class Account:
-	id: int
+	id		: int
+	region 	: Region | None = None
 	last_battle_time			: int | None = None
 	updated_tank_stats 			: int | None = None
 	updated_player_achievements : int | None = None
 	added 						: int | None = None
-	region : Region
 	inactive: bool = False
 	disabled: bool = False
 
@@ -30,7 +30,7 @@ class Account:
 
 	
 	@validator('last_battle_time', 'updated_tank_stats', 'updated_player_achievements', 'added')
-	def check_epoch(csl, v):
+	def check_epoch_ge_zero(cls, v):
 		if v is None:
 			return None
 		elif v >= 0:
@@ -39,7 +39,7 @@ class Account:
 			raise ValueError('time field must be >= 0')
 
 	
-	@root_validator()
+	@root_validator(skip_on_failure=True)
 	def set_region(cls, values):
 		_id = values.get('id')
 		if _id >= 31e8:
