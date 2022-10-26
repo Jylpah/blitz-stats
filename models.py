@@ -2,7 +2,7 @@ import json
 from pydantic import BaseModel, Json, root_validator, validator, Field
 from pydantic.json import pydantic_encoder
 
-from enum import Enum
+from enum import Enum, IntEnum
 
 class Region(str, Enum):
 	eu 		= 'eu'
@@ -61,5 +61,24 @@ class Account(BaseModel):
 		
 		return values
 
-# class WoTBlitzReplay(BaseModel):
-# 	pass
+class EnumWinnerTeam(IntEnum):
+	draw = 0
+	one = 1
+	two = 2
+
+class EnumBattleResult(IntEnum):
+	incomplete = -1
+	not_win = 0
+	win = 1
+
+class WoTBlitzReplaySummary(BaseModel):
+	winner_team 	: EnumWinnerTeam | None 	= Field(default=..., alias='wt')
+	battle_result 	: EnumBattleResult | None  	= Field(default=..., alias='br')
+	uploaded_by 	: int 			= Field(default=0, alias='ul')
+	credits_total	: int | None 	= Field(default=None, alias='ct')
+	credits_base	: int | None 	= Field(default=None, alias='cb')
+	title 			: str | None 	= Field(default=..., alias='t')
+
+	
+
+
