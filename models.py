@@ -1,5 +1,7 @@
-from pydantic import root_validator, validator
-from pydantic.dataclasses import dataclass
+import json
+from pydantic import BaseModel, Json, root_validator, validator, Field
+from pydantic.json import pydantic_encoder
+
 from enum import Enum
 
 class Region(str, Enum):
@@ -9,18 +11,21 @@ class Region(str, Enum):
 	ru 		= 'ru'
 	china 	= 'china'
 
-
-@dataclass
-class Account:
-	id		: int
+class Account(BaseModel):
+	id		: int = Field(default=..., alias='_id')
 	region 	: Region | None = None
 	last_battle_time			: int | None = None
 	updated_tank_stats 			: int | None = None
 	updated_player_achievements : int | None = None
 	added 						: int | None = None
-	inactive: bool = False
-	disabled: bool = False
+	inactive: bool | None = None
+	disabled: bool | None = None
 
+	class Config:
+		allow_population_by_field_name = True
+		allow_mutation = True
+		validate_assignment = True
+		        
 
 	@validator('id')
 	def check_id(cls, v):
@@ -41,21 +46,20 @@ class Account:
 	
 	@root_validator(skip_on_failure=True)
 	def set_region(cls, values):
-		_id = values.get('id')
-		if _id >= 31e8:
+		i = values.get('id')
+		if i >= 31e8:
 			values['region'] = Region.china
-		elif _id >= 20e8:
+		elif i >= 20e8:
 			values['region'] = Region.asia
-		elif _id >= 10e8:
+		elif i >= 10e8:
 			values['region'] = Region.com
-		elif _id >= 5e8:
+		elif i >= 5e8:
 			values['region'] = Region.eu
 		else:			
 			values['region'] = Region.ru
+		values = {k: v for k, v in values.items() if v is not None}
+		
 		return values
 
-
-	
-
-
-
+# class WoTBlitzReplay(BaseModel):
+# 	pass
