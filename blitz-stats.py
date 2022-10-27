@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Optional
 from pyutils.multilevelformatter import MultilevelFormatter, set_mlevel_logging
 from configparser import ConfigParser
+import models
 import accounts as acc
 import logging
 import argparse
