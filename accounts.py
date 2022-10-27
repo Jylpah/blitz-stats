@@ -199,6 +199,27 @@ async def cmd_accounts_fetch(args : Namespace, config: Optional[ConfigParser] = 
 	return False
 
 
+async def cmd_accounts_fetch_files(args : Namespace, config: Optional[ConfigParser] = None) -> bool:
+	try:
+		debug('starting')
+		
+
+
+	except Exception as err:
+		error(str(err))
+	return False
+
+
+async def cmd_accounts_fetch_wi	(args : Namespace, config: Optional[ConfigParser] = None) -> bool:
+	try:
+		debug('starting')
+		
+
+	except Exception as err:
+		error(str(err))
+	return False
+
+
 async def cmd_accounts_export(args : Namespace, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
