@@ -126,6 +126,17 @@ def get_mode_str(stat_type: str, archive : bool = False) -> Optional[str]:
         error(str(err))
     return None
 
+async def init_db():
+    if (DB_USER is None) or (DB_PASSWD is None):
+        client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, tls=DB_TLS, 
+                                                        tlsAllowInvalidCertificates=DB_CERT_REQ, 
+                                                        tlsCertificateKeyFile=DB_CERT, tlsCAFile=DB_CA)
+    else:
+		client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, 
+                                                        username=DB_USER, password=DB_PASSWD, tls=DB_TLS, 
+                                                        tlsAllowInvalidCertificates=DB_CERT_REQ, 
+                                                        tlsCertificateKeyFile=DB_CERT, tlsCAFile=DB_CA)
+
 
 async def init_db_indices(db: motor.motor_asyncio.AsyncIOMotorDatabase):
     """Create DB indices"""
