@@ -1,10 +1,16 @@
 from datetime import datetime
-import json
-from typing import Union
-from pydantic import BaseModel, Json, root_validator, validator, Field, ValidationError
-from pydantic.json import pydantic_encoder
-
+from typing import Any, Union
+from bson.objectid import ObjectId
+from pydantic import BaseModel, root_validator, validator, Field, ValidationError
 from enum import Enum, IntEnum
+from os.path import basename
+import logging
+
+logger = logging.getLogger()
+error 	= logger.error
+message	= logger.warning
+verbose	= logger.info
+debug	= logger.debug
 
 class Region(str, Enum):
 	eu 		= 'eu'
@@ -13,21 +19,34 @@ class Region(str, Enum):
 	ru 		= 'ru'
 	china 	= 'china'
 
-class Account(BaseModel):
-	id		: int = Field(default=..., alias='_id')
-	region 	: Region | None = None
-	last_battle_time			: int | None = None
-	updated_tank_stats 			: int | None = None
-	updated_player_achievements : int | None = None
-	added 						: int | None = None
-	inactive: bool | None = None
-	disabled: bool | None = None
+class BaseJsonModel(BaseModel):
+	def json_src(self, exclude :  set |dict | None = None):
+		return self.json(by_alias=False, exclude_none=False, exclude=exclude )
+
+	def json_db(self, exclude :  set |dict | None = None):
+		return self.json(by_alias=True, exclude_none=True, exclude=exclude)
+
+
+class Account(BaseJsonModel):
+	id		: int 			= Field(default=..., alias='_id')
+	region 	: Region | None = Field(default=None, alias='r')
+	last_battle_time			: int | None = Field(default=None, alias='l')
+	updated_tank_stats 			: int | None = Field(default=None, alias='uts')
+	updated_player_achievements : int | None = Field(default=None, alias='upa')
+	added 						: int | None = Field(default=None, alias='a')
+	inactive					: bool | None = Field(default=None, alias='i')
+	disabled					: bool | None = Field(default=None, alias='d')
+	datestr 					: str | None = Field(default=None, alias='dstr')
 
 	class Config:
 		allow_population_by_field_name = True
-		allow_mutation = True
-		validate_assignment = True
+		allow_mutation 			= True
+		validate_assignment 	= True
+		
 		        
+	# @validator('datestr')
+	# def check_dstr(cls, v):
+	# 	return None
 
 	@validator('id')
 	def check_id(cls, v):
@@ -59,10 +78,15 @@ class Account(BaseModel):
 			values['region'] = Region.eu
 		else:			
 			values['region'] = Region.ru
+		if values['last_battle_time'] is not None:
+			values['datestr'] = datetime.fromtimestamp(values['last_battle_time']).strftime("%Y-%m-%d %H:%M:%S")
 		# remove null values
-		values = {k: v for k, v in values.items() if v is not None}
-		
+		# values = {k: v for k, v in values.items() if v is not None}		
 		return values
+	
+	def json_db(self):
+		return super().json_db(exclude={'datestr'})
+
 
 class EnumWinnerTeam(IntEnum):
 	draw = 0
@@ -81,7 +105,7 @@ class EnumVehicleType(IntEnum):
 	heavy_tank = 2
 	tank_destroyer = 3
 
-class WoTBlitzReplayAchievement(BaseModel):
+class WoTBlitzReplayAchievement(BaseJsonModel):
 	t: int
 	v: int
 
@@ -89,7 +113,7 @@ class WoTBlitzReplayAchievement(BaseModel):
 WoTBlitzReplayDetail = dict[str, Union[str, int, list[WoTBlitzReplayAchievement], None]]
 
 
-class WoTBlitzReplaySummary(BaseModel):
+class WoTBlitzReplaySummary(BaseJsonModel):
 	winner_team 	: EnumWinnerTeam 	| None 	= Field(default=..., alias='wt')
 	battle_result 	: EnumBattleResult 	| None 	= Field(default=..., alias='br')
 	room_type		: int | None 	= Field(default=None, alias='rt')
@@ -108,7 +132,7 @@ class WoTBlitzReplaySummary(BaseModel):
 	exp_base		: int | None	= Field(default=..., alias='eb')
 	exp_total		: int | None	= Field(default=None, repr=False)	
 	battle_start_timestamp : int 		= Field(default=..., alias='bts')
-	battle_start_time : datetime | None	= Field(default=None, repr=False)	# duplicate of 'bts'
+	battle_start_time : str | None	= Field(default=None, repr=False)	# duplicate of 'bts'
 	battle_duration : float			= Field(default=..., alias='bd')	
 	description		: None			= Field(default=None, repr=False)
 	arena_unique_id	: int			= Field(default=..., alias='aid')
@@ -116,6 +140,7 @@ class WoTBlitzReplaySummary(BaseModel):
 	enemies 		: list[int]		= Field(default=..., alias='e')
 	mastery_badge	: int | None 	= Field(default=None, alias='mb')
 	details 		: list[WoTBlitzReplayDetail] = Field(default=..., alias='d')
+	TimestampFormat : str = "%Y-%m-%d %H:%M:%S"
 
 	@validator('vehicle_tier')
 	def check_tier(cls, v):
@@ -131,15 +156,66 @@ class WoTBlitzReplaySummary(BaseModel):
 		else:
 			raise ValueError('protagonist_team has to be within 1 or 2')
 
-	@validator('battle_start_timestamp', 'description', 'exp_total')
+	@validator('battle_start_time', 'description', 'exp_total')
 	def return_none(cls, v):
 		return None
 
-	@root_validator(skip_on_failure=True)
-	def remove_none(cls, values):
-		# remove null values
-		values = {k: v for k, v in values.items() if v is not None}		
-		return values
+	# @root_validator(skip_on_failure=True)
+	# def remove_none(cls, values):
+	# 	# remove null values
+	# 	values = {k: v for k, v in values.items() if v is not None}		
+	# 	return values
+
+	def json_src(self):
+		self.battle_start_time = datetime.fromtimestamp(self.battle_start_timestamp).strftime(self.TimestampFormat)
+		return super().json_src()
+
 	
+	def json_db(self):
+		self.battle_start_time = None
+		return super().json_db()
+
+
+class WoTBlitzReplayData(BaseJsonModel):
+	view_url	: str = Field(default=..., alias='v')
+	download_url: str | None = Field(default=None)
+	summary		: WoTBlitzReplaySummary  = Field(default=..., alias='s') 
+	ViewUrlBase : str = 'https://replays.wotinspector.com/en/view/'
+	DLurlBase	: str = 'https://replays.wotinspector.com/en/download/'
+
+	@validator('download_url')
+	def check_download_url(cls, v):
+		return None
+
+	@validator('view_url')
+	def check_view_url(cls, v):
+		try:
+			return v.split('/')[-1:][0]
+		except Exception as err:
+			raise ValueError('could not parse view_url')
+
+
+	def json_src(self):
+		export : WoTBlitzReplayData = self.copy(deep=True)
+		export.download_url = f"{self.DLurlBase}{self.view_url}"
+		export.view_url		= f"{self.ViewUrlBase}{self.view_url}"
+		return super(WoTBlitzReplayData, export).json_src()
+
+
+	def json_db(self):
+		# self.download_url 	= None
+		# if self.view_url.find('/') != -1:
+		# 	self.view_url = self.check_view_url(self.view_url)
+		return super().json_db()
+	
+
+class WoTBlitzReplay(BaseJsonModel):
+	id : ObjectId = Field(default=..., alias='_id')
+	status: str
+	data: WoTBlitzReplayData 
+	error: dict
+	class Config:
+		arbitrary_types_allowed = True
+		json_encoders = { ObjectId: str }
 
 
