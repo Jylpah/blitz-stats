@@ -1,0 +1,27 @@
+from configparser import ConfigParser
+from argparse import Namespace
+import logging
+from abc import ABCMeta, abstractmethod
+from models import W
+
+logger = logging.getLogger()
+error 	= logger.error
+message	= logger.warning
+verbose	= logger.info
+debug	= logger.debug
+
+
+
+class Backend(metaclass=ABCMeta):
+	"""Abstract class for a backend (mongo, files, postgres)"""
+	# def __init__(self, parser: Namespace, config: ConfigParser | None = None):
+	# 	try:
+	# 		if config is not None and 'BACKEND' in config.sections():
+
+	# 	except Exception as err:
+	# 		error(str(err))
+
+	@abstractmethod
+	async def replay_store()
+
+
