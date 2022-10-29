@@ -1,10 +1,11 @@
 import pymongo
-import motor.motor_asyncio
+import motor.motor_asyncio  # type: ignore
 import logging
 from bson import ObjectId
-import blitzutils as bu
+# import blitzutils as bu
 from datetime import datetime, timedelta
 from typing import Optional
+from time import time
 
 error 	= logging.error
 verbose_std	= logging.warning
@@ -126,16 +127,16 @@ def get_mode_str(stat_type: str, archive : bool = False) -> Optional[str]:
         error(str(err))
     return None
 
-async def init_db():
-    if (DB_USER is None) or (DB_PASSWD is None):
-        client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, tls=DB_TLS, 
-                                                        tlsAllowInvalidCertificates=DB_CERT_REQ, 
-                                                        tlsCertificateKeyFile=DB_CERT, tlsCAFile=DB_CA)
-    else:
-		client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, 
-                                                        username=DB_USER, password=DB_PASSWD, tls=DB_TLS, 
-                                                        tlsAllowInvalidCertificates=DB_CERT_REQ, 
-                                                        tlsCertificateKeyFile=DB_CERT, tlsCAFile=DB_CA)
+# async def init_db():
+#     if (DB_USER is None) or (DB_PASSWD is None):
+#         client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, tls=DB_TLS, 
+#                                                         tlsAllowInvalidCertificates=DB_CERT_REQ, 
+#                                                         tlsCertificateKeyFile=DB_CERT, tlsCAFile=DB_CA)
+#     else:
+# 		client = motor.motor_asyncio.AsyncIOMotorClient(DB_SERVER,DB_PORT, authSource=DB_AUTH, 
+#                                                         username=DB_USER, password=DB_PASSWD, tls=DB_TLS, 
+#                                                         tlsAllowInvalidCertificates=DB_CERT_REQ, 
+#                                                         tlsCertificateKeyFile=DB_CERT, tlsCAFile=DB_CA)
 
 
 async def init_db_indices(db: motor.motor_asyncio.AsyncIOMotorDatabase):
@@ -216,7 +217,7 @@ async def update_log(db : motor.motor_asyncio.AsyncIOMotorDatabase, action: str,
 	"""Log successfully finished status update"""
 	try:
 		dbc = db[DB_C_UPDATE_LOG]
-		await dbc.insert_one( { 'action': action, 'stat_type': stat_type, 'update': update,  'updated': bu.NOW() } )
+		await dbc.insert_one( { 'action': action, 'stat_type': stat_type, 'update': update,  'updated': int(time()) } )
 	except Exception as err:
 		error(f"Unexpected Exception: {str(err)}")
 		return False
