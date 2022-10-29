@@ -1,8 +1,7 @@
 from datetime import datetime
-from typing import Any, Union, TYPE_CHECKING
+from typing import Any, Mapping
 from bson.objectid import ObjectId
 from pydantic import BaseModel, Extra, root_validator, validator, Field
-import pydantic.typing
 import json
 from enum import Enum, IntEnum
 from os.path import basename
@@ -23,7 +22,7 @@ class Region(str, Enum):
 	china 	= 'china'
 
 class BaseJsonModel(BaseModel):
-	_exclude_alias : pydantic.typing.MappingIntStrAny = { str(True): {}, str(False): {} }
+	_exclude_alias : Mapping[int | str, Any] = { str(True): {}, str(False): {} }
 
 	def json_src(self, exclude :  set |dict | None = None):
 		return self.json(by_alias=False, exclude_none=False, exclude=exclude )
@@ -32,7 +31,7 @@ class BaseJsonModel(BaseModel):
 		return self.json(by_alias=True, exclude_none=True, exclude=exclude)
 
 	def json(self, by_alias: bool = False, **kwargs):
-		return super().json(exclude=self._exclude_alias[str(by_alias)], **kwargs)
+		return super().json(by_alias=by_alias, exclude=self._exclude_alias[str(by_alias)], **kwargs)
 		
 	# def json_db(self, exclude :  set |dict | None = None):
 	# 	res = dict()
@@ -59,7 +58,7 @@ class BaseJsonModel(BaseModel):
 
 
 class Account(BaseJsonModel):
-	_exclude_alias : pydantic.typing.MappingIntStrAny = { 	str(True):  { 'region' }, 
+	_exclude_alias : Mapping[int | str, Any] = { 	str(True):  { 'region' }, 
 											str(False): {'last_battle_time'} 
 											}	
 	id		: int 			= Field(default=..., alias='_id')
@@ -118,8 +117,13 @@ class Account(BaseJsonModel):
 		# values = {k: v for k, v in values.items() if v is not None}		
 		return values
 	
-	# def json_db(self):
-	# 	return super().json_db(exclude={'datestr'})
+
+class TestAccount(BaseJsonModel):
+	_exclude_alias : Mapping[int | str, Any] = { 	str(True):  { 'a' }, 
+													str(False): {'b'} 
+												}
+	a : Account = Field(default=..., alias='Aaa')
+	b : Account = Field(default=..., alias='Bee')
 
 
 class EnumWinnerTeam(IntEnum):
