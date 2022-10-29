@@ -2,7 +2,9 @@ from configparser import ConfigParser
 from argparse import Namespace
 import logging
 from abc import ABCMeta, abstractmethod
-from models import W
+
+from bson import ObjectId
+from models import WoTBlitzReplay
 
 logger = logging.getLogger()
 error 	= logger.error
@@ -22,6 +24,19 @@ class Backend(metaclass=ABCMeta):
 	# 		error(str(err))
 
 	@abstractmethod
-	async def replay_store()
+	async def replay_store(self, replay: WoTBlitzReplay) -> bool:
+		"""Store replay into backend"""
+		raise NotImplementedError
 
 
+	@abstractmethod
+	async def replay_get(self, replayId: str | ObjectId) -> WoTBlitzReplay | None:
+		"""Get a replay from backend based on replayID"""
+		raise NotImplementedError
+
+
+	# replay fields that can be searched: protagonist, battle_start_timestamp, account_id, vehicle_tier
+	@abstractmethod
+	async def replay_find(self, **kwargs) -> WoTBlitzReplay | None:
+		"""Find a replay from backend based on search string"""
+		raise NotImplementedError
