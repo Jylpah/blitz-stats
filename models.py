@@ -1,7 +1,8 @@
 from datetime import datetime
+from time import time
 from typing import Any, Mapping
 from bson.objectid import ObjectId
-from pydantic import BaseModel, Extra, root_validator, validator, Field
+from pydantic import BaseModel, Extra, root_validator, validator, Field, HttpUrl, ValidationError
 import json
 from enum import Enum, IntEnum
 from os.path import basename
@@ -21,8 +22,10 @@ class Region(str, Enum):
 	ru 		= 'ru'
 	china 	= 'china'
 
+TypeExcludeDict = Mapping[int | str, Any]
+
 class BaseJsonModel(BaseModel):
-	_exclude_alias : Mapping[int | str, Any] = { str(True): {}, str(False): {} }
+	_exclude_alias : TypeExcludeDict = { str(True): {}, str(False): {} }
 
 	def json_src(self, exclude :  set |dict | None = None):
 		return self.json(by_alias=False, exclude_none=False, exclude=exclude )
@@ -31,55 +34,28 @@ class BaseJsonModel(BaseModel):
 		return self.json(by_alias=True, exclude_none=True, exclude=exclude)
 
 	def json(self, by_alias: bool = False, **kwargs):
-		return super().json(by_alias=by_alias, exclude=self._exclude_alias[str(by_alias)], **kwargs)
+		return super().json(by_alias=by_alias, exclude_unset=True, 
+							exclude=self._exclude_alias[str(by_alias)], **kwargs)
 		
-	# def json_db(self, exclude :  set |dict | None = None):
-	# 	res = dict()
-	# 	for k, v in self:
-	# 		if (exclude is not None) and (k in exclude):
-	# 			continue
-	# 		tv = type(v)
-	# 		try:
-	# 			it = iter(v)
-	# 		except:
-	# 			if isinstance(tv, BaseJsonModel):
-	# 				res[k] = v.json_db()
-	# 			else:
-	# 				res[k] = json.dumps(v)
-	# 		elif tv == list:
-	# 			resk[k] = list()
-	# 			for 
-	# 		elif tv == set:
-	# 			pass
-	# 		elif tv == dict:
-	# 			pass
-
-	# 	return self.json(by_alias=True, exclude_none=True, exclude=exclude)
-
 
 class Account(BaseJsonModel):
-	_exclude_alias : Mapping[int | str, Any] = { 	str(True):  { 'region' }, 
-											str(False): {'last_battle_time'} 
-											}	
-	id		: int 			= Field(default=..., alias='_id')
-	region 	: Region | None = Field(default=None, alias='r')
+	# _exclude_alias : TypeExcludeDict = { 	str(True):  { 'region' }, 
+	# 										str(False): {'last_battle_time'} 
+	# 										}	
+	id		: int 				= Field(default=..., alias='_id')
+	region 	: Region | None 	= Field(default=None, alias='r')
 	last_battle_time			: int | None = Field(default=None, alias='l')
 	updated_tank_stats 			: int | None = Field(default=None, alias='uts')
 	updated_player_achievements : int | None = Field(default=None, alias='upa')
 	added 						: int | None = Field(default=None, alias='a')
 	inactive					: bool | None = Field(default=None, alias='i')
 	disabled					: bool | None = Field(default=None, alias='d')
-	# datestr 					: str | None = Field(default=None, alias='dstr')
 
 	class Config:
 		allow_population_by_field_name = True
 		allow_mutation 			= True
 		validate_assignment 	= True
-		
-		        
-	# @validator('datestr')
-	# def check_dstr(cls, v):
-	# 	return None
+
 
 	@validator('id')
 	def check_id(cls, v):
@@ -97,10 +73,21 @@ class Account(BaseJsonModel):
 		else:
 			raise ValueError('time field must be >= 0')
 
-	
+	@validator('added')
+	def set_current_time(cls, v):
+		if v is None:
+			return int(time())
+		else:
+			return v
+
+	TypeAccountDict = dict[str, int |bool |Region |None]
+
 	@root_validator(skip_on_failure=True)
-	def set_region(cls, values):
+	def set_region(cls, values: TypeAccountDict) -> TypeAccountDict:
 		i = values.get('id')
+		
+		assert type(i) is int, 'i has to be int'
+
 		if i >= 31e8:
 			values['region'] = Region.china
 		elif i >= 20e8:
@@ -110,16 +97,12 @@ class Account(BaseJsonModel):
 		elif i >= 5e8:
 			values['region'] = Region.eu
 		else:			
-			values['region'] = Region.ru
-		# if values['last_battle_time'] is not None:
-		# 	values['datestr'] = datetime.fromtimestamp(values['last_battle_time']).strftime("%Y-%m-%d %H:%M:%S")
-		# remove null values
-		# values = {k: v for k, v in values.items() if v is not None}		
+			values['region'] = Region.ru			
 		return values
 	
-
+# REMOVE
 class TestAccount(BaseJsonModel):
-	_exclude_alias : Mapping[int | str, Any] = { 	str(True):  { 'a' }, 
+	_exclude_alias : TypeExcludeDict = { 	str(True):  { 'a' }, 
 													str(False): {'b'} 
 												}
 	a : Account = Field(default=..., alias='Aaa')
@@ -138,9 +121,9 @@ class EnumBattleResult(IntEnum):
 
 
 class EnumVehicleType(IntEnum):
-	light_tank = 0
+	light_tank 	= 0
 	medium_tank = 1
-	heavy_tank = 2
+	heavy_tank 	= 2
 	tank_destroyer = 3
 
 class WoTBlitzReplayAchievement(BaseJsonModel):
@@ -193,11 +176,17 @@ class WoTBlitzReplayDetail(BaseJsonModel):
 	wp_points_stolen	: int | None = Field(default=None, alias='ws')
 
 	class Config:
-		extra = Extra.allow
-
+		extra 				= Extra.allow
+		allow_mutation 		= True
+		validate_assignment = True
 
 
 class WoTBlitzReplaySummary(BaseJsonModel):
+	_exclude_alias : TypeExcludeDict = { 	str(True):  { 'description', 'battle_start_time' }, 
+											str(False): {'description'} 
+										}
+	TimestampFormat : str = "%Y-%m-%d %H:%M:%S"
+
 	winner_team 	: EnumWinnerTeam 	| None 	= Field(default=..., alias='wt')
 	battle_result 	: EnumBattleResult 	| None 	= Field(default=..., alias='br')
 	room_type		: int | None 	= Field(default=None, alias='rt')
@@ -224,10 +213,12 @@ class WoTBlitzReplaySummary(BaseJsonModel):
 	enemies 		: list[int]		= Field(default=..., alias='e')
 	mastery_badge	: int | None 	= Field(default=None, alias='mb')
 	details 		: list[WoTBlitzReplayDetail] = Field(default=..., alias='d')
-	TimestampFormat : str = "%Y-%m-%d %H:%M:%S"
+
 
 	class Config:
-		extra = Extra.allow
+		extra 				= Extra.allow
+		allow_mutation 		= True
+		validate_assignment = True
 
 	@validator('vehicle_tier')
 	def check_tier(cls, v):
@@ -247,60 +238,48 @@ class WoTBlitzReplaySummary(BaseJsonModel):
 	def return_none(cls, v):
 		return None
 
-	# @root_validator(skip_on_failure=True)
-	# def remove_none(cls, values):
-	# 	# remove null values
-	# 	values = {k: v for k, v in values.items() if v is not None}		
-	# 	return values
-
-	def json_src(self):
-		self.battle_start_time = datetime.fromtimestamp(self.battle_start_timestamp).strftime(self.TimestampFormat)
-		return super().json_src()
-
-	
-	def json_db(self):
-		self.battle_start_time = None
-		return super().json_db()
-
-
-class WoTBlitzReplayData(BaseJsonModel):
-	view_url	: str = Field(default=..., alias='v')
-	download_url: str | None = Field(default=None, alias='d')
-	id 			: str | None  = Field(default=None, repr=False)
-	summary		: WoTBlitzReplaySummary  = Field(default=..., alias='s') 
-	ViewUrlBase : str = 'https://replays.wotinspector.com/en/view/'
-	DLurlBase	: str = 'https://replays.wotinspector.com/en/download/'
-
-	@validator('download_url')
-	def check_download_url(cls, v):
-		return None
-
-	@validator('view_url')
-	def check_view_url(cls, v):
-		try:
-			return v.split('/')[-1:][0]
-		except Exception as err:
-			raise ValueError('could not parse view_url')
-
-	@root_validator
-	def store_id(cls, values):
-		if values['view_url'] is not None:
-			values['id'] = values['view_url'].split('/')[-1:][0]
-		elif values['download_url'] is not None:
-			values['id'] = values['download_url'].split('/')[-1:][0]
-		else:
-			raise ValueError('Replay is missing ID')
+	@root_validator(skip_on_failure=True)
+	def root(cls, values):
+		# remove null values
+		del values['description']		
+		values['battle_start_time'] = datetime.fromtimestamp(values['battle_start_timestamp']).strftime(cls.TimestampFormat)
 		return values
 
 
-	def json_src(self):
-		return super().json_src(exclude={'id', 'ViewUrlBase', 'DLurlBase'})
-		
+class WoTBlitzReplayData(BaseJsonModel):
+	_exclude_alias : TypeExcludeDict = { 	str(True):  { 'view_url', 'download_url'}, 
+											str(False): {'id'} 
+										}
+	ViewUrlBase : str = 'https://replays.wotinspector.com/en/view/'
+	DLurlBase	: str = 'https://replays.wotinspector.com/en/download/'
 
-	def json_db(self):
-		return super().json_db(exclude={'view_url', 'download_url', 'ViewUrlBase', 'DLurlBase'})
+	# fields
+	view_url	: HttpUrl 		= Field(default=..., alias='v')
+	download_url: HttpUrl 		= Field(default=..., alias='d')
+	id 			: str | None	= Field(default=None, repr=False)
+	summary		: WoTBlitzReplaySummary  = Field(default=..., alias='s') 
 	
+	class Config:
+		allow_mutation 			= True
+		validate_assignment 	= True
 
+
+	@root_validator
+	def store_id(cls, values):
+		try:
+			if values['view_url'] is not None:
+				values['id'] = values['view_url'].split('/')[-1:][0]
+			elif values['download_url'] is not None:
+				values['id'] = values['download_url'].split('/')[-1:][0]
+			else:
+				raise ValueError('Replay is missing ID')
+			values['view_url'] 		= f"{cls.ViewUrlBase}{values['id']}"
+			values['download_url'] 	= f"{cls.DLurlBase}{values['id']}"
+			return values
+		except Exception as err:
+			raise ValueError('could not replay url')
+	
+	
 class WoTBlitzReplay(BaseJsonModel):
 	id : ObjectId = Field(default=..., alias='_id')
 	status: str
@@ -309,5 +288,7 @@ class WoTBlitzReplay(BaseJsonModel):
 	class Config:
 		arbitrary_types_allowed = True
 		json_encoders = { ObjectId: str }
+		allow_mutation 			= True
+		validate_assignment 	= True
 
 
