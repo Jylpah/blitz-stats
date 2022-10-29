@@ -118,6 +118,11 @@ class EnumBattleResult(IntEnum):
 	incomplete = -1
 	not_win = 0
 	win = 1
+	loss = 2
+	draw = 3
+
+	def __str__(self):
+		return f'{self.name}'.capitalize()
 
 
 class EnumVehicleType(IntEnum):
@@ -125,6 +130,10 @@ class EnumVehicleType(IntEnum):
 	medium_tank = 1
 	heavy_tank 	= 2
 	tank_destroyer = 3
+
+	def __str__(self):
+		return f'{self.name}'.replace('_', ' ').capitalize()
+
 
 class WoTBlitzReplayAchievement(BaseJsonModel):
 	t: int
@@ -285,10 +294,50 @@ class WoTBlitzReplay(BaseJsonModel):
 	status: str
 	data: WoTBlitzReplayData 
 	error: dict
+
 	class Config:
 		arbitrary_types_allowed = True
 		json_encoders = { ObjectId: str }
 		allow_mutation 			= True
 		validate_assignment 	= True
+
+	def get_enemies(self) -> list[int]:
+		return self.data.summary.enemies
+
+
+	def get_allies(self) -> list[int]:
+		return self.data.summary.allies
+
+	
+	def get_players(self) -> list[int]:
+		return self.get_enemies() + self.get_allies()
+
+	
+	def get_battle_result(self, player : int | None = None) -> EnumBattleResult:
+		try:
+			if self.data.summary.battle_result == EnumBattleResult.incomplete:
+				return EnumBattleResult.incomplete
+			
+			elif player is not None and player in self.get_enemies():
+				if self.data.summary.battle_result == EnumBattleResult.win:
+					return EnumBattleResult.loss
+				elif self.data.summary.winner_team == EnumWinnerTeam.draw:
+					return EnumBattleResult.draw
+				else:
+					return EnumBattleResult.win
+			
+			elif player is None or player in self.get_allies():
+				if self.data.summary.battle_result == EnumBattleResult.win:
+					return EnumBattleResult.win
+				elif self.data.summary.winner_team == EnumWinnerTeam.draw:
+					return EnumBattleResult.draw
+				else:
+					return EnumBattleResult.loss
+			else:
+				debug(f"player ({str(player)}) not in the battle")
+				return EnumBattleResult.incomplete
+		except Exception as err:
+			raise Exception('Error reading replay')
+
 
 
