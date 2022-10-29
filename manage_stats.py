@@ -7,7 +7,7 @@ import aioconsole, re, logging, time, xmltodict, collections, pymongo, motor.mot
 import ssl, configparser, random
 from datetime import date
 import blitzutils as bu
-import blitzstatsutils as su
+import utils as su
 from blitzutils import BlitzStars, RecordLogger, WG, Timer
 
 N_WORKERS = 4

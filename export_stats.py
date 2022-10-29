@@ -6,7 +6,7 @@ import sys, os, argparse, datetime, json, inspect, pprint, aiohttp, asyncio, aio
 import aioconsole, re, logging, time, xmltodict, collections, pymongo, motor.motor_asyncio
 import ssl, configparser
 from datetime import date
-import blitzstatsutils as su
+import utils as su
 import blitzutils as bu
 from blitzutils import BlitzStars
 

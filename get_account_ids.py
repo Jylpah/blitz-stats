@@ -6,7 +6,7 @@ import sys, argparse, json, os, inspect, pprint, aiohttp, asyncio, aiofiles, aio
 import motor.motor_asyncio, ssl, lxml, re, logging, time, xmltodict, collections, pymongo
 import configparser
 import blitzutils as bu
-import blitzstatsutils as su
+import utils as su
 from bs4 import BeautifulSoup
 from blitzutils import BlitzStars, WG, WoTinspector, RecordLogger
 
