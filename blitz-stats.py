@@ -13,28 +13,13 @@ import logging
 import argparse
 
 import sys
-import json
 import os
-import inspect
-import pprint
-import aiohttp
 import asyncio
-import aiofiles
-import aioconsole
-import motor.motor_asyncio
-import ssl
-import lxml
-import re
 
-import time
-import xmltodict
-import collections
-import pymongo
-
-import blitzutils as bu
+# import blitzutils as bu
 import utils as su
-from bs4 import BeautifulSoup
-from blitzutils import BlitzStars, WG, WoTinspector, RecordLogger
+
+# from blitzutils import BlitzStars, WG, WoTinspector, RecordLogger
 
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 logger = logging.getLogger()
