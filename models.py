@@ -1,12 +1,14 @@
 from datetime import datetime
 from time import time
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 from bson.objectid import ObjectId
-from pydantic import BaseModel, Extra, root_validator, validator, Field, HttpUrl, ValidationError
+from pydantic import BaseModel, Extra, root_validator, validator, Field, HttpUrl
+from pydantic.utils import ValueItems
 import json
 from enum import Enum, IntEnum
 from os.path import basename
 import logging
+import aiofiles
 
 TYPE_CHECKING = True
 logger = logging.getLogger()
@@ -24,24 +26,8 @@ class Region(str, Enum):
 
 TypeExcludeDict = Mapping[int | str, Any]
 
-class BaseJsonModel(BaseModel):
-	_exclude_alias : TypeExcludeDict = { str(True): {}, str(False): {} }
 
-	def json_src(self, exclude :  set |dict | None = None):
-		return self.json(by_alias=False, exclude_none=False, exclude=exclude )
-
-	def json_db(self, exclude :  set |dict | None = None):
-		return self.json(by_alias=True, exclude_none=True, exclude=exclude)
-
-	def json(self, by_alias: bool = False, **kwargs):
-		return super().json(by_alias=by_alias, exclude_unset=True, 
-							exclude=self._exclude_alias[str(by_alias)], **kwargs)
-		
-
-class Account(BaseJsonModel):
-	# _exclude_alias : TypeExcludeDict = { 	str(True):  { 'region' }, 
-	# 										str(False): {'last_battle_time'} 
-	# 										}	
+class Account(BaseModel):	
 	id		: int 				= Field(default=..., alias='_id')
 	region 	: Region | None 	= Field(default=None, alias='r')
 	last_battle_time			: int | None = Field(default=None, alias='l')
@@ -100,14 +86,6 @@ class Account(BaseJsonModel):
 			values['region'] = Region.ru			
 		return values
 	
-# REMOVE
-class TestAccount(BaseJsonModel):
-	_exclude_alias : TypeExcludeDict = { 	str(True):  { 'a' }, 
-													str(False): {'b'} 
-												}
-	a : Account = Field(default=..., alias='Aaa')
-	b : Account = Field(default=..., alias='Bee')
-
 
 class EnumWinnerTeam(IntEnum):
 	draw = 0
@@ -135,14 +113,14 @@ class EnumVehicleType(IntEnum):
 		return f'{self.name}'.replace('_', ' ').capitalize()
 
 
-class WoTBlitzReplayAchievement(BaseJsonModel):
+class WoTBlitzReplayAchievement(BaseModel):
 	t: int
 	v: int
 
 
 # WoTBlitzReplayDetail = dict[str, Union[str, int, list[WoTBlitzReplayAchievement], None]]
-class WoTBlitzReplayDetail(BaseJsonModel):
-	achievements : WoTBlitzReplayAchievement | None = Field(default=None, alias='a')
+class WoTBlitzReplayDetail(BaseModel):
+	achievements : list[WoTBlitzReplayAchievement] | None = Field(default=None, alias='a')
 	base_capture_points	: int | None = Field(default=None, alias='bc')
 	base_defend_points	: int | None = Field(default=None, alias='bd')
 	chassis_id			: int | None = Field(default=None, alias='ch')
@@ -188,14 +166,12 @@ class WoTBlitzReplayDetail(BaseJsonModel):
 		extra 				= Extra.allow
 		allow_mutation 		= True
 		validate_assignment = True
+		allow_population_by_field_name = True
 
 
-class WoTBlitzReplaySummary(BaseJsonModel):
-	_exclude_alias : TypeExcludeDict = { 	str(True):  { 'description', 'battle_start_time' }, 
-											str(False): {'description'} 
-										}
-	TimestampFormat : str = "%Y-%m-%d %H:%M:%S"
-
+class WoTBlitzReplaySummary(BaseModel):	
+	_TimestampFormat : str = "%Y-%m-%d %H:%M:%S"
+	
 	winner_team 	: EnumWinnerTeam 	| None 	= Field(default=..., alias='wt')
 	battle_result 	: EnumBattleResult 	| None 	= Field(default=..., alias='br')
 	room_type		: int | None 	= Field(default=None, alias='rt')
@@ -211,12 +187,12 @@ class WoTBlitzReplaySummary(BaseJsonModel):
 	vehicle_type 	: EnumVehicleType | None = Field(default=..., alias='vt')
 	credits_total	: int | None 	= Field(default=None, alias='ct')
 	credits_base	: int | None 	= Field(default=None, alias='cb')
-	exp_base		: int | None	= Field(default=..., alias='eb')
-	exp_total		: int | None	= Field(default=None, repr=False)	
-	battle_start_timestamp : int 		= Field(default=..., alias='bts')
+	exp_base		: int | None	= Field(default=None, alias='eb')
+	exp_total		: int | None	= Field(default=None, alias='et')	
+	battle_start_timestamp : int	= Field(default=..., alias='bts')
 	battle_start_time : str | None	= Field(default=None, repr=False)	# duplicate of 'bts'
 	battle_duration : float			= Field(default=..., alias='bd')	
-	description		: None			= Field(default=None, repr=False)
+	description		: str |None		= Field(default=None, alias='de')
 	arena_unique_id	: int			= Field(default=..., alias='aid')
 	allies 			: list[int]		= Field(default=..., alias='a')
 	enemies 		: list[int]		= Field(default=..., alias='e')
@@ -228,6 +204,7 @@ class WoTBlitzReplaySummary(BaseJsonModel):
 		extra 				= Extra.allow
 		allow_mutation 		= True
 		validate_assignment = True
+		allow_population_by_field_name = True
 
 	@validator('vehicle_tier')
 	def check_tier(cls, v):
@@ -243,34 +220,30 @@ class WoTBlitzReplaySummary(BaseJsonModel):
 		else:
 			raise ValueError('protagonist_team has to be within 1 or 2')
 
-	@validator('battle_start_time', 'description', 'exp_total')
+	@validator('battle_start_time')
 	def return_none(cls, v):
 		return None
 
 	@root_validator(skip_on_failure=True)
 	def root(cls, values):
-		# remove null values
-		del values['description']		
-		values['battle_start_time'] = datetime.fromtimestamp(values['battle_start_timestamp']).strftime(cls.TimestampFormat)
+		values['battle_start_time'] = datetime.fromtimestamp(values['battle_start_timestamp']).strftime(cls._TimestampFormat)
 		return values
 
 
-class WoTBlitzReplayData(BaseJsonModel):
-	_exclude_alias : TypeExcludeDict = { 	str(True):  { 'view_url', 'download_url'}, 
-											str(False): {'id'} 
-										}
-	ViewUrlBase : str = 'https://replays.wotinspector.com/en/view/'
-	DLurlBase	: str = 'https://replays.wotinspector.com/en/download/'
-
-	# fields
+class WoTBlitzReplayData(BaseModel):	
 	view_url	: HttpUrl 		= Field(default=..., alias='v')
 	download_url: HttpUrl 		= Field(default=..., alias='d')
-	id 			: str | None	= Field(default=None, repr=False)
+	id 			: str | None	= Field(default=None)
 	summary		: WoTBlitzReplaySummary  = Field(default=..., alias='s') 
-	
+
+	_ViewUrlBase : str = 'https://replays.wotinspector.com/en/view/'
+	_DLurlBase	: str = 'https://replays.wotinspector.com/en/download/'	
 	class Config:
+		arbitrary_types_allowed = True
 		allow_mutation 			= True
 		validate_assignment 	= True
+		allow_population_by_field_name = True
+		json_encoders = { ObjectId: str }
 
 
 	@root_validator
@@ -281,32 +254,92 @@ class WoTBlitzReplayData(BaseJsonModel):
 			elif values['download_url'] is not None:
 				values['id'] = values['download_url'].split('/')[-1:][0]
 			else:
-				raise ValueError('Replay is missing ID')
-			values['view_url'] 		= f"{cls.ViewUrlBase}{values['id']}"
-			values['download_url'] 	= f"{cls.DLurlBase}{values['id']}"
+				raise ValueError('Replay ID is missing')
+			values['view_url'] 		= f"{cls._ViewUrlBase}{values['id']}"
+			values['download_url'] 	= f"{cls._DLurlBase}{values['id']}"
 			return values
 		except Exception as err:
-			raise ValueError('could not replay url')
+			raise ValueError(f'Error reading replay ID: {str(err)}')
 	
 	
-class WoTBlitzReplay(BaseJsonModel):
-	id : ObjectId = Field(default=..., alias='_id')
-	status: str
-	data: WoTBlitzReplayData 
-	error: dict
+class WoTBlitzReplayJSON(BaseModel):
+	id : str | None 		= Field(default=None, alias='_id')
+	status: str				= Field(default="ok", alias='s') 
+	data: WoTBlitzReplayData= Field(default=..., alias='d') 
+	error: dict				= Field(default={}, alias='e') 
+
 
 	class Config:
 		arbitrary_types_allowed = True
 		json_encoders = { ObjectId: str }
 		allow_mutation 			= True
 		validate_assignment 	= True
+		allow_population_by_field_name = True
 
-	def get_enemies(self) -> list[int]:
-		return self.data.summary.enemies
+	@root_validator(pre=False)
+	def store_id(cls, values):
+		try:
+			values['id'] = values['data'].id			
+			return values
+		except Exception as err:
+			raise ValueError(f'Could not read replay ID: {str(err)}')
 
 
-	def get_allies(self) -> list[int]:
-		return self.data.summary.allies
+	@classmethod
+	async def open(cls, filename: str) -> Optional['WoTBlitzReplayJSON']:
+		"""Open replay JSON file and return WoTBlitzReplayJSON instance"""
+		try:
+			async with aiofiles.open(filename, 'r') as rf:
+				return cls.parse_raw(await rf.read())
+
+		except Exception as err:
+			error(f'Error reading replay: {str(err)}')
+		return None
+
+
+	def json_src(self) -> str:
+		exclude_src : TypeExcludeDict = { 'id': True, 'data': { 'id': True }} 
+		return self.json(exclude=exclude_src, exclude_unset=True, by_alias=False)
+
+
+	def json_db(self) -> str:
+		exclude_src : TypeExcludeDict = { 'data': { 
+											'view_url': True, 
+											'download_url': True, 
+											'summary': { 'battle_start_time' } 
+											}
+										} 
+		return self.json(exclude=exclude_src, exclude_defaults=True, by_alias=True)
+
+
+	def get_id(self) -> str | None:
+		try:
+			if self.id is not None:
+				return self.id
+			else:
+				return self.data.id
+		except Exception as err:
+			error(f'Could not read replay id: {str(err)}')
+		return None	
+
+
+	def get_enemies(self, player: int | None = None) -> list[int]:
+		if player is None or (player in self.data.summary.allies):
+			return self.data.summary.enemies
+		elif player in self.data.summary.enemies:
+			return self.data.summary.allies
+		else:
+			raise ValueError(f"account_id {player} not found in replay")
+
+
+	def get_allies(self, player: int | None = None) -> list[int]:
+		if player is None or (player in self.data.summary.allies):
+			return self.data.summary.allies
+		elif player in self.data.summary.enemies:
+			return self.data.summary.enemies
+		else:
+			raise ValueError(f"player {player} not found in replay")
+			
 
 	
 	def get_players(self) -> list[int]:
