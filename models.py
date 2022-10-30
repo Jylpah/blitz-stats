@@ -1,7 +1,8 @@
 from datetime import datetime
 from time import time
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, Tuple
 from bson.objectid import ObjectId
+from isort import place_module
 from pydantic import BaseModel, Extra, root_validator, validator, Field, HttpUrl
 from pydantic.utils import ValueItems
 import json
@@ -9,6 +10,7 @@ from enum import Enum, IntEnum
 from os.path import basename
 import logging
 import aiofiles
+from collections import defaultdict
 
 TYPE_CHECKING = True
 logger = logging.getLogger()
@@ -132,7 +134,7 @@ class WoTBlitzReplayDetail(BaseModel):
 	damage_blocked		: int | None = Field(default=None, alias='db')
 	damage_made			: int | None = Field(default=None, alias='dm')
 	damage_received		: int | None = Field(default=None, alias='dr')
-	dbid				: int | None = Field(default=None, alias='ai')
+	dbid				: int  		 = Field(default=..., alias='ai')
 	death_reason		: int | None = Field(default=None, alias='de')
 	distance_travelled	: int | None = Field(default=None, alias='dt')
 	enemies_damaged		: int | None = Field(default=None, alias='ed')
@@ -355,6 +357,25 @@ class WoTBlitzReplayJSON(BaseModel):
 	
 	def get_players(self) -> list[int]:
 		return self.get_enemies() + self.get_allies()
+
+	
+	def get_platoons(self, player: int | None = None) -> Tuple[	defaultdict[int, list[int]], 
+																defaultdict[int, list[int]]]:
+		allied_platoons : defaultdict[int, list[int]] = defaultdict(list)
+		enemy_platoons 	: defaultdict[int, list[int]] = defaultdict(list)
+		
+		allies 	= self.get_allies(player)
+
+		for d in self.data.summary.details:
+			if d.squad_index is not None and d.squad_index > 0:
+				account_id = d.dbid
+				if account_id in allies: 
+					allied_platoons[d.squad_index].append(account_id)
+				else:
+					enemy_platoons[d.squad_index].append(account_id)
+		
+		return allied_platoons, enemy_platoons
+
 
 	
 	def get_battle_result(self, player : int | None = None) -> EnumBattleResult:
