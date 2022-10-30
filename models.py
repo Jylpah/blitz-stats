@@ -296,6 +296,17 @@ class WoTBlitzReplayJSON(BaseModel):
 			error(f'Error reading replay: {str(err)}')
 		return None
 
+	
+	async def save(self, filename: str) -> int:
+		"""Save replay JSON into a file"""
+		try:
+			async with aiofiles.open(filename, 'w') as rf:
+				return await rf.write(self.json_src())
+
+		except Exception as err:
+			error(f'Error writing replay {filename}: {str(err)}')
+		return -1
+
 
 	def json_src(self) -> str:
 		exclude_src : TypeExcludeDict = { 'id': True, 'data': { 'id': True }} 
