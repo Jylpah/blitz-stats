@@ -3,6 +3,9 @@ from configparser import ConfigParser
 from typing import Optional
 import logging
 
+from backend import Backend
+from models import WoTBlitzReplayJSON
+
 logger = logging.getLogger()
 error 	= logger.error
 message	= logger.warning
@@ -162,9 +165,12 @@ def add_args_accounts_remove(parser: ArgumentParser, config: Optional[ConfigPars
 #
 ###########################################
 
-async def cmd_accounts(args : Namespace, config: Optional[ConfigParser] = None) -> bool:
+async def cmd_accounts(db: Backend, args : Namespace, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('accounts')
+		replay : WoTBlitzReplayJSON | None = await db.replay_get('1b46e2a1c4432074386f55881892921d')
+		print(str(replay))
+
 		if args.accounts_cmd == 'fetch':
 			await cmd_accounts_fetch(args, config)
 
@@ -213,6 +219,7 @@ async def cmd_accounts_fetch_files(args : Namespace, config: Optional[ConfigPars
 async def cmd_accounts_fetch_wi	(args : Namespace, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
+		
 		
 
 	except Exception as err:
