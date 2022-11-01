@@ -2,10 +2,10 @@
 
 # Script fetch Blitz player stats and tank stats
 
-from curses import meta
 from datetime import datetime
 from typing import Optional
-from pyutils.multilevelformatter import MultilevelFormatter, set_mlevel_logging
+from backend import Backend
+from pyutils.multilevelformatter import set_mlevel_logging
 from configparser import ConfigParser
 import models
 import accounts as acc
@@ -17,7 +17,7 @@ import os
 import asyncio
 
 # import blitzutils as bu
-import utils as su
+# import utils as su
 
 # from blitzutils import BlitzStars, WG, WoTinspector, RecordLogger
 
@@ -28,6 +28,10 @@ verbose_std	= logging.warning
 verbose	= logging.info
 debug	= logging.debug
 
+# Utils 
+def get_datestr(_datetime: datetime = datetime.now()) -> str:
+	return _datetime.strftime('%Y%m%d_%H%M')
+
 # main() -------------------------------------------------------------
 
 async def main(argv: list[str]):
@@ -37,9 +41,9 @@ async def main(argv: list[str]):
 	os.chdir(os.path.dirname(sys.argv[0]))
 	
 	# Default params
-	WG_APP_ID 	= 'cd770f38988839d7ab858d1cbe54bdd0'
-	CONFIG 		= 'blitz-stats.ini'	
-	LOG 		= 'blitz-stats.log'
+	WG_APP_ID 	= 'wg-app-id-missing'
+	CONFIG 		= 'blitzstats.ini'	
+	LOG 		= 'blitzstats.log'
 	THREADS 	= 20    # make it module specific?
 	BACKEND 	: Optional[str] = None
 
@@ -55,7 +59,7 @@ async def main(argv: list[str]):
 									help='Verbose mode')
 	arggroup_verbosity.add_argument('--silent', dest='LOG_LEVEL', action='store_const', const=logging.CRITICAL,
 									help='Silent mode')
-	parser.add_argument('--log', type=str, nargs='?', default=None, const=f"{LOG}_{su.get_datestr()}", 
+	parser.add_argument('--log', type=str, nargs='?', default=None, const=f"{LOG}_{get_datestr()}", 
 						help='Enable file logging')
 	parser.add_argument('--config', type=str, default=CONFIG, 
 						help='Read config from CONFIG')
@@ -63,31 +67,7 @@ async def main(argv: list[str]):
 
 	args, argv = parser.parse_known_args()
 
-
 	try:
-		if args.config is not None and os.path.isfile(args.config):
-			config = ConfigParser()
-			config.read(args.config)
-			if 'DEFAULT' in config.sections():
-				configDef = config['DEFAULT']
-				BACKEND = configDef.get('backend', None)
-			if 'MONGO' in config.sections():
-				configMongo = config['MONGO']				
-				M_SERVER 	: Optional[str] = configMongo.get('server', None)
-				M_PORT 		: Optional[int] = configMongo.getint('port', None)
-				M_TLS 		: bool 			= configMongo.getboolean('tls', False)
-				M_CERT_REQ 	: int  			= configMongo.getint('tls_req', 0)
-				M_AUTH 		: Optional[str] = configMongo.get('auth', None)
-				M_NAME 		: Optional[str] = configMongo.get('name', None)
-				M_USER 		: Optional[str] = configMongo.get('user', None)
-				M_PASSWD 	: Optional[str] = configMongo.get('password', None)
-				M_CERT		: Optional[str] = configMongo.get('cert', None)
-				M_CA		: Optional[str] = configMongo.get('ca', None)
-			if 'WG' in config.sections():
-				configWG 		= config['WG']
-				WG_APP_ID		= configWG.get('wg_app_id', WG_APP_ID)
-				WG_RATE_LIMIT	= configWG.getfloat('rate_limit', WG_RATE_LIMIT)
-			
 		# setup logging
 		logger.setLevel(args.LOG_LEVEL)
 		logger_conf: dict[int, str] = { 
@@ -102,6 +82,24 @@ async def main(argv: list[str]):
 		verbose_std	= logger.warning
 		verbose		= logger.info
 		debug		= logger.debug
+
+		if args.config is not None and os.path.isfile(args.config):
+			debug(f'Reading config from {args.config}')
+			config = ConfigParser()
+			config.read(args.config)
+			if 'GENERAL' in config.sections():
+				debug('Reading config section GENERAL')
+				configDef = config['GENERAL']
+				BACKEND = configDef.get('backend', None)
+			
+			if 'WG' in config.sections():
+				configWG 		= config['WG']
+				WG_APP_ID		= configWG.get('wg_app_id', WG_APP_ID)
+				WG_RATE_LIMIT	= configWG.getfloat('rate_limit', WG_RATE_LIMIT)
+		else:
+			debug("No config file found")
+			
+		
 
 		debug(f"Args parsed: {str(args)}")
 		debug(f"Args not parsed yet: {str(argv)}")
@@ -134,10 +132,13 @@ async def main(argv: list[str]):
 		if args.help:
 			parser.print_help()
 		debug(str(args))
-	
+
+		be : Backend | None  = await Backend.create(args.backend, config)
+		assert be is not None, 'Could not initialize backend'
+
 		if args.main_cmd == 'accounts':				
 			# how to handle errors / stats? 
-			await acc.cmd_accounts(args, config)				
+			await acc.cmd_accounts(be, args, config)				
 			
 		elif args.main_cmd == 'stats':
 			pass
@@ -155,3 +156,4 @@ async def main(argv: list[str]):
 if __name__ == "__main__":
    #asyncio.run(main(sys.argv[1:]), debug=True)
    asyncio.run(main(sys.argv[1:]))
+
