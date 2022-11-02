@@ -211,22 +211,23 @@ class MongoBackend(Backend):
 			if region is not None:
 				match.append({ 'r' : region.name })
 	
-			if inactive is None:
-				if not force:
-					assert update_field is not None, "automatic inactivity detection requires stat_type"
-					match.append({ '$or': [ { update_field: None}, { update_field: { '$lt': NOW - cache_valid }} ] })
-			elif inactive:
-				match.append({ 'i': True })
-			else:
-				match.append({ 'i': { '$ne': True }})
-			
 			if disabled:
 				match.append({ 'd': True })
 			else:
-				match.append({ 'd': { '$ne': True }})			
+				match.append({ 'd': { '$ne': True }})
+				if inactive is None:
+					if not force:
+						assert update_field is not None, "automatic inactivity detection requires stat_type"
+						match.append({ '$or': [ { update_field: None}, { update_field: { '$lt': NOW - cache_valid }} ] })
+				elif inactive:
+					match.append({ 'i': True })
+				else:
+					match.append({ 'i': { '$ne': True }})
+			
+						
 
 			pipeline : list[dict[str, Any]] = [ { '$match' : { '$and' : match } }]
-			
+
 			if sample >= 1:				
 				pipeline.append({'$sample': {'size' : int(sample) } })
 			elif sample > 0:
