@@ -4,7 +4,7 @@ from typing import Optional
 import logging
 
 from backend import Backend
-from models import WoTBlitzReplayJSON
+from models import WoTBlitzReplayJSON, Region, Account
 
 logger = logging.getLogger()
 error 	= logger.error
@@ -127,10 +127,16 @@ def add_args_accounts_export(parser: ArgumentParser, config: Optional[ConfigPars
 			EXPORT_FORMAT	= configAccs.get('export_format', EXPORT_FORMAT)
 			EXPORT_FILE		= configAccs.get('export_file', EXPORT_FILE )
 
-		parser.add_argument('--format', type=str, choices=['json', 'txt', 'csv'], 
-							default=EXPORT_FORMAT, help='Accounts list file format')
+		# parser.add_argument('--format', type=str, choices=['json', 'txt', 'csv'], 
+		# 					default=EXPORT_FORMAT, help='Accounts list file format')
 		parser.add_argument('file', metavar='FILE', type=str, nargs=1, default=EXPORT_FILE, 
-							help='File to export accounts to. Use \'-\' for STDIN')	
+							help='File to export accounts to. Use \'-\' for STDIN')
+		parser.add_argument('--disabled', action='store_true', default=False, help='Disabled accounts')
+		parser.add_argument('--inactive', action='store', type=str, choices=['auto', 'true', 'false'], 
+								default='auto', help='Inactive accounts')
+		parser.add_argument('--region', action='store', type=str, choices=['any'] + [ r.name for r in Region ], 
+								default='any', help='Filter by region (China not supported)')
+
 		return True	
 	except Exception as err:
 		error(str(err))
@@ -168,24 +174,22 @@ def add_args_accounts_remove(parser: ArgumentParser, config: Optional[ConfigPars
 async def cmd_accounts(db: Backend, args : Namespace, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('accounts')
-		replay : WoTBlitzReplayJSON | None = await db.replay_get('1b46e2a1c4432074386f55881892921d')
-		print(str(replay))
 
 		if args.accounts_cmd == 'fetch':
-			await cmd_accounts_fetch(args, config)
+			await cmd_accounts_fetch(db, args, config)
 
 		elif args.accounts_cmd == 'export':
-			await cmd_accounts_export(args, config)
+			await cmd_accounts_export(db, args, config)
 
 		elif args.accounts_cmd == 'remove':
-			await cmd_accounts_remove(args, config)
+			await cmd_accounts_remove(db, args, config)
 
 	except Exception as err:
 		error(str(err))
 	return False
 
 
-async def cmd_accounts_fetch(args : Namespace, config: Optional[ConfigParser] = None) -> bool:
+async def cmd_accounts_fetch(db: Backend, args : Namespace, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		
@@ -205,7 +209,7 @@ async def cmd_accounts_fetch(args : Namespace, config: Optional[ConfigParser] = 
 	return False
 
 
-async def cmd_accounts_fetch_files(args : Namespace, config: Optional[ConfigParser] = None) -> bool:
+async def cmd_accounts_fetch_files(db: Backend, args : Namespace, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		
@@ -216,7 +220,7 @@ async def cmd_accounts_fetch_files(args : Namespace, config: Optional[ConfigPars
 	return False
 
 
-async def cmd_accounts_fetch_wi	(args : Namespace, config: Optional[ConfigParser] = None) -> bool:
+async def cmd_accounts_fetch_wi	(db: Backend, args : Namespace, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		
@@ -227,30 +231,34 @@ async def cmd_accounts_fetch_wi	(args : Namespace, config: Optional[ConfigParser
 	return False
 
 
-async def cmd_accounts_export(args : Namespace, config: Optional[ConfigParser] = None) -> bool:
+async def cmd_accounts_export(db: Backend, args : Namespace, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
-		if args.accounts_cmd == 'fetch':
-			debug('fetch')	
-		elif args.accounts_cmd == 'export':
-			debug('export')
-		elif args.accounts_cmd == 'remove':
-			debug('remove')
+
+		query_args : dict[str, str | int | float | bool ] = dict()
+		
+		disabled : bool =  args.disabled
+		inactive : bool | None = None
+		if args.inactive == 'true':
+			inactive = True
+		elif args.inactive == 'false':
+			inactive = False
+		region : Region | None = None
+		if args.region != 'any':
+			region = Region(args.region)
+		
+		async for account in db.accounts_get(region=region, inactive=inactive, disabled=disabled, sample=5):
+			print(account.json())
 
 	except Exception as err:
 		error(str(err))
 	return False
 
 
-async def cmd_accounts_remove(args : Namespace, config: Optional[ConfigParser] = None) -> bool:
+async def cmd_accounts_remove(db: Backend, args : Namespace, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
-		if args.accounts_cmd == 'fetch':
-			debug('fetch')	
-		elif args.accounts_cmd == 'export':
-			debug('export')
-		elif args.accounts_cmd == 'remove':
-			debug('remove')
+		
 
 	except Exception as err:
 		error(str(err))
