@@ -7,14 +7,23 @@ from bson import ObjectId
 from models import Account, Region, WoTBlitzReplayJSON
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCursor, AsyncIOMotorCollection # type: ignore
 from os.path import isfile
-from typing import Optional
+from typing import Optional, Any
+from time import time
 
+# Setup logging
 logger	= logging.getLogger()
 error 	= logger.error
 message	= logger.warning
 verbose	= logger.info
 debug	= logger.debug
 
+# Constants
+MAX_UPDATE_INTERVAL : int = 4*30*24*60*60 # 4 months
+INACTIVE_THRESHOLD 	: int = 2*30*24*60*60 # 2 months
+WG_ACCOUNT_ID_MAX 	: int = int(31e8)
+MIN_INACTIVITY_PERIOD : int = 7 # days
+MAX_RETRIES : int = 3
+CACHE_VALID : int = 5   # days
 
 class Backend(metaclass=ABCMeta):
 	"""Abstract class for a backend (mongo, postgres, files)"""
@@ -56,31 +65,33 @@ class Backend(metaclass=ABCMeta):
 		raise NotImplementedError
 
 	@abstractmethod
-	async def account_get(self, account_id: int) -> AsyncGenerator[Account, None]:
+	async def account_get(self, account_id: int) -> Account | None:
 		"""Get account from backend"""
 		raise NotImplementedError
 
 	@abstractmethod
-	async def accounts_get(self, region: Region |None = None, inactive : bool = False, disable: bool =False ) -> AsyncGenerator[Account, None]:
+	async def accounts_get(self, stats_type : str | None = None, region: Region | None = None, 
+							inactive : bool | None = False, disabled: bool = False, sample : float = 0, 
+							force : bool = False, cache_valid: int = CACHE_VALID ) -> AsyncGenerator[Account, None]:
 		"""Get account from backend"""
 		raise NotImplementedError
+		yield Account(id=-1)
 
 
 
 class MongoBackend(Backend):
 
-	def __init__(self, config: ConfigParser | None = None, database: str = 'default', *args, **kwargs):
+	def __init__(self, config: ConfigParser | None = None, database: str = 'BlitzStats', *args, **kwargs):
 		try:
 			client : AsyncIOMotorClient | None = None
 			self.db : AsyncIOMotorDatabase
 			self.C : dict[str,str] = dict()
+
 			self.C['ACCOUNTS'] 		= 'Accounts'
 			self.C['TANKOPEDIA'] 	= 'Tankopedia'
 			self.C['REPLAYS'] 		= 'Replays'
 			self.C['TANK_STATS'] 	= 'TankStats'
 			self.C['PLAYER_ACHIEVEMENTS'] = 'PlayerAchievements'
-			
-
 
 			# defaults
 			SERVER 	: str 	= 'localhost'
@@ -159,11 +170,82 @@ class MongoBackend(Backend):
 		"""Find a replay from backend based on search string"""
 		raise NotImplementedError
 
-	async def account_get(self, account_id: int) -> AsyncGenerator[Account, None]:
+	
+	async def account_get(self, account_id: int) -> Account | None:
 		"""Get account from backend"""
-		raise NotImplementedError
+		try:
+			DBC : str = self.C['ACCOUNTS']
+			dbc : AsyncIOMotorCollection = self.db[DBC]
+			return Account.parse_obj(await dbc.find_one({'_id': account_id}))
+		except Exception as err:
+			error(f'Error fetching account_id: {account_id}) from Mongo DB: {str(err)}')	
+		return None
 
 
-	async def accounts_get(self, region: Region |None = None, inactive : bool = False, disable: bool =False ) -> AsyncGenerator[Account, None]:
-		"""Get account from backend"""
-		raise NotImplementedError
+	async def accounts_get(self, stats_type : str | None = None, region: Region | None = None, 
+							inactive : bool | None = False, disabled: bool = False, sample : float = 0, 
+							force : bool = False, cache_valid: int = CACHE_VALID ) -> AsyncGenerator[Account, None]:
+		"""Get accounts from Mongo DB
+			inactive: true = only inactive, false = not inactive, none = AUTO
+		"""
+		try:
+			# id						: int		= Field(default=..., alias='_id')
+			# region 					: Region | None= Field(default=None, alias='r')
+			# last_battle_time			: int | None = Field(default=None, alias='l')
+			# updated_tank_stats 		: int | None = Field(default=None, alias='ut')
+			# updated_player_achievements : int | None = Field(default=None, alias='up')
+			# added 					: int | None = Field(default=None, alias='a')
+			# inactive					: bool | None = Field(default=None, alias='i')
+			# disabled					: bool | None = Field(default=None, alias='d')
+
+			NOW = int(time())			
+			DBC : str = self.C['ACCOUNTS']
+			
+			update_field : str | None = Account.get_update_field(stats_type)
+
+			dbc : AsyncIOMotorCollection = self.db[DBC]
+			match : list[dict[str, str|int|float|dict|list]] = list()
+			
+			match.append({ '_id' : {  '$lt' : WG_ACCOUNT_ID_MAX}})  # exclude Chinese account ids
+
+			if region is not None:
+				match.append({ 'r' : region.name })
+	
+			if inactive is None:
+				if not force:
+					assert update_field is not None, "automatic inactivity detection requires stat_type"
+					match.append({ '$or': [ { update_field: None}, { update_field: { '$lt': NOW - cache_valid }} ] })
+			elif inactive:
+				match.append({ 'i': True })
+			else:
+				match.append({ 'i': { '$ne': True }})
+			
+			if disabled:
+				match.append({ 'd': True })
+			else:
+				match.append({ 'd': { '$ne': True }})			
+
+			pipeline : list[dict[str, Any]] = [ { '$match' : { '$and' : match } }]
+			
+			if sample >= 1:				
+				pipeline.append({'$sample': {'size' : int(sample) } })
+			elif sample > 0:
+				n = await dbc.estimated_document_count()
+				pipeline.append({'$sample': {'size' : int(n * sample) } })
+
+			cursor : AsyncIOMotorCursor = dbc.aggregate(pipeline, allowDiskUse=False)
+
+			async for account_obj in cursor:
+				try:
+					player = Account.parse_obj(account_obj)
+					if not force and not disabled and inactive is None and player.inactive:
+						assert update_field is not None, "automatic inactivity detection requires stat_type"
+						updated = dict(player)[update_field]
+						if (NOW - updated) < min(MAX_UPDATE_INTERVAL, (updated - player.last_battle_time)/2):
+							continue
+					yield player
+				except Exception as err:
+					error(str(err))
+					continue
+		except Exception as err:
+			error(f'Error fetching accounts from Mongo DB: {str(err)}')	
