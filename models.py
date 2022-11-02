@@ -87,7 +87,7 @@ class Account(BaseModel):
 	def set_region(cls, values: TypeAccountDict) -> TypeAccountDict:
 		i = values.get('id')
 		
-		assert type(i) is int, 'i has to be int'
+		assert type(i) is int, f'_id has to be int, was: {i}'
 
 		if i >= 31e8:
 			values['region'] = Region.china
