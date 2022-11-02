@@ -121,9 +121,9 @@ async def main(argv: list[str]):
 												metavar='')
 
 		accounts_parser = cmd_parsers.add_parser('accounts', aliases=['acc'], help='accounts help')
-		stats_parser = cmd_parsers.add_parser('stats', help='stats help')
+		stats_parser 	= cmd_parsers.add_parser('stats', help='stats help')
 		tankopedia_parser = cmd_parsers.add_parser('tankopedia', help='tankopedia help')
-		setup_parser = cmd_parsers.add_parser('setup', help='setup help')
+		setup_parser 	= cmd_parsers.add_parser('setup', help='setup help')
 		
 		if not acc.add_args_accounts(accounts_parser, config):
 			raise Exception("Failed to define argument parser for: accounts")
