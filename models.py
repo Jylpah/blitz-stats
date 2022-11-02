@@ -26,6 +26,7 @@ class Region(str, Enum):
 	ru 		= 'ru'
 	china 	= 'china'
 
+
 TypeExcludeDict = Mapping[int | str, Any]
 
 
@@ -47,10 +48,10 @@ class Account(BaseModel):
 
 
 	@classmethod
-	def get_update_field(cls, stats_type : str) -> str | None:
+	def get_update_field(cls, stats_type : str | None ) -> str | None:
 		UPDATED : str = 'updated_'
 		try:
-			if stats_type.startswith(UPDATED):
+			if stats_type is not None and stats_type.startswith(UPDATED):
 				return stats_type.replace(UPDATED, '')
 		except Exception as err:
 			error(f'stats_type does not start with "{UPDATED}": {stats_type}')
