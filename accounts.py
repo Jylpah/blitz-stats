@@ -3,8 +3,9 @@ from configparser import ConfigParser
 from typing import Optional
 import logging
 
-from backend import Backend
-from models import WoTBlitzReplayJSON, Region, Account
+from backend import Backend, OptInactiveAccounts
+from models import Account
+from blitzutils.models import WoTBlitzReplayJSON, Region
 
 logger = logging.getLogger()
 error 	= logger.error
@@ -132,10 +133,10 @@ def add_args_accounts_export(parser: ArgumentParser, config: Optional[ConfigPars
 		parser.add_argument('file', metavar='FILE', type=str, nargs=1, default=EXPORT_FILE, 
 							help='File to export accounts to. Use \'-\' for STDIN')
 		parser.add_argument('--disabled', action='store_true', default=False, help='Disabled accounts')
-		parser.add_argument('--inactive', type=str, choices=['auto', 'true', 'false'], 
-								default='auto', help='Inactive accounts')
+		parser.add_argument('--inactive', type=str, choices=[ o.name for o in OptInactiveAccounts ], 
+								default=OptInactiveAccounts.default().name, help='Include inactive accounts')
 		parser.add_argument('--region', type=str, choices=['any'] + [ r.name for r in Region ], 
-								default='any', help='Filter by region (China not supported)')
+								default=Region.API.name, help='Filter by region (default is API = eu + com + asia)')
 		parser.add_argument('--sample', type=float, default=0, help='Sample accounts')
 
 		return True	
@@ -239,11 +240,14 @@ async def cmd_accounts_export(db: Backend, args : Namespace, config: Optional[Co
 		query_args : dict[str, str | int | float | bool ] = dict()
 		
 		disabled : bool =  args.disabled
-		inactive : bool | None = None
-		if args.inactive == 'true':
-			inactive = True
-		elif args.inactive == 'false':
-			inactive = False
+		
+		inactive : OptInactiveAccounts = OptInactiveAccounts.default()
+
+		try: 
+			inactive = OptInactiveAccounts(args.inactive)
+		except ValueError as err:
+			assert False, f"Incorrect value for argument 'inactive': {args.inactive}"
+		
 		region : Region | None = None
 		if args.region != 'any':
 			region = Region(args.region)
