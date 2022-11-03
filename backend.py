@@ -4,11 +4,13 @@ import logging
 from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator
 from bson import ObjectId
-from models import Account, Region, WoTBlitzReplayJSON
+from models import Account
+from blitzutils.models import Region, WoTBlitzReplayJSON
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCursor, AsyncIOMotorCollection # type: ignore
 from os.path import isfile
 from typing import Optional, Any
 from time import time
+from enum import Enum
 
 # Setup logging
 logger	= logging.getLogger()
@@ -24,6 +26,17 @@ WG_ACCOUNT_ID_MAX 	: int = int(31e8)
 MIN_INACTIVITY_PERIOD : int = 7 # days
 MAX_RETRIES : int = 3
 CACHE_VALID : int = 5   # days
+
+class OptInactiveAccounts(str, Enum):
+	auto	= 'auto'
+	no		= 'no'
+	yes 	= 'yes'
+	both	= 'both'
+
+	@classmethod
+	def default(cls) -> 'OptInactiveAccounts':
+		return cls.auto
+	
 
 class Backend(metaclass=ABCMeta):
 	"""Abstract class for a backend (mongo, postgres, files)"""
@@ -71,7 +84,8 @@ class Backend(metaclass=ABCMeta):
 
 	@abstractmethod
 	async def accounts_get(self, stats_type : str | None = None, region: Region | None = None, 
-							inactive : bool | None = False, disabled: bool = False, sample : float = 0, 
+							inactive : OptInactiveAccounts = OptInactiveAccounts.default(), 
+							disabled: bool = False, sample : float = 0, 
 							force : bool = False, cache_valid: int = CACHE_VALID ) -> AsyncGenerator[Account, None]:
 		"""Get account from backend"""
 		raise NotImplementedError
@@ -182,8 +196,9 @@ class MongoBackend(Backend):
 		return None
 
 
-	async def accounts_get(self, stats_type : str | None = None, region: Region | None = None, 
-							inactive : bool | None = False, disabled: bool = False, sample : float = 0, 
+	async def accounts_get(self, stats_type : str | None = None, region: Region | None = Region.API, 
+							inactive : OptInactiveAccounts = OptInactiveAccounts.default(), 
+							disabled: bool = False, sample : float = 0, 
 							force : bool = False, cache_valid: int = CACHE_VALID ) -> AsyncGenerator[Account, None]:
 		"""Get accounts from Mongo DB
 			inactive: true = only inactive, false = not inactive, none = AUTO
@@ -209,21 +224,27 @@ class MongoBackend(Backend):
 			match.append({ '_id' : {  '$lt' : WG_ACCOUNT_ID_MAX}})  # exclude Chinese account ids
 
 			if region is not None:
-				match.append({ 'r' : region.name })
+				if region == Region.API:
+					match.append({ 'r' : { '$in' : [ r.name for r in Region.API_regions() ]} })
+				else:
+					match.append({ 'r' : region.name })
 	
 			if disabled:
 				match.append({ 'd': True })
 			else:
 				match.append({ 'd': { '$ne': True }})
-				if inactive is None:
+				# check inactive only if disabled == False
+				if inactive == OptInactiveAccounts.auto:
 					if not force:
 						assert update_field is not None, "automatic inactivity detection requires stat_type"
 						match.append({ '$or': [ { update_field: None}, { update_field: { '$lt': NOW - cache_valid }} ] })
-				elif inactive:
+				elif inactive == OptInactiveAccounts.yes:
 					match.append({ 'i': True })
-				else:
+				elif inactive == OptInactiveAccounts.no:
 					match.append({ 'i': { '$ne': True }})
-			
+				else:
+					# do not add a filter in case both inactive and active players are included
+					pass
 						
 
 			pipeline : list[dict[str, Any]] = [ { '$match' : { '$and' : match } }]
