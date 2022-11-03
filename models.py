@@ -21,11 +21,16 @@ verbose	= logger.info
 debug	= logger.debug
 
 class Region(str, Enum):
+	ru 		= 'ru'
 	eu 		= 'eu'
 	com 	= 'com'
 	asia 	= 'asia'
-	ru 		= 'ru'
 	china 	= 'china'
+	API		= 'API'
+
+	@classmethod
+	def API_regions(cls) -> list['Region']:
+		return [Region.eu, Region.com, Region.asia]
 
 
 TypeExcludeDict = Mapping[int | str, Any]
@@ -40,12 +45,25 @@ class Account(BaseModel):
 	added 						: int | None = Field(default=None, alias='a')
 	inactive					: bool 		 = Field(default=False, alias='i')
 	disabled					: bool		 = Field(default=False, alias='d')
+	_id_range					: dict[Region, list[int]] = { 
+															Region.ru	: [0, int(5e8)],
+															Region.eu	: [int(5e8), int(10e8)],
+															Region.com	: [int(10e8), int(20e8)],
+															Region.asia	: [int(20e8), int(31e8)],
+															Region.china: [int(31e8), int(50e8)] 
+															}
+	
 	
 
 	class Config:
 		allow_population_by_field_name = True
 		allow_mutation 			= True
 		validate_assignment 	= True
+
+
+	# @classmethod
+	# def get_id_range(cls) -> list[int]:
+	# 	return [cls._id_range[Region.eu][0], cls._id_range[Region.asia][1] ]
 
 
 	@classmethod
