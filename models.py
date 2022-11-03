@@ -2,6 +2,7 @@ from datetime import datetime
 from time import time
 from typing import Any, Mapping, Optional, Tuple
 from bson.objectid import ObjectId
+from bson.int64 import Int64
 from isort import place_module
 from pydantic import BaseModel, Extra, root_validator, validator, Field, HttpUrl
 from pydantic.utils import ValueItems
@@ -87,7 +88,10 @@ class Account(BaseModel):
 	def set_region(cls, values: TypeAccountDict) -> TypeAccountDict:
 		i = values.get('id')
 		
-		assert type(i) is int, f'_id has to be int, was: {i}'
+		if type(i) is Int64:
+			i = int(i)
+
+		assert type(i) is int, f'_id has to be int, was: {i} : {type(i)},'
 
 		if i >= 31e8:
 			values['region'] = Region.china
