@@ -27,14 +27,14 @@ MIN_INACTIVITY_PERIOD : int = 7 # days
 MAX_RETRIES : int = 3
 CACHE_VALID : int = 5   # days
 
-class OptInactiveAccounts(str, Enum):
+class OptAccountsInactive(str, Enum):
 	auto	= 'auto'
 	no		= 'no'
 	yes 	= 'yes'
 	both	= 'both'
 
 	@classmethod
-	def default(cls) -> 'OptInactiveAccounts':
+	def default(cls) -> 'OptAccountsInactive':
 		return cls.auto
 	
 
@@ -84,7 +84,7 @@ class Backend(metaclass=ABCMeta):
 
 	@abstractmethod
 	async def accounts_get(self, stats_type : str | None = None, region: Region | None = None, 
-							inactive : OptInactiveAccounts = OptInactiveAccounts.default(), 
+							inactive : OptAccountsInactive = OptAccountsInactive.default(), 
 							disabled: bool = False, sample : float = 0, 
 							force : bool = False, cache_valid: int = CACHE_VALID ) -> AsyncGenerator[Account, None]:
 		"""Get account from backend"""
@@ -197,7 +197,7 @@ class MongoBackend(Backend):
 
 
 	async def accounts_get(self, stats_type : str | None = None, region: Region | None = Region.API, 
-							inactive : OptInactiveAccounts = OptInactiveAccounts.default(), 
+							inactive : OptAccountsInactive = OptAccountsInactive.default(), 
 							disabled: bool = False, sample : float = 0, 
 							force : bool = False, cache_valid: int = CACHE_VALID ) -> AsyncGenerator[Account, None]:
 		"""Get accounts from Mongo DB
@@ -234,18 +234,17 @@ class MongoBackend(Backend):
 			else:
 				match.append({ 'd': { '$ne': True }})
 				# check inactive only if disabled == False
-				if inactive == OptInactiveAccounts.auto:
+				if inactive == OptAccountsInactive.auto:
 					if not force:
 						assert update_field is not None, "automatic inactivity detection requires stat_type"
 						match.append({ '$or': [ { update_field: None}, { update_field: { '$lt': NOW - cache_valid }} ] })
-				elif inactive == OptInactiveAccounts.yes:
+				elif inactive == OptAccountsInactive.yes:
 					match.append({ 'i': True })
-				elif inactive == OptInactiveAccounts.no:
+				elif inactive == OptAccountsInactive.no:
 					match.append({ 'i': { '$ne': True }})
 				else:
 					# do not add a filter in case both inactive and active players are included
-					pass
-						
+					pass						
 
 			pipeline : list[dict[str, Any]] = [ { '$match' : { '$and' : match } }]
 
