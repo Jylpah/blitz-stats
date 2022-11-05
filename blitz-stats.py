@@ -110,6 +110,7 @@ async def main(argv: list[str]):
 		parser.add_argument('--backend', type=str, choices=['mongodb', 'postgresql', 'files'], 
 							default=BACKEND, help='Choose backend to use')
 		parser.add_argument('--force', action='store_true', default=False, help='Force action')
+		
 		## MOVE TO MODULE OPTIONS?? 
 		parser.add_argument('--threads', type=int, default=THREADS, 
 							help='Set number of asynchronous threads')

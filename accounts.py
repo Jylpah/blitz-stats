@@ -2,10 +2,13 @@ from argparse import ArgumentParser, Namespace
 from configparser import ConfigParser
 from typing import Optional
 import logging
+from asyncio import Queue
 
 from backend import Backend, OptAccountsInactive
 from models import Account
+from pyutils.eventcounter import EventCounter
 from blitzutils.models import WoTBlitzReplayJSON, Region
+from blitzutils.wotinspector import WoTinspector
 
 logger = logging.getLogger()
 error 	= logger.error
@@ -16,6 +19,7 @@ debug	= logger.debug
 WI_MAX_PAGES 	: int 				= 100
 WI_RATE_LIMIT	: Optional[float] 	= None
 WI_AUTH_TOKEN	: Optional[str] 	= None
+ACCOUNTS_Q_MAX 	: int				= 5000
 
 ###########################################
 # 
@@ -75,11 +79,13 @@ def add_args_accounts_fetch_wi(parser: ArgumentParser, config: Optional[ConfigPa
 		WI_RATE_LIMIT 	: float  		= 20/3600
 		WI_MAX_PAGES 	: int 			= 100
 		WI_AUTH_TOKEN 	: Optional[str] = None
+		WI_WORKERS		: int 			= 2
 
 		if config is not None and 'WI' in config.sections():
 			configWI 		= config['WI']
 			WI_RATE_LIMIT	= configWI.getfloat('rate_limit', WI_RATE_LIMIT)
 			WI_MAX_PAGES	= configWI.getint('max_pages', WI_MAX_PAGES)
+			WI_WORKERS		= configWI.getint('threads', WI_WORKERS)
 			WI_AUTH_TOKEN	= configWI.get('auth_token', WI_AUTH_TOKEN)
 
 		parser.add_argument('--max', '--max-pages', dest='wi_max_pages', 
@@ -88,8 +94,11 @@ def add_args_accounts_fetch_wi(parser: ArgumentParser, config: Optional[ConfigPa
 		parser.add_argument('--start','--start_page',   dest='wi_start_page', 
 							metavar='START_PAGE', type=int, default=0, 
 							help='Start page to start spidering of WoTinspector.com')
+		parser.add_argument('--threads', '--workers', dest='wi_workers', 
+							type=int, default=WI_WORKERS, metavar='WORKERS',
+							help='Number of async workers to spider wotinspector.com')
 		parser.add_argument('--wi-auth-token', dest='wi_auth_token', 
-							type=int, default=WI_AUTH_TOKEN, metavar='AUTH_TOKEN',
+							type=str, default=WI_AUTH_TOKEN, metavar='AUTH_TOKEN',
 							help='Start page to start spidering of WoTinspector.com')
 		parser.add_argument('--wi-rate-limit', type=float, default=WI_RATE_LIMIT, metavar='RATE_LIMIT',
 							help='Rate limit for WoTinspector.com')
@@ -178,13 +187,13 @@ async def cmd_accounts(db: Backend, args : Namespace, config: Optional[ConfigPar
 		debug('accounts')
 
 		if args.accounts_cmd == 'fetch':
-			await cmd_accounts_fetch(db, args, config)
+			return await cmd_accounts_fetch(db, args, config)
 
 		elif args.accounts_cmd == 'export':
-			await cmd_accounts_export(db, args, config)
+			return await cmd_accounts_export(db, args, config)
 
 		elif args.accounts_cmd == 'remove':
-			await cmd_accounts_remove(db, args, config)
+			return await cmd_accounts_remove(db, args, config)
 
 	except Exception as err:
 		error(str(err))
@@ -200,37 +209,57 @@ async def cmd_accounts_fetch(db: Backend, args : Namespace, config: Optional[Con
 		# start source process: wi or files
 		# close backend + queue
 		# print stats
+		stats = EventCounter('accounts fetch')
+		accountQ : Queue = Queue(maxsize=ACCOUNTS_Q_MAX)
 
 		if args.accounts_fetch_source == 'wi':
-			debug('wi')	
+			debug('wi')
+			await cmd_accounts_fetch_wi(db, args, accountQ, stats, config)
 		elif args.accounts_fetch_source == 'files':
 			debug('files')
+			await cmd_accounts_fetch_files(db, args, accountQ, stats, config)
+		stats.print()
 
 	except Exception as err:
 		error(str(err))
 	return False
 
 
-async def cmd_accounts_fetch_files(db: Backend, args : Namespace, config: Optional[ConfigParser] = None) -> bool:
-	try:
-		debug('starting')
-		
-
-
-	except Exception as err:
-		error(str(err))
-	return False
-
-
-async def cmd_accounts_fetch_wi	(db: Backend, args : Namespace, config: Optional[ConfigParser] = None) -> bool:
+async def cmd_accounts_fetch_files(db: Backend, args : Namespace, queue : Queue, stats: EventCounter, 
+									config: Optional[ConfigParser] = None) -> EventCounter:
+	
+	raise NotImplementedError
 	try:
 		debug('starting')
 		
 		
 
+
 	except Exception as err:
 		error(str(err))
-	return False
+	return stats
+
+
+async def cmd_accounts_fetch_wi	(db: Backend, args : Namespace, queue : Queue, stats: EventCounter,
+									 config: Optional[ConfigParser] = None) -> EventCounter:
+	"""Fetch account_ids from replays.wotinspector.com replays"""
+	try:
+		debug('starting')
+		workers		: int 	= args.wi_workers
+		max_pages	: int	= args.wi_max_pages
+		start_page 	: int 	= args.wi_start_page
+		rate_limit 	: float	= args.wi_rate_limit
+		force 		: bool  = args.force
+		token		: str 	= args.wi_auth_token	# temp fix...
+		replayQ  	: Queue = Queue()
+		wi 			: WoTinspector 	= WoTinspector(rate_limit=rate_limit, auth_token=token)
+		
+		
+		
+
+	except Exception as err:
+		error(str(err))
+	return stats
 
 
 async def cmd_accounts_export(db: Backend, args : Namespace, config: Optional[ConfigParser] = None) -> bool:
