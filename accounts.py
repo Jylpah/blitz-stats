@@ -3,7 +3,7 @@ from configparser import ConfigParser
 from typing import Optional
 import logging
 
-from backend import Backend, OptInactiveAccounts
+from backend import Backend, OptAccountsInactive
 from models import Account
 from blitzutils.models import WoTBlitzReplayJSON, Region
 
@@ -133,8 +133,8 @@ def add_args_accounts_export(parser: ArgumentParser, config: Optional[ConfigPars
 		parser.add_argument('file', metavar='FILE', type=str, nargs=1, default=EXPORT_FILE, 
 							help='File to export accounts to. Use \'-\' for STDIN')
 		parser.add_argument('--disabled', action='store_true', default=False, help='Disabled accounts')
-		parser.add_argument('--inactive', type=str, choices=[ o.name for o in OptInactiveAccounts ], 
-								default=OptInactiveAccounts.default().name, help='Include inactive accounts')
+		parser.add_argument('--inactive', type=str, choices=[ o.name for o in OptAccountsInactive ], 
+								default=OptAccountsInactive.default().name, help='Include inactive accounts')
 		parser.add_argument('--region', type=str, choices=['any'] + [ r.name for r in Region ], 
 								default=Region.API.name, help='Filter by region (default is API = eu + com + asia)')
 		parser.add_argument('--sample', type=float, default=0, help='Sample accounts')
@@ -241,10 +241,10 @@ async def cmd_accounts_export(db: Backend, args : Namespace, config: Optional[Co
 		
 		disabled : bool =  args.disabled
 		
-		inactive : OptInactiveAccounts = OptInactiveAccounts.default()
+		inactive : OptAccountsInactive = OptAccountsInactive.default()
 
 		try: 
-			inactive = OptInactiveAccounts(args.inactive)
+			inactive = OptAccountsInactive(args.inactive)
 		except ValueError as err:
 			assert False, f"Incorrect value for argument 'inactive': {args.inactive}"
 		
