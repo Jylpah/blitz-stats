@@ -4,13 +4,17 @@ import logging
 from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator
 from bson import ObjectId
-from models import Account
-from blitzutils.models import Region, WoTBlitzReplayJSON
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCursor, AsyncIOMotorCollection # type: ignore
+from pymongo.results import InsertManyResult
+from pymongo.errors import BulkWriteError
 from os.path import isfile
-from typing import Optional, Any
+from typing import Optional, Any, Iterable
 from time import time
 from enum import Enum
+
+from models import Account
+from blitzutils.models import Region, WoTBlitzReplayJSON
+from pyutils.utils import epoch_now
 
 # Setup logging
 logger	= logging.getLogger()
@@ -77,10 +81,15 @@ class Backend(metaclass=ABCMeta):
 		"""Find a replay from backend based on search string"""
 		raise NotImplementedError
 
+	#----------------------------------------
+	# accounts
+	#----------------------------------------
+	
 	@abstractmethod
 	async def account_get(self, account_id: int) -> Account | None:
 		"""Get account from backend"""
 		raise NotImplementedError
+
 
 	@abstractmethod
 	async def accounts_get(self, stats_type : str | None = None, region: Region | None = None, 
@@ -92,8 +101,23 @@ class Backend(metaclass=ABCMeta):
 		yield Account(id=-1)
 
 
+	@abstractmethod
+	async def account_add(self, account: Account) -> bool:
+		"""Store account to the backend. Returns False 
+			if the account was not added"""
+		raise NotImplementedError
+	
+
+	@abstractmethod
+	async def accounts_add(self, accounts: Iterable[Account]) -> int:
+		"""Store account to the backend. Returns False 
+			if the account was not added"""
+		raise NotImplementedError
+
 
 class MongoBackend(Backend):
+
+	name : str = 'mongodb'
 
 	def __init__(self, config: ConfigParser | None = None, database: str = 'BlitzStats', *args, **kwargs):
 		try:
@@ -174,7 +198,7 @@ class MongoBackend(Backend):
 			dbc : AsyncIOMotorCollection = self.db[DBC]
 			return WoTBlitzReplayJSON.parse_obj(await dbc.find_one({'_id': str(replay_id)}))
 		except Exception as err:
-			error(f'Error fetching replay (id_: {replay_id}) from Mongo DB: {str(err)}')	
+			error(f'Error fetching replay (id_: {replay_id}) from {self.name}: {str(err)}')	
 		return None
 		
 
@@ -192,7 +216,7 @@ class MongoBackend(Backend):
 			dbc : AsyncIOMotorCollection = self.db[DBC]
 			return Account.parse_obj(await dbc.find_one({'_id': account_id}))
 		except Exception as err:
-			error(f'Error fetching account_id: {account_id}) from Mongo DB: {str(err)}')	
+			error(f'Error fetching account_id: {account_id}) from {self.name}: {str(err)}')	
 		return None
 
 
@@ -270,3 +294,43 @@ class MongoBackend(Backend):
 					continue
 		except Exception as err:
 			error(f'Error fetching accounts from Mongo DB: {str(err)}')	
+
+
+	async def account_add(self, account: Account) -> bool:
+		"""Store account to the backend. Returns False 
+			if the account was not added"""
+		try:
+			DBC : str = self.C['ACCOUNTS']
+			dbc : AsyncIOMotorCollection = self.db[DBC]
+			account.added = epoch_now()
+			await dbc.insert_one(account.json_db())
+			debug(f'Account add to {self.name}: {account.id}')
+			return True			
+		except Exception as err:
+			debug(f'Failed to add account_id={account.id} to {self.name}: {str(err)}')	
+		return False
+	
+
+	async def accounts_add(self, accounts: Iterable[Account]) -> int:
+		"""Store account to the backend. Returns False 
+			if the account was not added"""
+		added: int = 0
+		try:
+			DBC : str = self.C['ACCOUNTS']
+			dbc : AsyncIOMotorCollection = self.db[DBC]
+			now : int = epoch_now()
+			res : InsertManyResult
+			
+			for account in accounts:
+				# modifying Iterable items is OK since the item object ref stays the sam
+				account.added = now   
+
+			res = await dbc.insert_many( (account.json_db() for account in accounts), 
+										  ordered=False)
+			added = len(res.inserted_ids)
+		except BulkWriteError as err:
+			added = err.details['nInserted']
+			debug(f'Could not add {len(err.details["writeErrors"])} accounts')
+		except Exception as err:
+			error(f'Unknown error when adding acconts: {str(err)}')
+		return added
