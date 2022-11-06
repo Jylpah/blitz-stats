@@ -50,6 +50,7 @@ class Backend(metaclass=ABCMeta):
 
 	# 	except Exception as err:
 	# 		error(str(err))
+	name : str = 'Backend'
 
 	@classmethod
 	async def create(cls, backend : str, config : ConfigParser | None) -> Optional['Backend']:
@@ -109,7 +110,7 @@ class Backend(metaclass=ABCMeta):
 	
 
 	@abstractmethod
-	async def accounts_add(self, accounts: Iterable[Account]) -> int:
+	async def accounts_add(self, accounts: Iterable[Account]) -> tuple[int, int]:
 		"""Store account to the backend. Returns False 
 			if the account was not added"""
 		raise NotImplementedError
@@ -196,7 +197,7 @@ class MongoBackend(Backend):
 		try:
 			DBC : str = self.C['REPLAYS']
 			dbc : AsyncIOMotorCollection = self.db[DBC]
-			return WoTBlitzReplayJSON.parse_obj(await dbc.find_one({'_id': str(replay_id)}))
+			return WoTBlitzReplayJSON.parse_obj(await dbc.find_one({'_id': str(replay_id)}))   # returns None if not found
 		except Exception as err:
 			error(f'Error fetching replay (id_: {replay_id}) from {self.name}: {str(err)}')	
 		return None
@@ -311,10 +312,11 @@ class MongoBackend(Backend):
 		return False
 	
 
-	async def accounts_add(self, accounts: Iterable[Account]) -> int:
+	async def accounts_add(self, accounts: Iterable[Account]) -> tuple[int, int]:
 		"""Store account to the backend. Returns False 
 			if the account was not added"""
-		added: int = 0
+		added		: int = 0
+		not_added 	: int = 0
 		try:
 			DBC : str = self.C['ACCOUNTS']
 			dbc : AsyncIOMotorCollection = self.db[DBC]
@@ -330,7 +332,8 @@ class MongoBackend(Backend):
 			added = len(res.inserted_ids)
 		except BulkWriteError as err:
 			added = err.details['nInserted']
-			debug(f'Could not add {len(err.details["writeErrors"])} accounts')
+			not_added = len(err.details["writeErrors"])
+			debug(f'Added {added}, could not add {not_added} accounts')
 		except Exception as err:
 			error(f'Unknown error when adding acconts: {str(err)}')
-		return added
+		return added, not_added
