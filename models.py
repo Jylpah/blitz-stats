@@ -13,7 +13,7 @@ import logging
 import aiofiles
 from collections import defaultdict
 
-from .blitzutils.models import Region	# type: ignore
+from blitzutils.models import Region	# type: ignore
 
 TYPE_CHECKING = True
 logger = logging.getLogger()
@@ -23,26 +23,27 @@ verbose	= logger.info
 debug	= logger.debug
 
 
-# TypeExcludeDict = Mapping[int | str, Any]
-
+TypeExcludeDict = Mapping[int | str, Any]
 
 class Account(BaseModel):	
-	id		: int 							 = Field(default=..., alias='_id')
-	region 	: Region | None 				 = Field(default=None, alias='r')
+	id							: int 		 = Field(default=..., alias='_id')
+	region 						: Region | None= Field(default=None, alias='r')
 	last_battle_time			: int | None = Field(default=None, alias='l')
 	updated_tank_stats 			: int | None = Field(default=None, alias='ut')
 	updated_player_achievements : int | None = Field(default=None, alias='up')
 	added 						: int | None = Field(default=None, alias='a')
 	inactive					: bool 		 = Field(default=False, alias='i')
 	disabled					: bool		 = Field(default=False, alias='d')
-	_id_range					: dict[Region, list[int]] = { 
-															Region.ru	: [0, int(5e8)],
-															Region.eu	: [int(5e8), int(10e8)],
-															Region.com	: [int(10e8), int(20e8)],
-															Region.asia	: [int(20e8), int(31e8)],
-															Region.china: [int(31e8), int(50e8)] 
-															}
-	
+	_id_range	: dict[
+						Region, 
+						list[int]
+					] = {	
+							Region.ru	: [0, int(5e8)],
+							Region.eu	: [int(5e8), int(10e8)],
+							Region.com	: [int(10e8), int(20e8)],
+							Region.asia	: [int(20e8), int(31e8)],
+							Region.china: [int(31e8), int(50e8)] 
+						}
 	
 
 	class Config:
@@ -113,3 +114,12 @@ class Account(BaseModel):
 			values['region'] = Region.ru			
 		return values
 	
+	def json_src(self) -> str:
+		# exclude_src : TypeExcludeDict = { } 
+		return self.json(exclude_unset=True, by_alias=False)
+
+
+	def json_db(self) -> str:
+		# exclude_src : TypeExcludeDict = { } 
+		return self.json(exclude_defaults=True, by_alias=True)
+
