@@ -65,7 +65,7 @@ class Backend(metaclass=ABCMeta):
 
 
 	@abstractmethod
-	async def replay_store(self, replay: WoTBlitzReplayJSON) -> bool:
+	async def replay_insert(self, replay: WoTBlitzReplayJSON) -> bool:
 		"""Store replay into backend"""
 		raise NotImplementedError
 
@@ -103,14 +103,14 @@ class Backend(metaclass=ABCMeta):
 
 
 	@abstractmethod
-	async def account_add(self, account: Account) -> bool:
+	async def account_insert(self, account: Account) -> bool:
 		"""Store account to the backend. Returns False 
 			if the account was not added"""
 		raise NotImplementedError
 	
 
 	@abstractmethod
-	async def accounts_add(self, accounts: Iterable[Account]) -> tuple[int, int]:
+	async def accounts_insert(self, accounts: Iterable[Account]) -> tuple[int, int]:
 		"""Store account to the backend. Returns False 
 			if the account was not added"""
 		raise NotImplementedError
@@ -187,9 +187,16 @@ class MongoBackend(Backend):
 			error(f'Error connecting Mongo DB: {str(err)}')
 
 
-	async def replay_store(self, replay: WoTBlitzReplayJSON) -> bool:
+	async def replay_insert(self, replay: WoTBlitzReplayJSON) -> bool:
 		"""Store replay into backend"""
-		raise NotImplementedError
+		try:
+			DBC : str = self.C['REPLAYS']
+			dbc : AsyncIOMotorCollection = self.db[DBC]
+			await dbc.insert_one(replay.export_db())
+			return True
+		except Exception as err:
+			debug(f'Could not insert replay (_id: {replay.id}) into {self.name}: {str(err)}')	
+		return False
 
 
 	async def replay_get(self, replay_id: str | ObjectId) -> WoTBlitzReplayJSON | None:
@@ -197,9 +204,11 @@ class MongoBackend(Backend):
 		try:
 			DBC : str = self.C['REPLAYS']
 			dbc : AsyncIOMotorCollection = self.db[DBC]
-			return WoTBlitzReplayJSON.parse_obj(await dbc.find_one({'_id': str(replay_id)}))   # returns None if not found
+			res : Any | None = await dbc.find_one({'_id': str(replay_id)})
+			if res is not None:
+				return WoTBlitzReplayJSON.parse_obj(res)   # returns None if not found
 		except Exception as err:
-			error(f'Error fetching replay (id_: {replay_id}) from {self.name}: {str(err)}')	
+			debug(f'Error fetching replay (id_: {replay_id}) from {self.name}: {str(err)}')	
 		return None
 		
 
@@ -297,14 +306,14 @@ class MongoBackend(Backend):
 			error(f'Error fetching accounts from Mongo DB: {str(err)}')	
 
 
-	async def account_add(self, account: Account) -> bool:
+	async def account_insert(self, account: Account) -> bool:
 		"""Store account to the backend. Returns False 
 			if the account was not added"""
 		try:
 			DBC : str = self.C['ACCOUNTS']
 			dbc : AsyncIOMotorCollection = self.db[DBC]
 			account.added = epoch_now()
-			await dbc.insert_one(account.json_db())
+			await dbc.insert_one(account.export_db())
 			debug(f'Account add to {self.name}: {account.id}')
 			return True			
 		except Exception as err:
@@ -312,7 +321,7 @@ class MongoBackend(Backend):
 		return False
 	
 
-	async def accounts_add(self, accounts: Iterable[Account]) -> tuple[int, int]:
+	async def accounts_insert(self, accounts: Iterable[Account]) -> tuple[int, int]:
 		"""Store account to the backend. Returns False 
 			if the account was not added"""
 		added		: int = 0
@@ -327,7 +336,7 @@ class MongoBackend(Backend):
 				# modifying Iterable items is OK since the item object ref stays the sam
 				account.added = now   
 
-			res = await dbc.insert_many( (account.json_db() for account in accounts), 
+			res = await dbc.insert_many( (account.export_db() for account in accounts), 
 										  ordered=False)
 			added = len(res.inserted_ids)
 		except BulkWriteError as err:
