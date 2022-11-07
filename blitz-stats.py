@@ -23,10 +23,10 @@ import asyncio
 
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 logger = logging.getLogger()
-error 	= logging.error
-verbose_std	= logging.warning
-verbose	= logging.info
-debug	= logging.debug
+error 	= logger.error
+verbose_std	= logger.warning
+verbose	= logger.info
+debug	= logger.debug
 
 # Utils 
 def get_datestr(_datetime: datetime = datetime.now()) -> str:
