@@ -44,8 +44,6 @@ class Account(BaseModel):
 							Region.asia	: [int(20e8), int(31e8)],
 							Region.china: [int(31e8), int(50e8)] 
 						}
-	
-
 	class Config:
 		allow_population_by_field_name = True
 		allow_mutation 			= True
@@ -119,7 +117,7 @@ class Account(BaseModel):
 		return self.json(exclude_unset=True, by_alias=False)
 
 
-	def json_db(self) -> str:
+	def export_db(self) -> dict:
 		# exclude_src : TypeExcludeDict = { } 
-		return self.json(exclude_defaults=True, by_alias=True)
+		return self.dict(exclude_defaults=True, by_alias=True)
 
