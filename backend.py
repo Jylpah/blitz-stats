@@ -202,16 +202,18 @@ class MongoBackend(Backend):
 	async def replay_get(self, replay_id: str | ObjectId) -> WoTBlitzReplayJSON | None:
 		"""Get a replay from backend based on replayID"""
 		try:
+			debug(f'Getting replay (id={replay_id} from {self.name})')
 			DBC : str = self.C['REPLAYS']
 			dbc : AsyncIOMotorCollection = self.db[DBC]
 			res : Any | None = await dbc.find_one({'_id': str(replay_id)})
 			if res is not None:
+				# replay : WoTBlitzReplayJSON  = WoTBlitzReplayJSON.parse_obj(res) 
+				# debug(replay.json_src())
 				return WoTBlitzReplayJSON.parse_obj(res)   # returns None if not found
 		except Exception as err:
-			debug(f'Error fetching replay (id_: {replay_id}) from {self.name}: {str(err)}')	
+			debug(f'Error reading replay (id_: {replay_id}) from {self.name}: {str(err)}')	
 		return None
-		
-
+	
 
 	# replay fields that can be searched: protagonist, battle_start_timestamp, account_id, vehicle_tier
 	async def replay_find(self, **kwargs) -> AsyncGenerator[WoTBlitzReplayJSON, None]:
