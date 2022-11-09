@@ -12,7 +12,6 @@ import accounts as acc
 import replays as rep
 import logging
 from argparse import ArgumentParser
-
 import sys
 import os
 import asyncio
@@ -33,12 +32,11 @@ debug	= logger.debug
 def get_datestr(_datetime: datetime = datetime.now()) -> str:
 	return _datetime.strftime('%Y%m%d_%H%M')
 
-parser : ArgumentParser
 # main() -------------------------------------------------------------
 
 async def main(argv: list[str]):
 	# set the directory for the script
-	global logger, error, debug, verbose, verbose_std,db, wi, bs, MAX_PAGES, parser
+	global logger, error, debug, verbose, verbose_std,db, wi, bs, MAX_PAGES
 
 	os.chdir(os.path.dirname(sys.argv[0]))
 	
@@ -119,7 +117,8 @@ async def main(argv: list[str]):
 		cmd_parsers = parser.add_subparsers(dest='main_cmd', 
 												title='main commands',
 												description='valid subcommands',
-												metavar='')
+												metavar='accounts | stats | replays | tankopedia | setup')
+		cmd_parsers.required = True
 
 		accounts_parser = cmd_parsers.add_parser('accounts', aliases=['acc'], help='accounts help')
 		stats_parser 	= cmd_parsers.add_parser('stats', help='stats help')
