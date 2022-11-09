@@ -9,8 +9,9 @@ from pyutils.multilevelformatter import set_mlevel_logging
 from configparser import ConfigParser
 import models
 import accounts as acc
+import replays as rep
 import logging
-import argparse
+from argparse import ArgumentParser
 
 import sys
 import os
@@ -32,11 +33,12 @@ debug	= logger.debug
 def get_datestr(_datetime: datetime = datetime.now()) -> str:
 	return _datetime.strftime('%Y%m%d_%H%M')
 
+parser : ArgumentParser
 # main() -------------------------------------------------------------
 
 async def main(argv: list[str]):
 	# set the directory for the script
-	global logger, error, debug, verbose, verbose_std,db, wi, bs, MAX_PAGES
+	global logger, error, debug, verbose, verbose_std,db, wi, bs, MAX_PAGES, parser
 
 	os.chdir(os.path.dirname(sys.argv[0]))
 	
@@ -51,7 +53,7 @@ async def main(argv: list[str]):
 
 	config : Optional[ConfigParser] = None
 
-	parser = argparse.ArgumentParser(description='Fetch and manage WoT Blitz stats', add_help=False)
+	parser = ArgumentParser(description='Fetch and manage WoT Blitz stats', add_help=False)
 	arggroup_verbosity = parser.add_mutually_exclusive_group()
 	arggroup_verbosity.add_argument('-d', '--debug',dest='LOG_LEVEL', action='store_const', const=logging.DEBUG,  
 									help='Debug mode')
@@ -97,9 +99,7 @@ async def main(argv: list[str]):
 				WG_APP_ID		= configWG.get('wg_app_id', WG_APP_ID)
 				WG_RATE_LIMIT	= configWG.getfloat('rate_limit', WG_RATE_LIMIT)
 		else:
-			debug("No config file found")
-			
-		
+			debug("No config file found")		
 
 		debug(f"Args parsed: {str(args)}")
 		debug(f"Args not parsed yet: {str(argv)}")
@@ -123,38 +123,42 @@ async def main(argv: list[str]):
 
 		accounts_parser = cmd_parsers.add_parser('accounts', aliases=['acc'], help='accounts help')
 		stats_parser 	= cmd_parsers.add_parser('stats', help='stats help')
+		replays_parser 	= cmd_parsers.add_parser('replays', help='replays help')
 		tankopedia_parser = cmd_parsers.add_parser('tankopedia', help='tankopedia help')
 		setup_parser 	= cmd_parsers.add_parser('setup', help='setup help')
 		
 		if not acc.add_args_accounts(accounts_parser, config):
 			raise Exception("Failed to define argument parser for: accounts")
+		if not rep.add_args_replays(replays_parser, config):
+			raise Exception("Failed to define argument parser for: replays")
 
 		args = parser.parse_args(args=argv)
 		if args.help:
 			parser.print_help()
 		debug(str(args))
 
-		be : Backend | None  = await Backend.create(args.backend, config)
-		assert be is not None, 'Could not initialize backend'
+		backend : Backend | None  = await Backend.create(args.backend, config)
+		assert backend is not None, 'Could not initialize backend'
 
 		if args.main_cmd == 'accounts':				
 			# how to handle errors / stats? 
-			await acc.cmd_accounts(be, args, config)				
-			
+			await acc.cmd_accounts(backend, args, config)			
 		elif args.main_cmd == 'stats':
 			pass
+		elif args.main_cmd == 'replays':
+			await rep.cmd_replays(backend, args, config)
 		elif args.main_cmd == 'tankopedia':
 			pass
 		elif args.main_cmd == 'setup':
 			pass
+		else:
+			parser.print_help()
 
 	except Exception as err:
 		error(str(err))
 	
 
-
 ### main()
 if __name__ == "__main__":
    #asyncio.run(main(sys.argv[1:]), debug=True)
    asyncio.run(main(sys.argv[1:]))
-
