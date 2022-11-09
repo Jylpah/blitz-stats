@@ -63,6 +63,10 @@ class Backend(metaclass=ABCMeta):
 			error(f'Error creating backend {backend}: {str(err)}')
 		return None		
 
+	@classmethod
+	def list_available(cls) -> list[str]:
+		return ['mongodb']
+
 
 	@abstractmethod
 	async def replay_insert(self, replay: WoTBlitzReplayJSON) -> bool:
