@@ -37,7 +37,8 @@ def add_args_accounts(parser: ArgumentParser, config: Optional[ConfigParser] = N
 		accounts_parsers = parser.add_subparsers(dest='accounts_cmd', 	
 												title='accounts commands',
 												description='valid commands',
-												metavar='')
+												metavar='fetch | export | remove')
+		accounts_parsers.required = True
 		
 		fetch_parser = accounts_parsers.add_parser('fetch', aliases=['get'], help="accounts fetch help")
 		if not add_args_accounts_fetch(fetch_parser, config=config):
@@ -60,10 +61,10 @@ def add_args_accounts(parser: ArgumentParser, config: Optional[ConfigParser] = N
 def add_args_accounts_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		accounts_fetch_parsers = parser.add_subparsers(dest='accounts_fetch_source', 	
-														title='accounts fecth source',
+														title='accounts fetch source',
 														description='valid sources', 
-														metavar='')
-
+														metavar='wi | files')
+		accounts_fetch_parsers.required = True
 		accounts_fetch_wi_parser = accounts_fetch_parsers.add_parser('wi', help='accounts fetch wi help')
 		if not add_args_accounts_fetch_wi(accounts_fetch_wi_parser, config=config):
 			raise Exception("Failed to define argument parser for: accounts fetch wi")
@@ -213,11 +214,6 @@ async def cmd_accounts_fetch(db: Backend, args : Namespace, config: Optional[Con
 	try:
 		debug('starting')
 		
-		# init backend connection
-		# start backend feeder + queue
-		# start source process: wi or files
-		# close backend + queue
-		# print stats
 		stats = EventCounter('accounts fetch')
 		accountQ : Queue[list[int]] = Queue(maxsize=ACCOUNTS_Q_MAX)
 		db_worker = create_task(accounts_add_worker(db, accountQ))
@@ -264,7 +260,7 @@ async def accounts_add_worker(db: Backend, accountQ: Queue[list[int]]) -> EventC
 					accounts : list[Account] = list()
 					for player in players:
 						try:
-							accounts.append(Account(id=player, added=epoch_now()))
+							accounts.append(Account(id=player, added=epoch_now()))  # type: ignore
 						except Exception as err:
 							error(f'cound not create account object for account_id: {player}')
 					added, not_added= await db.accounts_insert(accounts)
@@ -335,42 +331,44 @@ async def cmd_accounts_fetch_wi	(db: Backend, args : Namespace, accountQ : Queue
 	return stats
 
 
-async def accounts_fetch_wi_spider_replays(db: Backend, wi: WoTinspector, args : Namespace, 
-											replay_idQ : Queue[str], pages : range) -> EventCounter:
+async def accounts_fetch_wi_spider_replays(db: Backend, wi: WoTinspector, args: Namespace,
+                                           replay_idQ: Queue[str], pages: range) -> EventCounter:
 	"""Spider replays.WoTinspector.com and feed found replay IDs into replayQ. Return stats"""
-	stats : EventCounter = EventCounter('Crawler')	
-	max_old_replays : int= args.wi_max_old_replays
-	force 		: bool  = args.force
-	old_replays : int = 0
-	
+	stats: EventCounter = EventCounter('Crawler')
+	max_old_replays: int = args.wi_max_old_replays
+	force: bool = args.force
+	old_replays: int = 0
+
 	try:
 		debug(f'Starting ({len(pages)} pages)')
 		for page in pages:
 			try:
 				if old_replays > max_old_replays:
 					message(f'{max_old_replays} found. Stopping spidering for more')
-					break			
-				url : str = wi.get_url_replay_listing(page)
-				resp : str | None = await get_url(wi.session, url)
+					break
+				debug(f'spidering page {page}')
+				url: str = wi.get_url_replay_listing(page)
+				resp: str | None = await get_url(wi.session, url)
 				if resp is None:
 					error('could not spider replays.WoTinspector.com page {page}')
-					stats.log('error')
+					stats.log('errors')
 					continue
 				debug(f'HTTP request OK')
-				replay_ids : set[str] = wi.parse_replay_ids(resp)
+				replay_ids: set[str] = wi.parse_replay_ids(resp)
 				debug(f'Page {page}: {len(replay_ids)} found')
-				if len(replay_ids) == 0:					
+				if len(replay_ids) == 0:
 					break
 				for replay_id in replay_ids:
-					if not force:
-						res : WoTBlitzReplayJSON | None = await db.replay_get(replay_id)
-						if res is not None:
-							debug(f'Replay already in the {db.name}: {replay_id}')
-							old_replays += 1 
-							stats.log('old replay')					
-							continue
-					await replay_idQ.put(replay_id)
-					stats.log('new replay')
+					res: WoTBlitzReplayJSON | None = await db.replay_get(replay_id)
+					if res is not None:
+						debug(f'Replay already in the {db.name}: {replay_id}')
+						stats.log('old replays found')
+						if not force:
+							old_replays += 1
+						continue
+					else:
+						await replay_idQ.put(replay_id)
+						stats.log('new replays')
 			except Exception as err:
 				error(str(err))
 	except CancelledError as err:
