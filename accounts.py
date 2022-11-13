@@ -2,8 +2,8 @@ from argparse import ArgumentParser, Namespace
 from configparser import ConfigParser
 from typing import Optional, cast
 import logging
-from asyncio import create_task, gather, Queue, CancelledError, Task
-from aiohttp import ClientResponse
+from asyncio import create_task, gather, Queue, CancelledError, Task, sleep
+from alive_progress import alive_bar		# type: ignore
 
 from backend import Backend, OptAccountsInactive
 from models import Account
@@ -221,7 +221,7 @@ async def cmd_accounts_fetch(db: Backend, args : Namespace, config: Optional[Con
 		try:
 			if args.accounts_fetch_source == 'wi':
 				debug('wi')
-				stats.merge_child(await cmd_accounts_fetch_wi(db, args, accountQ, config))
+				stats.merge_child(await cmd_accounts_fetch_wi(db, args, accountQ))
 			elif args.accounts_fetch_source == 'files':
 				debug('files')
 				stats.merge_child(await cmd_accounts_fetch_files(db, args, accountQ, config))
@@ -287,8 +287,7 @@ async def cmd_accounts_fetch_files(db: Backend, args : Namespace, accountQ : Que
 	raise NotImplementedError
 
 
-async def cmd_accounts_fetch_wi	(db: Backend, args : Namespace, accountQ : Queue[list[int]],
-									 config: Optional[ConfigParser] = None) -> EventCounter:
+async def cmd_accounts_fetch_wi(db: Backend, args : Namespace, accountQ : Queue[list[int]]) -> EventCounter:
 	"""Fetch account_ids from replays.wotinspector.com replays"""
 	debug('starting')
 	stats		: EventCounter = EventCounter('WoTinspector')
@@ -315,10 +314,20 @@ async def cmd_accounts_fetch_wi	(db: Backend, args : Namespace, accountQ : Queue
 		
 		pages : range = range(start_page,(start_page + max_pages), step)
 
-		stats.merge_child(await accounts_fetch_wi_spider_replays(db, wi, args, replay_idQ,  pages))
+		stats.merge_child(await accounts_fetch_wi_spider_replays(db, wi, args, replay_idQ, pages))
 
-		for _ in range(workersN):
-			workers.append(create_task(accounts_fetch_wi_fetch_replays(db, wi, replay_idQ, accountQ )))
+		replays 	: int = replay_idQ.qsize()
+		replays_left: int = replays
+		with alive_bar(replays, title="Fetching replays ", manual=True) as bar:
+			for _ in range(workersN):
+				workers.append(create_task(accounts_fetch_wi_fetch_replays(db, wi, replay_idQ, accountQ)))
+			while True:
+				await sleep(2)
+				replays_left = replay_idQ.qsize()
+				bar(1-replays_left/replays)
+				if replays_left == 0:
+					break
+		
 		await replay_idQ.join()
 
 		for worker in await gather(*workers, return_exceptions=True):
@@ -341,36 +350,39 @@ async def accounts_fetch_wi_spider_replays(db: Backend, wi: WoTinspector, args: 
 
 	try:
 		debug(f'Starting ({len(pages)} pages)')
-		for page in pages:
-			try:
-				if old_replays > max_old_replays:
-					message(f'{max_old_replays} found. Stopping spidering for more')
-					break
-				debug(f'spidering page {page}')
-				url: str = wi.get_url_replay_listing(page)
-				resp: str | None = await get_url(wi.session, url)
-				if resp is None:
-					error('could not spider replays.WoTinspector.com page {page}')
-					stats.log('errors')
-					continue
-				debug(f'HTTP request OK')
-				replay_ids: set[str] = wi.parse_replay_ids(resp)
-				debug(f'Page {page}: {len(replay_ids)} found')
-				if len(replay_ids) == 0:
-					break
-				for replay_id in replay_ids:
-					res: WoTBlitzReplayJSON | None = await db.replay_get(replay_id)
-					if res is not None:
-						debug(f'Replay already in the {db.name}: {replay_id}')
-						stats.log('old replays found')
-						if not force:
-							old_replays += 1
+		with alive_bar(len(pages), title= "Spidering replays") as bar:
+			for page in pages:			
+				try:
+					if old_replays > max_old_replays:
+						message(f'{max_old_replays} found. Stopping spidering for more')
+						break
+					debug(f'spidering page {page}')
+					url: str = wi.get_url_replay_listing(page)
+					resp: str | None = await get_url(wi.session, url)
+					if resp is None:
+						error('could not spider replays.WoTinspector.com page {page}')
+						stats.log('errors')
 						continue
-					else:
-						await replay_idQ.put(replay_id)
-						stats.log('new replays')
-			except Exception as err:
-				error(str(err))
+					debug(f'HTTP request OK')
+					replay_ids: set[str] = wi.parse_replay_ids(resp)
+					debug(f'Page {page}: {len(replay_ids)} found')
+					if len(replay_ids) == 0:
+						break
+					for replay_id in replay_ids:
+						res: WoTBlitzReplayJSON | None = await db.replay_get(replay_id)
+						if res is not None:
+							debug(f'Replay already in the {db.name}: {replay_id}')
+							stats.log('old replays found')
+							if not force:
+								old_replays += 1
+							continue
+						else:
+							await replay_idQ.put(replay_id)
+							stats.log('new replays')
+				except Exception as err:
+					error(str(err))
+				finally:
+					bar()
 	except CancelledError as err:
 		debug(f'Cancelled')
 	except Exception as err:
