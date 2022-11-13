@@ -100,16 +100,18 @@ class Account(BaseModel):
 
 		assert type(i) is int, f'_id has to be int, was: {i} : {type(i)},'
 
-		if i >= 31e8:
-			values['region'] = Region.china
-		elif i >= 20e8:
-			values['region'] = Region.asia
-		elif i >= 10e8:
-			values['region'] = Region.com
-		elif i >= 5e8:
-			values['region'] = Region.eu
-		else:			
-			values['region'] = Region.ru			
+		if values['region'] is None:
+			# set default regions, but do not change region if set
+			if i >= 31e8:
+				values['region'] = Region.china
+			elif i >= 20e8:
+				values['region'] = Region.asia
+			elif i >= 10e8:
+				values['region'] = Region.com
+			elif i >= 5e8:
+				values['region'] = Region.eu
+			else:			
+				values['region'] = Region.ru			
 		return values
 	
 	def json_src(self) -> str:
