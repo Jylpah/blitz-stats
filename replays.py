@@ -43,7 +43,10 @@ def add_args_replays(parser: ArgumentParser, config: Optional[ConfigParser] = No
 		replays_parsers.required = True
 		export_parser = replays_parsers.add_parser('export', help="replays export help")
 		if not add_args_replays_export(export_parser, config=config):
-			raise Exception("Failed to define argument parser for: replays export")		
+			raise Exception("Failed to define argument parser for: replays export")
+		import_parser = replays_parsers.add_parser('import', help="replays import help")
+		if not add_args_replays_import(import_parser, config=config):
+			raise Exception("Failed to define argument parser for: replays import")		
 				
 		return True
 	except Exception as err:
@@ -98,6 +101,38 @@ def add_args_replays_export_find(parser: ArgumentParser, config: Optional[Config
 	except Exception as err:
 		error(f'add_args_replays_export_find() : {str(err)}')
 	return False
+
+
+def add_args_replays_import(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+	try:
+		parser.add_argument('--replace', action='store_true', default=False, 
+							dest='replay_import_replace', 
+							help='Replace existing documents in the backend with the same primary key')
+		# Add selection --id | --all
+		replays_import_parsers = parser.add_subparsers(dest='replays_import_source', 	
+														title='replays import source',
+														description='valid import sources', 
+														metavar=' | '.join(Backend.list_available()))
+		replays_import_parsers.required = True
+		
+		replays_import_mongodb_parser = replays_import_parsers.add_parser('mongodb', help='replays import mongodb help')
+		if not add_args_replays_import_mongodb(replays_import_mongodb_parser, config=config):
+			raise Exception("Failed to define argument parser for: replays import mongodb")
+		
+		## Not implemented yet
+		# replays_export_find_parser = replays_export_parsers.add_parser('find', help='replays export find help')
+		# if not add_args_replays_export_find(replays_export_find_parser, config=config):
+		# 	raise Exception("Failed to define argument parser for: replays export find")		
+		
+		return True	
+	except Exception as err:
+		error(f'add_args_replays_export() : {str(err)}')
+	return False
+
+
+def add_args_replays_import_mongodb(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+	return True
+	raise NotImplementedError
 
 
 ###########################################
