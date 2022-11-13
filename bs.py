@@ -91,7 +91,7 @@ async def main(argv: list[str]):
 				debug('Reading config section GENERAL')
 				configDef = config['GENERAL']
 				BACKEND = configDef.get('backend', None)
-			
+			## Is this really needed here? 
 			if 'WG' in config.sections():
 				configWG 		= config['WG']
 				WG_APP_ID		= configWG.get('wg_app_id', WG_APP_ID)
