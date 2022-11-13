@@ -246,7 +246,7 @@ async def cmd_accounts_fetch(db: Backend, args : Namespace, config: Optional[Con
 
 async def accounts_add_worker(db: Backend, accountQ: Queue[list[int]]) -> EventCounter:
 	"""worker to read accounts from queue and add those to backend"""
-	stats : EventCounter = EventCounter(f'Backend {db.name}')
+	stats : EventCounter = EventCounter(f'{db.name}')
 	added 		: int
 	not_added 	: int
 	try:
@@ -255,7 +255,7 @@ async def accounts_add_worker(db: Backend, accountQ: Queue[list[int]]) -> EventC
 			players : list[int] = await accountQ.get()
 			try:
 				debug(f'Read {len(players)} from queue')
-				stats.log('candidates', len(players))
+				stats.log('accounts total', len(players))
 				try:
 					accounts : list[Account] = list()
 					for player in players:
@@ -264,8 +264,8 @@ async def accounts_add_worker(db: Backend, accountQ: Queue[list[int]]) -> EventC
 						except Exception as err:
 							error(f'cound not create account object for account_id: {player}')
 					added, not_added= await db.accounts_insert(accounts)
-					stats.log('added', added)
-					stats.log('not added', not_added)
+					stats.log('accounts added', added)
+					stats.log('accounts not added', not_added)
 				except Exception as err:
 					stats.log('errors')
 					error(f'Cound not add accounts do {db.name}: {str(err)}')
@@ -322,7 +322,7 @@ async def cmd_accounts_fetch_wi(db: Backend, args : Namespace, accountQ : Queue[
 			for _ in range(workersN):
 				workers.append(create_task(accounts_fetch_wi_fetch_replays(db, wi, replay_idQ, accountQ)))
 			while True:
-				await sleep(2)
+				await sleep(1)
 				replays_left = replay_idQ.qsize()
 				bar(1-replays_left/replays)
 				if replays_left == 0:
