@@ -36,7 +36,7 @@ def add_args_replays(parser: ArgumentParser, config: Optional[ConfigParser] = No
 	try:
 		
 		replays_parsers = parser.add_subparsers(dest='replays_cmd', 	
-												title='repolays commands',
+												title='replays commands',
 												description='valid commands',
 												help='replays help',
 												metavar='export')
@@ -141,7 +141,7 @@ def add_args_replays_import_mongodb(parser: ArgumentParser, config: Optional[Con
 #
 ###########################################
 
-async def cmd_replays(db: Backend, args : Namespace, config: Optional[ConfigParser] = None) -> bool:
+async def cmd_replays(db: Backend, args : Namespace) -> bool:
 	
 	try:
 		debug('replays')
@@ -149,10 +149,10 @@ async def cmd_replays(db: Backend, args : Namespace, config: Optional[ConfigPars
 		if args.replays_cmd == 'export':
 			if args.replays_export_query_type == 'id':
 				debug('export id')
-				return await cmd_replays_export_id(db, args, config)
+				return await cmd_replays_export_id(db, args)
 			elif args.replays_export_query_type == 'find':
 				debug('find')
-				return await cmd_replays_export_find(db, args, config)
+				return await cmd_replays_export_find(db, args)
 			else:
 				error('replays: unknown or missing subcommand')
 
@@ -161,7 +161,7 @@ async def cmd_replays(db: Backend, args : Namespace, config: Optional[ConfigPars
 	return False
 
 
-async def cmd_replays_export_id(db: Backend, args : Namespace, config: Optional[ConfigParser] = None) -> bool:
+async def cmd_replays_export_id(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		id : str = args.replay_export_id
@@ -183,6 +183,6 @@ async def replays_export_files(args: Namespace, replays: Iterable[WoTBlitzReplay
 	raise NotImplementedError
 	return False
 
-async def cmd_replays_export_find(db: Backend, args : Namespace, config: Optional[ConfigParser] = None) -> bool:
+async def cmd_replays_export_find(db: Backend, args : Namespace) -> bool:
 	raise NotImplementedError
 	return False

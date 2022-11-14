@@ -192,25 +192,25 @@ def add_args_accounts_remove(parser: ArgumentParser, config: Optional[ConfigPars
 #
 ###########################################
 
-async def cmd_accounts(db: Backend, args : Namespace, config: Optional[ConfigParser] = None) -> bool:
+async def cmd_accounts(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('accounts')
 
 		if args.accounts_cmd == 'update':
-			return await cmd_accounts_update(db, args, config)
+			return await cmd_accounts_update(db, args)
 
 		elif args.accounts_cmd == 'export':
-			return await cmd_accounts_export(db, args, config)
+			return await cmd_accounts_export(db, args)
 
 		elif args.accounts_cmd == 'remove':
-			return await cmd_accounts_remove(db, args, config)
+			return await cmd_accounts_remove(db, args)
 
 	except Exception as err:
 		error(str(err))
 	return False
 
 
-async def cmd_accounts_update(db: Backend, args : Namespace, config: Optional[ConfigParser] = None) -> bool:
+async def cmd_accounts_update(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		
@@ -224,7 +224,7 @@ async def cmd_accounts_update(db: Backend, args : Namespace, config: Optional[Co
 				stats.merge_child(await cmd_accounts_update_wi(db, args, accountQ))
 			elif args.accounts_update_source == 'files':
 				debug('files')
-				stats.merge_child(await cmd_accounts_update_files(db, args, accountQ, config))
+				stats.merge_child(await cmd_accounts_update_files(db, args, accountQ))
 		except Exception as err:
 			error(str(err))
 
@@ -280,8 +280,8 @@ async def accounts_add_worker(db: Backend, accountQ: Queue[list[int]]) -> EventC
 	return stats
 
 
-async def cmd_accounts_update_files(db: Backend, args : Namespace, accountQ : Queue[list[int]], 
-									config: Optional[ConfigParser] = None) -> EventCounter:
+async def cmd_accounts_update_files(db: Backend, args : Namespace, 
+									accountQ : Queue[list[int]]) -> EventCounter:
 	
 	debug('starting')
 	raise NotImplementedError
@@ -416,7 +416,7 @@ async def accounts_update_wi_fetch_replays(db: Backend, wi: WoTinspector, replay
 	return stats
 
 
-async def cmd_accounts_export(db: Backend, args : Namespace, config: Optional[ConfigParser] = None) -> bool:
+async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 
@@ -444,7 +444,7 @@ async def cmd_accounts_export(db: Backend, args : Namespace, config: Optional[Co
 	return False
 
 
-async def cmd_accounts_remove(db: Backend, args : Namespace, config: Optional[ConfigParser] = None) -> bool:
+async def cmd_accounts_remove(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		
