@@ -34,25 +34,11 @@ class Account(BaseModel):
 	added 						: int | None = Field(default=None, alias='a')
 	inactive					: bool 		 = Field(default=False, alias='i')
 	disabled					: bool		 = Field(default=False, alias='d')
-	_id_range	: dict[
-						Region, 
-						list[int]
-					] = {	
-							Region.ru	: [0, int(5e8)],
-							Region.eu	: [int(5e8), int(10e8)],
-							Region.com	: [int(10e8), int(20e8)],
-							Region.asia	: [int(20e8), int(31e8)],
-							Region.china: [int(31e8), int(50e8)] 
-						}
+
 	class Config:
 		allow_population_by_field_name = True
 		allow_mutation 			= True
 		validate_assignment 	= True
-
-
-	# @classmethod
-	# def get_id_range(cls) -> list[int]:
-	# 	return [cls._id_range[Region.eu][0], cls._id_range[Region.asia][1] ]
 
 
 	@classmethod
@@ -98,20 +84,12 @@ class Account(BaseModel):
 		if type(i) is Int64:
 			i = int(i)
 
-		assert type(i) is int, f'_id has to be int, was: {i} : {type(i)},'
+		assert type(i) is int, f'_id has to be int, was: {i} : {type(i)}'
 
 		if values['region'] is None:
 			# set default regions, but do not change region if set
-			if i >= 31e8:
-				values['region'] = Region.china
-			elif i >= 20e8:
-				values['region'] = Region.asia
-			elif i >= 10e8:
-				values['region'] = Region.com
-			elif i >= 5e8:
-				values['region'] = Region.eu
-			else:			
-				values['region'] = Region.ru			
+			values['region'] = Region.from_id(i)
+			
 		return values
 	
 	def json_src(self) -> str:
@@ -122,4 +100,4 @@ class Account(BaseModel):
 	def export_db(self) -> dict:
 		# exclude_src : TypeExcludeDict = { } 
 		return self.dict(exclude_defaults=True, by_alias=True)
-
+	
