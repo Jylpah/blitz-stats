@@ -37,12 +37,12 @@ def add_args_accounts(parser: ArgumentParser, config: Optional[ConfigParser] = N
 		accounts_parsers = parser.add_subparsers(dest='accounts_cmd', 	
 												title='accounts commands',
 												description='valid commands',
-												metavar='fetch | export | remove')
+												metavar='update | export | remove')
 		accounts_parsers.required = True
 		
-		fetch_parser = accounts_parsers.add_parser('fetch', aliases=['get'], help="accounts fetch help")
-		if not add_args_accounts_fetch(fetch_parser, config=config):
-			raise Exception("Failed to define argument parser for: accounts fetch")
+		update_parser = accounts_parsers.add_parser('update', aliases=['get'], help="accounts update help")
+		if not add_args_accounts_update(update_parser, config=config):
+			raise Exception("Failed to define argument parser for: accounts update")
 		
 		export_parser = accounts_parsers.add_parser('export', help="accounts export help")
 		if not add_args_accounts_export(export_parser, config=config):
@@ -58,20 +58,20 @@ def add_args_accounts(parser: ArgumentParser, config: Optional[ConfigParser] = N
 	return False
 
 
-def add_args_accounts_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_accounts_update(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
-		accounts_fetch_parsers = parser.add_subparsers(dest='accounts_fetch_source', 	
-														title='accounts fetch source',
+		accounts_update_parsers = parser.add_subparsers(dest='accounts_update_source', 	
+														title='accounts update source',
 														description='valid sources', 
 														metavar='wi | files')
-		accounts_fetch_parsers.required = True
-		accounts_fetch_wi_parser = accounts_fetch_parsers.add_parser('wi', help='accounts fetch wi help')
-		if not add_args_accounts_fetch_wi(accounts_fetch_wi_parser, config=config):
-			raise Exception("Failed to define argument parser for: accounts fetch wi")
+		accounts_update_parsers.required = True
+		accounts_update_wi_parser = accounts_update_parsers.add_parser('wi', help='accounts update wi help')
+		if not add_args_accounts_update_wi(accounts_update_wi_parser, config=config):
+			raise Exception("Failed to define argument parser for: accounts update wi")
 		
-		accounts_fetch_files_parser = accounts_fetch_parsers.add_parser('files', help='accounts fetch files help')
-		if not add_args_accounts_fetch_files(accounts_fetch_files_parser, config=config):
-			raise Exception("Failed to define argument parser for: accounts fetch files")		
+		accounts_update_files_parser = accounts_update_parsers.add_parser('files', help='accounts update files help')
+		if not add_args_accounts_update_files(accounts_update_files_parser, config=config):
+			raise Exception("Failed to define argument parser for: accounts update files")		
 		
 		return True	
 	except Exception as err:
@@ -79,7 +79,7 @@ def add_args_accounts_fetch(parser: ArgumentParser, config: Optional[ConfigParse
 	return False
 
 
-def add_args_accounts_fetch_wi(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_accounts_update_wi(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		global WI_MAX_OLD_REPLAYS
 
@@ -119,7 +119,7 @@ def add_args_accounts_fetch_wi(parser: ArgumentParser, config: Optional[ConfigPa
 	return False
 
 
-def add_args_accounts_fetch_files(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_accounts_update_files(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		IMPORT_FORMAT 	= 'txt'
 
@@ -196,8 +196,8 @@ async def cmd_accounts(db: Backend, args : Namespace, config: Optional[ConfigPar
 	try:
 		debug('accounts')
 
-		if args.accounts_cmd == 'fetch':
-			return await cmd_accounts_fetch(db, args, config)
+		if args.accounts_cmd == 'update':
+			return await cmd_accounts_update(db, args, config)
 
 		elif args.accounts_cmd == 'export':
 			return await cmd_accounts_export(db, args, config)
@@ -210,21 +210,21 @@ async def cmd_accounts(db: Backend, args : Namespace, config: Optional[ConfigPar
 	return False
 
 
-async def cmd_accounts_fetch(db: Backend, args : Namespace, config: Optional[ConfigParser] = None) -> bool:
+async def cmd_accounts_update(db: Backend, args : Namespace, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		
-		stats = EventCounter('accounts fetch')
+		stats = EventCounter('accounts update')
 		accountQ : Queue[list[int]] = Queue(maxsize=ACCOUNTS_Q_MAX)
 		db_worker = create_task(accounts_add_worker(db, accountQ))
 
 		try:
-			if args.accounts_fetch_source == 'wi':
+			if args.accounts_update_source == 'wi':
 				debug('wi')
-				stats.merge_child(await cmd_accounts_fetch_wi(db, args, accountQ))
-			elif args.accounts_fetch_source == 'files':
+				stats.merge_child(await cmd_accounts_update_wi(db, args, accountQ))
+			elif args.accounts_update_source == 'files':
 				debug('files')
-				stats.merge_child(await cmd_accounts_fetch_files(db, args, accountQ, config))
+				stats.merge_child(await cmd_accounts_update_files(db, args, accountQ, config))
 		except Exception as err:
 			error(str(err))
 
@@ -280,14 +280,14 @@ async def accounts_add_worker(db: Backend, accountQ: Queue[list[int]]) -> EventC
 	return stats
 
 
-async def cmd_accounts_fetch_files(db: Backend, args : Namespace, accountQ : Queue[list[int]], 
+async def cmd_accounts_update_files(db: Backend, args : Namespace, accountQ : Queue[list[int]], 
 									config: Optional[ConfigParser] = None) -> EventCounter:
 	
 	debug('starting')
 	raise NotImplementedError
 
 
-async def cmd_accounts_fetch_wi(db: Backend, args : Namespace, accountQ : Queue[list[int]]) -> EventCounter:
+async def cmd_accounts_update_wi(db: Backend, args : Namespace, accountQ : Queue[list[int]]) -> EventCounter:
 	"""Fetch account_ids from replays.wotinspector.com replays"""
 	debug('starting')
 	stats		: EventCounter = EventCounter('WoTinspector')
@@ -314,13 +314,13 @@ async def cmd_accounts_fetch_wi(db: Backend, args : Namespace, accountQ : Queue[
 		
 		pages : range = range(start_page,(start_page + max_pages), step)
 
-		stats.merge_child(await accounts_fetch_wi_spider_replays(db, wi, args, replay_idQ, pages))
+		stats.merge_child(await accounts_update_wi_spider_replays(db, wi, args, replay_idQ, pages))
 
 		replays 	: int = replay_idQ.qsize()
 		replays_left: int = replays
 		with alive_bar(replays, title="Fetching replays ", manual=True) as bar:
 			for _ in range(workersN):
-				workers.append(create_task(accounts_fetch_wi_fetch_replays(db, wi, replay_idQ, accountQ)))
+				workers.append(create_task(accounts_update_wi_fetch_replays(db, wi, replay_idQ, accountQ)))
 			while True:
 				await sleep(1)
 				replays_left = replay_idQ.qsize()
@@ -340,7 +340,7 @@ async def cmd_accounts_fetch_wi(db: Backend, args : Namespace, accountQ : Queue[
 	return stats
 
 
-async def accounts_fetch_wi_spider_replays(db: Backend, wi: WoTinspector, args: Namespace,
+async def accounts_update_wi_spider_replays(db: Backend, wi: WoTinspector, args: Namespace,
                                            replay_idQ: Queue[str], pages: range) -> EventCounter:
 	"""Spider replays.WoTinspector.com and feed found replay IDs into replayQ. Return stats"""
 	stats: EventCounter = EventCounter('Crawler')
@@ -390,7 +390,7 @@ async def accounts_fetch_wi_spider_replays(db: Backend, wi: WoTinspector, args: 
 	return stats
 
 
-async def accounts_fetch_wi_fetch_replays(db: Backend, wi: WoTinspector, replay_idQ : Queue[str], 
+async def accounts_update_wi_fetch_replays(db: Backend, wi: WoTinspector, replay_idQ : Queue[str], 
 											accountQ : Queue[list[int]]) -> EventCounter:
 	stats : EventCounter = EventCounter('Fetch replays')
 	try:
