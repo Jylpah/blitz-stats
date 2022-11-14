@@ -7,14 +7,16 @@ from typing import Optional
 from backend import Backend
 from pyutils.multilevelformatter import set_mlevel_logging
 from configparser import ConfigParser
-import models
-import accounts as acc
-import replays as rep
 import logging
 from argparse import ArgumentParser
 import sys
 import os
 import asyncio
+
+import models
+import accounts as acc
+import replays as rep
+import tank_stats as ts
 
 # import blitzutils as bu
 # import utils as su
@@ -31,6 +33,7 @@ debug	= logger.debug
 # Utils 
 def get_datestr(_datetime: datetime = datetime.now()) -> str:
 	return _datetime.strftime('%Y%m%d_%H%M')
+
 
 # main() -------------------------------------------------------------
 
@@ -115,16 +118,17 @@ async def main(argv: list[str]):
 		parser.add_argument('--wg-app-id', type=str, default=WG_APP_ID,
 							help='Set WG APP ID')
 		cmd_parsers = parser.add_subparsers(dest='main_cmd', 
-												title='main commands',
-												description='valid subcommands',
-												metavar='accounts | stats | replays | tankopedia | setup')
+											title='main commands',
+											description='valid subcommands',
+											metavar='accounts | tank-stats | player-achievements | replays | tankopedia | setup')
 		cmd_parsers.required = True
 
-		accounts_parser = cmd_parsers.add_parser('accounts', aliases=['acc'], help='accounts help')
-		stats_parser 	= cmd_parsers.add_parser('stats', help='stats help')
-		replays_parser 	= cmd_parsers.add_parser('replays', help='replays help')
-		tankopedia_parser = cmd_parsers.add_parser('tankopedia', help='tankopedia help')
-		setup_parser 	= cmd_parsers.add_parser('setup', help='setup help')
+		accounts_parser 			= cmd_parsers.add_parser('accounts', aliases=['acc'], help='accounts help')
+		tank_stats_parser 			= cmd_parsers.add_parser('tank-stats', help='tank-stats help')
+		player_achievements_parser 	= cmd_parsers.add_parser('player-achievements', help='player-achievements help')
+		replays_parser 				= cmd_parsers.add_parser('replays', help='replays help')
+		tankopedia_parser 			= cmd_parsers.add_parser('tankopedia', help='tankopedia help')
+		setup_parser 				= cmd_parsers.add_parser('setup', help='setup help')
 		
 		if not acc.add_args_accounts(accounts_parser, config):
 			raise Exception("Failed to define argument parser for: accounts")
@@ -141,15 +145,15 @@ async def main(argv: list[str]):
 
 		if args.main_cmd == 'accounts':				
 			# how to handle errors / stats? 
-			await acc.cmd_accounts(backend, args, config)			
-		elif args.main_cmd == 'stats':
-			pass
+			await acc.cmd_accounts(backend, args)
+		elif args.main_cmd == 'tank-stats':
+			await ts.cmd_tank_stats(backend, args)
 		elif args.main_cmd == 'replays':
-			await rep.cmd_replays(backend, args, config)
+			await rep.cmd_replays(backend, args)
 		elif args.main_cmd == 'tankopedia':
-			pass
+			raise NotImplementedError
 		elif args.main_cmd == 'setup':
-			pass
+			raise NotImplementedError
 		else:
 			parser.print_help()
 
