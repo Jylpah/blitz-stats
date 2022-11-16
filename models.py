@@ -16,7 +16,7 @@ from collections import defaultdict
 from blitzutils.models import Region	# type: ignore
 
 TYPE_CHECKING = True
-logger = logging.getLogger()
+logger 	= logging.getLogger()
 error 	= logger.error
 message	= logger.warning
 verbose	= logger.info
@@ -54,6 +54,10 @@ class Account(BaseModel):
 
 	@validator('id')
 	def check_id(cls, v):
+		assert v is not None, "id cannot be None"
+		assert type(v) is int or type(v) is Int64, "id has to be int"
+		if type(v) is Int64:
+			v = int(v)
 		if v < 0:
 			raise ValueError('account_id must be >= 0')
 		return v
@@ -81,9 +85,6 @@ class Account(BaseModel):
 	def set_region(cls, values: TypeAccountDict) -> TypeAccountDict:
 		i = values.get('id')
 		
-		if type(i) is Int64:
-			i = int(i)
-
 		assert type(i) is int, f'_id has to be int, was: {i} : {type(i)}'
 
 		if values['region'] is None:
