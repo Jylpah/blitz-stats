@@ -111,12 +111,7 @@ async def main(argv: list[str]):
 		parser.add_argument('--backend', type=str, choices=['mongodb', 'postgresql', 'files'], 
 							default=BACKEND, help='Choose backend to use')
 		parser.add_argument('--force', action='store_true', default=False, help='Force action')
-		
-		## MOVE TO MODULE OPTIONS?? 
-		parser.add_argument('--threads', type=int, default=THREADS, 
-							help='Set number of asynchronous threads')
-		parser.add_argument('--wg-app-id', type=str, default=WG_APP_ID,
-							help='Set WG APP ID')
+
 		cmd_parsers = parser.add_subparsers(dest='main_cmd', 
 											title='main commands',
 											description='valid subcommands',
@@ -132,12 +127,16 @@ async def main(argv: list[str]):
 		
 		if not acc.add_args_accounts(accounts_parser, config):
 			raise Exception("Failed to define argument parser for: accounts")
+		if not ts.add_args_tank_stats(tank_stats_parser, config):
+			raise Exception("Failed to define argument parser for: replays")
 		if not rep.add_args_replays(replays_parser, config):
 			raise Exception("Failed to define argument parser for: replays")
-
+		
+		debug('parsing full args')
 		args = parser.parse_args(args=argv)
 		if args.help:
 			parser.print_help()
+		debug('arguments given:')
 		debug(str(args))
 
 		backend : Backend | None  = await Backend.create(args.backend, config)
