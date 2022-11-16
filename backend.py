@@ -13,7 +13,7 @@ from time import time
 from enum import Enum
 
 from models import Account
-from blitzutils.models import Region, WoTBlitzReplayJSON
+from blitzutils.models import Region, WoTBlitzReplayJSON, WGtankStat
 from pyutils.utils import epoch_now
 
 # Setup logging
@@ -28,8 +28,9 @@ MAX_UPDATE_INTERVAL : int = 4*30*24*60*60 # 4 months
 INACTIVE_THRESHOLD 	: int = 2*30*24*60*60 # 2 months
 WG_ACCOUNT_ID_MAX 	: int = int(31e8)
 MIN_INACTIVITY_PERIOD : int = 7 # days
-MAX_RETRIES : int = 3
-CACHE_VALID : int = 5   # days
+MAX_RETRIES 		: int = 3
+CACHE_VALID 		: int = 5   # days
+ACCOUNTS_Q_MAX 		: int = 500
 
 class OptAccountsInactive(str, Enum):
 	auto	= 'auto'
@@ -115,8 +116,13 @@ class Backend(metaclass=ABCMeta):
 
 	@abstractmethod
 	async def accounts_insert(self, accounts: Iterable[Account]) -> tuple[int, int]:
-		"""Store account to the backend. Returns False 
-			if the account was not added"""
+		"""Store accounts to the backend. Returns number of accounts inserted and not inserted""" 			
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def tank_stats_insert(self, tank_stats: Iterable[WGtankStat]) -> tuple[int, int]:
+		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
 		raise NotImplementedError
 
 
@@ -335,12 +341,11 @@ class MongoBackend(Backend):
 		try:
 			DBC : str = self.C['ACCOUNTS']
 			dbc : AsyncIOMotorCollection = self.db[DBC]
-			now : int = epoch_now()
 			res : InsertManyResult
 			
 			for account in accounts:
 				# modifying Iterable items is OK since the item object ref stays the sam
-				account.added = now   
+				account.added = epoch_now()   
 
 			res = await dbc.insert_many( (account.export_db() for account in accounts), 
 										  ordered=False)
@@ -351,4 +356,25 @@ class MongoBackend(Backend):
 			debug(f'Added {added}, could not add {not_added} accounts')
 		except Exception as err:
 			error(f'Unknown error when adding acconts: {str(err)}')
+		return added, not_added
+
+	
+	async def tank_stats_insert(self, tank_stats: Iterable[WGtankStat]) -> tuple[int, int]:
+		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
+		added		: int = 0
+		not_added 	: int = 0
+		try:
+			DBC : str = self.C['TANK_STATS']
+			dbc : AsyncIOMotorCollection = self.db[DBC]
+			res : InsertManyResult
+			
+			res = await dbc.insert_many( (tank_stat.export_db() for tank_stat in tank_stats), 
+										  ordered=False)
+			added = len(res.inserted_ids)
+		except BulkWriteError as err:
+			added = err.details['nInserted']
+			not_added = len(err.details["writeErrors"])
+			debug(f'Added {added}, could not add {not_added} tank stats')
+		except Exception as err:
+			error(f'Unknown error when adding tank stats: {str(err)}')
 		return added, not_added
