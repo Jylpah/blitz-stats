@@ -5,7 +5,7 @@ import logging
 from asyncio import create_task, gather, Queue, CancelledError, Task, sleep
 from alive_progress import alive_bar		# type: ignore
 
-from backend import Backend, OptAccountsInactive
+from backend import Backend, OptAccountsInactive, ACCOUNTS_Q_MAX
 from models import Account
 from pyutils.eventcounter import EventCounter
 from pyutils.utils import get_url, get_url_JSON_model, epoch_now
@@ -22,8 +22,6 @@ WI_MAX_PAGES 	: int 				= 100
 WI_MAX_OLD_REPLAYS: int 			= 30
 WI_RATE_LIMIT	: Optional[float] 	= None
 WI_AUTH_TOKEN	: Optional[str] 	= None
-ACCOUNTS_Q_MAX 	: int				= 100
-ACCOUNT_Q_MAX 	: int				= 5000
 
 ###########################################
 # 
@@ -33,7 +31,7 @@ ACCOUNT_Q_MAX 	: int				= 5000
 
 def add_args_accounts(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
-		
+		debug('starting')
 		accounts_parsers = parser.add_subparsers(dest='accounts_cmd', 	
 												title='accounts commands',
 												description='valid commands',
@@ -60,6 +58,7 @@ def add_args_accounts(parser: ArgumentParser, config: Optional[ConfigParser] = N
 
 def add_args_accounts_update(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
+		debug('starting')
 		accounts_update_parsers = parser.add_subparsers(dest='accounts_update_source', 	
 														title='accounts update source',
 														description='valid sources', 
@@ -81,6 +80,7 @@ def add_args_accounts_update(parser: ArgumentParser, config: Optional[ConfigPars
 
 def add_args_accounts_update_wi(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
+		debug('starting')
 		global WI_MAX_OLD_REPLAYS
 
 		WI_RATE_LIMIT 	: float  		= 20/3600
@@ -121,6 +121,7 @@ def add_args_accounts_update_wi(parser: ArgumentParser, config: Optional[ConfigP
 
 def add_args_accounts_update_files(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
+		debug('starting')
 		IMPORT_FORMAT 	= 'txt'
 
 		if config is not None and 'ACCOUNTS' in config.sections():
@@ -139,6 +140,7 @@ def add_args_accounts_update_files(parser: ArgumentParser, config: Optional[Conf
 
 def add_args_accounts_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
+		debug('starting')
 		EXPORT_FORMAT 	= 'txt'
 		EXPORT_FILE 	= 'accounts_export.txt'
 
@@ -166,6 +168,7 @@ def add_args_accounts_export(parser: ArgumentParser, config: Optional[ConfigPars
 
 def add_args_accounts_remove(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
+		debug('starting')
 		IMPORT_FORMAT 	= 'txt'
 
 		if config is not None:
@@ -194,7 +197,7 @@ def add_args_accounts_remove(parser: ArgumentParser, config: Optional[ConfigPars
 
 async def cmd_accounts(db: Backend, args : Namespace) -> bool:
 	try:
-		debug('accounts')
+		debug('starting')
 
 		if args.accounts_cmd == 'update':
 			return await cmd_accounts_update(db, args)
@@ -246,11 +249,11 @@ async def cmd_accounts_update(db: Backend, args : Namespace) -> bool:
 
 async def accounts_add_worker(db: Backend, accountQ: Queue[list[int]]) -> EventCounter:
 	"""worker to read accounts from queue and add those to backend"""
+	debug('starting')
 	stats : EventCounter = EventCounter(f'{db.name}')
 	added 		: int
 	not_added 	: int
 	try:
-		debug('starting')
 		while True:
 			players : list[int] = await accountQ.get()
 			try:
@@ -265,7 +268,7 @@ async def accounts_add_worker(db: Backend, accountQ: Queue[list[int]]) -> EventC
 							error(f'cound not create account object for account_id: {player}')
 					added, not_added= await db.accounts_insert(accounts)
 					stats.log('accounts added', added)
-					stats.log('accounts not added', not_added)
+					stats.log('old accounts found', not_added)
 				except Exception as err:
 					stats.log('errors')
 					error(f'Cound not add accounts do {db.name}: {str(err)}')
@@ -343,6 +346,7 @@ async def cmd_accounts_update_wi(db: Backend, args : Namespace, accountQ : Queue
 async def accounts_update_wi_spider_replays(db: Backend, wi: WoTinspector, args: Namespace,
                                            replay_idQ: Queue[str], pages: range) -> EventCounter:
 	"""Spider replays.WoTinspector.com and feed found replay IDs into replayQ. Return stats"""
+	debug('starting')
 	stats: EventCounter = EventCounter('Crawler')
 	max_old_replays: int = args.wi_max_old_replays
 	force: bool = args.force
@@ -392,6 +396,7 @@ async def accounts_update_wi_spider_replays(db: Backend, wi: WoTinspector, args:
 
 async def accounts_update_wi_fetch_replays(db: Backend, wi: WoTinspector, replay_idQ : Queue[str], 
 											accountQ : Queue[list[int]]) -> EventCounter:
+	debug('starting')
 	stats : EventCounter = EventCounter('Fetch replays')
 	try:
 		while not replay_idQ.empty():
@@ -447,6 +452,7 @@ async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 async def cmd_accounts_remove(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
+		raise NotImplementedError
 		
 
 	except Exception as err:
