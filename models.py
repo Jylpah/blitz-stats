@@ -23,7 +23,7 @@ verbose	= logger.info
 debug	= logger.debug
 
 
-TypeExcludeDict = Mapping[int | str, Any]
+# TypeExcludeDict = Mapping[int | str, Any]
 
 class Account(BaseModel):	
 	id							: int 		 = Field(default=..., alias='_id')
