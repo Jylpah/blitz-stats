@@ -154,10 +154,10 @@ def add_args_accounts_export(parser: ArgumentParser, config: Optional[ConfigPars
 		parser.add_argument('file', metavar='FILE', type=str, nargs=1, default=EXPORT_FILE, 
 							help='File to export accounts to. Use \'-\' for STDIN')
 		parser.add_argument('--disabled', action='store_true', default=False, help='Disabled accounts')
-		parser.add_argument('--inactive', type=str, choices=[ o.name for o in OptAccountsInactive ], 
-								default=OptAccountsInactive.default().name, help='Include inactive accounts')
-		parser.add_argument('--region', type=str, choices=['any'] + [ r.name for r in Region ], 
-								default=Region.API.name, help='Filter by region (default is API = eu + com + asia)')
+		parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
+								default=OptAccountsInactive.default().value, help='Include inactive accounts')
+		parser.add_argument('--region', type=str, choices=['any'] + [ r.value for r in Region ], 
+								default=Region.API.value, help='Filter by region (default is API = eu + com + asia)')
 		parser.add_argument('--sample', type=float, default=0, help='Sample accounts')
 
 		return True	
