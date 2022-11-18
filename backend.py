@@ -2,17 +2,17 @@ from configparser import ConfigParser
 from argparse import Namespace
 import logging
 from abc import ABCMeta, abstractmethod
-from collections.abc import AsyncGenerator
+# from collections.abc import AsyncGenerator
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCursor, AsyncIOMotorCollection # type: ignore
 from pymongo.results import InsertManyResult
 from pymongo.errors import BulkWriteError
 from os.path import isfile
-from typing import Optional, Any, Iterable
+from typing import Optional, Any, Iterable, AsyncGenerator
 from time import time
 from enum import Enum
 
-from models import Account
+from models import Account, StatsTypes
 from blitzutils.models import Region, WoTBlitzReplayJSON, WGtankStat
 from pyutils.utils import epoch_now
 
@@ -43,6 +43,7 @@ class OptAccountsInactive(str, Enum):
 		return cls.auto
 	
 
+
 class Backend(metaclass=ABCMeta):
 	"""Abstract class for a backend (mongo, postgres, files)"""
 	# def __init__(self, parser: Namespace, config: ConfigParser | None = None):
@@ -52,6 +53,7 @@ class Backend(metaclass=ABCMeta):
 	# 	except Exception as err:
 	# 		error(str(err))
 	name : str = 'Backend'
+
 
 	@classmethod
 	async def create(cls, backend : str, config : ConfigParser | None) -> Optional['Backend']:
@@ -63,6 +65,7 @@ class Backend(metaclass=ABCMeta):
 		except Exception as err:
 			error(f'Error creating backend {backend}: {str(err)}')
 		return None		
+
 
 	@classmethod
 	def list_available(cls) -> list[str]:
@@ -98,14 +101,22 @@ class Backend(metaclass=ABCMeta):
 
 
 	@abstractmethod
-	async def accounts_get(self, stats_type : str | None = None, region: Region | None = None, 
+	async def accounts_get(self, stats_type : StatsTypes | None = None, region: Region | None = None, 
 							inactive : OptAccountsInactive = OptAccountsInactive.default(), 
 							disabled: bool = False, sample : float = 0, 
 							force : bool = False, cache_valid: int = CACHE_VALID ) -> AsyncGenerator[Account, None]:
-		"""Get account from backend"""
+		"""Get accounts from backend"""
 		raise NotImplementedError
 		yield Account(id=-1)
+	
 
+	@abstractmethod
+	async def accounts_count(self, stats_type : StatsTypes | None = None, region: Region | None = None, 
+							inactive : OptAccountsInactive = OptAccountsInactive.default(), 
+							disabled: bool = False, sample : float = 0, 
+							force : bool = False, cache_valid: int = CACHE_VALID ) -> int:
+		"""Get number of accounts from backend"""
+		raise NotImplementedError
 
 	@abstractmethod
 	async def account_insert(self, account: Account) -> bool:
@@ -241,8 +252,13 @@ class MongoBackend(Backend):
 			error(f'Error fetching account_id: {account_id}) from {self.name}: {str(err)}')	
 		return None
 
+	async def accounts_count(self, stats_type : StatsTypes | None = None, region: Region | None = None, 
+							inactive : OptAccountsInactive = OptAccountsInactive.default(), 
+							disabled: bool = False, sample : float = 0, 
+							force : bool = False, cache_valid: int = CACHE_VALID ) -> int:
 
-	async def accounts_get(self, stats_type : str | None = None, region: Region | None = Region.API, 
+
+	async def accounts_get(self, stats_type : StatsTypes | None = None, region: Region | None = Region.API, 
 							inactive : OptAccountsInactive = OptAccountsInactive.default(), 
 							disabled: bool = False, sample : float = 0, 
 							force : bool = False, cache_valid: int = CACHE_VALID ) -> AsyncGenerator[Account, None]:
@@ -262,7 +278,9 @@ class MongoBackend(Backend):
 			NOW = int(time())			
 			DBC : str = self.C['ACCOUNTS']
 			
-			update_field : str | None = Account.get_update_field(stats_type)
+			update_field : str | None = None
+			if stats_type is not None:
+				update_field = stats_type.value
 
 			dbc : AsyncIOMotorCollection = self.db[DBC]
 			match : list[dict[str, str|int|float|dict|list]] = list()
@@ -301,7 +319,7 @@ class MongoBackend(Backend):
 				pipeline.append({'$sample': {'size' : int(n * sample) } })
 
 			cursor : AsyncIOMotorCursor = dbc.aggregate(pipeline, allowDiskUse=False)
-
+			
 			async for account_obj in cursor:
 				try:
 					player = Account.parse_obj(account_obj)
@@ -317,6 +335,57 @@ class MongoBackend(Backend):
 		except Exception as err:
 			error(f'Error fetching accounts from Mongo DB: {str(err)}')	
 
+	async def _accounts_get_pipeline(self, stats_type : StatsTypes | None = None, region: Region | None = Region.API, 
+							inactive : OptAccountsInactive = OptAccountsInactive.default(), 
+							disabled: bool = False, sample : float = 0, 
+							force : bool = False, cache_valid: int = CACHE_VALID ) -> list[dict[str, Any]] | None:
+		try:
+			NOW = int(time())			
+			DBC : str = self.C['ACCOUNTS']
+			
+			update_field : str | None = None
+			if stats_type is not None:
+				update_field = stats_type.value
+
+			dbc : AsyncIOMotorCollection = self.db[DBC]
+			match : list[dict[str, str|int|float|dict|list]] = list()
+			
+			match.append({ '_id' : {  '$lt' : WG_ACCOUNT_ID_MAX}})  # exclude Chinese account ids
+
+			if region is not None:
+				if region == Region.API:
+					match.append({ 'r' : { '$in' : [ r.name for r in Region.API_regions() ]} })
+				else:
+					match.append({ 'r' : region.name })
+	
+			if disabled:
+				match.append({ 'd': True })
+			else:
+				match.append({ 'd': { '$ne': True }})
+				# check inactive only if disabled == False
+				if inactive == OptAccountsInactive.auto:
+					if not force:
+						assert update_field is not None, "automatic inactivity detection requires stat_type"
+						match.append({ '$or': [ { update_field: None}, { update_field: { '$lt': NOW - cache_valid }} ] })
+				elif inactive == OptAccountsInactive.yes:
+					match.append({ 'i': True })
+				elif inactive == OptAccountsInactive.no:
+					match.append({ 'i': { '$ne': True }})
+				else:
+					# do not add a filter in case both inactive and active players are included
+					pass						
+
+			pipeline : list[dict[str, Any]] = [ { '$match' : { '$and' : match } }]
+
+			if sample >= 1:				
+				pipeline.append({'$sample': {'size' : int(sample) } })
+			elif sample > 0:
+				n = await dbc.estimated_document_count()
+				pipeline.append({'$sample': {'size' : int(n * sample) } })
+			return pipeline		
+		except Exception as err:
+			error(str(err))
+		return None
 
 	async def account_insert(self, account: Account) -> bool:
 		"""Store account to the backend. Returns False 
@@ -351,9 +420,12 @@ class MongoBackend(Backend):
 										  ordered=False)
 			added = len(res.inserted_ids)
 		except BulkWriteError as err:
-			added = err.details['nInserted']
-			not_added = len(err.details["writeErrors"])
-			debug(f'Added {added}, could not add {not_added} accounts')
+			if err.details is not None:
+				added = err.details['nInserted']
+				not_added = len(err.details["writeErrors"])
+				debug(f'Added {added}, could not add {not_added} accounts')
+			else:
+				error('BulkWriteError.details is None')
 		except Exception as err:
 			error(f'Unknown error when adding acconts: {str(err)}')
 		return added, not_added
@@ -372,9 +444,12 @@ class MongoBackend(Backend):
 										  ordered=False)
 			added = len(res.inserted_ids)
 		except BulkWriteError as err:
-			added = err.details['nInserted']
-			not_added = len(err.details["writeErrors"])
-			debug(f'Added {added}, could not add {not_added} tank stats')
+			if err.details is not None:
+				added = err.details['nInserted']
+				not_added = len(err.details["writeErrors"])
+				debug(f'Added {added}, could not add {not_added} tank stats')
+			else:
+				error('BulkWriteError.details is None')
 		except Exception as err:
 			error(f'Unknown error when adding tank stats: {str(err)}')
 		return added, not_added
