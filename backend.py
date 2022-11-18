@@ -137,6 +137,13 @@ class Backend(metaclass=ABCMeta):
 		raise NotImplementedError
 
 
+	@abstractmethod
+	async def tank_stats_get(self, account: Account, tank_id: int | None = None, last_battle_time: int | None = None) -> AsyncGenerator[WGtankStat, None]:
+		"""Return tank stats from the backend"""
+		raise NotImplementedError
+
+
+
 class MongoBackend(Backend):
 
 	name : str = 'mongodb'
@@ -440,3 +447,8 @@ class MongoBackend(Backend):
 		except Exception as err:
 			error(f'Unknown error when adding tank stats: {str(err)}')
 		return added, not_added
+
+
+	async def tank_stats_get(self, account: Account, tank_id: int | None = None, last_battle_time: int | None = None) -> AsyncGenerator[WGtankStat, None]:
+		"""Return tank stats from the backend"""
+		raise NotImplementedError
