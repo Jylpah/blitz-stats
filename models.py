@@ -12,7 +12,6 @@ from os.path import basename
 import logging
 import aiofiles
 from collections import defaultdict
-
 from blitzutils.models import Region	# type: ignore
 
 TYPE_CHECKING = True
@@ -23,7 +22,10 @@ verbose	= logger.info
 debug	= logger.debug
 
 
-# TypeExcludeDict = Mapping[int | str, Any]
+class StatsTypes(str, Enum):
+		tank_stats 			= 'updated_tank_stats'
+		player_achievements = 'updated_player_achievements'
+
 
 class Account(BaseModel):	
 	id							: int 		 = Field(default=..., alias='_id')
@@ -35,20 +37,21 @@ class Account(BaseModel):
 	inactive					: bool 		 = Field(default=False, alias='i')
 	disabled					: bool		 = Field(default=False, alias='d')
 
+	
 	class Config:
 		allow_population_by_field_name = True
 		allow_mutation 			= True
 		validate_assignment 	= True
 
-
+	
 	@classmethod
 	def get_update_field(cls, stats_type : str | None ) -> str | None:
 		UPDATED : str = 'updated_'
 		try:
-			if stats_type is not None and stats_type.startswith(UPDATED):
-				return stats_type.replace(UPDATED, '')
+			if stats_type is not None:
+				return StatsTypes(stats_type).value
 		except Exception as err:
-			error(f'stats_type does not start with "{UPDATED}": {stats_type}')
+			error(f'Unknown stats_type: {stats_type}')
 		return None
 
 
