@@ -7,4 +7,5 @@ ssl/
 tmp/
 .vscode/
 .gitattributes
+.venv
 !requirements.txt
