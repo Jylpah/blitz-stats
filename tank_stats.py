@@ -161,19 +161,48 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 		for i in range(args.threads):
 			tasks.append(create_task(update_tank_stats_api_worker(wg, region, accountQ, statsQ)))
 
+		accounts_N 		: int = 0
+		accounts_added 	: int = 0 
+		qsize 			: int = 0
+		
 		if args.accounts is not None:
-			if len(args.accounts) == 0:
+			accounts_N = len(args.accounts)
+			if accounts_N == 0:
 				raise ValueError('--accounts requires account_id(s) as parameters')
-			for account_id in args.accounts:
-				try:
-					await accountQ.put(Account(_id=account_id))
-				except Exception as err:
-					error(f'Could not add account ({account_id}) to queue')
+			with alive_bar(accounts_N, title= "Fetching tank stats", manual=True) as bar:
+				for account_id in args.accounts:
+					try:
+						await accountQ.put(Account(_id=account_id))
+					except Exception as err:
+						error(f'Could not add account ({account_id}) to queue')
+					finally:
+						accounts_added += 1
+						qsize = accountQ.qsize()
+						bar((accounts_added - qsize)/accounts_N)
+				
+				while accountQ.qsize() > 0:
+					await sleep(1)
+					bar((accounts_added - qsize)/accounts_N)
 		else:
-			async for account in db.accounts_get(stats_type=StatsTypes.tank_stats, region=region, 
+			message('Counting accounts to fetch stats...')
+			accounts_N = await db.accounts_count(stats_type=StatsTypes.tank_stats, region=region, 
 												inactive=inactive, disabled=args.check_invalid, 
-												sample=args.sample, force=args.force, cache_valid=args.older_than):
-				await accountQ.put(account)
+												sample=args.sample, force=args.force, cache_valid=args.older_than)
+			with alive_bar(accounts_N, title= "Fetching tank stats", manual=True) as bar:
+				async for account in db.accounts_get(stats_type=StatsTypes.tank_stats, region=region, 
+													inactive=inactive, disabled=args.check_invalid, 
+													sample=args.sample, force=args.force, cache_valid=args.older_than):
+					await accountQ.put(account)
+					accounts_added += 1
+					qsize = accountQ.qsize()
+					bar((accounts_added - qsize)/accounts_N)
+
+				while True:
+					await sleep(1)
+					qsize = accountQ.qsize()
+					bar((accounts_added - qsize)/accounts_N)
+					if qsize == 0: 
+						break
 
 		await accountQ.join()
 		await statsQ.join()

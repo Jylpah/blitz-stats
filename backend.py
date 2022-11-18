@@ -256,6 +256,25 @@ class MongoBackend(Backend):
 							inactive : OptAccountsInactive = OptAccountsInactive.default(), 
 							disabled: bool = False, sample : float = 0, 
 							force : bool = False, cache_valid: int = CACHE_VALID ) -> int:
+		try:
+			NOW = int(time())	
+			DBC : str = self.C['ACCOUNTS']
+			dbc : AsyncIOMotorCollection = self.db[DBC]
+			pipeline : list[dict[str, Any]] | None = await self._accounts_get_pipeline(stats_type, region, inactive,
+																				disabled, sample, force , cache_valid)
+
+			if pipeline is None:
+				raise ValueError(f'could not create get-accounts {self.name} cursor')
+			pipeline.append({ '$count': 'accounts' })
+			cursor : AsyncIOMotorCursor = dbc.aggregate(pipeline, allowDiskUse=False)
+			res : Any =  (await cursor.to_list(length=100))[0]
+			if type(res) is dict and 'accounts' in res:
+				return int(res['accounts'])
+			else:
+				raise ValueError('pipeline returned malformed data')
+		except Exception as err:
+			error(f'counting accounts failed: {err}')
+		return -1
 
 
 	async def accounts_get(self, stats_type : StatsTypes | None = None, region: Region | None = Region.API, 
@@ -266,59 +285,19 @@ class MongoBackend(Backend):
 			inactive: true = only inactive, false = not inactive, none = AUTO
 		"""
 		try:
-			# id						: int		= Field(default=..., alias='_id')
-			# region 					: Region | None= Field(default=None, alias='r')
-			# last_battle_time			: int | None = Field(default=None, alias='l')
-			# updated_tank_stats 		: int | None = Field(default=None, alias='ut')
-			# updated_player_achievements : int | None = Field(default=None, alias='up')
-			# added 					: int | None = Field(default=None, alias='a')
-			# inactive					: bool | None = Field(default=None, alias='i')
-			# disabled					: bool | None = Field(default=None, alias='d')
-
-			NOW = int(time())			
+			NOW = int(time())	
 			DBC : str = self.C['ACCOUNTS']
-			
+			dbc : AsyncIOMotorCollection = self.db[DBC]
+			pipeline : list[dict[str, Any]] | None = await self._accounts_get_pipeline(stats_type, region, inactive,
+																				disabled, sample, force , cache_valid)
+
 			update_field : str | None = None
 			if stats_type is not None:
 				update_field = stats_type.value
 
-			dbc : AsyncIOMotorCollection = self.db[DBC]
-			match : list[dict[str, str|int|float|dict|list]] = list()
-			
-			match.append({ '_id' : {  '$lt' : WG_ACCOUNT_ID_MAX}})  # exclude Chinese account ids
-
-			if region is not None:
-				if region == Region.API:
-					match.append({ 'r' : { '$in' : [ r.name for r in Region.API_regions() ]} })
-				else:
-					match.append({ 'r' : region.name })
-	
-			if disabled:
-				match.append({ 'd': True })
-			else:
-				match.append({ 'd': { '$ne': True }})
-				# check inactive only if disabled == False
-				if inactive == OptAccountsInactive.auto:
-					if not force:
-						assert update_field is not None, "automatic inactivity detection requires stat_type"
-						match.append({ '$or': [ { update_field: None}, { update_field: { '$lt': NOW - cache_valid }} ] })
-				elif inactive == OptAccountsInactive.yes:
-					match.append({ 'i': True })
-				elif inactive == OptAccountsInactive.no:
-					match.append({ 'i': { '$ne': True }})
-				else:
-					# do not add a filter in case both inactive and active players are included
-					pass						
-
-			pipeline : list[dict[str, Any]] = [ { '$match' : { '$and' : match } }]
-
-			if sample >= 1:				
-				pipeline.append({'$sample': {'size' : int(sample) } })
-			elif sample > 0:
-				n = await dbc.estimated_document_count()
-				pipeline.append({'$sample': {'size' : int(n * sample) } })
-
-			cursor : AsyncIOMotorCursor = dbc.aggregate(pipeline, allowDiskUse=False)
+			if pipeline is None:
+				raise ValueError(f'could not create get-accounts {self.name} cursor')
+			cursor : AsyncIOMotorCursor = dbc.aggregate(pipeline)
 			
 			async for account_obj in cursor:
 				try:
@@ -335,18 +314,26 @@ class MongoBackend(Backend):
 		except Exception as err:
 			error(f'Error fetching accounts from Mongo DB: {str(err)}')	
 
+
 	async def _accounts_get_pipeline(self, stats_type : StatsTypes | None = None, region: Region | None = Region.API, 
 							inactive : OptAccountsInactive = OptAccountsInactive.default(), 
 							disabled: bool = False, sample : float = 0, 
 							force : bool = False, cache_valid: int = CACHE_VALID ) -> list[dict[str, Any]] | None:
 		try:
+			# id						: int		= Field(default=..., alias='_id')
+			# region 					: Region | None= Field(default=None, alias='r')
+			# last_battle_time			: int | None = Field(default=None, alias='l')
+			# updated_tank_stats 		: int | None = Field(default=None, alias='ut')
+			# updated_player_achievements : int | None = Field(default=None, alias='up')
+			# added 					: int | None = Field(default=None, alias='a')
+			# inactive					: bool | None = Field(default=None, alias='i')
+			# disabled					: bool | None = Field(default=None, alias='d')
+			
 			NOW = int(time())			
 			DBC : str = self.C['ACCOUNTS']
-			
 			update_field : str | None = None
 			if stats_type is not None:
 				update_field = stats_type.value
-
 			dbc : AsyncIOMotorCollection = self.db[DBC]
 			match : list[dict[str, str|int|float|dict|list]] = list()
 			
