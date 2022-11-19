@@ -3,6 +3,8 @@ from configparser import ConfigParser
 from typing import Optional, Iterable, cast
 import logging
 from asyncio import create_task, gather, Queue, CancelledError, Task, sleep
+from aiofiles import open
+from asyncstdlib import enumerate
 from alive_progress import alive_bar		# type: ignore
 
 from backend import Backend, OptAccountsInactive, ACCOUNTS_Q_MAX, CACHE_VALID
@@ -23,11 +25,11 @@ debug	= logger.debug
 WORKERS_WGAPI 		: int = 40
 TANK_STATS_Q_MAX 	: int = 1000
 
-###########################################
+########################################################
 # 
 # add_args_ functions  
 #
-###########################################
+########################################################
 
 def add_args_tank_stats(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
@@ -91,6 +93,9 @@ def add_args_tank_stats_update(parser: ArgumentParser, config: Optional[ConfigPa
 								default=OptAccountsInactive.default().value, help='Include inactive accounts')
 		parser.add_argument('--accounts', type=int, default=None, nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
 							help='Update tank stats for the listed ACCOUNT_ID(s)')
+		parser.add_argument('--accounts-file', '--file',type=str, dest='accounts_file', metavar='FILENAME', 
+							default=None, help='Read account_ids from FILENAME one account_id per line')
+
 		return True
 	except Exception as err:
 		error(str(err))
@@ -124,8 +129,7 @@ async def cmd_tank_stats(db: Backend, args : Namespace) -> bool:
 			return await cmd_tank_stats_update(db, args)
 
 		elif args.tank_stats_cmd == 'export':
-			#return await cmd_tank_stats_export(db, args)
-			pass
+			return await cmd_tank_stats_export(db, args)
 
 		elif args.tank_stats_cmd == 'import':
 			# return await cmd_accounts_import(db, args)
@@ -135,6 +139,11 @@ async def cmd_tank_stats(db: Backend, args : Namespace) -> bool:
 		error(str(err))
 	return False
 
+########################################################
+# 
+# cmd_tank_stats_update()
+#
+########################################################
 
 async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 	assert 'wg_app_id' in args and type(args.wg_app_id) is str, "'wg_app_id' must be set and string"
@@ -164,48 +173,63 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 		accounts_N 		: int = 0
 		accounts_added 	: int = 0 
 		qsize 			: int = 0
-		
+
+		# count number of accounts
 		if args.accounts is not None:
-			accounts_N = len(args.accounts)
-			if accounts_N == 0:
-				raise ValueError('--accounts requires account_id(s) as parameters')
-			with alive_bar(accounts_N, title= "Fetching tank stats", manual=True) as bar:
-				for account_id in args.accounts:
-					try:
-						await accountQ.put(Account(_id=account_id))
-					except Exception as err:
-						error(f'Could not add account ({account_id}) to queue')
-					finally:
-						accounts_added += 1
-						qsize = accountQ.qsize()
-						bar((accounts_added - qsize)/accounts_N)
-				
-				while accountQ.qsize() > 0:
-					await sleep(1)
-					bar((accounts_added - qsize)/accounts_N)
+			accounts_N = len(args.accounts)			
+		elif args.accounts_file is not None:
+			message(f'Reading accounts from {args.accounts_file}')
+			async with open(args.accounts_file, mode='r') as f:
+				async for accounts_N, _ in enumerate(f):
+					pass
+			accounts_N += 1
 		else:
 			if args.sample > 1:
 				accounts_N = int(args.sample)
 			else:				
 				message('Counting accounts to fetch stats...')
 				accounts_N = await db.accounts_count(stats_type=StatsTypes.tank_stats, region=region, 
-												inactive=inactive, disabled=args.check_invalid, 
-												sample=args.sample, force=args.force, cache_valid=args.older_than)
-			with alive_bar(accounts_N, title= "Fetching tank stats", manual=True) as bar:
-				async for account in db.accounts_get(stats_type=StatsTypes.tank_stats, region=region, 
 													inactive=inactive, disabled=args.check_invalid, 
-													sample=args.sample, force=args.force, cache_valid=args.older_than):
-					await accountQ.put(account)
-					accounts_added += 1
-					qsize = accountQ.qsize()
-					bar((accounts_added - qsize)/accounts_N)
+													sample=args.sample, force=args.force, cache_valid=args.older_than)
 
-				while True:
-					await sleep(1)
-					qsize = accountQ.qsize()
-					bar((accounts_added - qsize)/accounts_N)
-					if qsize == 0: 
-						break
+		if accounts_N == 0:
+			raise ValueError('No accounts to update tank stats for')		
+
+		with alive_bar(accounts_N, title= "Fetching tank stats", manual=True) as bar:
+			if args.accounts is not None:	
+				async for accounts_added, account_id in enumerate(args.accounts):
+					try:
+						await accountQ.put(Account(_id=account_id))
+					except Exception as err:
+						error(f'Could not add account ({account_id}) to queue')
+					finally:
+						bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
+
+			elif args.accounts_file is not None:
+				async with open(args.accounts_file, mode='r') as f:
+					async for accounts_added, line in enumerate(f):
+						try:
+							await accountQ.put(Account(_id=int(line.strip())))
+						except Exception as err:
+							error(f'Could not add account ({line.strip()}) to queue')
+						finally:
+							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
+			
+			else:
+				async for accounts_added, account in enumerate(db.accounts_get(stats_type=StatsTypes.tank_stats, 
+													region=region, inactive=inactive, disabled=args.check_invalid, 
+													sample=args.sample, force=args.force, cache_valid=args.older_than)):
+					try:
+						await accountQ.put(account)
+					except Exception as err:
+						error(f'Could not add account ({account.id}) to queue')
+					finally:	
+						bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
+			
+			accounts_added += 1			# enumemrate() starts from 0, not 1			
+			while accountQ.qsize() > 0:
+				await sleep(1)
+				bar((accounts_added - accountQ.qsize())/accounts_N)
 
 		await accountQ.join()
 		await statsQ.join()
@@ -291,3 +315,13 @@ async def add_tank_stats_worker(db: Backend, statsQ: Queue[list[WGtankStat]]) ->
 	except Exception as err:
 		error(str(err))
 	return stats
+
+
+########################################################
+# 
+# cmd_tank_stats_export()
+#
+########################################################
+
+async def cmd_tank_stats_export(db: Backend, args : Namespace) -> bool:
+	return False
