@@ -184,8 +184,11 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 					await sleep(1)
 					bar((accounts_added - qsize)/accounts_N)
 		else:
-			message('Counting accounts to fetch stats...')
-			accounts_N = await db.accounts_count(stats_type=StatsTypes.tank_stats, region=region, 
+			if args.sample > 1:
+				accounts_N = int(args.sample)
+			else:				
+				message('Counting accounts to fetch stats...')
+				accounts_N = await db.accounts_count(stats_type=StatsTypes.tank_stats, region=region, 
 												inactive=inactive, disabled=args.check_invalid, 
 												sample=args.sample, force=args.force, cache_valid=args.older_than)
 			with alive_bar(accounts_N, title= "Fetching tank stats", manual=True) as bar:
@@ -217,6 +220,12 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 	except Exception as err:
 		error(str(err))
 	finally:
+	
+		wg_stats : dict[str, str] | None = wg.print_server_stats()
+		if wg_stats is not None and logger.level <= logging.WARNING:
+			message('WG API stats:')
+			for server in wg_stats:
+				message(f'{server.capitalize():7s}: {wg_stats[server]}')
 		await wg.close()
 	return False
 
