@@ -79,8 +79,8 @@ def add_args_tank_stats_update(parser: ArgumentParser, config: Optional[ConfigPa
 		parser.add_argument('--wg-app-id', type=str, default=WG_APP_ID, help='Set WG APP ID')
 		parser.add_argument('--rate-limit', type=float, default=WG_RATE_LIMIT, metavar='RATE_LIMIT',
 							help='Rate limit for WG API')
-		parser.add_argument('--region', type=str, choices=['any'] + [ r.value for r in Region ], 
-							default=Region.API.value, help='Filter by region (default is API = eu + com + asia)')
+		parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
+							default=Region.API_regions(), help='Filter by region (default: eu + com + asia + ru)')
 		parser.add_argument('--sample', type=float, default=0, metavar='SAMPLE',
 							help='Update tank stats for SAMPLE of accounts. If 0 < SAMPLE < 1, SAMPLE defines a %% of users')
 		parser.add_argument('--older-than', type=int, default=CACHE_VALID, metavar='DAYS',
@@ -146,6 +146,7 @@ async def cmd_tank_stats(db: Backend, args : Namespace) -> bool:
 ########################################################
 
 async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
+	"""Update tank stats"""
 	assert 'wg_app_id' in args and type(args.wg_app_id) is str, "'wg_app_id' must be set and string"
 	assert 'rate_limit' in args and (type(args.rate_limit) is float or \
 			type(args.rate_limit) is int), "'rate_limit' must set and a number"	
@@ -160,15 +161,15 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 	wg 	: WGApi = WGApi(WG_app_id=args.wg_app_id, rate_limit=args.rate_limit)
 
 	try:
-		stats 	: EventCounter	= EventCounter('tank-stats update')
-		region 	: Region 		= Region(args.region)
+		stats 	 : EventCounter				= EventCounter('tank-stats update')
+		regions	 : set[Region] 				= { Region(r) for r in args.region }
 		accountQ : Queue[Account] 			= Queue(maxsize=ACCOUNTS_Q_MAX)
 		statsQ	 : Queue[list[WGtankStat]] 	= Queue(maxsize=TANK_STATS_Q_MAX)
 
 		tasks : list[Task] = list()
 		tasks.append(create_task(add_tank_stats_worker(db, statsQ)))
 		for i in range(args.threads):
-			tasks.append(create_task(update_tank_stats_api_worker(wg, region, accountQ, statsQ)))
+			tasks.append(create_task(update_tank_stats_api_worker(wg, regions, accountQ, statsQ)))
 
 		accounts_N 		: int = 0
 		accounts_added 	: int = 0 
@@ -188,7 +189,7 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 				accounts_N = int(args.sample)
 			else:				
 				message('Counting accounts to fetch stats...')
-				accounts_N = await db.accounts_count(stats_type=StatsTypes.tank_stats, region=region, 
+				accounts_N = await db.accounts_count(stats_type=StatsTypes.tank_stats, regions=regions, 
 													inactive=inactive, disabled=args.check_invalid, 
 													sample=args.sample, force=args.force, cache_valid=args.older_than)
 
@@ -209,6 +210,7 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 				async with open(args.accounts_file, mode='r') as f:
 					async for accounts_added, line in enumerate(f):
 						try:
+							##  REFACTOR to use Importable interface
 							await accountQ.put(Account(_id=int(line.strip())))
 						except Exception as err:
 							error(f'Could not add account ({line.strip()}) to queue')
@@ -217,7 +219,7 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 			
 			else:
 				async for accounts_added, account in enumerate(db.accounts_get(stats_type=StatsTypes.tank_stats, 
-													region=region, inactive=inactive, disabled=args.check_invalid, 
+													regions=regions, inactive=inactive, disabled=args.check_invalid, 
 													sample=args.sample, force=args.force, cache_valid=args.older_than)):
 					try:
 						await accountQ.put(account)
@@ -253,7 +255,7 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 		await wg.close()
 	return False
 
-async def update_tank_stats_api_worker(wg : WGApi, region: Region, accountQ: Queue[Account], 
+async def update_tank_stats_api_worker(wg : WGApi, regions: set[Region], accountQ: Queue[Account], 
 										statsQ: Queue[list[WGtankStat]]) -> EventCounter:
 	"""Async worker to fetch tank stats from WG API"""
 	debug('starting')
@@ -264,8 +266,11 @@ async def update_tank_stats_api_worker(wg : WGApi, region: Region, accountQ: Que
 			try:
 				debug(f'account_id: {account.id}')
 				stats.log('accounts total')
-				tank_stats : list[WGtankStat] | None = await wg.get_tank_stats(account.id, region)
 				
+				if account.region not in regions:
+					raise ValueError(f"account_id's ({account.id}) region ({account.region}) is not in defined regions ({', '.join(regions)})")
+				tank_stats : list[WGtankStat] | None = await wg.get_tank_stats(account.id, account.region)
+
 				if tank_stats is None:
 					verbose(f'Could not fetch account: {account.id}')
 					stats.log('accounts w/o stats')
