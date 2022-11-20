@@ -365,9 +365,8 @@ class MongoBackend(Backend):
 
 			if pipeline is None:
 				raise ValueError(f'could not create get-accounts {self.name} cursor')
-			cursor : AsyncIOMotorCursor = dbc.aggregate(pipeline)
-			
-			async for account_obj in cursor:
+						
+			async for account_obj in dbc.aggregate(pipeline):
 				try:
 					player = BSAccount.parse_obj(account_obj)
 					if not force and not disabled and inactive is None and player.inactive:
