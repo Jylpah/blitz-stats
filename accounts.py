@@ -1,18 +1,22 @@
 from argparse import ArgumentParser, Namespace
 from configparser import ConfigParser
-from typing import Optional, cast
+from typing import Optional, cast, Type
 import logging
-from asyncio import create_task, gather, Queue, CancelledError, Task, sleep
-from alive_progress import alive_bar		# type: ignore
+from asyncio import create_task, gather, wait, Queue, CancelledError, Task, sleep
 
-from backend import Backend, OptAccountsInactive, ACCOUNTS_Q_MAX
-from models import Account
+from alive_progress import alive_bar		# type: ignore
+from sys import stdout
+from csv import DictWriter, DictReader, Dialect, Sniffer, excel
+
+from backend import Backend, OptAccountsInactive, OptAccountsDistributed, ACCOUNTS_Q_MAX
+from models import BSAccount, StatsTypes
 from pyutils.eventcounter import EventCounter
-from pyutils.utils import get_url, get_url_JSON_model, epoch_now
+from pyutils.counterqueue import CounterQueue, alive_queue_bar
+from pyutils.utils import get_url, get_url_JSON_model, epoch_now, export, TXTexportable, CSVexportable, JSONexportable
 from blitzutils.models import WoTBlitzReplayJSON, Region
 from blitzutils.wotinspector import WoTinspector
 
-logger = logging.getLogger()
+logger 	= logging.getLogger()
 error 	= logger.error
 message	= logger.warning
 verbose	= logger.info
@@ -22,6 +26,8 @@ WI_MAX_PAGES 	: int 				= 100
 WI_MAX_OLD_REPLAYS: int 			= 30
 WI_RATE_LIMIT	: Optional[float] 	= None
 WI_AUTH_TOKEN	: Optional[str] 	= None
+
+EXPORT_SUPPORTED_FORMATS : list[str] = ['json', 'txt', 'csv']
 
 ###########################################
 # 
@@ -142,22 +148,27 @@ def add_args_accounts_export(parser: ArgumentParser, config: Optional[ConfigPars
 	try:
 		debug('starting')
 		EXPORT_FORMAT 	= 'txt'
-		EXPORT_FILE 	= 'accounts_export.txt'
+		EXPORT_FILE 	= 'accounts'
 
 		if config is not None and 'ACCOUNTS' in config.sections():
 			configAccs 	= config['ACCOUNTS']
 			EXPORT_FORMAT	= configAccs.get('export_format', EXPORT_FORMAT)
 			EXPORT_FILE		= configAccs.get('export_file', EXPORT_FILE )
 
-		# parser.add_argument('--format', type=str, choices=['json', 'txt', 'csv'], 
-		# 					default=EXPORT_FORMAT, help='Accounts list file format')
-		parser.add_argument('file', metavar='FILE', type=str, nargs=1, default=EXPORT_FILE, 
+		parser.add_argument('format', type=str, nargs='?', choices=EXPORT_SUPPORTED_FORMATS, 
+		 					 default=EXPORT_FORMAT, help='Accounts list file format')
+		parser.add_argument('filename', metavar='FILE', type=str, nargs='?', default=EXPORT_FILE, 
 							help='File to export accounts to. Use \'-\' for STDIN')
+		parser.add_argument('--append', action='store_true', default=False, help='Append to file(s)')
+		parser.add_argument('--force', action='store_true', default=False, help='Overwrite existing file(s) when exporting')
 		parser.add_argument('--disabled', action='store_true', default=False, help='Disabled accounts')
 		parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
-								default=OptAccountsInactive.default().value, help='Include inactive accounts')
-		parser.add_argument('--region', type=str, choices=['any'] + [ r.value for r in Region ], 
-								default=Region.API.value, help='Filter by region (default is API = eu + com + asia)')
+								default=OptAccountsInactive.no.value, help='Include inactive accounts')
+		parser.add_argument('--region', type=str, nargs='*', choices={ r.value for r in Region.API_regions() }, 
+								default={ r.value for r in Region.API_regions() }, help='Filter by region (default is API = eu + com + asia)')
+		parser.add_argument('--by-region', action='store_true', default=False, help='Export accounts by region')
+		parser.add_argument('--distributed', '--dist',type=int, dest='distributed', metavar='N', 
+							default=0, help='Split accounts into N files distributed stats fetching')
 		parser.add_argument('--sample', type=float, default=0, help='Sample accounts')
 
 		return True	
@@ -260,10 +271,10 @@ async def accounts_add_worker(db: Backend, accountQ: Queue[list[int]]) -> EventC
 				debug(f'Read {len(players)} from queue')
 				stats.log('accounts total', len(players))
 				try:
-					accounts : list[Account] = list()
+					accounts : list[BSAccount] = list()
 					for player in players:
 						try:
-							accounts.append(Account(id=player, added=epoch_now()))  # type: ignore
+							accounts.append(BSAccount(id=player, added=epoch_now()))  # type: ignore
 						except Exception as err:
 							error(f'cound not create account object for account_id: {player}')
 					added, not_added= await db.accounts_insert(accounts)
@@ -424,29 +435,89 @@ async def accounts_update_wi_fetch_replays(db: Backend, wi: WoTinspector, replay
 async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
+		assert type(args.distributed) is int, 'param "distributed" has to be integer'
+		assert type(args.sample) in [int, float], 'param "sample" has to be a number'
 
-		query_args : dict[str, str | int | float | bool ] = dict()
-		
-		disabled : bool =  args.disabled
-		
-		inactive : OptAccountsInactive = OptAccountsInactive.default()
-
+		## not implemented...
+		# query_args : dict[str, str | int | float | bool ] = dict()
+		stats 		: EventCounter 			= EventCounter('accounts export')
+		disabled 	: bool 					= args.disabled
+		inactive 	: OptAccountsInactive 	= OptAccountsInactive.default()
+		regions		: set[Region] 			= { Region(r) for r in args.region }
+		distributed : OptAccountsDistributed 
+		filename	: str					= args.filename
+		force		: bool 					= args.force
 		try: 
 			inactive = OptAccountsInactive(args.inactive)
+			if inactive == OptAccountsInactive.auto:		# auto mode requires specication of stats type
+				inactive = OptAccountsInactive.no
 		except ValueError as err:
 			assert False, f"Incorrect value for argument 'inactive': {args.inactive}"
+
+		sample 		: float = args.sample
+		accountQs 	: dict[str, CounterQueue[BSAccount]] = dict()
+		account_workers : list[Task] = list()
+		export_workers 	: list[Task] = list()
 		
-		region : Region | None = None
-		if args.region != 'any':
-			region = Region(args.region)
-		sample : float = args.sample
+		total : int = await db.accounts_count(regions=regions, inactive=inactive, disabled=disabled, sample=sample)
+
+		if args.distributed > 0:
+			for i in range(args.distributed):
+				accountQs[str(i)] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)
+				distributed = OptAccountsDistributed(i, args.distributed)
+				account_workers.append(create_task(db.accounts_get_worker(accountQs[str(i)], regions=regions, 
+														inactive=inactive, disabled=disabled, sample=sample,
+														distributed=distributed)))
+				export_workers.append(create_task(export(Q=cast(Queue[CSVexportable] | Queue[TXTexportable] | Queue[JSONexportable], accountQs[str(i)]), 
+											format=args.format, filename=f'{filename}.{i}', 
+											force=force, append=args.append)))
+		elif args.by_region:
+			for region in regions:
+				accountQs[region.name] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)
+				account_workers.append(create_task(db.accounts_get_worker(accountQs[region.name], regions={region}, 
+														inactive=inactive, disabled=disabled, sample=sample)))
+											
+				export_workers.append(create_task(export(Q=cast(Queue[CSVexportable] | Queue[TXTexportable] | Queue[JSONexportable], accountQs[region.name]), 
+											format=args.format, filename=f'{filename}.{region.name}', 
+											force=force, append=args.append)))
+		else:
+			accountQs['all'] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)
+			account_workers.append(create_task(db.accounts_get_worker(accountQs['all'], regions=regions, 
+														inactive=inactive, disabled=disabled, sample=sample)))
+
+			if filename != '-':
+				filename += '.all'
+			export_workers.append(create_task(export(Q=cast(Queue[CSVexportable] | Queue[TXTexportable] | Queue[JSONexportable], accountQs['all']), 
+											format=args.format, filename=filename, 
+											force=force, append=args.append)))
 		
-		async for account in db.accounts_get(region=region, inactive=inactive, disabled=disabled, sample=sample):
-			print(account.json())
+		bar : Task
+		bar = create_task(alive_queue_bar(list(accountQs.values()), 'Exporting accounts', total=total))
+
+		await wait(account_workers)
+		for queue in accountQs.values():
+			await queue.join() 
+		bar.cancel()
+		for res in await gather(*account_workers):
+			if type(res) is EventCounter:
+				stats.merge_child(res)
+			elif type(res) is BaseException:
+				error(f'Backend ({db.name}) accounts_get_worker() returned error: {res}')
+		for worker in export_workers:
+			worker.cancel()
+		for res in await gather(*export_workers):
+			if type(res) is EventCounter:
+				stats.merge_child(res)
+			elif type(res) is BaseException:
+				error(f'export(format={args.format}) returned error: {res}')
+		stats.print()
 
 	except Exception as err:
 		error(str(err))
 	return False
+
+
+
 
 
 async def cmd_accounts_remove(db: Backend, args : Namespace) -> bool:
