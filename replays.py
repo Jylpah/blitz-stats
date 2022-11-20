@@ -5,8 +5,7 @@ import logging
 from asyncio import create_task, gather, Queue, CancelledError, Task
 from aiohttp import ClientResponse
 
-from backend import Backend, OptAccountsInactive
-from models import Account
+from backend import Backend
 from pyutils.eventcounter import EventCounter
 from pyutils.utils import get_url, get_url_JSON_model, epoch_now
 from blitzutils.models import WoTBlitzReplayJSON, Region
