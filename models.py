@@ -12,7 +12,7 @@ from os.path import basename
 import logging
 import aiofiles
 from collections import defaultdict
-from blitzutils.models import Region	# type: ignore
+from blitzutils.models import Region, Account	# type: ignore
 
 TYPE_CHECKING = True
 logger 	= logging.getLogger()
@@ -23,14 +23,11 @@ debug	= logger.debug
 
 
 class StatsTypes(str, Enum):
-		tank_stats 			= 'updated_tank_stats'
-		player_achievements = 'updated_player_achievements'
+	tank_stats 			= 'updated_tank_stats'
+	player_achievements = 'updated_player_achievements'
 
 
-class Account(BaseModel):	
-	id							: int 		 = Field(default=..., alias='_id')
-	region 						: Region | None= Field(default=None, alias='r')
-	last_battle_time			: int | None = Field(default=None, alias='l')
+class BSAccount(Account):	
 	updated_tank_stats 			: int | None = Field(default=None, alias='ut')
 	updated_player_achievements : int | None = Field(default=None, alias='up')
 	added 						: int | None = Field(default=None, alias='a')
@@ -55,18 +52,7 @@ class Account(BaseModel):
 		return None
 
 
-	@validator('id')
-	def check_id(cls, v):
-		assert v is not None, "id cannot be None"
-		assert type(v) is int or type(v) is Int64, "id has to be int"
-		if type(v) is Int64:
-			v = int(v)
-		if v < 0:
-			raise ValueError('account_id must be >= 0')
-		return v
-
-	
-	@validator('last_battle_time', 'updated_tank_stats', 'updated_player_achievements', 'added')
+	@validator('updated_tank_stats', 'updated_player_achievements', 'added')
 	def check_epoch_ge_zero(cls, v):
 		if v is None:
 			return None
@@ -82,26 +68,34 @@ class Account(BaseModel):
 		else:
 			return v
 
-	TypeAccountDict = dict[str, int |bool |Region |None]
-
-	@root_validator(skip_on_failure=True)
-	def set_region(cls, values: TypeAccountDict) -> TypeAccountDict:
-		i = values.get('id')
-		
-		assert type(i) is int, f'_id has to be int, was: {i} : {type(i)}'
-
-		if values['region'] is None:
-			# set default regions, but do not change region if set
-			values['region'] = Region.from_id(i)
 			
-		return values
-	
-	def json_src(self) -> str:
-		# exclude_src : TypeExcludeDict = { } 
-		return self.json(exclude_unset=True, by_alias=False)
+	# def json_src(self) -> str:
+	# 	# exclude_src : TypeExcludeDict = { } 
+	# 	return self.json(exclude_unset=True, by_alias=False)
 
 
-	def export_db(self) -> dict:
+	# JSONexportable()
+	@classmethod
+	def json_formats(cls) -> list[str]:
+		return ['db'] + super().json_formats()
+
+
+	def json_str(self, format: str = 'src') -> str:
 		# exclude_src : TypeExcludeDict = { } 
-		return self.dict(exclude_defaults=True, by_alias=True)
+		if format == 'db':
+			return self.json(exclude_defaults=True, by_alias=True)
+		else:
+			return super().json_str(format=format)
+
+
+	def json_obj(self, format: str = 'src') -> Any:
+		# exclude_src : TypeExcludeDict = { } 
+		if format == 'db':
+			return self.dict(exclude_defaults=True, by_alias=True)
+		else:
+			return super().json_obj(format=format)
+
+
+	# def dict_src(self) -> dict[str, int|bool|Region|None]:
+	# 	return self.dict(exclude_unset=False, by_alias=False)
 	
