@@ -2,7 +2,6 @@ from configparser import ConfigParser
 from argparse import Namespace
 import logging
 from abc import ABCMeta, abstractmethod
-# from collections.abc import AsyncGenerator
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCursor, AsyncIOMotorCollection # type: ignore
 from pymongo.results import InsertManyResult
@@ -11,10 +10,12 @@ from os.path import isfile
 from typing import Optional, Any, Iterable, AsyncGenerator
 from time import time
 from enum import Enum
+from asyncio import Queue, CancelledError
 
-from models import Account, StatsTypes
+from models import BSAccount, StatsTypes
 from blitzutils.models import Region, WoTBlitzReplayJSON, WGtankStat
 from pyutils.utils import epoch_now
+from pyutils.eventcounter import EventCounter
 
 # Setup logging
 logger	= logging.getLogger()
@@ -42,6 +43,33 @@ class OptAccountsInactive(str, Enum):
 	def default(cls) -> 'OptAccountsInactive':
 		return cls.auto
 	
+
+class OptAccountsDistributed():
+
+	def __init__(self, mod: int, div: int):
+		assert type(mod) is int and mod >=0 , 'Modulus has to be integer >= 0'
+		assert type(div) is int and div > 0, 'Divisor has to be positive integer'
+		self.mod : int = mod
+		self.div : int = div
+
+
+	@classmethod
+	def create(cls, input: str) -> Optional['OptAccountsDistributed']:
+		try:
+			res : list[str] = input.split(':')
+			if len(res) != 2:
+				raise ValueError(f'Input ({input} does not match format "I:N")')
+			mod : int = int(res[0])
+			div : int = int(res[1])
+			return OptAccountsDistributed(mod, div)
+		except Exception as err:
+			error(str(err))
+		return None
+
+
+	def match(self, value : int) -> bool:
+		assert type(value) is int, "value has to be integere"
+		return value % self.div == self.mod
 
 
 class Backend(metaclass=ABCMeta):
@@ -95,38 +123,56 @@ class Backend(metaclass=ABCMeta):
 	#----------------------------------------
 	
 	@abstractmethod
-	async def account_get(self, account_id: int) -> Account | None:
+	async def account_get(self, account_id: int) -> BSAccount | None:
 		"""Get account from backend"""
 		raise NotImplementedError
 
 
 	@abstractmethod
-	async def accounts_get(self, stats_type : StatsTypes | None = None, region: Region | None = None, 
-							inactive : OptAccountsInactive = OptAccountsInactive.default(), 
-							disabled: bool = False, sample : float = 0, 
-							force : bool = False, cache_valid: int = CACHE_VALID ) -> AsyncGenerator[Account, None]:
+	async def accounts_get(self, stats_type : StatsTypes | None = None, 
+							regions: set[Region] = Region.API_regions(), 
+							inactive : OptAccountsInactive = OptAccountsInactive.default(), 	
+							disabled: bool = False, 
+							dist : OptAccountsDistributed | None = None, sample : float = 0, 
+							force : bool = False, cache_valid: int = CACHE_VALID ) -> AsyncGenerator[BSAccount, None]:
 		"""Get accounts from backend"""
 		raise NotImplementedError
-		yield Account(id=-1)
+		yield BSAccount(id=-1)
+
+
+	async def accounts_get_worker(self, accountQ : Queue[BSAccount], **kwargs) -> EventCounter:
+		debug('starting')
+		stats : EventCounter = EventCounter('accounts')
+		try:
+			async for account in self.accounts_get(**kwargs):
+				await accountQ.put(account)
+				stats.log('queued')		
+		except CancelledError as err:
+			debug(f'Cancelled')
+		except Exception as err:
+			error(str(err))
+		return stats
 	
 
 	@abstractmethod
-	async def accounts_count(self, stats_type : StatsTypes | None = None, region: Region | None = None, 
-							inactive : OptAccountsInactive = OptAccountsInactive.default(), 
-							disabled: bool = False, sample : float = 0, 
+	async def accounts_count(self, stats_type : StatsTypes | None = None, 
+							regions: set[Region] = Region.API_regions(), 
+							inactive : OptAccountsInactive = OptAccountsInactive.default(), 	
+							disabled: bool = False, 
+							dist : OptAccountsDistributed | None = None, sample : float = 0, 
 							force : bool = False, cache_valid: int = CACHE_VALID ) -> int:
 		"""Get number of accounts from backend"""
 		raise NotImplementedError
 
 	@abstractmethod
-	async def account_insert(self, account: Account) -> bool:
+	async def account_insert(self, account: BSAccount) -> bool:
 		"""Store account to the backend. Returns False 
 			if the account was not added"""
 		raise NotImplementedError
 	
 
 	@abstractmethod
-	async def accounts_insert(self, accounts: Iterable[Account]) -> tuple[int, int]:
+	async def accounts_insert(self, accounts: Iterable[BSAccount]) -> tuple[int, int]:
 		"""Store accounts to the backend. Returns number of accounts inserted and not inserted""" 			
 		raise NotImplementedError
 
@@ -138,11 +184,17 @@ class Backend(metaclass=ABCMeta):
 
 
 	@abstractmethod
-	async def tank_stats_get(self, account: Account, tank_id: int | None = None, last_battle_time: int | None = None) -> AsyncGenerator[WGtankStat, None]:
+	async def tank_stats_get(self, account: BSAccount, tank_id: int | None = None, 
+								last_battle_time: int | None = None) -> AsyncGenerator[WGtankStat, None]:
 		"""Return tank stats from the backend"""
 		raise NotImplementedError
 
 
+##############################################
+#
+## class MongoBackend(Backend)
+#
+##############################################
 
 class MongoBackend(Backend):
 
@@ -249,26 +301,31 @@ class MongoBackend(Backend):
 		raise NotImplementedError
 
 	
-	async def account_get(self, account_id: int) -> Account | None:
+	async def account_get(self, account_id: int) -> BSAccount | None:
 		"""Get account from backend"""
 		try:
 			DBC : str = self.C['ACCOUNTS']
 			dbc : AsyncIOMotorCollection = self.db[DBC]
-			return Account.parse_obj(await dbc.find_one({'_id': account_id}))
+			return BSAccount.parse_obj(await dbc.find_one({'_id': account_id}))
 		except Exception as err:
 			error(f'Error fetching account_id: {account_id}) from {self.name}: {str(err)}')	
 		return None
 
-	async def accounts_count(self, stats_type : StatsTypes | None = None, region: Region | None = None, 
-							inactive : OptAccountsInactive = OptAccountsInactive.default(), 
-							disabled: bool = False, sample : float = 0, 
+
+	async def accounts_count(self, stats_type : StatsTypes | None = None, 
+							regions: set[Region] = Region.API_regions(), 
+							inactive : OptAccountsInactive = OptAccountsInactive.default(), 	
+							disabled: bool = False, 
+							dist : OptAccountsDistributed | None = None, sample : float = 0, 
 							force : bool = False, cache_valid: int = CACHE_VALID ) -> int:
 		try:
 			NOW = int(time())	
 			DBC : str = self.C['ACCOUNTS']
 			dbc : AsyncIOMotorCollection = self.db[DBC]
-			pipeline : list[dict[str, Any]] | None = await self._accounts_get_pipeline(stats_type, region, inactive,
-																				disabled, sample, force , cache_valid)
+			pipeline : list[dict[str, Any]] | None = await self._accounts_mk_pipeline(stats_type=stats_type, regions=regions, 
+																	inactive=inactive, disabled=disabled, 
+																	dist=dist, sample=sample, 
+																	force=force, cache_valid=cache_valid)
 
 			if pipeline is None:
 				raise ValueError(f'could not create get-accounts {self.name} cursor')
@@ -284,10 +341,12 @@ class MongoBackend(Backend):
 		return -1
 
 
-	async def accounts_get(self, stats_type : StatsTypes | None = None, region: Region | None = Region.API, 
-							inactive : OptAccountsInactive = OptAccountsInactive.default(), 
-							disabled: bool = False, sample : float = 0, 
-							force : bool = False, cache_valid: int = CACHE_VALID ) -> AsyncGenerator[Account, None]:
+	async def accounts_get(self, stats_type : StatsTypes | None = None, 
+							regions: set[Region] = Region.API_regions(), 
+							inactive : OptAccountsInactive = OptAccountsInactive.default(), 	
+							disabled: bool = False, 
+							dist : OptAccountsDistributed | None = None, sample : float = 0, 
+							force : bool = False, cache_valid: int = CACHE_VALID ) -> AsyncGenerator[BSAccount, None]:
 		"""Get accounts from Mongo DB
 			inactive: true = only inactive, false = not inactive, none = AUTO
 		"""
@@ -295,8 +354,10 @@ class MongoBackend(Backend):
 			NOW = int(time())	
 			DBC : str = self.C['ACCOUNTS']
 			dbc : AsyncIOMotorCollection = self.db[DBC]
-			pipeline : list[dict[str, Any]] | None = await self._accounts_get_pipeline(stats_type, region, inactive,
-																				disabled, sample, force , cache_valid)
+			pipeline : list[dict[str, Any]] | None = await self._accounts_mk_pipeline(stats_type=stats_type, regions=regions, 
+																	inactive=inactive, disabled=disabled, 
+																	dist=dist, sample=sample, 
+																	force=force, cache_valid=cache_valid)
 
 			update_field : str | None = None
 			if stats_type is not None:
@@ -308,7 +369,7 @@ class MongoBackend(Backend):
 			
 			async for account_obj in cursor:
 				try:
-					player = Account.parse_obj(account_obj)
+					player = BSAccount.parse_obj(account_obj)
 					if not force and not disabled and inactive is None and player.inactive:
 						assert update_field is not None, "automatic inactivity detection requires stat_type"
 						updated = dict(player)[update_field]
@@ -322,8 +383,10 @@ class MongoBackend(Backend):
 			error(f'Error fetching accounts from Mongo DB: {str(err)}')	
 
 
-	async def _accounts_get_pipeline(self, stats_type : StatsTypes | None = None, region: Region | None = Region.API, 
+	async def _accounts_mk_pipeline(self, stats_type : StatsTypes | None = None, 
+							regions: set[Region] = Region.API_regions(), 
 							inactive : OptAccountsInactive = OptAccountsInactive.default(), 
+							dist : OptAccountsDistributed | None = None,
 							disabled: bool = False, sample : float = 0, 
 							force : bool = False, cache_valid: int = CACHE_VALID ) -> list[dict[str, Any]] | None:
 		try:
@@ -345,12 +408,11 @@ class MongoBackend(Backend):
 			match : list[dict[str, str|int|float|dict|list]] = list()
 			
 			match.append({ '_id' : {  '$lt' : WG_ACCOUNT_ID_MAX}})  # exclude Chinese account ids
-
-			if region is not None:
-				if region == Region.API:
-					match.append({ 'r' : { '$in' : [ r.name for r in Region.API_regions() ]} })
-				else:
-					match.append({ 'r' : region.name })
+			
+			if dist is not None:
+				match.append({ '_id' : {  '$mod' :  [ dist.div, dist.mod ]}})
+			
+			match.append({ 'r' : { '$in' : [ r.value for r in regions ]} })
 	
 			if disabled:
 				match.append({ 'd': True })
@@ -381,14 +443,14 @@ class MongoBackend(Backend):
 			error(str(err))
 		return None
 
-	async def account_insert(self, account: Account) -> bool:
+	async def account_insert(self, account: BSAccount) -> bool:
 		"""Store account to the backend. Returns False 
 			if the account was not added"""
 		try:
 			DBC : str = self.C['ACCOUNTS']
 			dbc : AsyncIOMotorCollection = self.db[DBC]
 			account.added = epoch_now()
-			await dbc.insert_one(account.export_db())
+			await dbc.insert_one(account.json_obj('db'))
 			debug(f'Account add to {self.name}: {account.id}')
 			return True			
 		except Exception as err:
@@ -396,7 +458,7 @@ class MongoBackend(Backend):
 		return False
 	
 
-	async def accounts_insert(self, accounts: Iterable[Account]) -> tuple[int, int]:
+	async def accounts_insert(self, accounts: Iterable[BSAccount]) -> tuple[int, int]:
 		"""Store account to the backend. Returns False 
 			if the account was not added"""
 		added		: int = 0
@@ -410,7 +472,7 @@ class MongoBackend(Backend):
 				# modifying Iterable items is OK since the item object ref stays the sam
 				account.added = epoch_now()   
 
-			res = await dbc.insert_many( (account.export_db() for account in accounts), 
+			res = await dbc.insert_many( (account.json_obj('db') for account in accounts), 
 										  ordered=False)
 			added = len(res.inserted_ids)
 		except BulkWriteError as err:
@@ -449,6 +511,6 @@ class MongoBackend(Backend):
 		return added, not_added
 
 
-	async def tank_stats_get(self, account: Account, tank_id: int | None = None, last_battle_time: int | None = None) -> AsyncGenerator[WGtankStat, None]:
+	async def tank_stats_get(self, account: BSAccount, tank_id: int | None = None, last_battle_time: int | None = None) -> AsyncGenerator[WGtankStat, None]:
 		"""Return tank stats from the backend"""
 		raise NotImplementedError
