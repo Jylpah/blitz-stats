@@ -6,6 +6,7 @@ from asyncio import create_task, gather, wait, Queue, CancelledError, Task, slee
 
 from alive_progress import alive_bar		# type: ignore
 from sys import stdout
+
 from csv import DictWriter, DictReader, Dialect, Sniffer, excel
 
 from backend import Backend, OptAccountsInactive, OptAccountsDistributed, ACCOUNTS_Q_MAX
@@ -447,6 +448,8 @@ async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 		distributed : OptAccountsDistributed 
 		filename	: str					= args.filename
 		force		: bool 					= args.force
+		export_stdout : bool 				= filename == '-'
+
 		try: 
 			inactive = OptAccountsInactive(args.inactive)
 			if inactive == OptAccountsInactive.auto:		# auto mode requires specication of stats type
@@ -498,13 +501,15 @@ async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 											format=args.format, filename=filename, 
 											force=force, append=args.append)))
 		
-		bar : Task
-		bar = create_task(alive_queue_bar(list(accountQs.values()), 'Exporting accounts', total=total))
+		bar : Task | None = None
+		if not export_stdout:
+			bar = create_task(alive_queue_bar(list(accountQs.values()), 'Exporting accounts', total=total, enrich_print=False))
 			
 		await wait(account_workers)
 		for queue in accountQs.values():
 			await queue.join() 
-		bar.cancel()
+		if bar is not None:
+			bar.cancel()
 		for res in await gather(*account_workers):
 			if type(res) is EventCounter:
 				stats.merge_child(res)
@@ -517,7 +522,8 @@ async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 				stats.merge_child(res)
 			elif type(res) is BaseException:
 				error(f'export(format={args.format}) returned error: {res}')
-		stats.print()
+		if not export_stdout:
+			stats.print()
 
 	except Exception as err:
 		error(str(err))
