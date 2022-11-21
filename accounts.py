@@ -472,14 +472,21 @@ async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 											format=args.format, filename=f'{filename}.{i}', 
 											force=force, append=args.append)))
 		elif args.by_region:
+			accountQs['all'] = CounterQueue(maxsize=ACCOUNTS_Q_MAX, count_items=False)
+			# by region
 			for region in regions:
-				accountQs[region.name] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)
-				account_workers.append(create_task(db.accounts_get_worker(accountQs[region.name], regions={region}, 
-														inactive=inactive, disabled=disabled, sample=sample)))
-											
-				export_workers.append(create_task(export(Q=cast(Queue[CSVexportable] | Queue[TXTexportable] | Queue[JSONexportable], accountQs[region.name]), 
+				accountQs[region.name] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)											
+				export_workers.append(create_task(export(Q=cast(Queue[CSVexportable] | Queue[TXTexportable] | Queue[JSONexportable], 
+																accountQs[region.name]), 
 											format=args.format, filename=f'{filename}.{region.name}', 
 											force=force, append=args.append)))
+			
+			# fetch accounts for all the regios
+			account_workers.append(create_task(db.accounts_get_worker(accountQs['all'], regions=regions, 
+														inactive=inactive, disabled=disabled, sample=sample)))
+			# split by region
+			export_workers.append(create_task(accounts_split_Q_by_region(Q_all=accountQs['all'], 
+									regionQs=cast(dict[str, Queue[BSAccount]], accountQs))))
 		else:
 			accountQs['all'] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)
 			account_workers.append(create_task(db.accounts_get_worker(accountQs['all'], regions=regions, 
@@ -493,7 +500,7 @@ async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 		
 		bar : Task
 		bar = create_task(alive_queue_bar(list(accountQs.values()), 'Exporting accounts', total=total))
-
+			
 		await wait(account_workers)
 		for queue in accountQs.values():
 			await queue.join() 
@@ -517,14 +524,38 @@ async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 	return False
 
 
+async def accounts_split_Q_by_region(Q_all, regionQs : dict[str, Queue[BSAccount]]) -> EventCounter:
+	debug('starting')
+	stats : EventCounter = EventCounter('By region')
+	try:
+		while True:
+			account : BSAccount = await Q_all.get()			
+			try:
+				if account.region is None:
+					raise ValueError(f'account ({account.id}) does not have region defined')
+				await regionQs[account.region.name].put(account)
+				stats.log(account.region.name)
+			
+			except CancelledError:
+				raise CancelledError from None
+			except Exception as err:
+				stats.log('errors')
+				error(str(err))
+			finally:
+				stats.log('total')
+				Q_all.task_done()
 
+	except CancelledError as err:
+		debug(f'Cancelled')
+	except Exception as err:
+		error(str(err))
+	return stats
 
 
 async def cmd_accounts_remove(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		raise NotImplementedError
-		
 
 	except Exception as err:
 		error(str(err))
