@@ -272,7 +272,7 @@ class MongoBackend(Backend):
 		try:
 			DBC : str = self.C['REPLAYS']
 			dbc : AsyncIOMotorCollection = self.db[DBC]
-			await dbc.insert_one(replay.export_db())
+			await dbc.insert_one(replay.obj_db())
 			return True
 		except Exception as err:
 			debug(f'Could not insert replay (_id: {replay.id}) into {self.name}: {str(err)}')	
@@ -449,7 +449,7 @@ class MongoBackend(Backend):
 			DBC : str = self.C['ACCOUNTS']
 			dbc : AsyncIOMotorCollection = self.db[DBC]
 			account.added = epoch_now()
-			await dbc.insert_one(account.json_obj('db'))
+			await dbc.insert_one(account.obj_db())
 			debug(f'Account add to {self.name}: {account.id}')
 			return True			
 		except Exception as err:
@@ -471,7 +471,7 @@ class MongoBackend(Backend):
 				# modifying Iterable items is OK since the item object ref stays the sam
 				account.added = epoch_now()   
 
-			res = await dbc.insert_many( (account.json_obj('db') for account in accounts), 
+			res = await dbc.insert_many( (account.obj_db() for account in accounts), 
 										  ordered=False)
 			added = len(res.inserted_ids)
 		except BulkWriteError as err:
@@ -495,7 +495,7 @@ class MongoBackend(Backend):
 			dbc : AsyncIOMotorCollection = self.db[DBC]
 			res : InsertManyResult
 			
-			res = await dbc.insert_many( (tank_stat.export_db() for tank_stat in tank_stats), 
+			res = await dbc.insert_many( (tank_stat.obj_db() for tank_stat in tank_stats), 
 										  ordered=False)
 			added = len(res.inserted_ids)
 		except BulkWriteError as err:

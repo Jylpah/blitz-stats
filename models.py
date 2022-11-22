@@ -34,6 +34,8 @@ class BSAccount(Account):
 	inactive					: bool 		 = Field(default=False, alias='i')
 	disabled					: bool		 = Field(default=False, alias='d')
 
+	_exclude_export_DB_fields = None
+	_exclude_export_src_fields = None
 	
 	class Config:
 		allow_population_by_field_name = True
@@ -68,34 +70,3 @@ class BSAccount(Account):
 		else:
 			return v
 
-			
-	# def json_src(self) -> str:
-	# 	# exclude_src : TypeExcludeDict = { } 
-	# 	return self.json(exclude_unset=True, by_alias=False)
-
-
-	# JSONexportable()
-	@classmethod
-	def json_formats(cls) -> list[str]:
-		return ['db'] + super().json_formats()
-
-
-	def json_str(self, format: str = 'src') -> str:
-		# exclude_src : TypeExcludeDict = { } 
-		if format == 'db':
-			return self.json(exclude_defaults=True, by_alias=True)
-		else:
-			return super().json_str(format=format)
-
-
-	def json_obj(self, format: str = 'src') -> Any:
-		# exclude_src : TypeExcludeDict = { } 
-		if format == 'db':
-			return self.dict(exclude_defaults=True, by_alias=True)
-		else:
-			return super().json_obj(format=format)
-
-
-	# def dict_src(self) -> dict[str, int|bool|Region|None]:
-	# 	return self.dict(exclude_unset=False, by_alias=False)
-	

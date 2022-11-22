@@ -13,7 +13,7 @@ from backend import Backend, OptAccountsInactive, OptAccountsDistributed, ACCOUN
 from models import BSAccount, StatsTypes
 from pyutils.eventcounter import EventCounter
 from pyutils.counterqueue import CounterQueue, alive_queue_bar
-from pyutils.utils import get_url, get_url_JSON_model, epoch_now, export, TXTexportable, CSVexportable, JSONexportable
+from pyutils.utils import get_url, get_url_JSON_model, epoch_now, export, TXTExportable, CSVExportable, JSONExportable
 from blitzutils.models import WoTBlitzReplayJSON, Region
 from blitzutils.wotinspector import WoTinspector
 
@@ -415,7 +415,9 @@ async def accounts_update_wi_fetch_replays(db: Backend, wi: WoTinspector, replay
 			replay_id = await replay_idQ.get()
 			try:
 				url : str = wi.get_url_replay_JSON(replay_id)
-				replay : WoTBlitzReplayJSON | None = cast(WoTBlitzReplayJSON, await get_url_JSON_model(wi.session, url, WoTBlitzReplayJSON ))
+				replay : WoTBlitzReplayJSON | None = cast(WoTBlitzReplayJSON, 
+														await get_url_JSON_model(wi.session, url, 
+																			WoTBlitzReplayJSON ))
 				if replay is None:
 					error(f'Could not fetch replay id: {replay_id}')
 					continue
@@ -471,7 +473,7 @@ async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 				account_workers.append(create_task(db.accounts_get_worker(accountQs[str(i)], regions=regions, 
 														inactive=inactive, disabled=disabled, sample=sample,
 														distributed=distributed)))
-				export_workers.append(create_task(export(Q=cast(Queue[CSVexportable] | Queue[TXTexportable] | Queue[JSONexportable], accountQs[str(i)]), 
+				export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], accountQs[str(i)]), 
 											format=args.format, filename=f'{filename}.{i}', 
 											force=force, append=args.append)))
 		elif args.by_region:
@@ -479,7 +481,7 @@ async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 			# by region
 			for region in regions:
 				accountQs[region.name] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)											
-				export_workers.append(create_task(export(Q=cast(Queue[CSVexportable] | Queue[TXTexportable] | Queue[JSONexportable], 
+				export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], 
 																accountQs[region.name]), 
 											format=args.format, filename=f'{filename}.{region.name}', 
 											force=force, append=args.append)))
@@ -497,7 +499,7 @@ async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 
 			if filename != '-':
 				filename += '.all'
-			export_workers.append(create_task(export(Q=cast(Queue[CSVexportable] | Queue[TXTexportable] | Queue[JSONexportable], accountQs['all']), 
+			export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], accountQs['all']), 
 											format=args.format, filename=filename, 
 											force=force, append=args.append)))
 		
