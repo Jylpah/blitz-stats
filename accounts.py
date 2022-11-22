@@ -283,7 +283,7 @@ async def accounts_add_worker(db: Backend, accountQ: Queue[list[int]]) -> EventC
 					stats.log('old accounts found', not_added)
 				except Exception as err:
 					stats.log('errors')
-					error(f'Cound not add accounts do {db.name}: {str(err)}')
+					error(f'Cound not add accounts do {db.name}: {err}')
 			except Exception as err:
 				error(str(err))
 			finally:
@@ -473,9 +473,10 @@ async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 				account_workers.append(create_task(db.accounts_get_worker(accountQs[str(i)], regions=regions, 
 														inactive=inactive, disabled=disabled, sample=sample,
 														distributed=distributed)))
-				export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], accountQs[str(i)]), 
-											format=args.format, filename=f'{filename}.{i}', 
-											force=force, append=args.append)))
+				export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], 
+															accountQs[str(i)]), 
+														format=args.format, filename=f'{filename}.{i}', 
+														force=force, append=args.append)))
 		elif args.by_region:
 			accountQs['all'] = CounterQueue(maxsize=ACCOUNTS_Q_MAX, count_items=False)
 			# by region
