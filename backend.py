@@ -91,7 +91,7 @@ class Backend(metaclass=ABCMeta):
 			else:				
 				assert False, f'Backend not implemented: {backend}'
 		except Exception as err:
-			error(f'Error creating backend {backend}: {str(err)}')
+			error(f'Error creating backend {backend}: {err}')
 		return None		
 
 
@@ -264,7 +264,7 @@ class MongoBackend(Backend):
 		except FileNotFoundError as err:
 			error(str(err))
 		except Exception as err:
-			error(f'Error connecting Mongo DB: {str(err)}')
+			error(f'Error connecting Mongo DB: {err}')
 
 
 	async def replay_insert(self, replay: WoTBlitzReplayJSON) -> bool:
@@ -275,7 +275,7 @@ class MongoBackend(Backend):
 			await dbc.insert_one(replay.obj_db())
 			return True
 		except Exception as err:
-			debug(f'Could not insert replay (_id: {replay.id}) into {self.name}: {str(err)}')	
+			debug(f'Could not insert replay (_id: {replay.id}) into {self.name}: {err}')	
 		return False
 
 
@@ -291,7 +291,7 @@ class MongoBackend(Backend):
 				# debug(replay.json_src())
 				return WoTBlitzReplayJSON.parse_obj(res)   # returns None if not found
 		except Exception as err:
-			debug(f'Error reading replay (id_: {replay_id}) from {self.name}: {str(err)}')	
+			debug(f'Error reading replay (id_: {replay_id}) from {self.name}: {err}')	
 		return None
 	
 
@@ -308,7 +308,7 @@ class MongoBackend(Backend):
 			dbc : AsyncIOMotorCollection = self.db[DBC]
 			return BSAccount.parse_obj(await dbc.find_one({'_id': account_id}))
 		except Exception as err:
-			error(f'Error fetching account_id: {account_id}) from {self.name}: {str(err)}')	
+			error(f'Error fetching account_id: {account_id}) from {self.name}: {err}')	
 		return None
 
 
@@ -379,7 +379,7 @@ class MongoBackend(Backend):
 					error(str(err))
 					continue
 		except Exception as err:
-			error(f'Error fetching accounts from Mongo DB: {str(err)}')	
+			error(f'Error fetching accounts from Mongo DB: {err}')	
 
 
 	async def _accounts_mk_pipeline(self, stats_type : StatsTypes | None = None, 
@@ -453,7 +453,7 @@ class MongoBackend(Backend):
 			debug(f'Account add to {self.name}: {account.id}')
 			return True			
 		except Exception as err:
-			debug(f'Failed to add account_id={account.id} to {self.name}: {str(err)}')	
+			debug(f'Failed to add account_id={account.id} to {self.name}: {err}')	
 		return False
 	
 
@@ -482,7 +482,7 @@ class MongoBackend(Backend):
 			else:
 				error('BulkWriteError.details is None')
 		except Exception as err:
-			error(f'Unknown error when adding acconts: {str(err)}')
+			error(f'Unknown error when adding acconts: {err}')
 		return added, not_added
 
 	
@@ -506,7 +506,7 @@ class MongoBackend(Backend):
 			else:
 				error('BulkWriteError.details is None')
 		except Exception as err:
-			error(f'Unknown error when adding tank stats: {str(err)}')
+			error(f'Unknown error when adding tank stats: {err}')
 		return added, not_added
 
 
