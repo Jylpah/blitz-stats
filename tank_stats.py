@@ -8,7 +8,7 @@ from asyncstdlib import enumerate
 from alive_progress import alive_bar		# type: ignore
 
 from backend import Backend, OptAccountsInactive, ACCOUNTS_Q_MAX, CACHE_VALID
-from models import Account, StatsTypes
+from models import BSAccount, StatsTypes
 from pyutils.eventcounter import EventCounter
 from pyutils.utils import get_url, get_url_JSON_model, epoch_now
 from blitzutils.models import WoTBlitzReplayJSON, Region, WGApiWoTBlitzTankStats, WGtankStat
@@ -80,7 +80,7 @@ def add_args_tank_stats_update(parser: ArgumentParser, config: Optional[ConfigPa
 		parser.add_argument('--rate-limit', type=float, default=WG_RATE_LIMIT, metavar='RATE_LIMIT',
 							help='Rate limit for WG API')
 		parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
-							default=Region.API_regions(), help='Filter by region (default: eu + com + asia + ru)')
+							default=list(Region.API_regions()), help='Filter by region (default: eu + com + asia + ru)')
 		parser.add_argument('--sample', type=float, default=0, metavar='SAMPLE',
 							help='Update tank stats for SAMPLE of accounts. If 0 < SAMPLE < 1, SAMPLE defines a %% of users')
 		parser.add_argument('--older-than', type=int, default=CACHE_VALID, metavar='DAYS',
@@ -93,8 +93,8 @@ def add_args_tank_stats_update(parser: ArgumentParser, config: Optional[ConfigPa
 								default=OptAccountsInactive.default().value, help='Include inactive accounts')
 		parser.add_argument('--accounts', type=int, default=None, nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
 							help='Update tank stats for the listed ACCOUNT_ID(s)')
-		parser.add_argument('--accounts-file', '--file',type=str, dest='accounts_file', metavar='FILENAME', 
-							default=None, help='Read account_ids from FILENAME one account_id per line')
+		parser.add_argument('--file',type=str, metavar='FILENAME', default=None, 
+							help='Read account_ids from FILENAME one account_id per line')
 
 		return True
 	except Exception as err:
@@ -150,7 +150,7 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 	assert 'wg_app_id' in args and type(args.wg_app_id) is str, "'wg_app_id' must be set and string"
 	assert 'rate_limit' in args and (type(args.rate_limit) is float or \
 			type(args.rate_limit) is int), "'rate_limit' must set and a number"	
-	assert 'region' in args and type(args.region) is str, "'region' must be set and string"
+	assert 'region' in args and type(args.region) is list, "'region' must be set and a list"
 	
 	debug('starting')
 	inactive : OptAccountsInactive = OptAccountsInactive.default()
@@ -163,7 +163,7 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 	try:
 		stats 	 : EventCounter				= EventCounter('tank-stats update')
 		regions	 : set[Region] 				= { Region(r) for r in args.region }
-		accountQ : Queue[Account] 			= Queue(maxsize=ACCOUNTS_Q_MAX)
+		accountQ : Queue[BSAccount] 			= Queue(maxsize=ACCOUNTS_Q_MAX)
 		statsQ	 : Queue[list[WGtankStat]] 	= Queue(maxsize=TANK_STATS_Q_MAX)
 
 		tasks : list[Task] = list()
@@ -173,17 +173,19 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 
 		accounts_N 		: int = 0
 		accounts_added 	: int = 0 
-		qsize 			: int = 0
+		# qsize 			: int = 0
 
 		# count number of accounts
 		if args.accounts is not None:
 			accounts_N = len(args.accounts)			
-		elif args.accounts_file is not None:
-			message(f'Reading accounts from {args.accounts_file}')
-			async with open(args.accounts_file, mode='r') as f:
+		elif args.file is not None:
+			message(f'Reading accounts from {args.file}')
+			async with open(args.file, mode='r') as f:
 				async for accounts_N, _ in enumerate(f):
 					pass
 			accounts_N += 1
+			if args.file.endswith('.csv'):
+				accounts_N -= 1
 		else:
 			if args.sample > 1:
 				accounts_N = int(args.sample)
@@ -200,20 +202,37 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 			if args.accounts is not None:	
 				async for accounts_added, account_id in enumerate(args.accounts):
 					try:
-						await accountQ.put(Account(_id=account_id))
+						await accountQ.put(BSAccount(id=account_id))
 					except Exception as err:
 						error(f'Could not add account ({account_id}) to queue')
 					finally:
 						bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
 
-			elif args.accounts_file is not None:
-				async with open(args.accounts_file, mode='r') as f:
-					async for accounts_added, line in enumerate(f):
+			elif args.file is not None:
+
+				if args.file.endswith('.txt'):
+					async for accounts_added, account in enumerate(BSAccount.import_txt(args.file)):
 						try:
-							##  REFACTOR to use Importable interface
-							await accountQ.put(Account(_id=int(line.strip())))
+							await accountQ.put(account)
 						except Exception as err:
-							error(f'Could not add account ({line.strip()}) to queue')
+							error(f'Could not add account to the queue: {err}')
+						finally:
+							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
+
+				elif args.file.endswith('.csv'):				
+					async for accounts_added, account in enumerate(BSAccount.import_csv(args.file)):
+						try:
+							await accountQ.put(account)
+						except Exception as err:
+							error(f'Could not add account to the queue: {err}')
+						finally:
+							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
+				elif args.file.endswith('.json'):				
+					async for accounts_added, account in enumerate(BSAccount.import_json(args.file)):
+						try:
+							await accountQ.put(account)
+						except Exception as err:
+							error(f'Could not add account to the queue: {err}')
 						finally:
 							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
 			
@@ -255,14 +274,14 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 		await wg.close()
 	return False
 
-async def update_tank_stats_api_worker(wg : WGApi, regions: set[Region], accountQ: Queue[Account], 
+async def update_tank_stats_api_worker(wg : WGApi, regions: set[Region], accountQ: Queue[BSAccount], 
 										statsQ: Queue[list[WGtankStat]]) -> EventCounter:
 	"""Async worker to fetch tank stats from WG API"""
 	debug('starting')
 	stats = EventCounter('WG API')
 	try:
 		while True:
-			account : Account = await accountQ.get()
+			account : BSAccount = await accountQ.get()
 			try:
 				debug(f'account_id: {account.id}')
 				stats.log('accounts total')
