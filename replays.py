@@ -49,7 +49,7 @@ def add_args_replays(parser: ArgumentParser, config: Optional[ConfigParser] = No
 				
 		return True
 	except Exception as err:
-		error(f'add_args_replays(): {str(err)}')
+		error(f'add_args_replays(): {err}')
 	return False
 
 
@@ -78,7 +78,7 @@ def add_args_replays_export(parser: ArgumentParser, config: Optional[ConfigParse
 		
 		return True	
 	except Exception as err:
-		error(f'add_args_replays_export() : {str(err)}')
+		error(f'add_args_replays_export() : {err}')
 	return False
 
 
@@ -88,7 +88,7 @@ def add_args_replays_export_id(parser: ArgumentParser, config: Optional[ConfigPa
 		parser.add_argument('replay_export_id',type=str, metavar='REPLAY-ID', help='Replay ID to export')		
 		return True
 	except Exception as err:
-		error(f'add_args_replays_export_id() : {str(err)}')
+		error(f'add_args_replays_export_id() : {err}')
 	return False
 
 
@@ -98,7 +98,7 @@ def add_args_replays_export_find(parser: ArgumentParser, config: Optional[Config
 	try:
 		return True
 	except Exception as err:
-		error(f'add_args_replays_export_find() : {str(err)}')
+		error(f'add_args_replays_export_find() : {err}')
 	return False
 
 
@@ -125,7 +125,7 @@ def add_args_replays_import(parser: ArgumentParser, config: Optional[ConfigParse
 		
 		return True	
 	except Exception as err:
-		error(f'add_args_replays_export() : {str(err)}')
+		error(f'add_args_replays_export() : {err}')
 	return False
 
 
