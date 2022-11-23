@@ -333,7 +333,7 @@ async def cmd_accounts_update_wi(db: Backend, args : Namespace, accountQ : Queue
 
 		replays 	: int = replay_idQ.qsize()
 		replays_left: int = replays
-		with alive_bar(replays, title="Fetching replays ", manual=True) as bar:
+		with alive_bar(replays, title="Fetching replays ", manual=True, enrich_print=False) as bar:
 			for _ in range(workersN):
 				workers.append(create_task(accounts_update_wi_fetch_replays(db, wi, replay_idQ, accountQ)))
 			while True:
@@ -366,7 +366,7 @@ async def accounts_update_wi_spider_replays(db: Backend, wi: WoTinspector, args:
 
 	try:
 		debug(f'Starting ({len(pages)} pages)')
-		with alive_bar(len(pages), title= "Spidering replays") as bar:
+		with alive_bar(len(pages), title= "Spidering replays", enrich_print=False) as bar:
 			for page in pages:			
 				try:
 					if old_replays > max_old_replays:

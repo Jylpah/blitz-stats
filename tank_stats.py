@@ -198,7 +198,7 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 		if accounts_N == 0:
 			raise ValueError('No accounts to update tank stats for')		
 
-		with alive_bar(accounts_N, title= "Fetching tank stats", manual=True) as bar:
+		with alive_bar(accounts_N, title= "Fetching tank stats", manual=True, enrich_print=False) as bar:
 			if args.accounts is not None:	
 				async for accounts_added, account_id in enumerate(args.accounts):
 					try:
