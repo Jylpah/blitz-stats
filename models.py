@@ -70,24 +70,24 @@ class BSAccount(Account):
 		else:
 			return v
 
-	@classmethod
-	def from_csv(cls, row: dict[str, Any]) -> 'BSAccount':
-		"""Provide CSV row as a dict for csv.DictWriter"""
-		row = super().from_csv(row).dict()
-		# field type conversion
-		for field in ['inactive', 'disabled']:
-			if field in row:
-				if row[field] == '':
-					del row[field]
-				else:
-					row[field] = int(row[field])
+	# @classmethod
+	# def from_csv(cls, row: dict[str, Any]) -> 'BSAccount':
+	# 	"""Provide CSV row as a dict for csv.DictWriter"""
+	# 	row = super().from_csv(row).dict()
+	# 	# field type conversion
+	# 	for field in ['inactive', 'disabled']:
+	# 		if field in row:
+	# 			if row[field] == '':
+	# 				del row[field]
+	# 			else:
+	# 				row[field] = int(row[field])
 		
-		for field in []:
-			if field in row:
-				if row[field] == '':
-					del row[field]
-				else:
-					row[field] = bool(row[field])
+	# 	for field in []:
+	# 		if field in row:
+	# 			if row[field] == '':
+	# 				del row[field]
+	# 			else:
+	# 				row[field] = bool(row[field])
 		
-		return BSAccount(**row)
+	# 	return BSAccount(**row)
 
