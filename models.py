@@ -14,7 +14,7 @@ import aiofiles
 from collections import defaultdict
 
 from blitzutils.models import Region, Account	# type: ignore
-
+from pyutils.utils import epoch_now
 
 TYPE_CHECKING = True
 logger 	= logging.getLogger()
@@ -32,12 +32,16 @@ class StatsTypes(StrEnum):
 class BSAccount(Account):	
 	updated_tank_stats 			: int | None = Field(default=None, alias='ut')
 	updated_player_achievements : int | None = Field(default=None, alias='up')
-	added 						: int | None = Field(default=None, alias='a')
+	
+	# added 						: int | None = Field(default=None, alias='a')
+	added 						: int 		= Field(default_factory=epoch_now, alias='a')
 	inactive					: bool 		 = Field(default=False, alias='i')
 	disabled					: bool		 = Field(default=False, alias='d')
 
 	_exclude_export_DB_fields = None
 	_exclude_export_src_fields = None
+	_include_export_DB_fields = None
+	_include_export_src_fields= None
 	
 	class Config:
 		allow_population_by_field_name = True
