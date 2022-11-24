@@ -247,11 +247,14 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 						error(f'Could not add account ({account.id}) to queue')
 					finally:	
 						bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
-							
+
+			incomplete : bool = False				
 			while accountQ.qsize() > 0:
+				incomplete = True
 				await sleep(1)
 				bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
-			bar(1)
+			if incomplete:						# FIX the edge case of queue getting processed before while loop
+				bar(1)
 
 		await accountQ.join()
 		await statsQ.join()
