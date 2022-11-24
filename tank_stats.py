@@ -219,7 +219,7 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 						finally:
 							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
 
-				elif args.file.endswith('.csv'):				
+				elif args.file.endswith('.csv'):					
 					async for accounts_added, account in enumerate(BSAccount.import_csv(args.file)):
 						try:
 							await accountQ.put(account)
@@ -227,6 +227,7 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 							error(f'Could not add account to the queue: {err}')
 						finally:
 							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
+
 				elif args.file.endswith('.json'):				
 					async for accounts_added, account in enumerate(BSAccount.import_json(args.file)):
 						try:
@@ -246,11 +247,11 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 						error(f'Could not add account ({account.id}) to queue')
 					finally:	
 						bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
-			
-			accounts_added += 1			# enumemrate() starts from 0, not 1			
+							
 			while accountQ.qsize() > 0:
 				await sleep(1)
-				bar((accounts_added - accountQ.qsize())/accounts_N)
+				bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
+			bar(1)
 
 		await accountQ.join()
 		await statsQ.join()
@@ -313,20 +314,30 @@ async def update_tank_stats_api_worker(wg : WGApi, regions: set[Region], account
 
 
 async def add_tank_stats_worker(db: Backend, statsQ: Queue[list[WGtankStat]]) -> EventCounter:
-	"""Async worker to add tank stats to backend"""
+	"""Async worker to add tank stats to backend. Assumes batch is for the same account"""
 	debug('starting')
 	stats 		: EventCounter = EventCounter(f'Backend ({db.name})')
 	added 		: int
 	not_added 	: int
+	account 	: BSAccount | None
+	account_id	: int
 	try:		
 		while True:
-			tank_stats : list[WGtankStat] = await statsQ.get()
+			tank_stats : list[WGtankStat] = await statsQ.get()			
 			added 		= 0
 			not_added 	= 0
+			account		= None
 			try:
 				if len(tank_stats) > 0:
-					debug(f'Read {len(tank_stats)} from queue')
+					debug(f'Read {len(tank_stats)} from queue')					
 					added, not_added= await db.tank_stats_insert(tank_stats)
+					account_id = tank_stats[0].account_id
+					if (account := await db.account_get(account_id=account_id)) is None:
+						account = BSAccount(id=account_id)
+					debug(f'{account}')
+					account.stats_updated(StatsTypes.tank_stats)
+					account.inactive = (added == 0)
+					await db.account_update(account=account)
 			except Exception as err:
 				error(str(err))
 			finally:
