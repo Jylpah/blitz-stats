@@ -339,7 +339,12 @@ async def add_tank_stats_worker(db: Backend, statsQ: Queue[list[WGtankStat]]) ->
 						account = BSAccount(id=account_id)
 					debug(f'{account}')
 					account.stats_updated(StatsTypes.tank_stats)
-					account.inactive = (added == 0)
+					if added > 0:
+						account.inactive = False
+						stats.log('accounts /w new stats')
+					else:
+						account.inactive = True
+						stats.log('accounts w/o new stats')
 					await db.account_update(account=account)
 			except Exception as err:
 				error(str(err))
