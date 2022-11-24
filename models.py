@@ -7,12 +7,14 @@ from isort import place_module
 from pydantic import BaseModel, Extra, root_validator, validator, Field, HttpUrl
 from pydantic.utils import ValueItems
 import json
-from enum import Enum, IntEnum
+from enum import Enum, IntEnum, StrEnum
 from os.path import basename
 import logging
 import aiofiles
 from collections import defaultdict
+
 from blitzutils.models import Region, Account	# type: ignore
+
 
 TYPE_CHECKING = True
 logger 	= logging.getLogger()
@@ -22,7 +24,7 @@ verbose	= logger.info
 debug	= logger.debug
 
 
-class StatsTypes(str, Enum):
+class StatsTypes(StrEnum):
 	tank_stats 			= 'updated_tank_stats'
 	player_achievements = 'updated_player_achievements'
 
@@ -49,12 +51,12 @@ class BSAccount(Account):
 		try:
 			if stats_type is not None:
 				return StatsTypes(stats_type).value
-		except Exception as err:
+		except Exception:
 			error(f'Unknown stats_type: {stats_type}')
 		return None
 
 
-	@validator('updated_tank_stats', 'updated_player_achievements', 'added')
+	@validator('updated_tank_stats', 'updated_player_achievements')
 	def check_epoch_ge_zero(cls, v):
 		if v is None:
 			return None
@@ -63,31 +65,17 @@ class BSAccount(Account):
 		else:
 			raise ValueError('time field must be >= 0')
 
+
 	@validator('added')
 	def set_current_time(cls, v):
 		if v is None:
 			return int(time())
-		else:
+		elif v >= 0:
 			return v
+		else:
+			ValueError('time field must be >= 0')
 
-	# @classmethod
-	# def from_csv(cls, row: dict[str, Any]) -> 'BSAccount':
-	# 	"""Provide CSV row as a dict for csv.DictWriter"""
-	# 	row = super().from_csv(row).dict()
-	# 	# field type conversion
-	# 	for field in ['inactive', 'disabled']:
-	# 		if field in row:
-	# 			if row[field] == '':
-	# 				del row[field]
-	# 			else:
-	# 				row[field] = int(row[field])
-		
-	# 	for field in []:
-	# 		if field in row:
-	# 			if row[field] == '':
-	# 				del row[field]
-	# 			else:
-	# 				row[field] = bool(row[field])
-		
-	# 	return BSAccount(**row)
 
+	def stats_updated(self, stats: StatsTypes) -> None:
+		assert type(stats) is StatsTypes, "'stats' need to be type(StatsTypes)"
+		setattr(self, stats.value, int(time()))
