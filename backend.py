@@ -9,7 +9,7 @@ from pymongo.errors import BulkWriteError
 from os.path import isfile
 from typing import Optional, Any, Iterable, AsyncGenerator
 from time import time
-from enum import Enum
+from enum import Enum, StrEnum
 from asyncio import Queue, CancelledError
 
 from models import BSAccount, StatsTypes
@@ -33,7 +33,7 @@ MAX_RETRIES 		: int = 3
 CACHE_VALID 		: int = 5   # days
 ACCOUNTS_Q_MAX 		: int = 500
 
-class OptAccountsInactive(str, Enum):
+class OptAccountsInactive(StrEnum):
 	auto	= 'auto'
 	no		= 'no'
 	yes 	= 'yes'
@@ -163,6 +163,14 @@ class Backend(metaclass=ABCMeta):
 							force : bool = False, cache_valid: int = CACHE_VALID ) -> int:
 		"""Get number of accounts from backend"""
 		raise NotImplementedError
+
+
+	@abstractmethod
+	async def account_update(self, account: BSAccount, upsert: bool = True) -> bool:
+		"""Update an account in the backend. Returns False 
+			if the account was not updated"""
+		raise NotImplementedError
+
 
 	@abstractmethod
 	async def account_insert(self, account: BSAccount) -> bool:
@@ -456,6 +464,21 @@ class MongoBackend(Backend):
 			debug(f'Failed to add account_id={account.id} to {self.name}: {err}')	
 		return False
 	
+	
+	async def account_update(self, account: BSAccount, upsert: bool = True) -> bool:
+		"""Update an account in the backend. Returns False 
+			if the account was not updated"""
+		try:
+			DBC : str = self.C['ACCOUNTS']
+			dbc : AsyncIOMotorCollection = self.db[DBC]
+			
+			await dbc.find_one_and_replace({ '_id': account.id }, account.obj_db(), upsert=upsert)
+			debug(f'Updated: {account}')
+			return True			
+		except Exception as err:
+			debug(f'Failed to update account_id={account.id} to {self.name}: {err}')	
+		return False
+
 
 	async def accounts_insert(self, accounts: Iterable[BSAccount]) -> tuple[int, int]:
 		"""Store account to the backend. Returns False 
