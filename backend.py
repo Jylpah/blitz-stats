@@ -186,7 +186,7 @@ class Backend(metaclass=ABCMeta):
 
 
 	@abstractmethod
-	async def tank_stats_insert(self, tank_stats: Iterable[WGtankStat]) -> tuple[int, int]:
+	async def tank_stats_insert(self, tank_stats: Iterable[WGtankStat]) -> tuple[int, int, int]:
 		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
 		raise NotImplementedError
 
@@ -509,15 +509,17 @@ class MongoBackend(Backend):
 		return added, not_added
 
 	
-	async def tank_stats_insert(self, tank_stats: Iterable[WGtankStat]) -> tuple[int, int]:
+	async def tank_stats_insert(self, tank_stats: Iterable[WGtankStat]) -> tuple[int, int, int]:
 		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
-		added		: int = 0
-		not_added 	: int = 0
+		added			: int = 0
+		not_added 		: int = 0
+		last_battle_time: int = -1
+
 		try:
 			DBC : str = self.C['TANK_STATS']
 			dbc : AsyncIOMotorCollection = self.db[DBC]
 			res : InsertManyResult
-			
+			last_battle_time = max( [ ts.last_battle_time for ts in tank_stats] )	
 			res = await dbc.insert_many( (tank_stat.obj_db() for tank_stat in tank_stats), 
 										  ordered=False)
 			added = len(res.inserted_ids)
@@ -530,7 +532,7 @@ class MongoBackend(Backend):
 				error('BulkWriteError.details is None')
 		except Exception as err:
 			error(f'Unknown error when adding tank stats: {err}')
-		return added, not_added
+		return added, not_added, last_battle_time
 
 
 	async def tank_stats_get(self, account: BSAccount, tank_id: int | None = None, last_battle_time: int | None = None) -> AsyncGenerator[WGtankStat, None]:
