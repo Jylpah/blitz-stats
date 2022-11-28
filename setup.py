@@ -69,7 +69,7 @@ async def cmd_setup(db: Backend, args : Namespace) -> bool:
 			error('setup: unknown or missing subcommand')
 
 	except Exception as err:
-		error(str(err))
+		error(f'{err}')
 	return False
 
 
@@ -79,5 +79,5 @@ async def cmd_setup_init(db: Backend, args : Namespace) -> bool:
 		await db.init()
 		return True 
 	except Exception as err:
-		error(str(err))
+		error(f'{err}')
 	return False
