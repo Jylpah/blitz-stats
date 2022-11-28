@@ -10,13 +10,15 @@ from configparser import ConfigParser
 import logging
 from argparse import ArgumentParser
 import sys
-import os
+from os import chdir
+from os.path import isfile, dirname
 import asyncio
 
 import models
 import accounts as acc
 import replays as rep
 import tank_stats as ts
+import setup as se
 
 # import blitzutils as bu
 # import utils as su
@@ -41,15 +43,14 @@ async def main(argv: list[str]):
 	# set the directory for the script
 	global logger, error, debug, verbose, verbose_std,db, wi, bs, MAX_PAGES
 
-	os.chdir(os.path.dirname(sys.argv[0]))
+	chdir(dirname(sys.argv[0]))
 	
 	# Default params
 	WG_APP_ID 	= 'wg-app-id-missing'
 	CONFIG 		= 'blitzstats.ini'	
 	LOG 		= 'blitzstats.log'
-	THREADS 	= 20    # make it module specific?
+	# THREADS 	= 20    # make it module specific?
 	BACKEND 	: Optional[str] = None
-
 	WG_RATE_LIMIT : float = 10
 
 	config : Optional[ConfigParser] = None
@@ -58,7 +59,7 @@ async def main(argv: list[str]):
 	arggroup_verbosity = parser.add_mutually_exclusive_group()
 	arggroup_verbosity.add_argument('-d', '--debug',dest='LOG_LEVEL', action='store_const', const=logging.DEBUG,  
 									help='Debug mode')
-	arggroup_verbosity.add_argument('--verbose', dest='LOG_LEVEL', action='store_const', const=logging.INFO,
+	arggroup_verbosity.add_argument('-v', '--verbose', dest='LOG_LEVEL', action='store_const', const=logging.INFO,
 									help='Verbose mode')
 	arggroup_verbosity.add_argument('--silent', dest='LOG_LEVEL', action='store_const', const=logging.CRITICAL,
 									help='Silent mode')
@@ -86,7 +87,7 @@ async def main(argv: list[str]):
 		verbose		= logger.info
 		debug		= logger.debug
 
-		if args.config is not None and os.path.isfile(args.config):
+		if args.config is not None and isfile(args.config):
 			debug(f'Reading config from {args.config}')
 			config = ConfigParser()
 			config.read(args.config)
@@ -95,10 +96,10 @@ async def main(argv: list[str]):
 				configDef = config['GENERAL']
 				BACKEND = configDef.get('backend', None)
 			## Is this really needed here? 
-			if 'WG' in config.sections():
-				configWG 		= config['WG']
-				WG_APP_ID		= configWG.get('wg_app_id', WG_APP_ID)
-				WG_RATE_LIMIT	= configWG.getfloat('rate_limit', WG_RATE_LIMIT)
+			# if 'WG' in config.sections():
+			# 	configWG 		= config['WG']
+			# 	WG_APP_ID		= configWG.get('wg_app_id', WG_APP_ID)
+			# 	WG_RATE_LIMIT	= configWG.getfloat('rate_limit', WG_RATE_LIMIT)
 		else:
 			debug("No config file found")		
 
@@ -131,7 +132,9 @@ async def main(argv: list[str]):
 			raise Exception("Failed to define argument parser for: replays")
 		if not rep.add_args_replays(replays_parser, config):
 			raise Exception("Failed to define argument parser for: replays")
-		
+		if not se.add_args_setup(setup_parser, config):
+			raise Exception("Failed to define argument parser for: setup")
+				
 		debug('parsing full args')
 		args = parser.parse_args(args=argv)
 		if args.help:
@@ -139,11 +142,10 @@ async def main(argv: list[str]):
 		debug('arguments given:')
 		debug(str(args))
 
-		backend : Backend | None  = await Backend.create(args.backend, config)
+		backend : Backend | None  = Backend.create(args.backend, config)
 		assert backend is not None, 'Could not initialize backend'
 
-		if args.main_cmd == 'accounts':				
-			# how to handle errors / stats? 
+		if args.main_cmd == 'accounts':			
 			await acc.cmd_accounts(backend, args)
 		elif args.main_cmd == 'tank-stats':
 			await ts.cmd_tank_stats(backend, args)
@@ -152,12 +154,12 @@ async def main(argv: list[str]):
 		elif args.main_cmd == 'tankopedia':
 			raise NotImplementedError
 		elif args.main_cmd == 'setup':
-			raise NotImplementedError
+			await se.cmd_setup(backend, args)
 		else:
 			parser.print_help()
 
 	except Exception as err:
-		error(str(err))
+		error(f'{err}')
 	
 
 ### main()
