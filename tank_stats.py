@@ -33,7 +33,7 @@ TANK_STATS_Q_MAX 	: int = 1000
 
 def add_args_tank_stats(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
-		debug('starting')
+		debug('starting')		
 		tank_stats_parsers = parser.add_subparsers(dest='tank_stats_cmd', 	
 												title='tank-stats commands',
 												description='valid commands',
@@ -58,7 +58,7 @@ def add_args_tank_stats(parser: ArgumentParser, config: Optional[ConfigParser] =
 		debug('Finished')	
 		return True
 	except Exception as err:
-		error(str(err))
+		error(f'{err}')
 	return False
 
 
@@ -83,7 +83,7 @@ def add_args_tank_stats_update(parser: ArgumentParser, config: Optional[ConfigPa
 							default=list(Region.API_regions()), help='Filter by region (default: eu + com + asia + ru)')
 		parser.add_argument('--sample', type=float, default=0, metavar='SAMPLE',
 							help='Update tank stats for SAMPLE of accounts. If 0 < SAMPLE < 1, SAMPLE defines a %% of users')
-		parser.add_argument('--older-than', type=int, default=CACHE_VALID, metavar='DAYS',
+		parser.add_argument('--cache_valid', type=int, default=None, metavar='DAYS',
 							help='Update only accounts with stats older than DAYS')		
 		parser.add_argument('--distributed', '--dist',type=str, dest='distributed', metavar='I:N', 
 							default=None, help='Distributed update for accounts: id %% N == I')
@@ -98,7 +98,7 @@ def add_args_tank_stats_update(parser: ArgumentParser, config: Optional[ConfigPa
 
 		return True
 	except Exception as err:
-		error(str(err))
+		error(f'{err}')
 	return False
 
 def add_args_tank_stats_prune(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
@@ -136,7 +136,7 @@ async def cmd_tank_stats(db: Backend, args : Namespace) -> bool:
 			pass
 			
 	except Exception as err:
-		error(str(err))
+		error(f'{err}')
 	return False
 
 ########################################################
@@ -267,7 +267,7 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 		message(stats.print(do_print=False))
 		return True
 	except Exception as err:
-		error(str(err))
+		error(f'{err}')
 	finally:
 	
 		wg_stats : dict[str, str] | None = wg.print_server_stats()
@@ -305,14 +305,14 @@ async def update_tank_stats_api_worker(wg : WGApi, regions: set[Region], account
 
 			except Exception as err:
 				stats.log('errors')
-				error(str(err))
+				error(f'{err}')
 			finally:
 				accountQ.task_done()
 		
 	except CancelledError as err:
 		debug(f'Cancelled')	
 	except Exception as err:
-		error(str(err))
+		error(f'{err}')
 	return stats
 
 
@@ -324,30 +324,38 @@ async def add_tank_stats_worker(db: Backend, statsQ: Queue[list[WGtankStat]]) ->
 	not_added 	: int
 	account 	: BSAccount | None
 	account_id	: int
+	last_battle_time : int
 	try:		
 		while True:
 			tank_stats : list[WGtankStat] = await statsQ.get()			
-			added 		= 0
-			not_added 	= 0
-			account		= None
+			added 			= 0
+			not_added 		= 0
+			last_battle_time = -1
+			account			= None
 			try:
 				if len(tank_stats) > 0:
 					debug(f'Read {len(tank_stats)} from queue')					
-					added, not_added= await db.tank_stats_insert(tank_stats)
+					added, not_added, last_battle_time = await db.tank_stats_insert(tank_stats)	
 					account_id = tank_stats[0].account_id
 					if (account := await db.account_get(account_id=account_id)) is None:
 						account = BSAccount(id=account_id)
 					debug(f'{account}')
 					account.stats_updated(StatsTypes.tank_stats)
 					if added > 0:
-						account.inactive = False
 						stats.log('accounts /w new stats')
+						if account.inactive:
+							stats.log('accounts marked active')
+						account.inactive = False						
 					else:
-						account.inactive = True
 						stats.log('accounts w/o new stats')
+						if epoch_now() - last_battle_time > db.cache_valid:							
+							if not account.inactive:
+								stats.log('accounts marked inactive')
+							account.inactive = True							
+						
 					await db.account_update(account=account)
 			except Exception as err:
-				error(str(err))
+				error(f'{err}')
 			finally:
 				stats.log('tank stats added', added)
 				stats.log('old tank stats found', not_added)
@@ -356,7 +364,7 @@ async def add_tank_stats_worker(db: Backend, statsQ: Queue[list[WGtankStat]]) ->
 	except CancelledError as err:
 		debug(f'Cancelled')	
 	except Exception as err:
-		error(str(err))
+		error(f'{err}')
 	return stats
 
 
