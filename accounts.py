@@ -1,15 +1,17 @@
 from argparse import ArgumentParser, Namespace
 from configparser import ConfigParser
-from typing import Optional, cast, Type
+from typing import Optional, cast, Type, Any
 import logging
 from asyncio import create_task, gather, wait, Queue, CancelledError, Task, sleep
+from aiofiles import open
+from os.path import isfile
 
 from alive_progress import alive_bar		# type: ignore
 from sys import stdout
 
 from csv import DictWriter, DictReader, Dialect, Sniffer, excel
 
-from backend import Backend, OptAccountsInactive, OptAccountsDistributed, ACCOUNTS_Q_MAX
+from backend import Backend, OptAccountsInactive, OptAccountsDistributed, ACCOUNTS_Q_MAX, MongoBackend
 from models import BSAccount, StatsTypes
 from pyutils.eventcounter import EventCounter
 from pyutils.counterqueue import CounterQueue, alive_queue_bar
@@ -56,10 +58,14 @@ def add_args_accounts(parser: ArgumentParser, config: Optional[ConfigParser] = N
 		remove_parser = accounts_parsers.add_parser('remove', aliases=['rm'], help="accounts remove help")
 		if not add_args_accounts_remove(remove_parser, config=config):
 			raise Exception("Failed to define argument parser for: accounts remove")
+
+		import_parser = accounts_parsers.add_parser('import', help="accounts import help")
+		if not add_args_accounts_import(import_parser, config=config):
+			raise Exception("Failed to define argument parser for: accounts import")	
 		
 		return True
 	except Exception as err:
-		error(str(err))
+		error(f'{err}')
 	return False
 
 
@@ -81,7 +87,7 @@ def add_args_accounts_update(parser: ArgumentParser, config: Optional[ConfigPars
 		
 		return True	
 	except Exception as err:
-		error(str(err))
+		error(f'{err}')
 	return False
 
 
@@ -122,7 +128,7 @@ def add_args_accounts_update_wi(parser: ArgumentParser, config: Optional[ConfigP
 		
 		return True	
 	except Exception as err:
-		error(str(err))
+		error(f'{err}')
 	return False
 
 
@@ -141,7 +147,7 @@ def add_args_accounts_update_files(parser: ArgumentParser, config: Optional[Conf
 							default='-', help='Files to read. Use \'-\' for STDIN')		
 		return True	
 	except Exception as err:
-		error(str(err))
+		error(f'{err}')
 	return False
 
 
@@ -174,7 +180,70 @@ def add_args_accounts_export(parser: ArgumentParser, config: Optional[ConfigPars
 
 		return True	
 	except Exception as err:
-		error(str(err))
+		error(f'{err}')
+	return False
+
+
+def add_args_accounts_import(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+	"""Add argument parser for accounts import"""
+	try:
+		debug('starting')
+		
+		accounts_import_parsers = parser.add_subparsers(dest='accounts_import_backend', 	
+														title='accounts import backend',
+														description='valid backends', 
+														metavar=', '.join(Backend.list_available()))
+		accounts_import_parsers.required = True
+		accounts_import_mongodb_parser = accounts_import_parsers.add_parser('mongodb', help='accounts import mongodb help')
+		if not add_args_accounts_import_mongodb(accounts_import_mongodb_parser, config=config):
+			raise Exception("Failed to define argument parser for: accounts import mongodb")
+
+		accounts_import_files_parser = accounts_import_parsers.add_parser('files', help='accounts import files help')
+		if not add_args_accounts_import_files(accounts_import_files_parser, config=config):
+			raise Exception("Failed to define argument parser for: accounts import files")
+		
+		parser.add_argument('--sample', type=float, default=0, help='Sample accounts')
+		parser.add_argument('--import-config', metavar='CONFIG', type=str, default=None, 
+								help='Config file for backend to import from. \
+								Default is to use existing backend')
+		
+		return True
+	except Exception as err:
+		error(f'{err}')
+	return False
+
+
+def add_args_accounts_import_mongodb(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+	"""Add argument parser for accounts import"""
+	try:
+		debug('starting')
+		parser.add_argument('--server-url', metavar='SERVER-URL', type=str, default=None, 
+										help='MongoDB server URL to connect the server. \
+											Required if the current backend is not the same MongoDB instance')
+		parser.add_argument('--database', metavar='DATABASE', type=str, default=None, 
+										help='Database to use. Uses current database as default')
+		parser.add_argument('--collection', metavar='COLLECTION', type=str, default=None, 
+										help='Collection to use. Uses current database as default')
+		parser.add_argument('--import-type', metavar='IMPORT-TYPE', type=str, default='BSAccount', 
+										choices=['WG_Account', 'BSAccount'], 
+										help='Collection to use. Uses current database as default')
+
+
+		return True
+	except Exception as err:
+		error(f'{err}')
+	return False
+
+
+def add_args_accounts_import_files(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+	"""Add argument parser for accounts import"""
+	try:
+		debug('starting')
+		parser.add_argument('files', type=str, nargs='+', metavar='FILE [FILE1 ...]', 
+							help='Files to import')
+		return True
+	except Exception as err:
+		error(f'{err}')
 	return False
 
 
@@ -198,7 +267,7 @@ def add_args_accounts_remove(parser: ArgumentParser, config: Optional[ConfigPars
 		
 		return True	
 	except Exception as err:
-		error(str(err))
+		error(f'{err}')
 	return False
 
 ###########################################
@@ -216,12 +285,15 @@ async def cmd_accounts(db: Backend, args : Namespace) -> bool:
 
 		elif args.accounts_cmd == 'export':
 			return await cmd_accounts_export(db, args)
+		
+		elif args.accounts_cmd == 'import':
+			return await cmd_accounts_import(db, args)
 
 		elif args.accounts_cmd == 'remove':
 			return await cmd_accounts_remove(db, args)
 
 	except Exception as err:
-		error(str(err))
+		error(f'{err}')
 	return False
 
 
@@ -241,7 +313,7 @@ async def cmd_accounts_update(db: Backend, args : Namespace) -> bool:
 				debug('files')
 				stats.merge_child(await cmd_accounts_update_files(db, args, accountQ))
 		except Exception as err:
-			error(str(err))
+			error(f'{err}')
 
 		await accountQ.join()
 		db_worker.cancel()
@@ -255,7 +327,7 @@ async def cmd_accounts_update(db: Backend, args : Namespace) -> bool:
 		stats.print()
 
 	except Exception as err:
-		error(str(err))
+		error(f'{err}')
 	return False
 
 
@@ -285,13 +357,13 @@ async def accounts_add_worker(db: Backend, accountQ: Queue[list[int]]) -> EventC
 					stats.log('errors')
 					error(f'Cound not add accounts do {db.name}: {err}')
 			except Exception as err:
-				error(str(err))
+				error(f'{err}')
 			finally:
 				accountQ.task_done()
 	except CancelledError as err:
 		debug(f'Cancelled')
 	except Exception as err:
-		error(str(err))
+		error(f'{err}')
 	return stats
 
 
@@ -313,7 +385,7 @@ async def cmd_accounts_update_wi(db: Backend, args : Namespace, accountQ : Queue
 	start_page 	: int 	= args.wi_start_page
 
 	rate_limit 	: float	= args.wi_rate_limit
-	force 		: bool  = args.force
+	# force 		: bool  = args.force
 	token		: str 	= args.wi_auth_token	# temp fix...
 	replay_idQ  : Queue[str] = Queue()
 	# pageQ		: Queue[int] = Queue()
@@ -349,7 +421,7 @@ async def cmd_accounts_update_wi(db: Backend, args : Namespace, accountQ : Queue
 			stats.merge_child(worker)
 
 	except Exception as err:
-		error(str(err))
+		error(f'{err}')
 	finally:
 		await wi.close()
 	return stats
@@ -359,10 +431,10 @@ async def accounts_update_wi_spider_replays(db: Backend, wi: WoTinspector, args:
                                            replay_idQ: Queue[str], pages: range) -> EventCounter:
 	"""Spider replays.WoTinspector.com and feed found replay IDs into replayQ. Return stats"""
 	debug('starting')
-	stats: EventCounter = EventCounter('Crawler')
-	max_old_replays: int = args.wi_max_old_replays
-	force: bool = args.force
-	old_replays: int = 0
+	stats			: EventCounter = EventCounter('Crawler')
+	max_old_replays	: int 	= args.wi_max_old_replays
+	force			: bool 	= args.force
+	old_replays		: int 	= 0
 
 	try:
 		debug(f'Starting ({len(pages)} pages)')
@@ -396,13 +468,13 @@ async def accounts_update_wi_spider_replays(db: Backend, wi: WoTinspector, args:
 							await replay_idQ.put(replay_id)
 							stats.log('new replays')
 				except Exception as err:
-					error(str(err))
+					error(f'{err}')
 				finally:
 					bar()
 	except CancelledError as err:
 		debug(f'Cancelled')
 	except Exception as err:
-		error(str(err))
+		error(f'{err}')
 	return stats
 
 
@@ -431,7 +503,102 @@ async def accounts_update_wi_fetch_replays(db: Backend, wi: WoTinspector, replay
 			finally:
 				replay_idQ.task_done()
 	except Exception as err:
-		error(str(err))	
+		error(f'{err}')	
+	return stats
+
+
+async def cmd_accounts_import(db: Backend, args : Namespace) -> bool:
+	
+	try:
+		stats 		: EventCounter 			= EventCounter('accounts import')
+		accountQ 	: Queue[BSAccount]		= Queue(ACCOUNTS_Q_MAX)
+		config 		: ConfigParser | None 	= None
+
+		importer : Task = create_task(db.accounts_insert_worker(accountQ=accountQ, force=args.force))
+		if args.import_config is not None and isfile(args.import_config):
+			debug(f'Reading config from {args.config}')
+			config = ConfigParser()
+			config.read(args.config)
+
+		if args.accounts_import_backend == 'mongodb':
+			stats.merge_child(await cmd_accounts_import_mongodb(db, args, accountQ, config))
+		elif args.accounts_import_backend == 'files':
+			stats.merge_child(await cmd_accounts_import_files(db, args, accountQ, config))
+		else:
+			raise ValueError(f'Unsupported import backend {args.accounts_import_backend}')
+
+		await accountQ.join()
+		importer.cancel()
+		worker_res : tuple[EventCounter|BaseException] = await gather(importer,return_exceptions=True)
+		if type(worker_res[0]) is EventCounter:
+			stats.merge_child(worker_res[0])
+		elif type(worker_res[0]) is BaseException:
+			error(f'account insert worker threw an exception: {worker_res[0]}')
+		stats.print()
+		return True
+	except Exception as err:
+		error(f'{err}')	
+	return False
+
+
+async def cmd_accounts_import_mongodb(db: Backend, args : Namespace, accountsQ: Queue[BSAccount],
+										config: ConfigParser | None = None) -> EventCounter:
+	stats : EventCounter = EventCounter('accounts import mongodb')
+	try:
+		kwargs : dict[str, Any] = dict()
+		import_db : Backend | None
+		if args.server_url is not None:
+			kwargs['host'] = args.server_url
+		if args.database is not None:
+			kwargs['database'] = args.database
+		
+		if config is None:
+			assert db.name == 'mongodb', f'Cannot import from mongodb without config'
+			import_db = db.copy(**kwargs)			
+		else:
+			import_db = Backend.create('mongodb', config, **kwargs)
+
+		if import_db is None:
+			raise ValueError('Could not init mongodb to import accounts from')
+
+		if args.collection is not None:
+			import_db.set_table('ACCOUNTS', args.collection)
+		elif db == import_db and db.table_accounts == import_db.table_accounts:
+			raise ValueError('Cannot import from itself')
+
+		message('Counting accounts to import ...')
+		N : int = await db.accounts_count(regions=Region.has_stats(),
+										inactive=OptAccountsInactive.both,
+										sample=args.sample, force=args.force)
+
+		with alive_bar(N, title="Importing accounts ", enrich_print=False) as bar:
+			if args.import_type == 'BSAccount':	
+				async for account in import_db.accounts_get(regions=Region.has_stats(), 
+															inactive=OptAccountsInactive.both, 
+															sample=args.sample, force=args.force):
+					await accountsQ.put(account)
+					bar()
+					stats.log('read')
+			elif args.import_type == 'WG_Account':
+				async for account in cast(MongoBackend, import_db).accounts_get_WG_Account(regions=Region.has_stats(), 
+															inactive=OptAccountsInactive.both, 
+															sample=args.sample, force=args.force):
+					await accountsQ.put(account)
+					bar()
+					stats.log('read')
+
+	except Exception as err:
+		error(f'{err}')	
+	return stats
+
+
+async def cmd_accounts_import_files(db: Backend, args : Namespace, accountsQ: Queue[BSAccount], 
+									config: ConfigParser | None = None) -> EventCounter:
+	stats : EventCounter 	= EventCounter('accounts import mongodb')
+	try:
+		raise NotImplementedError
+	except Exception as err:
+		error(f'{err}')	
 	return stats
 
 
@@ -529,7 +696,7 @@ async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 			stats.print()
 
 	except Exception as err:
-		error(str(err))
+		error(f'{err}')
 	return False
 
 
@@ -549,7 +716,7 @@ async def accounts_split_Q_by_region(Q_all, regionQs : dict[str, Queue[BSAccount
 				raise CancelledError from None
 			except Exception as err:
 				stats.log('errors')
-				error(str(err))
+				error(f'{err}')
 			finally:
 				stats.log('total')
 				Q_all.task_done()
@@ -557,7 +724,7 @@ async def accounts_split_Q_by_region(Q_all, regionQs : dict[str, Queue[BSAccount
 	except CancelledError as err:
 		debug(f'Cancelled')
 	except Exception as err:
-		error(str(err))
+		error(f'{err}')
 	return stats
 
 
@@ -567,5 +734,5 @@ async def cmd_accounts_remove(db: Backend, args : Namespace) -> bool:
 		raise NotImplementedError
 
 	except Exception as err:
-		error(str(err))
+		error(f'{err}')
 	return False
