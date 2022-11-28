@@ -32,8 +32,7 @@ ACCOUNT_Q_MAX 	: int				= 5000
 
 
 def add_args_replays(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
-	try:
-		
+	try:		
 		replays_parsers = parser.add_subparsers(dest='replays_cmd', 	
 												title='replays commands',
 												description='valid commands',
@@ -43,6 +42,7 @@ def add_args_replays(parser: ArgumentParser, config: Optional[ConfigParser] = No
 		export_parser = replays_parsers.add_parser('export', help="replays export help")
 		if not add_args_replays_export(export_parser, config=config):
 			raise Exception("Failed to define argument parser for: replays export")
+
 		import_parser = replays_parsers.add_parser('import', help="replays import help")
 		if not add_args_replays_import(import_parser, config=config):
 			raise Exception("Failed to define argument parser for: replays import")		
@@ -156,7 +156,7 @@ async def cmd_replays(db: Backend, args : Namespace) -> bool:
 				error('replays: unknown or missing subcommand')
 
 	except Exception as err:
-		error(str(err))
+		error(f'{err}')
 	return False
 
 
@@ -174,7 +174,7 @@ async def cmd_replays_export_id(db: Backend, args : Namespace) -> bool:
 			print(replay.json_src(indent=4))			
 		return True 
 	except Exception as err:
-		error(str(err))
+		error(f'{err}')
 	return False
 
 
