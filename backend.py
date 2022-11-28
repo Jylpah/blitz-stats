@@ -4,15 +4,16 @@ import logging
 from abc import ABCMeta, abstractmethod
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCursor, AsyncIOMotorCollection # type: ignore
-from pymongo.results import InsertManyResult
+from pymongo.results import InsertManyResult, InsertOneResult
 from pymongo.errors import BulkWriteError
+from pymongo import DESCENDING, ASCENDING
 from os.path import isfile
 from typing import Optional, Any, Iterable, AsyncGenerator
 from time import time
 from enum import Enum, StrEnum
 from asyncio import Queue, CancelledError
 
-from models import BSAccount, StatsTypes
+from models import BSAccount, StatsTypes, WG_Account
 from blitzutils.models import Region, WoTBlitzReplayJSON, WGtankStat
 from pyutils.utils import epoch_now
 from pyutils.eventcounter import EventCounter
@@ -31,7 +32,7 @@ WG_ACCOUNT_ID_MAX 	: int = int(31e8)
 MIN_INACTIVITY_PERIOD : int = 7 # days
 MAX_RETRIES 		: int = 3
 CACHE_VALID 		: int = 5   # days
-ACCOUNTS_Q_MAX 		: int = 500
+ACCOUNTS_Q_MAX 		: int = 10000
 
 class OptAccountsInactive(StrEnum):
 	auto	= 'auto'
@@ -54,7 +55,7 @@ class OptAccountsDistributed():
 
 
 	@classmethod
-	def create(cls, input: str) -> Optional['OptAccountsDistributed']:
+	def parse(cls, input: str) -> Optional['OptAccountsDistributed']:
 		try:
 			res : list[str] = input.split(':')
 			if len(res) != 2:
@@ -63,7 +64,7 @@ class OptAccountsDistributed():
 			div : int = int(res[1])
 			return OptAccountsDistributed(mod, div)
 		except Exception as err:
-			error(str(err))
+			error(f'{err}')
 		return None
 
 
@@ -79,25 +80,96 @@ class Backend(metaclass=ABCMeta):
 	# 		if config is not None and 'BACKEND' in config.sections():
 
 	# 	except Exception as err:
-	# 		error(str(err))
+	# 		error(f'{err}')
 	name : str = 'Backend'
+	_cache_valid : int = CACHE_VALID
 
 
 	@classmethod
-	async def create(cls, backend : str, config : ConfigParser | None) -> Optional['Backend']:
+	def create(cls, backend : str, 
+						config : ConfigParser | None = None, **kwargs) -> Optional['Backend']:
 		try:
 			if backend == 'mongodb':
-				return MongoBackend(config)
+				return MongoBackend(config, **kwargs)
 			else:				
 				assert False, f'Backend not implemented: {backend}'
 		except Exception as err:
 			error(f'Error creating backend {backend}: {err}')
-		return None		
+		return None
 
 
 	@classmethod
 	def list_available(cls) -> list[str]:
 		return ['mongodb']
+
+	
+	@property
+	def cache_valid(self) -> int:
+		return self._cache_valid
+
+
+	@abstractmethod
+	def __eq__(self, __o: object) -> bool:
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def init(self) -> bool:
+		"""Init backend and indexes"""
+		raise NotImplementedError
+
+
+	@abstractmethod
+	def copy(self, **kwargs) -> Optional['Backend']:
+		"""Create a copy of backend"""
+		raise NotImplementedError
+
+
+	@property
+	@abstractmethod
+	def database(self) -> str:
+		raise NotImplementedError
+
+	@abstractmethod
+	def set_database(self, database : str) -> bool:
+		"""Set database"""
+		raise NotImplementedError
+
+
+	@property
+	@abstractmethod
+	def table_accounts(self) -> str:
+		raise NotImplementedError
+
+
+	@property
+	@abstractmethod
+	def table_tank_stats(self) -> str:
+		raise NotImplementedError
+
+
+	@property
+	@abstractmethod
+	def table_player_achievements(self) -> str:
+		raise NotImplementedError
+
+
+	@property
+	@abstractmethod
+	def table_replays(self) -> str:
+		raise NotImplementedError
+
+
+	@property
+	@abstractmethod
+	def table_tankopedia(self) -> str:
+		raise NotImplementedError
+
+
+	@abstractmethod
+	def set_table(self, table_type: str, new: str) -> bool:
+		"""Set database table/collection"""
+		raise NotImplementedError
 
 
 	@abstractmethod
@@ -134,7 +206,7 @@ class Backend(metaclass=ABCMeta):
 							inactive : OptAccountsInactive = OptAccountsInactive.default(), 	
 							disabled: bool = False, 
 							dist : OptAccountsDistributed | None = None, sample : float = 0, 
-							force : bool = False, cache_valid: int = CACHE_VALID ) -> AsyncGenerator[BSAccount, None]:
+							force : bool = False, cache_valid: int | None = None ) -> AsyncGenerator[BSAccount, None]:
 		"""Get accounts from backend"""
 		raise NotImplementedError
 		yield BSAccount(id=-1)
@@ -150,7 +222,36 @@ class Backend(metaclass=ABCMeta):
 		except CancelledError as err:
 			debug(f'Cancelled')
 		except Exception as err:
-			error(str(err))
+			error(f'{err}')
+		return stats
+
+	
+	async def accounts_insert_worker(self, accountQ : Queue[BSAccount], force: bool = False) -> EventCounter:
+		debug(f'starting, force={force}')
+		stats : EventCounter = EventCounter('accounts insert')
+		try:
+			while True:
+				account = await accountQ.get()
+				try:
+					if force:
+						debug(f'Trying to upsert account_id={account.id} into {self.name}:{self.database}.{self.table_accounts}')
+						await self.account_update(account, upsert=True)
+					else:
+						debug(f'Trying to insert account_id={account.id} into {self.name}:{self.database}.{self.table_accounts}')
+						await self.account_insert(account)
+					if force:
+						stats.log('accounts added/updated')
+					else:
+						stats.log('accounts added')
+				except Exception as err:
+					debug(f'Error: {err}')
+					stats.log('accounts not added')
+				finally:
+					accountQ.task_done()
+		except CancelledError as err:
+			debug(f'Cancelled')
+		except Exception as err:
+			error(f'{err}')
 		return stats
 	
 
@@ -160,7 +261,7 @@ class Backend(metaclass=ABCMeta):
 							inactive : OptAccountsInactive = OptAccountsInactive.default(), 	
 							disabled: bool = False, 
 							dist : OptAccountsDistributed | None = None, sample : float = 0, 
-							force : bool = False, cache_valid: int = CACHE_VALID ) -> int:
+							force : bool = False, cache_valid: int | None = None ) -> int:
 		"""Get number of accounts from backend"""
 		raise NotImplementedError
 
@@ -207,72 +308,208 @@ class Backend(metaclass=ABCMeta):
 class MongoBackend(Backend):
 
 	name : str = 'mongodb'
+	default_db : str = 'BlitzStats'
 
-	def __init__(self, config: ConfigParser | None = None, database: str = 'BlitzStats', *args, **kwargs):
+	def __init__(self, config: ConfigParser | None = None, 
+					#  database: str | None = None, 
+					**kwargs):
+		"""Init MongoDB backend from config file and CLI args
+			CLI arguments overide settings in the config file"""	
+		mongodb_rc 	: dict[str, Any] = dict()
+		self._config : dict[str, Any]
+		self._database 	: str 	= 'BlitzStats'
+		self._client 	: AsyncIOMotorClient
+
+		# server defaults
+		mongodb_rc['host'] 						= 'localhost'
+		mongodb_rc['port'] 						= 27017
+		mongodb_rc['tls']						= False
+		mongodb_rc['tlsAllowInvalidCertificates']= False
+		mongodb_rc['tlsAllowInvalidHostnames']	= False
+		mongodb_rc['tlsCertificateKeyFile']		= None
+		mongodb_rc['tlsCAFile']					= None
+		mongodb_rc['authSource']				= None
+		mongodb_rc['username']					= None
+		mongodb_rc['password']					= None
+
+		if 'database' in kwargs:
+			self._database = kwargs['database']
+			del kwargs['database']
+
 		try:
-			client : AsyncIOMotorClient | None = None
-			self.db : AsyncIOMotorDatabase
-			self.C : dict[str,str] = dict()
+			client 		: AsyncIOMotorClient | None = None
+			self.db 	: AsyncIOMotorDatabase
+			self.C 		: dict[str,str] = dict()
 
-			self.C['ACCOUNTS'] 		= 'Accounts'
-			self.C['TANKOPEDIA'] 	= 'Tankopedia'
-			self.C['REPLAYS'] 		= 'Replays'
-			self.C['TANK_STATS'] 	= 'TankStats'
+			# default collections
+			self.C['ACCOUNTS'] 			= 'Accounts'
+			self.C['TANKOPEDIA'] 		= 'Tankopedia'
+			self.C['REPLAYS'] 			= 'Replays'
+			self.C['TANK_STATS'] 		= 'TankStats'
 			self.C['PLAYER_ACHIEVEMENTS'] = 'PlayerAchievements'
 
-			# defaults
-			SERVER 	: str 	= 'localhost'
-			PORT 	: int  	= 27017
-			TLS 	: bool	= False
-			INVALID_CERT	: bool = False
-			INVALID_HOST	: bool = False
-			AUTHDB			: str | None = None
-			USER 			: str | None = None
-			PASSWD 			: str | None = None
-			CERT			: str | None = None
-			CA				: str | None = None			
+			if config is not None:
+				if 'GENERAL' in config.sections():
+					configGeneral = config['GENERAL']
+					self._cache_valid 	= configGeneral.getint('cache_valid', CACHE_VALID) 
+				if 'MONGODB' in config.sections():
+					configMongo = config['MONGODB']
+					self._database			= configMongo.get('database', self._database)
+					mongodb_rc['host'] 	= configMongo.get('server', mongodb_rc['host'])
+					mongodb_rc['port'] 	= configMongo.getint('port', mongodb_rc['port'])
+					mongodb_rc['tls'] 	= configMongo.getboolean('tls', mongodb_rc['tls'])
+					mongodb_rc['tlsAllowInvalidCertificates']	= configMongo.getboolean('tls_invalid_certs', 
+																		mongodb_rc['tlsAllowInvalidCertificates'])
+					mongodb_rc['tlsAllowInvalidHostnames']	= configMongo.getboolean('tls_invalid_hosts', 
+																			mongodb_rc['tlsAllowInvalidHostnames'])
+					mongodb_rc['tlsCertificateKeyFile']	= configMongo.get('cert', mongodb_rc['tlsCertificateKeyFile'])
+					mongodb_rc['tlsCAFile']				= configMongo.get('ca', mongodb_rc['tlsCAFile'])
+					mongodb_rc['authSource']			= configMongo.get('auth_db', mongodb_rc['authSource'])
+					mongodb_rc['username']				= configMongo.get('user', mongodb_rc['username'])
+					mongodb_rc['password']				= configMongo.get('password', mongodb_rc['password'])
 
-			if config is not None and 'MONGO' in config.sections():
-				configMongo = config['MONGO']				
-				SERVER 		= configMongo.get('server', SERVER)
-				PORT 		= configMongo.getint('port', PORT)
-				database	= configMongo.get('database', database)
-				TLS 		= configMongo.getboolean('tls', TLS)
-				INVALID_CERT= configMongo.getboolean('tls_invalid_certs', INVALID_CERT)
-				INVALID_HOST= configMongo.getboolean('tls_invalid_hosts', INVALID_HOST)
-				AUTHDB		= configMongo.get('auth_db', AUTHDB)
-				USER 		= configMongo.get('user', USER)
-				PASSWD 		= configMongo.get('password', PASSWD)
-				CERT		= configMongo.get('cert', CERT)
-				CA			= configMongo.get('ca', CA)
-				self.C['ACCOUNTS'] 		= configMongo.get('c_accounts', self.C['ACCOUNTS'])
-				self.C['TANKOPEDIA'] 	= configMongo.get('c_tankopedia', self.C['TANKOPEDIA'])
-				self.C['REPLAYS'] 		= configMongo.get('c_replays', self.C['REPLAYS'])
-				self.C['TANK_STATS']	= configMongo.get('c_tank_stats', self.C['TANK_STATS'])
-				self.C['PLAYER_ACHIEVEMENTS'] 	= configMongo.get('c_player_achievements', self.C['PLAYER_ACHIEVEMENTS'])					
-			else:					
-				debug(f'"MONGO" section not found from config file')
+					self.C['ACCOUNTS'] 		= configMongo.get('c_accounts', self.C['ACCOUNTS'])
+					self.C['TANKOPEDIA'] 	= configMongo.get('c_tankopedia', self.C['TANKOPEDIA'])
+					self.C['REPLAYS'] 		= configMongo.get('c_replays', self.C['REPLAYS'])
+					self.C['TANK_STATS']	= configMongo.get('c_tank_stats', self.C['TANK_STATS'])
+					self.C['PLAYER_ACHIEVEMENTS'] 	= configMongo.get('c_player_achievements', 
+																		self.C['PLAYER_ACHIEVEMENTS'])
+				else:					
+					debug(f'"MONGODB" section not found from config file')
+
+			for param, value in kwargs.items():
+				mongodb_rc[param] = value
+
+			mongodb_rc = {k: v for k, v in mongodb_rc.items() if v is not None} 	# remove unset kwargs
 		
-			if USER is None:
-				client =  AsyncIOMotorClient(host=SERVER,port=PORT, tls=TLS, 
-											tlsAllowInvalidCertificates=INVALID_CERT, 
-											tlsAllowInvalidHostnames=INVALID_HOST,
-											tlsCertificateKeyFile=CERT, tlsCAFile=CA, *args, **kwargs)
-			else:
-				client =  AsyncIOMotorClient(host=SERVER,port=PORT, tls=TLS, 
-											tlsAllowInvalidCertificates=INVALID_CERT, 
-											tlsAllowInvalidHostnames=INVALID_HOST,
-											tlsCertificateKeyFile=CERT, tlsCAFile=CA, 
-											authSource=AUTHDB, username=USER, password=PASSWD,  *args, **kwargs)
-			
-			assert client is not None, "Failed to initialize Mongo DB connection"			
-			self.db = client[database]
+			self._client  =  AsyncIOMotorClient(**mongodb_rc)
+						
+			assert self._client  is not None, "Failed to initialize Mongo DB connection"
+			self._config = mongodb_rc
+			self.db = self._client[self._database]
 	
 			debug('Mongo DB connection succeeded')
 		except FileNotFoundError as err:
-			error(str(err))
+			error(f'{err}')
 		except Exception as err:
 			error(f'Error connecting Mongo DB: {err}')
+
+
+	def copy(self, **kwargs) -> Optional['Backend']:
+		"""Create a copy of the backend"""
+		try:
+			for param, value in kwargs.items():
+				self._config[param] = value
+			return MongoBackend(config=None, **self._config)
+		except Exception as err:
+			error(f'Error creating copy: {err}')
+		return None		
+		
+	
+	def set_database(self, database : str) -> bool:
+		"""Set database"""
+		try:
+			self.db = self._client[database]
+			self._database = database
+			return True
+		except Exception as err:
+			error(f'Error creating copy: {err}')
+		return False
+
+
+	@property
+	def database(self) -> str:
+		return self._database
+
+
+	@property
+	def table_accounts(self) -> str:
+		return self.C['ACCOUNTS']
+
+
+	@property
+	def table_tank_stats(self) -> str:
+		return self.C['TANK_STATS']
+
+
+	@property
+	def table_player_achievements(self) -> str:
+		return self.C['PLAYER_ACHIEVEMENTS']
+
+
+	@property
+	def table_replays(self) -> str:
+		return self.C['REPLAYS']
+
+
+	@property
+	def table_tankopedia(self) -> str:
+		return self.C['TANKOPEDIA']
+
+
+	def set_table(self, table: str, new: str) -> bool:
+		"""Set database"""
+		try:
+			assert table in self.C.keys(), f'Unknown collection {table}'
+			self.C[table] = new	
+			return True
+		except Exception as err:
+			error(f'Error creating copy: {err}')
+		return False
+
+
+	def __eq__(self, __o: object) -> bool:
+		return __o is not None and isinstance(__o, MongoBackend) and \
+					self._client.address == __o._client.address and \
+					self.database == __o.database
+
+
+	async def init(self) -> bool:
+		"""Init MongoDB backend: create collections and set indexes"""
+		try:
+			# self.C['ACCOUNTS'] 			= 'Accounts'
+			# self.C['TANKOPEDIA'] 		= 'Tankopedia'
+			# self.C['REPLAYS'] 			= 'Replays'
+			# self.C['TANK_STATS'] 		= 'TankStats'
+			# self.C['PLAYER_ACHIEVEMENTS'] = 'PlayerAchievements'
+
+			DBC : str = 'NOT DEFINED'
+			dbc : AsyncIOMotorCollection
+
+			try:
+				DBC = self.C['ACCOUNTS']
+				dbc = self.db[DBC]
+
+				verbose(f'Adding index: {DBC}: [ region, inactive, disabled]')
+				await dbc.create_index([ ('r', DESCENDING), ('i', DESCENDING), 
+										 ('d', DESCENDING) ], background=True)
+			except Exception as err:
+				error(f'{self.name}: Could not init collection {DBC} for accounts: {err}')	
+			
+			try:
+				DBC = self.C['REPLAYS']
+				dbc = self.db[DBC]
+
+				verbose(f'Adding index: {DBC}: [ data.summary.protagonist, data.summary.room_type, data.summary.vehicle_tier]')
+				await dbc.create_index([ ('d.s.p', DESCENDING), ('d.s.rt', DESCENDING), 
+										 ('d.s.vx', DESCENDING) ], background=True)
+			except Exception as err:
+				error(f'{self.name}: Could not init collection {DBC} for replays: {err}')
+
+			try:
+				DBC = self.C['TANK_STATS']
+				dbc = self.db[DBC]
+
+				verbose(f'Adding index: {DBC}: [ tank_id, account_id, last_battle_time]')
+				await dbc.create_index([ ('a', DESCENDING), ('t', DESCENDING),
+										 ('lb', DESCENDING) ], background=True)
+			except Exception as err:
+				error(f'{self.name}: Could not init collection {DBC} for tank_stats: {err}')
+
+
+		except Exception as err:
+			error(f'Error initializing {self.name}: {err}')
+		return False
 
 
 	async def replay_insert(self, replay: WoTBlitzReplayJSON) -> bool:
@@ -325,7 +562,7 @@ class MongoBackend(Backend):
 							inactive : OptAccountsInactive = OptAccountsInactive.default(), 	
 							disabled: bool = False, 
 							dist : OptAccountsDistributed | None = None, sample : float = 0, 
-							force : bool = False, cache_valid: int = CACHE_VALID ) -> int:
+							force : bool = False, cache_valid: int | None = None ) -> int:
 		try:
 			NOW = int(time())	
 			DBC : str = self.C['ACCOUNTS']
@@ -338,7 +575,7 @@ class MongoBackend(Backend):
 			if pipeline is None:
 				raise ValueError(f'could not create get-accounts {self.name} cursor')
 			pipeline.append({ '$count': 'accounts' })
-			cursor : AsyncIOMotorCursor = dbc.aggregate(pipeline, allowDiskUse=False)
+			cursor : AsyncIOMotorCursor = dbc.aggregate(pipeline, allowDiskUse=True)
 			res : Any =  (await cursor.to_list(length=100))[0]
 			if type(res) is dict and 'accounts' in res:
 				return int(res['accounts'])
@@ -354,7 +591,7 @@ class MongoBackend(Backend):
 							inactive : OptAccountsInactive = OptAccountsInactive.default(), 	
 							disabled: bool = False, 
 							dist : OptAccountsDistributed | None = None, sample : float = 0, 
-							force : bool = False, cache_valid: int = CACHE_VALID ) -> AsyncGenerator[BSAccount, None]:
+							force : bool = False, cache_valid: int | None = None ) -> AsyncGenerator[BSAccount, None]:
 		"""Get accounts from Mongo DB
 			inactive: true = only inactive, false = not inactive, none = AUTO
 		"""
@@ -374,7 +611,7 @@ class MongoBackend(Backend):
 			if pipeline is None:
 				raise ValueError(f'could not create get-accounts {self.name} cursor')
 						
-			async for account_obj in dbc.aggregate(pipeline):
+			async for account_obj in dbc.aggregate(pipeline, allowDiskUse=True):
 				try:
 					player = BSAccount.parse_obj(account_obj)
 					if not force and not disabled and inactive is None and player.inactive:
@@ -384,7 +621,43 @@ class MongoBackend(Backend):
 							continue
 					yield player
 				except Exception as err:
-					error(str(err))
+					error(f'{err}')
+					continue
+		except Exception as err:
+			error(f'Error fetching accounts from Mongo DB: {err}')	
+
+
+	async def accounts_get_WG_Account(self, stats_type : StatsTypes | None = None, 
+							regions: set[Region] = Region.API_regions(), 
+							inactive : OptAccountsInactive = OptAccountsInactive.default(), 	
+							disabled: bool = False, 
+							dist : OptAccountsDistributed | None = None, sample : float = 0, 
+							force : bool = False, cache_valid: int | None = None ) -> AsyncGenerator[BSAccount, None]:
+		"""Get accounts from Mongo DB
+			inactive: true = only inactive, false = not inactive, none = AUTO
+		"""
+		try:
+			NOW = int(time())	
+			DBC : str = self.C['ACCOUNTS']
+			dbc : AsyncIOMotorCollection = self.db[DBC]
+			pipeline : list[dict[str, Any]] | None = await self._accounts_mk_pipeline(stats_type=stats_type, regions=regions, 
+																	inactive=inactive, disabled=disabled, 
+																	dist=dist, sample=sample, 
+																	force=force, cache_valid=cache_valid)
+
+			if pipeline is None:
+				raise ValueError(f'could not create get-accounts {self.name} cursor')
+
+			account 	: BSAccount
+			wg_account 	: WG_Account				
+			async for account_obj in dbc.aggregate(pipeline, allowDiskUse=True):
+				try:
+					wg_account = WG_Account.parse_obj(account_obj)
+					debug(f'Read {wg_account} from {self.database}.{self.table_accounts}')
+					account = BSAccount.parse_obj(wg_account.obj_db())
+					yield account
+				except Exception as err:
+					error(f'{err}')
 					continue
 		except Exception as err:
 			error(f'Error fetching accounts from Mongo DB: {err}')	
@@ -395,7 +668,7 @@ class MongoBackend(Backend):
 							inactive : OptAccountsInactive = OptAccountsInactive.default(), 
 							dist : OptAccountsDistributed | None = None,
 							disabled: bool = False, sample : float = 0, 
-							force : bool = False, cache_valid: int = CACHE_VALID ) -> list[dict[str, Any]] | None:
+							force : bool = False, cache_valid: int | None = None ) -> list[dict[str, Any]] | None:
 		try:
 			# id						: int		= Field(default=..., alias='_id')
 			# region 					: Region | None= Field(default=None, alias='r')
@@ -406,37 +679,41 @@ class MongoBackend(Backend):
 			# inactive					: bool | None = Field(default=None, alias='i')
 			# disabled					: bool | None = Field(default=None, alias='d')
 			
-			NOW = int(time())			
+			NOW = epoch_now()
 			DBC : str = self.C['ACCOUNTS']
+			if cache_valid is None:
+				cache_valid = self.cache_valid
 			update_field : str | None = None
 			if stats_type is not None:
 				update_field = stats_type.value
 			dbc : AsyncIOMotorCollection = self.db[DBC]
 			match : list[dict[str, str|int|float|dict|list]] = list()
 			
+			# Pipeline build based on ESR rule
+			# https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
+
+			if disabled:
+				match.append({ 'd': True })
+			elif inactive == OptAccountsInactive.yes:
+				match.append({ 'i': True })
+			
+			if regions != Region.has_stats():
+				match.append({ 'r' : { '$in' : [ r.value for r in regions ]} })
+
 			match.append({ '_id' : {  '$lt' : WG_ACCOUNT_ID_MAX}})  # exclude Chinese account ids
 			
 			if dist is not None:
-				match.append({ '_id' : {  '$mod' :  [ dist.div, dist.mod ]}})
-			
-			match.append({ 'r' : { '$in' : [ r.value for r in regions ]} })
+				match.append({ '_id' : {  '$mod' :  [ dist.div, dist.mod ]}})			
 	
-			if disabled:
-				match.append({ 'd': True })
-			else:
+			if not disabled:
 				match.append({ 'd': { '$ne': True }})
 				# check inactive only if disabled == False
 				if inactive == OptAccountsInactive.auto:
 					if not force:
 						assert update_field is not None, "automatic inactivity detection requires stat_type"
-						match.append({ '$or': [ { update_field: None}, { update_field: { '$lt': NOW - cache_valid }} ] })
-				elif inactive == OptAccountsInactive.yes:
-					match.append({ 'i': True })
+						match.append({ '$or': [ { update_field: None}, { update_field: { '$lt': NOW - cache_valid }} ] })				
 				elif inactive == OptAccountsInactive.no:
 					match.append({ 'i': { '$ne': True }})
-				else:
-					# do not add a filter in case both inactive and active players are included
-					pass						
 
 			pipeline : list[dict[str, Any]] = [ { '$match' : { '$and' : match } }]
 
@@ -447,7 +724,7 @@ class MongoBackend(Backend):
 				pipeline.append({'$sample': {'size' : int(n * sample) } })
 			return pipeline		
 		except Exception as err:
-			error(str(err))
+			error(f'{err}')
 		return None
 
 	async def account_insert(self, account: BSAccount) -> bool:
@@ -457,7 +734,7 @@ class MongoBackend(Backend):
 			DBC : str = self.C['ACCOUNTS']
 			dbc : AsyncIOMotorCollection = self.db[DBC]
 			account.added = epoch_now()
-			await dbc.insert_one(account.obj_db())
+			res : InsertOneResult = await dbc.insert_one(account.obj_db())
 			debug(f'Account add to {self.name}: {account.id}')
 			return True			
 		except Exception as err:
@@ -535,6 +812,7 @@ class MongoBackend(Backend):
 		return added, not_added, last_battle_time
 
 
-	async def tank_stats_get(self, account: BSAccount, tank_id: int | None = None, last_battle_time: int | None = None) -> AsyncGenerator[WGtankStat, None]:
+	async def tank_stats_get(self, account: BSAccount, tank_id: int | None = None, 
+								last_battle_time: int | None = None) -> AsyncGenerator[WGtankStat, None]:
 		"""Return tank stats from the backend"""
 		raise NotImplementedError
