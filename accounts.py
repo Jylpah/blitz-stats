@@ -1,6 +1,6 @@
 from argparse import ArgumentParser, Namespace
 from configparser import ConfigParser
-from typing import Optional, cast, Type, Any
+from typing import Optional, cast, Type, Any, TypeVar
 import logging
 from asyncio import create_task, gather, wait, Queue, CancelledError, Task, sleep
 from aiofiles import open
@@ -13,10 +13,11 @@ from csv import DictWriter, DictReader, Dialect, Sniffer, excel
 
 from backend import Backend, OptAccountsInactive, OptAccountsDistributed, ACCOUNTS_Q_MAX, MongoBackend
 from models import BSAccount, StatsTypes
+from models_import import WG_Account
 from pyutils.eventcounter import EventCounter
 from pyutils.counterqueue import CounterQueue, alive_queue_bar
 from pyutils.utils import get_url, get_url_JSON_model, epoch_now, export, TXTExportable, CSVExportable, JSONExportable
-from blitzutils.models import WoTBlitzReplayJSON, Region
+from blitzutils.models import WoTBlitzReplayJSON, Region, Account
 from blitzutils.wotinspector import WoTinspector
 
 logger 	= logging.getLogger()
@@ -171,8 +172,8 @@ def add_args_accounts_export(parser: ArgumentParser, config: Optional[ConfigPars
 		parser.add_argument('--disabled', action='store_true', default=False, help='Disabled accounts')
 		parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
 								default=OptAccountsInactive.no.value, help='Include inactive accounts')
-		parser.add_argument('--region', type=str, nargs='*', choices={ r.value for r in Region.API_regions() }, 
-								default={ r.value for r in Region.API_regions() }, help='Filter by region (default is API = eu + com + asia)')
+		parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
+								default=[ r.value for r in Region.API_regions() ], help='Filter by region (default is API = eu + com + asia)')
 		parser.add_argument('--by-region', action='store_true', default=False, help='Export accounts by region')
 		parser.add_argument('--distributed', '--dist',type=int, dest='distributed', metavar='N', 
 							default=0, help='Split accounts into N files distributed stats fetching')
@@ -202,6 +203,10 @@ def add_args_accounts_import(parser: ArgumentParser, config: Optional[ConfigPars
 		if not add_args_accounts_import_files(accounts_import_files_parser, config=config):
 			raise Exception("Failed to define argument parser for: accounts import files")
 		
+		parser.add_argument('--region', type=str, nargs='*', 
+								choices=[ r.value for r in Region.has_stats() ], 
+								default=[ r.value for r in Region.has_stats() ], 
+								help='Filter by region (default is API = eu + com + asia)')
 		parser.add_argument('--sample', type=float, default=0, help='Sample accounts')
 		parser.add_argument('--import-config', metavar='CONFIG', type=str, default=None, 
 								help='Config file for backend to import from. \
@@ -509,7 +514,7 @@ async def accounts_update_wi_fetch_replays(db: Backend, wi: WoTinspector, replay
 
 
 async def cmd_accounts_import(db: Backend, args : Namespace) -> bool:
-	
+	"""Import accounts from other backend"""	
 	try:
 		stats 		: EventCounter 			= EventCounter('accounts import')
 		accountQ 	: Queue[BSAccount]		= Queue(ACCOUNTS_Q_MAX)
@@ -546,12 +551,13 @@ async def cmd_accounts_import_mongodb(db: Backend, args : Namespace, accountsQ: 
 										config: ConfigParser | None = None) -> EventCounter:
 	stats : EventCounter = EventCounter('accounts import mongodb')
 	try:
-		kwargs : dict[str, Any] = dict()
 		import_db : Backend | None
+		kwargs : dict[str, Any] = dict()
 		if args.server_url is not None:
 			kwargs['host'] = args.server_url
 		if args.database is not None:
 			kwargs['database'] = args.database
+		regions : set[Region] ={ Region(r) for r in args.region }
 		
 		if config is None:
 			assert db.name == 'mongodb', f'Cannot import from mongodb without config'
@@ -568,25 +574,25 @@ async def cmd_accounts_import_mongodb(db: Backend, args : Namespace, accountsQ: 
 			raise ValueError('Cannot import from itself')
 
 		message('Counting accounts to import ...')
-		N : int = await db.accounts_count(regions=Region.has_stats(),
+		N : int = await db.accounts_count(regions=regions,
 										inactive=OptAccountsInactive.both,
-										sample=args.sample, force=args.force)
+										sample=args.sample, force=True)
 
 		with alive_bar(N, title="Importing accounts ", enrich_print=False) as bar:
+			
+			account_type: type[WG_Account] | type[BSAccount]
 			if args.import_type == 'BSAccount':	
-				async for account in import_db.accounts_get(regions=Region.has_stats(), 
-															inactive=OptAccountsInactive.both, 
-															sample=args.sample, force=args.force):
-					await accountsQ.put(account)
-					bar()
-					stats.log('read')
+				account_type=BSAccount
 			elif args.import_type == 'WG_Account':
-				async for account in cast(MongoBackend, import_db).accounts_get_WG_Account(regions=Region.has_stats(), 
-															inactive=OptAccountsInactive.both, 
-															sample=args.sample, force=args.force):
-					await accountsQ.put(account)
-					bar()
-					stats.log('read')
+				account_type=WG_Account
+			else:
+				raise ValueError(f'Unsupported account --import-type: {args.import_type}')
+
+			async for account in import_db.accounts_import(account_type=account_type, regions=regions, 
+															sample=args.sample):
+				await accountsQ.put(account)
+				bar()
+				stats.log('read')
 
 	except Exception as err:
 		error(f'{err}')	
@@ -595,7 +601,7 @@ async def cmd_accounts_import_mongodb(db: Backend, args : Namespace, accountsQ: 
 
 async def cmd_accounts_import_files(db: Backend, args : Namespace, accountsQ: Queue[BSAccount], 
 									config: ConfigParser | None = None) -> EventCounter:
-	stats : EventCounter 	= EventCounter('accounts import mongodb')
+	stats : EventCounter 	= EventCounter('accounts import files')
 	try:
 		raise NotImplementedError
 	except Exception as err:
