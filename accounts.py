@@ -441,9 +441,9 @@ async def accounts_update_wi_spider_replays(db: Backend, wi: WoTinspector, args:
 		with alive_bar(len(pages), title= "Spidering replays", enrich_print=False) as bar:
 			for page in pages:			
 				try:
-					if old_replays > max_old_replays:
-						message(f'{max_old_replays} found. Stopping spidering for more')
-						break
+					if old_replays > max_old_replays:						
+						raise CancelledError
+						#  break
 					debug(f'spidering page {page}')
 					url: str = wi.get_url_replay_listing(page)
 					resp: str | None = await get_url(wi.session, url)
@@ -472,7 +472,8 @@ async def accounts_update_wi_spider_replays(db: Backend, wi: WoTinspector, args:
 				finally:
 					bar()
 	except CancelledError as err:
-		debug(f'Cancelled')
+		# debug(f'Cancelled')
+		message(f'{max_old_replays} found. Stopping spidering for more')
 	except Exception as err:
 		error(f'{err}')
 	return stats
@@ -491,7 +492,7 @@ async def accounts_update_wi_fetch_replays(db: Backend, wi: WoTinspector, replay
 														await get_url_JSON_model(wi.session, url, 
 																			WoTBlitzReplayJSON ))
 				if replay is None:
-					error(f'Could not fetch replay id: {replay_id}')
+					verbose(f'Could not fetch replay id: {replay_id}')
 					continue
 				players : list[int] = replay.get_players()
 				stats.log('players found', len(players))
