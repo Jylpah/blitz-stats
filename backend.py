@@ -4,7 +4,7 @@ import logging
 from abc import ABCMeta, abstractmethod
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCursor, AsyncIOMotorCollection # type: ignore
-from pymongo.results import InsertManyResult, InsertOneResult
+from pymongo.results import InsertManyResult, InsertOneResult, UpdateResult
 from pymongo.errors import BulkWriteError
 from pymongo import DESCENDING, ASCENDING
 from os.path import isfile
@@ -13,8 +13,8 @@ from time import time
 from enum import Enum, StrEnum
 from asyncio import Queue, CancelledError
 
-from models import BSAccount, StatsTypes, WG_Account
-from blitzutils.models import Region, WoTBlitzReplayJSON, WGtankStat
+from models import BSAccount, StatsTypes
+from blitzutils.models import Region, WoTBlitzReplayJSON, WGtankStat, Account
 from pyutils.utils import epoch_now
 from pyutils.eventcounter import EventCounter
 
@@ -226,6 +226,14 @@ class Backend(metaclass=ABCMeta):
 		return stats
 
 	
+	@abstractmethod
+	async def accounts_import(self, account_type: type[Account], regions: set[Region] = Region.has_stats(), 
+							sample : float = 0) -> AsyncGenerator[BSAccount, None]:
+		"""import accounts"""
+		raise NotImplementedError
+		yield BSAccount()
+
+
 	async def accounts_insert_worker(self, accountQ : Queue[BSAccount], force: bool = False) -> EventCounter:
 		debug(f'starting, force={force}')
 		stats : EventCounter = EventCounter('accounts insert')
@@ -291,12 +299,54 @@ class Backend(metaclass=ABCMeta):
 		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
 		raise NotImplementedError
 
+	
+	@abstractmethod
+	async def tank_stats_update(self, tank_stats: list[WGtankStat], upsert: bool = False) -> tuple[int, int, int]:
+		"""Update or upsert tank stats to the backend. Returns number of stats updated and not updated"""
+		raise NotImplementedError
+
 
 	@abstractmethod
 	async def tank_stats_get(self, account: BSAccount, tank_id: int | None = None, 
 								last_battle_time: int | None = None) -> AsyncGenerator[WGtankStat, None]:
 		"""Return tank stats from the backend"""
 		raise NotImplementedError
+
+
+	async def tank_stats_insert_worker(self, tank_statsQ : Queue[list[WGtankStat]], force: bool = False) -> EventCounter:
+		debug(f'starting, force={force}')
+		stats : EventCounter = EventCounter('tank-stats insert')
+		try:
+			added : int
+			not_added : int
+			read : int
+			while True:
+				added = 0
+				not_added = 0
+				tank_stats = await tank_statsQ.get()
+				read = len(tank_stats)
+				try:
+					if force:
+						debug(f'Trying to upsert {len(tank_stats)} tank stats into {self.name}:{self.database}.{self.table_tank_stats}')
+						added, not_added, _ = await self.tank_stats_update(tank_stats, upsert=True)
+					else:
+						debug(f'Trying to insert {len(tank_stats)} tank stats into {self.name}:{self.database}.{self.table_tank_stats}')
+						added, not_added, _ = await self.tank_stats_insert(tank_stats)
+					if force:
+						stats.log('tank stats added/updated', added)
+					else:
+						stats.log('accounts added', added)
+					stats.log('accounts not added', not_added)
+				except Exception as err:
+					debug(f'Error: {err}')
+					stats.log('errors', read)
+				finally:
+					tank_statsQ.task_done()
+		except CancelledError as err:
+			debug(f'Cancelled')
+		except Exception as err:
+			error(f'{err}')
+		return stats
 
 
 ##############################################
@@ -506,6 +556,15 @@ class MongoBackend(Backend):
 			except Exception as err:
 				error(f'{self.name}: Could not init collection {DBC} for tank_stats: {err}')
 
+			try:
+				DBC = self.C['PLAYER_ACHIEVEMENTS']
+				dbc = self.db[DBC]
+
+				verbose(f'Adding index: {DBC}: [ account_id, updated]')
+				# await dbc.create_index([ ('a', DESCENDING), ('u', DESCENDING)], background=True)
+			except Exception as err:
+				error(f'{self.name}: Could not init collection {DBC} for player_achievements: {err}')
+
 
 		except Exception as err:
 			error(f'Error initializing {self.name}: {err}')
@@ -627,34 +686,29 @@ class MongoBackend(Backend):
 			error(f'Error fetching accounts from Mongo DB: {err}')	
 
 
-	async def accounts_get_WG_Account(self, stats_type : StatsTypes | None = None, 
-							regions: set[Region] = Region.API_regions(), 
-							inactive : OptAccountsInactive = OptAccountsInactive.default(), 	
-							disabled: bool = False, 
-							dist : OptAccountsDistributed | None = None, sample : float = 0, 
-							force : bool = False, cache_valid: int | None = None ) -> AsyncGenerator[BSAccount, None]:
-		"""Get accounts from Mongo DB
-			inactive: true = only inactive, false = not inactive, none = AUTO
-		"""
+	async def accounts_import(self, account_type: type[Account], regions: set[Region] = Region.has_stats(), 
+							sample : float = 0) -> AsyncGenerator[BSAccount, None]:
+		"""Import accounts from Mongo DB"""
 		try:
-			NOW = int(time())	
 			DBC : str = self.C['ACCOUNTS']
 			dbc : AsyncIOMotorCollection = self.db[DBC]
-			pipeline : list[dict[str, Any]] | None = await self._accounts_mk_pipeline(stats_type=stats_type, regions=regions, 
-																	inactive=inactive, disabled=disabled, 
-																	dist=dist, sample=sample, 
-																	force=force, cache_valid=cache_valid)
 
-			if pipeline is None:
-				raise ValueError(f'could not create get-accounts {self.name} cursor')
-
+			pipeline : list[dict[str, Any]] = list()
+			if regions != Region.has_stats():
+				pipeline.append({ '$match': { 'r' in regions }})
+			
+			if sample > 0 and sample < 1:
+				N : int = await dbc.estimated_document_count()
+				pipeline.append({ '$sample' : N * sample })
+			elif sample >= 1:
+				pipeline.append({ '$sample' : sample })
+			
 			account 	: BSAccount
-			wg_account 	: WG_Account				
 			async for account_obj in dbc.aggregate(pipeline, allowDiskUse=True):
 				try:
-					wg_account = WG_Account.parse_obj(account_obj)
-					debug(f'Read {wg_account} from {self.database}.{self.table_accounts}')
-					account = BSAccount.parse_obj(wg_account.obj_db())
+					account_in = account_type.parse_obj(account_obj)
+					debug(f'Read {account_in} from {self.database}.{self.table_accounts}')
+					account = BSAccount.parse_obj(account_in.obj_db())
 					yield account
 				except Exception as err:
 					error(f'{err}')
@@ -810,6 +864,27 @@ class MongoBackend(Backend):
 		except Exception as err:
 			error(f'Unknown error when adding tank stats: {err}')
 		return added, not_added, last_battle_time
+
+
+	async def tank_stats_update(self, tank_stats: list[WGtankStat], upsert: bool = False) -> tuple[int, int, int]:
+		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
+		updated			: int = 0
+		not_updated 	: int = 0
+		last_battle_time: int = -1
+
+		try:
+			DBC : str = self.C['TANK_STATS']
+			dbc : AsyncIOMotorCollection = self.db[DBC]
+			res : UpdateResult
+			last_battle_time = max( [ ts.last_battle_time for ts in tank_stats] )	
+			res = await dbc.update_many( (ts.obj_db() for ts in tank_stats), 
+										  upsert=upsert, ordered=False)
+			updated = res.modified_count
+			not_updated = len(tank_stats) - updated
+		
+		except Exception as err:
+			error(f'Unknown error when updating tank stats: {err}')
+		return updated, not_updated, last_battle_time
 
 
 	async def tank_stats_get(self, account: BSAccount, tank_id: int | None = None, 
