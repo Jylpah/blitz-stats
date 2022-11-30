@@ -4,6 +4,7 @@ from typing import Optional, Iterable, cast
 import logging
 from asyncio import create_task, gather, Queue, CancelledError, Task, sleep
 from aiofiles import open
+from os.path import isfile
 from asyncstdlib import enumerate
 from alive_progress import alive_bar		# type: ignore
 
@@ -80,7 +81,7 @@ def add_args_tank_stats_update(parser: ArgumentParser, config: Optional[ConfigPa
 		parser.add_argument('--rate-limit', type=float, default=WG_RATE_LIMIT, metavar='RATE_LIMIT',
 							help='Rate limit for WG API')
 		parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
-							default=list(Region.API_regions()), help='Filter by region (default: eu + com + asia + ru)')
+							default=[ r.value for r in Region.API_regions() ], help='Filter by region (default: eu + com + asia + ru)')
 		parser.add_argument('--sample', type=float, default=0, metavar='SAMPLE',
 							help='Update tank stats for SAMPLE of accounts. If 0 < SAMPLE < 1, SAMPLE defines a %% of users')
 		parser.add_argument('--cache_valid', type=int, default=None, metavar='DAYS',
@@ -107,8 +108,66 @@ def add_args_tank_stats_prune(parser: ArgumentParser, config: Optional[ConfigPar
 
 
 def add_args_tank_stats_import(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
-	debug('starting')
-	return True
+	"""Add argument parser for tank-stats import"""
+	try:
+		debug('starting')
+		
+		tank_stats_import_parsers = parser.add_subparsers(dest='tank_stats_import_backend', 	
+														title='tank-stats import backend',
+														description='valid backends', 
+														metavar=', '.join(Backend.list_available()))
+		tank_stats_import_parsers.required = True
+		tank_stats_import_mongodb_parser = tank_stats_import_parsers.add_parser('mongodb', help='tank-stats import mongodb help')
+		if not add_args_tank_stats_import_mongodb(tank_stats_import_mongodb_parser, config=config):
+			raise Exception("Failed to define argument parser for: tank-stats import mongodb")
+
+		tank_stats_import_files_parser = tank_stats_import_parsers.add_parser('files', help='tank-stats import files help')
+		if not add_args_tank_stats_import_files(tank_stats_import_files_parser, config=config):
+			raise Exception("Failed to define argument parser for: tank-stats import files")
+		
+		parser.add_argument('--sample', type=float, default=0, help='Sample tank-stats')
+		parser.add_argument('--import-config', metavar='CONFIG', type=str, default=None, 
+								help='Config file for backend to import from. \
+								Default is to use existing backend')
+		
+		return True
+	except Exception as err:
+		error(f'{err}')
+	return False
+
+
+def add_args_tank_stats_import_mongodb(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+	"""Add argument parser for tank-stats import mongodb"""
+	try:
+		debug('starting')
+		parser.add_argument('--server-url', metavar='SERVER-URL', type=str, default=None, 
+										help='MongoDB server URL to connect the server. \
+											Required if the current backend is not the same MongoDB instance')
+		parser.add_argument('--database', metavar='DATABASE', type=str, default=None, 
+										help='Database to use. Uses current database as default')
+		parser.add_argument('--collection', metavar='COLLECTION', type=str, default=None, 
+										help='Collection to use. Uses current database as default')
+		parser.add_argument('--import-type', metavar='IMPORT-TYPE', type=str, default='BSAccount', 
+										choices=['WG_Account', 'BSAccount'], 
+										help='Collection to use. Uses current database as default')
+
+
+		return True
+	except Exception as err:
+		error(f'{err}')
+	return False
+
+
+def add_args_tank_stats_import_files(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+	"""Add argument parser for tank-stats import files"""
+	try:
+		debug('starting')
+		parser.add_argument('files', type=str, nargs='+', metavar='FILE [FILE1 ...]', 
+							help='Files to import')
+		return True
+	except Exception as err:
+		error(f'{err}')
+	return False
 
 
 def add_args_tank_stats_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
@@ -132,7 +191,7 @@ async def cmd_tank_stats(db: Backend, args : Namespace) -> bool:
 			return await cmd_tank_stats_export(db, args)
 
 		elif args.tank_stats_cmd == 'import':
-			# return await cmd_accounts_import(db, args)
+			# return await cmd_tank_stats_import(db, args)
 			pass
 			
 	except Exception as err:
@@ -376,3 +435,66 @@ async def add_tank_stats_worker(db: Backend, statsQ: Queue[list[WGtankStat]]) ->
 
 async def cmd_tank_stats_export(db: Backend, args : Namespace) -> bool:
 	return False
+
+
+########################################################
+# 
+# cmd_tank_stats_import()
+#
+########################################################
+
+async def cmd_tank_stats_import(db: Backend, args : Namespace) -> bool:
+	"""Import tank stats from other backend"""
+	
+	try:
+		stats 		: EventCounter 				= EventCounter('tank-stats import')
+		accountQ 	: Queue[BSAccount]			= Queue(ACCOUNTS_Q_MAX)
+		tank_statsQ	: Queue[list[WGtankStat]]	= Queue(ACCOUNTS_Q_MAX)
+		config 		: ConfigParser | None 	= None
+
+		importer : Task = create_task(db.tank_stats_insert_worker(tank_statsQ=tank_statsQ, force=args.force))
+
+		if args.import_config is not None and isfile(args.import_config):
+			debug(f'Reading config from {args.config}')
+			config = ConfigParser()
+			config.read(args.config)
+
+		if args.tank_stats_import_backend == 'mongodb':
+			stats.merge_child(await cmd_tank_stats_import_mongodb(db, args, tank_statsQ, config))
+		elif args.tank_stats_import_backend == 'files':
+			stats.merge_child(await cmd_tank_stats_import_files(db, args, tank_statsQ, config))
+		else:
+			raise ValueError(f'Unsupported import backend {args.tank_stats_import_backend}')
+
+		await accountQ.join()
+		importer.cancel()
+		worker_res : tuple[EventCounter|BaseException] = await gather(importer,return_exceptions=True)
+		if type(worker_res[0]) is EventCounter:
+			stats.merge_child(worker_res[0])
+		elif type(worker_res[0]) is BaseException:
+			error(f'account insert worker threw an exception: {worker_res[0]}')
+		stats.print()
+		return True
+	except Exception as err:
+		error(f'{err}')	
+	return False
+
+
+async def cmd_tank_stats_import_mongodb(db: Backend, args : Namespace, tank_statsQ: Queue[list[WGtankStat]],
+										config: ConfigParser | None = None) -> EventCounter:
+	stats : EventCounter = EventCounter('accounts import mongodb')
+	try:
+		pass
+	except Exception as err:
+		error(f'{err}')	
+	return stats
+
+
+async def cmd_tank_stats_import_files(db: Backend, args : Namespace, tank_statsQ: Queue[list[WGtankStat]], 
+									config: ConfigParser | None = None) -> EventCounter:
+	stats : EventCounter = EventCounter('accounts import files')
+	try:
+		raise NotImplementedError
+	except Exception as err:
+		error(f'{err}')	
+	return stats
