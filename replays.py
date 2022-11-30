@@ -19,7 +19,7 @@ debug	= logger.debug
 
 WI_MAX_PAGES 	: int 				= 100
 WI_MAX_OLD_REPLAYS: int 			= 30
-WI_RATE_LIMIT	: Optional[float] 	= None
+WI_RATE_LIMIT	: Optional[float] 	= 20/3600
 WI_AUTH_TOKEN	: Optional[str] 	= None
 ACCOUNTS_Q_MAX 	: int				= 100
 ACCOUNT_Q_MAX 	: int				= 5000
