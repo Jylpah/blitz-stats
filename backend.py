@@ -14,7 +14,7 @@ from enum import Enum, StrEnum
 from asyncio import Queue, CancelledError
 
 from models import BSAccount, StatsTypes
-from blitzutils.models import Region, WoTBlitzReplayJSON, WGtankStat, Account
+from blitzutils.models import Region, WoTBlitzReplayJSON, WGtankStat, Account, Tank
 from pyutils.utils import epoch_now
 from pyutils.eventcounter import EventCounter
 
@@ -33,6 +33,7 @@ MIN_INACTIVITY_PERIOD : int = 7 # days
 MAX_RETRIES 		: int = 3
 CACHE_VALID 		: int = 5   # days
 ACCOUNTS_Q_MAX 		: int = 10000
+TANK_STATS_BATCH	: int = 1000
 
 class OptAccountsInactive(StrEnum):
 	auto	= 'auto'
@@ -227,8 +228,9 @@ class Backend(metaclass=ABCMeta):
 
 	
 	@abstractmethod
-	async def accounts_import(self, account_type: type[Account], regions: set[Region] = Region.has_stats(), 
-							sample : float = 0) -> AsyncGenerator[BSAccount, None]:
+	async def accounts_export(self, account_type: type[Account] = BSAccount, 
+								regions: set[Region] = Region.has_stats(), 
+								sample : float = 0) -> AsyncGenerator[BSAccount, None]:
 		"""import accounts"""
 		raise NotImplementedError
 		yield BSAccount()
@@ -327,14 +329,12 @@ class Backend(metaclass=ABCMeta):
 				read = len(tank_stats)
 				try:
 					if force:
-						debug(f'Trying to upsert {len(tank_stats)} tank stats into {self.name}:{self.database}.{self.table_tank_stats}')
+						debug(f'Trying to upsert {read} tank stats into {self.name}:{self.database}.{self.table_tank_stats}')
 						added, not_added, _ = await self.tank_stats_update(tank_stats, upsert=True)
-					else:
-						debug(f'Trying to insert {len(tank_stats)} tank stats into {self.name}:{self.database}.{self.table_tank_stats}')
-						added, not_added, _ = await self.tank_stats_insert(tank_stats)
-					if force:
 						stats.log('tank stats added/updated', added)
 					else:
+						debug(f'Trying to insert {read} tank stats into {self.name}:{self.database}.{self.table_tank_stats}')
+						added, not_added, _ = await self.tank_stats_insert(tank_stats)
 						stats.log('accounts added', added)
 					stats.log('accounts not added', not_added)
 				except Exception as err:
@@ -686,8 +686,9 @@ class MongoBackend(Backend):
 			error(f'Error fetching accounts from Mongo DB: {err}')	
 
 
-	async def accounts_import(self, account_type: type[Account], regions: set[Region] = Region.has_stats(), 
-							sample : float = 0) -> AsyncGenerator[BSAccount, None]:
+	async def accounts_export(self, account_type: type[Account] = BSAccount, 
+								regions: set[Region] = Region.has_stats(), 
+								sample : float = 0) -> AsyncGenerator[BSAccount, None]:
 		"""Import accounts from Mongo DB"""
 		try:
 			DBC : str = self.C['ACCOUNTS']
@@ -695,7 +696,7 @@ class MongoBackend(Backend):
 
 			pipeline : list[dict[str, Any]] = list()
 			if regions != Region.has_stats():
-				pipeline.append({ '$match': { 'r' in regions }})
+				pipeline.append({ '$match': { 'r': { '$in':  [ r.value for r in regions ] } }})
 			
 			if sample > 0 and sample < 1:
 				N : int = await dbc.estimated_document_count()
@@ -891,3 +892,47 @@ class MongoBackend(Backend):
 								last_battle_time: int | None = None) -> AsyncGenerator[WGtankStat, None]:
 		"""Return tank stats from the backend"""
 		raise NotImplementedError
+
+
+	async def tank_stats_export(self, tank_stats_type: type[WGtankStat] = WGtankStat, 
+								# regions: set[Region] = Region.has_stats(), 
+								accounts: list[BSAccount] | None = None,
+								tanks: list[Tank] | None = None,  
+								sample : float = 0) -> AsyncGenerator[list[WGtankStat], None]:
+		"""Import accounts from Mongo DB"""
+		try:
+			DBC : str = self.C['TANK_STATS']
+			dbc : AsyncIOMotorCollection = self.db[DBC]
+
+			pipeline : list[dict[str, Any]] = list()
+			match : list[dict[str, Any]] = list()
+			if accounts is not None:
+				match.append({ 'a': { '$in' : [ a.id for a in accounts ]}})
+			if tanks is not None:
+				match.append({ 't': { '$in' : [ t.tank_id for t in tanks ]}})
+			if len(match) > 0:
+				pipeline.append({ '$match': { '$and' : match }})
+			
+			if sample > 0 and sample < 1:
+				N : int = await dbc.estimated_document_count()
+				pipeline.append({ '$sample' : N * sample })
+			elif sample >= 1:
+				pipeline.append({ '$sample' : sample })
+			
+			tank_stats	: list[WGtankStat] = list()
+			async for tank_stat_obj in dbc.aggregate(pipeline, allowDiskUse=True):
+				try:
+					tank_stat_in = tank_stats_type.parse_obj(tank_stat_obj)
+					debug(f'Read account={tank_stat_in.account_id} tank_id={tank_stat_in.tank_id} from {self.database}.{self.table_tank_stats}')
+					tank_stats.append(WGtankStat.parse_obj(tank_stat_in.obj_db()))
+					if len(tank_stats) >= TANK_STATS_BATCH:
+						yield tank_stats
+						tank_stats = list()
+				except Exception as err:
+					error(f'{err}')
+					continue
+			if len(tank_stats) > 0:
+				yield tank_stats
+
+		except Exception as err:
+			error(f'Error fetching accounts from Mongo DB: {err}')	
