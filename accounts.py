@@ -588,7 +588,7 @@ async def cmd_accounts_import_mongodb(db: Backend, args : Namespace, accountsQ: 
 			else:
 				raise ValueError(f'Unsupported account --import-type: {args.import_type}')
 
-			async for account in import_db.accounts_import(account_type=account_type, regions=regions, 
+			async for account in import_db.accounts_export(account_type=account_type, regions=regions, 
 															sample=args.sample):
 				await accountsQ.put(account)
 				bar()
