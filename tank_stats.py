@@ -171,8 +171,35 @@ def add_args_tank_stats_import_files(parser: ArgumentParser, config: Optional[Co
 
 
 def add_args_tank_stats_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
-	debug('starting')
-	return True
+	try:
+		debug('starting')
+		EXPORT_FORMAT 	= 'csv'
+		EXPORT_FILE 	= 'tank_stats'
+		EXPORT_SUPPORTED_FORMATS : list[str] = ['json', 'csv']
+
+		if config is not None and 'TANK_STATS' in config.sections():
+			configTS 	= config['TANK_STATS']
+			EXPORT_FORMAT	= configTS.get('export_format', EXPORT_FORMAT)
+			EXPORT_FILE		= configTS.get('export_file', EXPORT_FILE )
+
+		parser.add_argument('format', type=str, nargs='?', choices=EXPORT_SUPPORTED_FORMATS, 
+		 					 default=EXPORT_FORMAT, help='Export file format')
+		parser.add_argument('filename', metavar='FILE', type=str, nargs='?', default=EXPORT_FILE, 
+							help='File to export tank-stats to. Use \'-\' for STDIN')
+		parser.add_argument('--append', action='store_true', default=False, help='Append to file(s)')
+		parser.add_argument('--force', action='store_true', default=False, help='Overwrite existing file(s) when exporting')
+		# parser.add_argument('--disabled', action='store_true', default=False, help='Disabled accounts')
+		# parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
+								# default=OptAccountsInactive.no.value, help='Include inactive accounts')
+		parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
+								default=[ r.value for r in Region.API_regions() ], help='Filter by region (default is API = eu + com + asia)')
+		parser.add_argument('--by-region', action='store_true', default=False, help='Export tank-stats by region')
+		parser.add_argument('--sample', type=float, default=0, help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
+
+		return True	
+	except Exception as err:
+		error(f'{err}')
+	return False
 
 
 ###########################################
@@ -452,7 +479,8 @@ async def cmd_tank_stats_import(db: Backend, args : Namespace) -> bool:
 		tank_statsQ	: Queue[list[WGtankStat]]	= Queue(ACCOUNTS_Q_MAX)
 		config 		: ConfigParser | None 	= None
 
-		importer : Task = create_task(db.tank_stats_insert_worker(tank_statsQ=tank_statsQ, force=args.force))
+		importer : Task = create_task(db.tank_stats_insert_worker(tank_statsQ=tank_statsQ, 
+																	force=args.force))
 
 		if args.import_config is not None and isfile(args.import_config):
 			debug(f'Reading config from {args.config}')
