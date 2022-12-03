@@ -8,13 +8,15 @@ from pymongo.results import InsertManyResult, InsertOneResult, UpdateResult
 from pymongo.errors import BulkWriteError
 from pymongo import DESCENDING, ASCENDING
 from os.path import isfile
-from typing import Optional, Any, Iterable, AsyncGenerator
+from typing import Optional, Any, Iterable, AsyncGenerator, cast
 from time import time
+from datetime import date
 from enum import Enum, StrEnum
 from asyncio import Queue, CancelledError
+from pydantic import ValidationError
 
-from models import BSAccount, StatsTypes
-from blitzutils.models import Region, WoTBlitzReplayJSON, WGtankStat, Account, Tank
+from models import BSAccount, BSBlitzRelease, StatsTypes
+from blitzutils.models import Region, WoTBlitzReplayJSON, WGtankStat, Account, Tank, WGBlitzRelease
 from pyutils.utils import epoch_now
 from pyutils.eventcounter import EventCounter
 
@@ -173,6 +175,10 @@ class Backend(metaclass=ABCMeta):
 		raise NotImplementedError
 
 
+	#----------------------------------------
+	# replays
+	#----------------------------------------
+
 	@abstractmethod
 	async def replay_insert(self, replay: WoTBlitzReplayJSON) -> bool:
 		"""Store replay into backend"""
@@ -295,6 +301,9 @@ class Backend(metaclass=ABCMeta):
 		"""Store accounts to the backend. Returns number of accounts inserted and not inserted""" 			
 		raise NotImplementedError
 
+	#----------------------------------------
+	# tank stats
+	#----------------------------------------
 
 	@abstractmethod
 	async def tank_stats_insert(self, tank_stats: Iterable[WGtankStat]) -> tuple[int, int, int]:
@@ -312,6 +321,15 @@ class Backend(metaclass=ABCMeta):
 	async def tank_stats_get(self, account: BSAccount, tank_id: int | None = None, 
 								last_battle_time: int | None = None) -> AsyncGenerator[WGtankStat, None]:
 		"""Return tank stats from the backend"""
+		raise NotImplementedError
+
+	
+	@abstractmethod
+	async def tank_stats_count(self, release: BSBlitzRelease | None = None,
+							regions: set[Region] = Region.API_regions(), 
+							sample : float = 0, 
+							force : bool = False) -> int:
+		"""Get number of tank-stats from backend"""
 		raise NotImplementedError
 
 
@@ -347,6 +365,22 @@ class Backend(metaclass=ABCMeta):
 		except Exception as err:
 			error(f'{err}')
 		return stats
+
+
+	#----------------------------------------
+	# Releases
+	#----------------------------------------
+
+	@abstractmethod
+	async def release_get(self, release : str) -> BSBlitzRelease | None:
+		raise NotImplementedError
+	
+
+	@abstractmethod
+	async def releases_get(self, release: str | None = None, since : date | None = None, 
+							first : BSBlitzRelease | None = None) -> list[BSBlitzRelease]:
+		raise NotImplementedError
+
 
 
 ##############################################
@@ -394,6 +428,7 @@ class MongoBackend(Backend):
 			# default collections
 			self.C['ACCOUNTS'] 			= 'Accounts'
 			self.C['TANKOPEDIA'] 		= 'Tankopedia'
+			self.C['RELEASES'] 			= 'Releases'
 			self.C['REPLAYS'] 			= 'Replays'
 			self.C['TANK_STATS'] 		= 'TankStats'
 			self.C['PLAYER_ACHIEVEMENTS'] = 'PlayerAchievements'
@@ -571,40 +606,13 @@ class MongoBackend(Backend):
 		return False
 
 
-	async def replay_insert(self, replay: WoTBlitzReplayJSON) -> bool:
-		"""Store replay into backend"""
-		try:
-			DBC : str = self.C['REPLAYS']
-			dbc : AsyncIOMotorCollection = self.db[DBC]
-			await dbc.insert_one(replay.obj_db())
-			return True
-		except Exception as err:
-			debug(f'Could not insert replay (_id: {replay.id}) into {self.name}: {err}')	
-		return False
+########################################################
+# 
+# MongoBackend(): account
+#
+########################################################
 
 
-	async def replay_get(self, replay_id: str | ObjectId) -> WoTBlitzReplayJSON | None:
-		"""Get a replay from backend based on replayID"""
-		try:
-			debug(f'Getting replay (id={replay_id} from {self.name})')
-			DBC : str = self.C['REPLAYS']
-			dbc : AsyncIOMotorCollection = self.db[DBC]
-			res : Any | None = await dbc.find_one({'_id': str(replay_id)})
-			if res is not None:
-				# replay : WoTBlitzReplayJSON  = WoTBlitzReplayJSON.parse_obj(res) 
-				# debug(replay.json_src())
-				return WoTBlitzReplayJSON.parse_obj(res)   # returns None if not found
-		except Exception as err:
-			debug(f'Error reading replay (id_: {replay_id}) from {self.name}: {err}')	
-		return None
-	
-
-	# replay fields that can be searched: protagonist, battle_start_timestamp, account_id, vehicle_tier
-	async def replay_find(self, **kwargs) -> AsyncGenerator[WoTBlitzReplayJSON, None]:
-		"""Find a replay from backend based on search string"""
-		raise NotImplementedError
-
-	
 	async def account_get(self, account_id: int) -> BSAccount | None:
 		"""Get account from backend"""
 		try:
@@ -622,24 +630,34 @@ class MongoBackend(Backend):
 							disabled: bool = False, 
 							dist : OptAccountsDistributed | None = None, sample : float = 0, 
 							force : bool = False, cache_valid: int | None = None ) -> int:
+		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
 		try:
-			NOW = int(time())	
 			DBC : str = self.C['ACCOUNTS']
 			dbc : AsyncIOMotorCollection = self.db[DBC]
-			pipeline : list[dict[str, Any]] | None = await self._accounts_mk_pipeline(stats_type=stats_type, regions=regions, 
-																	inactive=inactive, disabled=disabled, 
-																	dist=dist, sample=sample, 
-																	force=force, cache_valid=cache_valid)
-
-			if pipeline is None:
-				raise ValueError(f'could not create get-accounts {self.name} cursor')
-			pipeline.append({ '$count': 'accounts' })
-			cursor : AsyncIOMotorCursor = dbc.aggregate(pipeline, allowDiskUse=True)
-			res : Any =  (await cursor.to_list(length=100))[0]
-			if type(res) is dict and 'accounts' in res:
-				return int(res['accounts'])
+			if stats_type is None and regions == Region.has_stats() and \
+			   inactive == OptAccountsInactive.both and disabled == False: 
+				total : int = cast(int, await dbc.estimated_document_count())
+				if sample == 0:
+					return total
+				if sample < 1:
+					return int(total * sample)
+				else:
+					return int(min(total, sample))
 			else:
-				raise ValueError('pipeline returned malformed data')
+				pipeline : list[dict[str, Any]] | None = await self._accounts_mk_pipeline(stats_type=stats_type, regions=regions, 
+																		inactive=inactive, disabled=disabled, 
+																		dist=dist, sample=sample, 
+																		force=force, cache_valid=cache_valid)
+
+				if pipeline is None:
+					raise ValueError(f'could not create get-accounts {self.name} cursor')
+				pipeline.append({ '$count': 'accounts' })
+				cursor : AsyncIOMotorCursor = dbc.aggregate(pipeline, allowDiskUse=True)
+				res : Any =  (await cursor.to_list(length=100))[0]
+				if type(res) is dict and 'accounts' in res:
+					return int(res['accounts'])
+				else:
+					raise ValueError('pipeline returned malformed data')
 		except Exception as err:
 			error(f'counting accounts failed: {err}')
 		return -1
@@ -722,8 +740,8 @@ class MongoBackend(Backend):
 							regions: set[Region] = Region.API_regions(), 
 							inactive : OptAccountsInactive = OptAccountsInactive.default(), 
 							dist : OptAccountsDistributed | None = None,
-							disabled: bool = False, sample : float = 0, 
-							force : bool = False, cache_valid: int | None = None ) -> list[dict[str, Any]] | None:
+							disabled: bool|None = False, sample : float = 0, 
+							force : bool = False, cache_valid: int | None = None) -> list[dict[str, Any]] | None:
 		try:
 			# id						: int		= Field(default=..., alias='_id')
 			# region 					: Region | None= Field(default=None, alias='r')
@@ -760,7 +778,7 @@ class MongoBackend(Backend):
 			if dist is not None:
 				match.append({ '_id' : {  '$mod' :  [ dist.div, dist.mod ]}})			
 	
-			if not disabled:
+			if disabled is not None and not disabled:
 				match.append({ 'd': { '$ne': True }})
 				# check inactive only if disabled == False
 				if inactive == OptAccountsInactive.auto:
@@ -775,12 +793,13 @@ class MongoBackend(Backend):
 			if sample >= 1:				
 				pipeline.append({'$sample': {'size' : int(sample) } })
 			elif sample > 0:
-				n = await dbc.estimated_document_count()
+				n : int = cast(int, await dbc.estimated_document_count())
 				pipeline.append({'$sample': {'size' : int(n * sample) } })
 			return pipeline		
 		except Exception as err:
 			error(f'{err}')
 		return None
+
 
 	async def account_insert(self, account: BSAccount) -> bool:
 		"""Store account to the backend. Returns False 
@@ -840,7 +859,191 @@ class MongoBackend(Backend):
 			error(f'Unknown error when adding acconts: {err}')
 		return added, not_added
 
+########################################################
+# 
+# MongoBackend(): releases
+#
+########################################################
+
+
+	async def release_get(self, release : str) -> BSBlitzRelease | None:
+		res : BSBlitzRelease | None = None
+		try:
+			DBC : str = self.C['RELEASES']
+			dbc : AsyncIOMotorCollection = self.db[DBC]			
+			res = BSBlitzRelease.parse_obj(await dbc.find({ 'release' : release }))
+			if res is None:
+				raise ValueError()
+		except ValidationError as err:
+			error(f'Incorrect data format: {err}')
+		except Exception as err:
+			error(f'Could not find release {release}: {err}')
+		return res
+
+
+	async def releases_get(self, release: str |None = None, since : date | None = None, 
+							first : BSBlitzRelease | None = None) -> list[BSBlitzRelease]:
+		assert since is None or first is None, 'Only one can be defined: since, first'
+
+		releases : list[BSBlitzRelease] = list()
+		try:
+			DBC : str = self.C['RELEASES']
+			dbc : AsyncIOMotorCollection = self.db[DBC]
+			query : dict[str, Any] = dict()
+			if since is not None:
+				query['launch_date'] = { '$gte': since }
+			elif first is not None:
+				query['launch_date'] = { '$gte': first.launch_date}
+			
+			if release is not None:
+				query['release'] = { '$regex' : '^' + release }
+			
+			async for r in dbc.find(query).sort('launch_date', ASCENDING):
+				rel : BSBlitzRelease|None = BSBlitzRelease.parse_obj(r)
+				if rel is not None:
+					releases.append(rel)
+				else:
+					error(f'Could not parse release: {r}')
+		except Exception as err:
+			error(f'Error getting releases: {err}')
+		return releases
+
+
+########################################################
+# 
+# MongoBackend(): replay
+#
+########################################################
+
+	async def replay_insert(self, replay: WoTBlitzReplayJSON) -> bool:
+		"""Store replay into backend"""
+		try:
+			DBC : str = self.C['REPLAYS']
+			dbc : AsyncIOMotorCollection = self.db[DBC]
+			await dbc.insert_one(replay.obj_db())
+			return True
+		except Exception as err:
+			debug(f'Could not insert replay (_id: {replay.id}) into {self.name}: {err}')	
+		return False
+
+
+	async def replay_get(self, replay_id: str | ObjectId) -> WoTBlitzReplayJSON | None:
+		"""Get a replay from backend based on replayID"""
+		try:
+			debug(f'Getting replay (id={replay_id} from {self.name})')
+			DBC : str = self.C['REPLAYS']
+			dbc : AsyncIOMotorCollection = self.db[DBC]
+			res : Any | None = await dbc.find_one({'_id': str(replay_id)})
+			if res is not None:
+				# replay : WoTBlitzReplayJSON  = WoTBlitzReplayJSON.parse_obj(res) 
+				# debug(replay.json_src())
+				return WoTBlitzReplayJSON.parse_obj(res)   # returns None if not found
+		except Exception as err:
+			debug(f'Error reading replay (id_: {replay_id}) from {self.name}: {err}')	
+		return None
 	
+
+	# replay fields that can be searched: protagonist, battle_start_timestamp, account_id, vehicle_tier
+	async def replay_find(self, **kwargs) -> AsyncGenerator[WoTBlitzReplayJSON, None]:
+		"""Find a replay from backend based on search string"""
+		raise NotImplementedError
+
+
+
+########################################################
+# 
+# MongoBackend(): tank_stats
+#
+########################################################
+
+
+	async def _tank_stats_mk_pipeline(self, release: BSBlitzRelease|None = None, 
+										regions: set[Region] = Region.API_regions(), 
+										tanks: list[Tank]| None = None, 
+										accounts : list[Account] |None = None,
+										sample: float = 0) -> list[dict[str, Any]] | None:
+		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
+		try:
+			# class WGtankStat(JSONExportable, JSONImportable):
+			# id					: ObjectId | None = Field(None, alias='_id')
+			# _region				: Region | None = Field(None, alias='r')
+			# all					: WGtankStatAll = Field(..., alias='s')
+			# last_battle_time		: int			= Field(..., alias='lb')
+			# account_id			: int			= Field(..., alias='a')
+			# tank_id				: int 			= Field(..., alias='t')
+			# mark_of_mastery		: int 			= Field(..., alias='m')
+			# battle_life_time		: int 			= Field(..., alias='l')
+			# max_xp				: int  | None
+			# in_garage_updated		: int  | None
+			# max_frags				: int  | None
+			# frags					: int  | None
+			# in_garage 			: bool | None
+			
+			NOW = epoch_now()
+			DBC : str = self.C['TANK_STATS']
+			dbc : AsyncIOMotorCollection = self.db[DBC]
+			pipeline : list[dict[str, Any]] = list()
+			match : list[dict[str, str|int|float|dict|list]] = list()
+			
+			# Pipeline build based on ESR rule
+			# https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
+
+			if regions != Region.has_stats():
+				match.append({ 'r' : { '$in' : [ r.value for r in regions ]} })
+			if tanks is not None:
+				match.append({ 't': { '$in': [ t.tank_id for t in tanks ]}})
+			if accounts is not None:
+				match.append({ 'a': { '$in': [ a.id for a in accounts ]}})
+
+			if len(match) > 0:
+				pipeline.append( { '$match' : { '$and' : match } })
+
+			if sample >= 1:				
+				pipeline.append({'$sample': {'size' : int(sample) } })
+			elif sample > 0:
+				n : int = cast(int, await dbc.estimated_document_count())
+				pipeline.append({'$sample': {'size' : int(n * sample) } })
+			return pipeline		
+		except Exception as err:
+			error(f'{err}')
+		return None
+
+
+	async def tank_stats_count(self, release: BSBlitzRelease | None = None,
+							regions: set[Region] = Region.API_regions(), 
+							sample : float = 0, 
+							force : bool = False) -> int:
+		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
+		try:
+			DBC : str = self.C['TANK_STATS']
+			dbc : AsyncIOMotorCollection = self.db[DBC]
+
+			if release is None and regions == Region.has_stats(): 
+				total : int = cast(int, await dbc.estimated_document_count())
+				if sample == 0:
+					return total
+				if sample < 1:
+					return int(total * sample)
+				else:
+					return int(min(total, sample))
+			else:
+				pipeline : list[dict[str, Any]] | None 
+				pipeline = await self._tank_stats_mk_pipeline(release=release, regions=regions, sample=sample)
+
+				if pipeline is None:
+					raise ValueError(f'could not create get-accounts {self.name} cursor')
+				pipeline.append({ '$count': 'accounts' })
+				cursor : AsyncIOMotorCursor = dbc.aggregate(pipeline, allowDiskUse=True)
+				res : Any =  (await cursor.to_list(length=100))[0]
+				if type(res) is dict and 'accounts' in res:
+					return int(res['accounts'])
+				else:
+					raise ValueError('pipeline returned malformed data')
+		except Exception as err:
+			error(f'counting accounts failed: {err}')
+		return -1
+	
+
 	async def tank_stats_insert(self, tank_stats: Iterable[WGtankStat]) -> tuple[int, int, int]:
 		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
 		added			: int = 0
