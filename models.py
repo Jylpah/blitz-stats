@@ -13,7 +13,8 @@ import logging
 import aiofiles
 from collections import defaultdict
 
-from blitzutils.models import Region, Account	# type: ignore
+from blitzutils.models import Region, Account, WGBlitzRelease
+	# type: ignore
 from pyutils.utils import epoch_now
 
 TYPE_CHECKING = True
@@ -85,3 +86,16 @@ class BSAccount(Account):
 		setattr(self, stats.value, int(time()))
 
 
+class BSBlitzRelease(WGBlitzRelease):
+	cut_off: datetime 	= Field(default=0)
+
+	class Config:		
+		allow_mutation 			= True
+		validate_assignment 	= True
+
+
+	@validator('cut_off')
+	def validate_cut_off(cls, v):
+		if v >= 0:
+			return v
+		raise ValueError('cut_off has to be >= 0')
