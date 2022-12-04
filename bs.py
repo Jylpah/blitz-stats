@@ -5,7 +5,7 @@
 from datetime import datetime
 from typing import Optional
 from backend import Backend
-from pyutils.multilevelformatter import set_mlevel_logging
+from pyutils import MultilevelFormatter
 from configparser import ConfigParser
 import logging
 from argparse import ArgumentParser
@@ -18,6 +18,7 @@ import models
 import accounts as acc
 import replays as rep
 import tank_stats as ts
+import releases as rel
 import setup as se
 
 # import blitzutils as bu
@@ -79,7 +80,7 @@ async def main(argv: list[str]):
 			logging.WARNING: 	'%(message)s',
 			logging.ERROR: 		'%(levelname)s: %(message)s'
 		}
-		set_mlevel_logging(logger, fmts=logger_conf, 
+		MultilevelFormatter.setLevels(logger, fmts=logger_conf, 
 							fmt='%(levelname)s: %(funcName)s(): %(message)s', 
 							log_file=args.log)
 		error 		= logger.error
@@ -116,7 +117,7 @@ async def main(argv: list[str]):
 		cmd_parsers = parser.add_subparsers(dest='main_cmd', 
 											title='main commands',
 											description='valid subcommands',
-											metavar='accounts | tank-stats | player-achievements | replays | tankopedia | setup')
+											metavar='accounts | tank-stats | player-achievements | replays | tankopedia | releases | setup')
 		cmd_parsers.required = True
 
 		accounts_parser 			= cmd_parsers.add_parser('accounts', aliases=['acc'], help='accounts help')
@@ -124,6 +125,7 @@ async def main(argv: list[str]):
 		player_achievements_parser 	= cmd_parsers.add_parser('player-achievements', help='player-achievements help')
 		replays_parser 				= cmd_parsers.add_parser('replays', help='replays help')
 		tankopedia_parser 			= cmd_parsers.add_parser('tankopedia', help='tankopedia help')
+		releases_parser 			= cmd_parsers.add_parser('releases', help='releases help')
 		setup_parser 				= cmd_parsers.add_parser('setup', help='setup help')
 		
 		if not acc.add_args_accounts(accounts_parser, config):
@@ -132,6 +134,8 @@ async def main(argv: list[str]):
 			raise Exception("Failed to define argument parser for: replays")
 		if not rep.add_args_replays(replays_parser, config):
 			raise Exception("Failed to define argument parser for: replays")
+		if not rel.add_args_releases(releases_parser, config):
+			raise Exception("Failed to define argument parser for: releases")
 		if not se.add_args_setup(setup_parser, config):
 			raise Exception("Failed to define argument parser for: setup")
 				
@@ -151,6 +155,8 @@ async def main(argv: list[str]):
 			await ts.cmd_tank_stats(backend, args)
 		elif args.main_cmd == 'replays':
 			await rep.cmd_replays(backend, args)
+		elif args.main_cmd == 'releases':
+			await rel.cmd_releases(backend, args)
 		elif args.main_cmd == 'tankopedia':
 			raise NotImplementedError
 		elif args.main_cmd == 'setup':
