@@ -10,7 +10,7 @@ from alive_progress import alive_bar		# type: ignore
 
 from backend import Backend, OptAccountsInactive, ACCOUNTS_Q_MAX, CACHE_VALID
 from models import BSAccount, StatsTypes
-from pyutils.eventcounter import EventCounter
+from pyutils import CounterQueue, EventCounter
 from pyutils.utils import get_url, get_url_JSON_model, epoch_now
 from blitzutils.models import WoTBlitzReplayJSON, Region, WGApiWoTBlitzTankStats, WGtankStat
 from blitzutils.wg import WGApi 
@@ -173,7 +173,7 @@ def add_args_tank_stats_import_files(parser: ArgumentParser, config: Optional[Co
 def add_args_tank_stats_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
-		EXPORT_FORMAT 	= 'csv'
+		EXPORT_FORMAT 	= 'json'
 		EXPORT_FILE 	= 'tank_stats'
 		EXPORT_SUPPORTED_FORMATS : list[str] = ['json', 'csv']
 
@@ -194,7 +194,10 @@ def add_args_tank_stats_export(parser: ArgumentParser, config: Optional[ConfigPa
 		parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
 								default=[ r.value for r in Region.API_regions() ], help='Filter by region (default is API = eu + com + asia)')
 		parser.add_argument('--by-region', action='store_true', default=False, help='Export tank-stats by region')
-		parser.add_argument('--sample', type=float, default=0, help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
+		parser.add_argument('--sample', type=float, default=0, 
+							help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
+		parser.add_argument('--accounts', type=str, default=None, nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
+							help="Update tank stats for the listed ACCOUNT_ID(s). ACCOUNT_ID format 'account_id:region' or 'account_id'")
 
 		return True	
 	except Exception as err:
@@ -461,7 +464,91 @@ async def add_tank_stats_worker(db: Backend, statsQ: Queue[list[WGtankStat]]) ->
 ########################################################
 
 async def cmd_tank_stats_export(db: Backend, args : Namespace) -> bool:
+	try:
+		debug('starting')		
+		assert type(args.sample) in [int, float], 'param "sample" has to be a number'
+
+		## not implemented...
+		# query_args : dict[str, str | int | float | bool ] = dict()
+		stats 		: EventCounter 			= EventCounter('tank-stats export')
+		regions		: set[Region] 			= { Region(r) for r in args.region }
+		filename	: str					= args.filename
+		force		: bool 					= args.force
+		export_stdout : bool 				= filename == '-'
+		sample 		: float = args.sample
+
+		accountQs 	: dict[str, CounterQueue[BSAccount]] = dict()
+		account_workers : list[Task] = list()
+		export_workers 	: list[Task] = list()
+		
+		# total : int = await db.tank_stats_count(regions=regions, sample=sample)
+
+		# if args.distributed > 0:
+		# 	for i in range(args.distributed):
+		# 		accountQs[str(i)] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)
+		# 		distributed = OptAccountsDistributed(i, args.distributed)
+		# 		account_workers.append(create_task(db.accounts_get_worker(accountQs[str(i)], regions=regions, 
+		# 												inactive=inactive, disabled=disabled, sample=sample,
+		# 												distributed=distributed)))
+		# 		export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], 
+		# 													accountQs[str(i)]), 
+		# 												format=args.format, filename=f'{filename}.{i}', 
+		# 												force=force, append=args.append)))
+		# elif args.by_region:
+		# 	accountQs['all'] = CounterQueue(maxsize=ACCOUNTS_Q_MAX, count_items=False)
+		# 	# by region
+		# 	for region in regions:
+		# 		accountQs[region.name] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)											
+		# 		export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], 
+		# 														accountQs[region.name]), 
+		# 									format=args.format, filename=f'{filename}.{region.name}', 
+		# 									force=force, append=args.append)))
+			
+		# 	# fetch accounts for all the regios
+		# 	account_workers.append(create_task(db.accounts_get_worker(accountQs['all'], regions=regions, 
+		# 												inactive=inactive, disabled=disabled, sample=sample)))
+		# 	# split by region
+		# 	export_workers.append(create_task(accounts_split_Q_by_region(Q_all=accountQs['all'], 
+		# 							regionQs=cast(dict[str, Queue[BSAccount]], accountQs))))
+		# else:
+		# 	accountQs['all'] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)
+		# 	account_workers.append(create_task(db.accounts_get_worker(accountQs['all'], regions=regions, 
+		# 												inactive=inactive, disabled=disabled, sample=sample)))
+
+		# 	if filename != '-':
+		# 		filename += '.all'
+		# 	export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], accountQs['all']), 
+		# 									format=args.format, filename=filename, 
+		# 									force=force, append=args.append)))
+		
+		# bar : Task | None = None
+		# if not export_stdout:
+		# 	bar = create_task(alive_queue_bar(list(accountQs.values()), 'Exporting accounts', total=total, enrich_print=False))
+			
+		# await wait(account_workers)
+		# for queue in accountQs.values():
+		# 	await queue.join() 
+		# if bar is not None:
+		# 	bar.cancel()
+		# for res in await gather(*account_workers):
+		# 	if type(res) is EventCounter:
+		# 		stats.merge_child(res)
+		# 	elif type(res) is BaseException:
+		# 		error(f'Backend ({db.name}) accounts_get_worker() returned error: {res}')
+		# for worker in export_workers:
+		# 	worker.cancel()
+		# for res in await gather(*export_workers):
+		# 	if type(res) is EventCounter:
+		# 		stats.merge_child(res)
+		# 	elif type(res) is BaseException:
+		# 		error(f'export(format={args.format}) returned error: {res}')
+		# if not export_stdout:
+		# 	stats.print()
+
+	except Exception as err:
+		error(f'{err}')
 	return False
+
 
 
 ########################################################
