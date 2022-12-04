@@ -5,12 +5,13 @@ import logging
 from asyncio import create_task, gather, Queue, CancelledError, Task
 from aiohttp import ClientResponse
 from datetime import date
+from os.path import isfile
 
-from pyutils.utils import get_timestamp, export, JSONExportable, CSVExportable, TXTExportable
-
-
-from backend import Backend
+from pyutils.utils import export, JSONExportable, CSVExportable, TXTExportable
+from pyutils.eventcounter import EventCounter
+from backend import Backend, MongoBackend
 from models import BSBlitzRelease
+from models_import import WG_Release
 
 logger = logging.getLogger()
 error 	= logger.error
@@ -45,6 +46,10 @@ def add_args_releases(parser: ArgumentParser, config: Optional[ConfigParser] = N
 		remove_parser = releases_parsers.add_parser('remove', help="releases remove help")
 		if not add_args_releases_remove(remove_parser, config=config):
 			raise Exception("Failed to define argument parser for: releases remove")
+
+		import_parser = releases_parsers.add_parser('import', help="releases import help")
+		if not add_args_releases_import(import_parser, config=config):
+			raise Exception("Failed to define argument parser for: releases import")
 
 		export_parser = releases_parsers.add_parser('export', help="releases export help")
 		if not add_args_releases_export(export_parser, config=config):
@@ -92,6 +97,25 @@ def add_args_releases_remove(parser: ArgumentParser, config: Optional[ConfigPars
 	return False
 
 
+def add_args_releases_import(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+	try:
+		debug('starting')
+		import_parsers = parser.add_subparsers(dest='releases_import_backend', 	
+														title='releases import backend',
+														description='valid backends', 
+														metavar=', '.join(Backend.list_available()))
+		import_parsers.required = True
+		import_mongodb_parser = import_parsers.add_parser('mongodb', help='releases import mongodb help')
+		if not MongoBackend.add_args_import(import_mongodb_parser, config=config, 
+											import_types=['BSBlitzRelease', 'WG_Account']):
+			raise Exception("Failed to define argument parser for: releases import mongodb")
+		
+		return True	
+	except Exception as err:
+		error(f'add_args_releases_import() : {err}')
+	return False
+
+
 def add_args_releases_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
@@ -108,6 +132,8 @@ def add_args_releases_export(parser: ArgumentParser, config: Optional[ConfigPars
 	except Exception as err:
 		error(f'add_args_releases_remove() : {err}')
 	return False
+
+
 
 ###########################################
 # 
@@ -128,6 +154,9 @@ async def cmd_releases(db: Backend, args : Namespace) -> bool:
 		elif args.releases_cmd == 'remove':
 			debug('releases remove')
 			return await cmd_releases_remove(db, args)
+		elif args.releases_cmd == 'import':
+			debug('releases import')
+			return await cmd_releases_import(db, args)	
 		elif args.releases_cmd == 'export':
 			debug('releases export')
 			return await cmd_releases_export(db, args)		
@@ -201,5 +230,39 @@ async def cmd_releases_export(db: Backend, args : Namespace) -> bool:
 		return True 
 	except Exception as err:
 		error(f'{err}')
+	return False
+
+
+async def cmd_releases_import(db: Backend, args : Namespace) -> bool:
+	"""Import accounts from other backend"""	
+	try:
+		stats 		: EventCounter 			= EventCounter('releases import')
+		releaseQ 	: Queue[BSBlitzRelease]	= Queue(100)
+		config 		: ConfigParser | None 	= None
+
+		importer : Task = create_task(db.releases_insert_worker(releaseQ=releaseQ, force=args.force))
+		if args.import_config is not None and isfile(args.import_config):
+			debug(f'Reading config from {args.config}')
+			config = ConfigParser()
+			config.read(args.config)
+
+		if args.releases_import_backend == 'mongodb':
+			stats.merge_child(await cmd_releases_import_mongodb(db, args, releaseQ, config))
+		# elif args.releases_import_backend == 'files':
+		# 	stats.merge_child(await cmd_releases_import_files(db, args, releaseQ, config))
+		else:
+			raise ValueError(f'Unsupported import backend {args.accounts_import_backend}')
+
+		await releaseQ.join()
+		importer.cancel()
+		worker_res : tuple[EventCounter|BaseException] = await gather(importer,return_exceptions=True)
+		if type(worker_res[0]) is EventCounter:
+			stats.merge_child(worker_res[0])
+		elif type(worker_res[0]) is BaseException:
+			error(f'releases insert worker threw an exception: {worker_res[0]}')
+		stats.print()
+		return True
+	except Exception as err:
+		error(f'{err}')	
 	return False
 
