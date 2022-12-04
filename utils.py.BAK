@@ -209,7 +209,7 @@ async def init_db_indices(db: motor.motor_asyncio.AsyncIOMotorDatabase):
 
         return True
     except Exception as err:
-        error(f"Unexpected Exception: {str(err)}")
+        error(f"Unexpected Exception: {err}")
     return False
 
 
@@ -219,7 +219,7 @@ async def update_log(db : motor.motor_asyncio.AsyncIOMotorDatabase, action: str,
 		dbc = db[DB_C_UPDATE_LOG]
 		await dbc.insert_one( { 'action': action, 'stat_type': stat_type, 'update': update,  'updated': int(time()) } )
 	except Exception as err:
-		error(f"Unexpected Exception: {str(err)}")
+		error(f"Unexpected Exception: {err}")
 		return False
 	return True
 
