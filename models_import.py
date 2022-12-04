@@ -1,7 +1,14 @@
 from pydantic import Field, root_validator, validator
-
+from datetime import datetime, date
 from blitzutils.models import Account
+from models import BSBlitzRelease
+import logging
 
+logger 	= logging.getLogger()
+error 	= logger.error
+message	= logger.warning
+verbose	= logger.info
+debug	= logger.debug
 
 class WG_Account(Account):	
 	updated_WGtankstats 		 : int | None = Field(default=None, alias='ut')
@@ -27,4 +34,22 @@ class WG_Account(Account):
 			return v
 		else:
 			raise ValueError('time field must be >= 0')
+
+
+class WG_Release(BSBlitzRelease):
+	release		: str 				= Field(default=..., alias='Release')
+	launch_date	: date | None		= Field(default=None, alias='Date')
+	cut_off		: int 				= Field(default=0, alias='Cut-off')
+
+	class Config:
+		allow_population_by_field_name = True
+		allow_mutation 			= True
+		validate_assignment 	= True
+		
+	@validator('launch_date', pre=True)
+	def to_date(cls, v) -> date | None:
+		print(f'DEBUG: {v}')
+		if v is None:
+			return None
+		return datetime.fromisoformat(v).date()
 
