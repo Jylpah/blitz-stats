@@ -196,9 +196,11 @@ def add_args_accounts_import(parser: ArgumentParser, config: Optional[ConfigPars
 														metavar=', '.join(Backend.list_available()))
 		accounts_import_parsers.required = True
 		accounts_import_mongodb_parser = accounts_import_parsers.add_parser('mongodb', help='accounts import mongodb help')
-		if not add_args_accounts_import_mongodb(accounts_import_mongodb_parser, config=config):
+		if not MongoBackend.add_args_import(accounts_import_mongodb_parser, config=config, 
+											import_types=['BSAccount', 'WG_Account']):
 			raise Exception("Failed to define argument parser for: accounts import mongodb")
 
+		
 		accounts_import_files_parser = accounts_import_parsers.add_parser('files', help='accounts import files help')
 		if not add_args_accounts_import_files(accounts_import_files_parser, config=config):
 			raise Exception("Failed to define argument parser for: accounts import files")
@@ -551,14 +553,15 @@ async def cmd_accounts_import_mongodb(db: Backend, args : Namespace, accountsQ: 
 										config: ConfigParser | None = None) -> EventCounter:
 	stats : EventCounter = EventCounter('accounts import mongodb')
 	try:
+		regions : set[Region] ={ Region(r) for r in args.region }
+
 		import_db : Backend | None
 		kwargs : dict[str, Any] = dict()
 		if args.server_url is not None:
 			kwargs['host'] = args.server_url
 		if args.database is not None:
 			kwargs['database'] = args.database
-		regions : set[Region] ={ Region(r) for r in args.region }
-		
+
 		if config is None:
 			assert db.name == 'mongodb', f'Cannot import from mongodb without config'
 			import_db = db.copy(**kwargs)			
