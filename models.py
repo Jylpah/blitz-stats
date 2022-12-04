@@ -4,6 +4,7 @@ from typing import Any, Mapping, Optional, Tuple
 from bson.objectid import ObjectId
 from bson.int64 import Int64
 from isort import place_module
+from math import ceil
 from pydantic import BaseModel, Extra, root_validator, validator, Field, HttpUrl
 from pydantic.utils import ValueItems
 import json
@@ -15,7 +16,7 @@ from collections import defaultdict
 
 from blitzutils.models import Region, Account, WGBlitzRelease
 	# type: ignore
-from pyutils.utils import epoch_now
+from pyutils.utils import epoch_now, TXTExportable, CSVExportable
 
 TYPE_CHECKING = True
 logger 	= logging.getLogger()
@@ -86,8 +87,8 @@ class BSAccount(Account):
 		setattr(self, stats.value, int(time()))
 
 
-class BSBlitzRelease(WGBlitzRelease):
-	cut_off: datetime 	= Field(default=0)
+class BSBlitzRelease(WGBlitzRelease, TXTExportable, CSVExportable):
+	cut_off: int 	= Field(default=0)
 
 	class Config:		
 		allow_mutation 			= True
@@ -99,3 +100,23 @@ class BSBlitzRelease(WGBlitzRelease):
 		if v >= 0:
 			return v
 		raise ValueError('cut_off has to be >= 0')
+
+
+	def cut_off_now(self) -> None:
+		ROUND_TO : int = 15*60
+		self.cut_off = ceil(epoch_now() / ROUND_TO) * ROUND_TO
+	
+	# TXTExportable()
+	def txt_row(self, format : str = '') -> str:
+		"""export data as single row of text"""
+		return self.release
+
+
+	# CSVExportable()
+	def csv_headers(self) -> list[str]:
+		return list(self.dict(exclude_unset=False, by_alias=False).keys())
+
+
+	def csv_row(self) -> dict[str, str | int | float | bool]:
+		return self.dict(exclude_unset=False, by_alias=False)
+	
