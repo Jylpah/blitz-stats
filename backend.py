@@ -1,5 +1,5 @@
 from configparser import ConfigParser
-from argparse import Namespace
+from argparse import Namespace, ArgumentParser
 import logging
 from abc import ABCMeta, abstractmethod
 from bson import ObjectId
@@ -90,7 +90,7 @@ class Backend(metaclass=ABCMeta):
 
 	@classmethod
 	def create(cls, backend : str, 
-						config : ConfigParser | None = None, **kwargs) -> Optional['Backend']:
+				config : ConfigParser | None = None, **kwargs) -> Optional['Backend']:
 		try:
 			if backend == 'mongodb':
 				return MongoBackend(config, **kwargs)
@@ -99,6 +99,13 @@ class Backend(metaclass=ABCMeta):
 		except Exception as err:
 			error(f'Error creating backend {backend}: {err}')
 		return None
+
+
+	@classmethod
+	@abstractmethod
+	def add_args_import(cls, parser: ArgumentParser, config: Optional[ConfigParser] = None, 
+							import_types: list[str] = list()) -> bool:
+		raise NotImplementedError
 
 
 	@classmethod
@@ -154,6 +161,12 @@ class Backend(metaclass=ABCMeta):
 	@property
 	@abstractmethod
 	def table_player_achievements(self) -> str:
+		raise NotImplementedError
+
+
+	@property
+	@abstractmethod
+	def table_releases(self) -> str:
 		raise NotImplementedError
 
 
@@ -382,6 +395,58 @@ class Backend(metaclass=ABCMeta):
 		raise NotImplementedError
 
 
+	@abstractmethod
+	async def release_get_latest(self) -> BSBlitzRelease | None:
+		"""Get the latest release in the backend"""
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def release_get_current(self) -> BSBlitzRelease | None:
+		"""Get the latest release in the backend"""
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def release_update(self, release: BSBlitzRelease, upsert: bool = True) -> bool:
+		"""Update an release in the backend. Returns False 
+			if the release was not updated"""
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def release_insert(self, release: BSBlitzRelease) -> bool:
+		"""Insert new release to the backend"""
+		raise NotImplementedError
+	
+
+	async def releases_insert_worker(self, releaseQ : Queue[BSBlitzRelease], force: bool = False) -> EventCounter:
+		debug(f'starting, force={force}')
+		stats : EventCounter = EventCounter('accounts insert')
+		try:
+			while True:
+				release = await releaseQ.get()
+				try:
+					if force:
+						debug(f'Trying to upsert release={release.release} into {self.name}:{self.database}.{self.table_releases}')
+						await self.release_update(release, upsert=True)
+					else:
+						debug(f'Trying to insert release={release.release} into {self.name}:{self.database}.{self.table_releases}')
+						await self.release_insert(release)
+					if force:
+						stats.log('releases added/updated')
+					else:
+						stats.log('releases added')
+				except Exception as err:
+					debug(f'Error: {err}')
+					stats.log('releases not added')
+				finally:
+					releaseQ.task_done()
+		except CancelledError as err:
+			debug(f'Cancelled')
+		except Exception as err:
+			error(f'{err}')
+		return stats
 
 ##############################################
 #
@@ -488,7 +553,7 @@ class MongoBackend(Backend):
 			return MongoBackend(config=None, **self._config)
 		except Exception as err:
 			error(f'Error creating copy: {err}')
-		return None		
+		return None
 		
 	
 	def set_database(self, database : str) -> bool:
@@ -499,6 +564,28 @@ class MongoBackend(Backend):
 			return True
 		except Exception as err:
 			error(f'Error creating copy: {err}')
+		return False
+
+
+	@classmethod
+	def add_args_import(cls, parser: ArgumentParser, config: Optional[ConfigParser] = None, 
+							import_types: list[str] = list()) -> bool:
+		"""Add argument parser for import from MongoDB"""
+		try:
+			debug('starting')
+			parser.add_argument('--server-url', metavar='SERVER-URL', type=str, default=None, 
+											help='MongoDB server URL to connect the server. \
+												Required if the current backend is not the same MongoDB instance')
+			parser.add_argument('--database', metavar='DATABASE', type=str, default=None, 
+											help='Database to use. Uses current database as default')
+			parser.add_argument('--collection', metavar='COLLECTION', type=str, default=None, 
+											help='Collection to use. Uses current database as default')
+			parser.add_argument('--import-type', metavar='IMPORT-TYPE', type=str, default=import_types[0], 
+											choices=import_types, 
+											help='Collection to use. Uses current database as default')
+			return True
+		except Exception as err:
+			error(f'{err}')
 		return False
 
 
@@ -522,6 +609,11 @@ class MongoBackend(Backend):
 		return self.C['PLAYER_ACHIEVEMENTS']
 
 
+	@property
+	def table_releases(self) -> str:
+		return self.C['RELEASES']
+
+	
 	@property
 	def table_replays(self) -> str:
 		return self.C['REPLAYS']
@@ -553,9 +645,10 @@ class MongoBackend(Backend):
 		"""Init MongoDB backend: create collections and set indexes"""
 		try:
 			# self.C['ACCOUNTS'] 			= 'Accounts'
-			# self.C['TANKOPEDIA'] 		= 'Tankopedia'
+			# self.C['TANKOPEDIA'] 			= 'Tankopedia'
+			# self.C['RELEASES'] 			= 'Releases'
 			# self.C['REPLAYS'] 			= 'Replays'
-			# self.C['TANK_STATS'] 		= 'TankStats'
+			# self.C['TANK_STATS'] 			= 'TankStats'
 			# self.C['PLAYER_ACHIEVEMENTS'] = 'PlayerAchievements'
 
 			DBC : str = 'NOT DEFINED'
@@ -571,6 +664,15 @@ class MongoBackend(Backend):
 			except Exception as err:
 				error(f'{self.name}: Could not init collection {DBC} for accounts: {err}')	
 			
+			try:
+				DBC = self.C['RELEASES']
+				dbc = self.db[DBC]
+
+				verbose(f'Adding index: {DBC}: [ release: -1, launch_date: -1]')
+				await dbc.create_index([ ('release', DESCENDING), ('launch_date', DESCENDING)], background=True)
+			except Exception as err:
+				error(f'{self.name}: Could not init collection {DBC} for releases: {err}')
+
 			try:
 				DBC = self.C['REPLAYS']
 				dbc = self.db[DBC]
@@ -881,10 +983,47 @@ class MongoBackend(Backend):
 		return res
 
 
-	async def releases_get(self, release: str |None = None, since : date | None = None, 
+	async def release_get_latest(self) -> BSBlitzRelease | None:
+		"""Get the latest release in the backend"""
+		rel : BSBlitzRelease | None = None
+		try:
+			DBC : str = self.C['RELEASES']
+			dbc : AsyncIOMotorCollection = self.db[DBC]
+			async for r in dbc.find().sort('launch_date', DESCENDING):
+				rel = BSBlitzRelease.parse_obj(r)
+				if rel is not None:
+					return rel			
+		except ValidationError as err:
+			error(f'Incorrect data format: {err}')
+		except Exception as err:
+			error(f'Could not find the latest release: {err}')
+		return None
+
+
+	async def release_get_current(self) -> BSBlitzRelease | None:
+		"""Get the latest release in the backend"""
+		rel : BSBlitzRelease | None = None
+		try:
+			DBC : str = self.C['RELEASES']
+			dbc : AsyncIOMotorCollection = self.db[DBC]
+			async for r in dbc.find({ 'launch_date': { '$lte': date.today() } }).sort('launch_date', DESCENDING):
+				rel = BSBlitzRelease.parse_obj(r)
+				if rel is not None:
+					if rel.cut_off == 0:
+						return rel
+					else:
+						return None
+		except ValidationError as err:
+			error(f'Incorrect data format: {err}')
+		except Exception as err:
+			error(f'Could not find the latest release: {err}')
+		return None
+
+
+	async def releases_get(self, release: str | None = None, since : date | None = None, 
 							first : BSBlitzRelease | None = None) -> list[BSBlitzRelease]:
 		assert since is None or first is None, 'Only one can be defined: since, first'
-
+		debug(f'release={release}, since={since}, first={first}')
 		releases : list[BSBlitzRelease] = list()
 		try:
 			DBC : str = self.C['RELEASES']
@@ -908,6 +1047,35 @@ class MongoBackend(Backend):
 			error(f'Error getting releases: {err}')
 		return releases
 
+
+	async def release_insert(self, release: BSBlitzRelease) -> bool:
+		"""Insert new release to the backend"""
+		try:
+			DBC : str = self.C['RELEASES']
+			dbc : AsyncIOMotorCollection = self.db[DBC]
+			res : InsertOneResult= dbc.insert_one(release)
+			if res.inserted_id is None:
+				error(f'Could not add release {release}')
+				return False
+			return True
+		except Exception as err:
+			error(f'Could not add release {release}: {err}')
+		return False
+
+
+	async def release_update(self, release: BSBlitzRelease, upsert: bool = True) -> bool:
+		"""Update an release in the backend. Returns False 
+			if the release was not updated"""
+		try:
+			DBC : str = self.C['RELEASES']
+			dbc : AsyncIOMotorCollection = self.db[DBC]
+			
+			await dbc.find_one_and_replace({ 'release': release.release }, release.obj_db(), upsert=upsert)
+			debug(f'Updated: {release}')
+			return True			
+		except Exception as err:
+			debug(f'Failed to update release={release} to {self.name}: {err}')	
+		return False
 
 ########################################################
 # 
@@ -1138,4 +1306,7 @@ class MongoBackend(Backend):
 				yield tank_stats
 
 		except Exception as err:
-			error(f'Error fetching accounts from Mongo DB: {err}')	
+			error(f'Error fetching accounts from Mongo DB: {err}')
+
+
+	
