@@ -534,24 +534,26 @@ async def cmd_accounts_import(db: Backend, args : Namespace) -> bool:
 		kwargs : dict[str, Any] = Backend.read_args(args=args, backend=args.accounts_import_backend)
 		if (import_db:= Backend.create(args.accounts_import_backend, config=config, **kwargs)) is not None:
 			if args.collection is not None:
-				import_db.set_table('ACCOUNTS', args.collection)
+				import_db.set_table('ACCOUNTS', args.import_table)
 			elif db == import_db and db.table_accounts == import_db.table_accounts:
 				raise ValueError('Cannot import from itself')
 		else:
 			raise ValueError(f'Could not init {args.accounts_import_backend} to import accounts from')
-		
+
+		account_type: type[Account] = globals()[args.import_type]
+		assert issubclass(account_type, Account), "--import-type has to be subclass of blitzutils.models.Account" 
+
 		message('Counting accounts to import ...')
 		N : int = await db.accounts_count(regions=regions,
 										inactive=OptAccountsInactive.both,
 										sample=args.sample, force=True)
-
-		account_type: type[WG_Account] | type[BSAccount]
-		if args.import_type == 'BSAccount':	
-			account_type=BSAccount
-		elif args.import_type == 'WG_Account':
-			account_type=WG_Account
-		else:
-			raise ValueError(f'Unsupported account --import-type: {args.import_type}')
+		
+		# if args.import_type == 'BSAccount':	
+		# 	account_type=BSAccount
+		# elif args.import_type == 'WG_Account':
+		# 	account_type=WG_Account
+		# else:
+		# 	raise ValueError(f'Unsupported account --import-type: {args.import_type}')
 
 		with alive_bar(N, title="Importing accounts ", enrich_print=False) as bar:
 			async for account in import_db.accounts_export(account_type=account_type, regions=regions, 
