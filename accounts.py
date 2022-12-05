@@ -15,8 +15,8 @@ from backend import Backend, OptAccountsInactive, OptAccountsDistributed, ACCOUN
 from models import BSAccount, StatsTypes
 from models_import import WG_Account
 from pyutils.eventcounter import EventCounter
-from pyutils.counterqueue import CounterQueue, alive_queue_bar
-from pyutils.utils import get_url, get_url_JSON_model, epoch_now, export, TXTExportable, CSVExportable, JSONExportable
+from pyutils.counterqueue import CounterQueue
+from pyutils.utils import get_url, get_url_JSON_model, epoch_now, export, TXTExportable, CSVExportable, JSONExportable, alive_queue_bar
 from blitzutils.models import WoTBlitzReplayJSON, Region, Account
 from blitzutils.wotinspector import WoTinspector
 
@@ -214,11 +214,7 @@ def add_args_accounts_import(parser: ArgumentParser, config: Optional[ConfigPars
 								choices=[ r.value for r in Region.has_stats() ], 
 								default=[ r.value for r in Region.has_stats() ], 
 								help='Filter by region (default is API = eu + com + asia)')
-		parser.add_argument('--sample', type=float, default=0, help='Sample accounts')
-		parser.add_argument('--import-config', metavar='CONFIG', type=str, default=None, 
-								help='Config file for backend to import from. \
-								Default is to use existing backend')
-
+		
 		return True
 	except Exception as err:
 		error(f'{err}')
