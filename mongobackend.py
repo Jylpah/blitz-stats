@@ -167,7 +167,7 @@ class MongoBackend(Backend):
 		if args.server_url is not None:
 			kwargs['host'] = args.server_url
 		if args.database is not None:
-			kwargs['database'] = args.database
+			kwargs['database'] = args.import_database
 		return kwargs	
 	
 
@@ -638,6 +638,38 @@ class MongoBackend(Backend):
 		except Exception as err:
 			error(f'Error getting releases: {err}')
 		return releases
+
+
+	async def releases_export(self, release_type: type[WGBlitzRelease] = BSBlitzRelease,
+								sample : float = 0) -> AsyncGenerator[BSBlitzRelease, None]:
+		"""Import relaseses from Mongo DB"""
+		try:
+			DBC : str = self.C['RELEASES']
+			dbc : AsyncIOMotorCollection = self.db[DBC]
+
+			pipeline : list[dict[str, Any]] = list()			
+			
+			if sample > 0 and sample < 1:
+				N : int = await dbc.estimated_document_count()
+				pipeline.append({ '$sample' : N * sample })
+			elif sample >= 1:
+				pipeline.append({ '$sample' : sample })
+			
+			# WIP. Does not manage empty filters. Add support for since/release mask
+			raise NotImplementedError
+			
+			release 	: BSBlitzRelease
+			async for release_obj in dbc.aggregate(pipeline, allowDiskUse=True):
+				try:
+					release_in = release_type.parse_obj(release_obj)
+					debug(f'Read {release_in} from {self.database}.{self.table_releases}')
+					release = BSBlitzRelease.parse_obj(release_in.obj_db())
+					yield release
+				except Exception as err:
+					error(f'{err}')
+					continue
+		except Exception as err:
+			error(f'Error exporting releases from {self.name}: {err}')	
 
 
 	async def release_insert(self, release: BSBlitzRelease) -> bool:
