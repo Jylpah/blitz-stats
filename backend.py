@@ -128,7 +128,7 @@ class Backend(metaclass=ABCMeta):
 
 	@classmethod
 	def create(cls, backend : str, config : ConfigParser | None = None, 
-					copy_from: 'Backend' | None = None, 
+					copy_from: Optional['Backend'] = None, 
 					**kwargs) -> Optional['Backend']:
 		try:
 			if copy_from is not None and copy_from.name == backend:
@@ -154,7 +154,7 @@ class Backend(metaclass=ABCMeta):
 								help='Config file for backend to import from. \
 								Default is to use existing backend')
 		parser.add_argument('--sample', type=float, default=0, help='Sample size')
-		
+
 		return True
 
 
