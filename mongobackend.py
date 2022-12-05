@@ -145,15 +145,14 @@ class MongoBackend(Backend):
 		"""Add argument parser for import backend"""
 		try:
 			debug('starting')
+			super().add_args_import(parser=parser, config=config, import_types=import_types)
+
 			parser.add_argument('--server-url', metavar='SERVER-URL', type=str, default=None, dest='import_host',
 										help='Server URL to connect to. Required if the imported other than the current backend')
 			parser.add_argument('--database', metavar='DATABASE', type=str, default=None, dest='import_database',
 										help='Database to use. Uses current database as default')
 			parser.add_argument('--collection', metavar='COLLECTION', type=str, default=None, dest='import_table',
 										help='Collection/table to import from. Uses current database as default')
-			parser.add_argument('--import-type', metavar='IMPORT-TYPE', type=str, default=import_types[0], 
-											choices=import_types, 
-											help='Collection to use. Uses current database as default')
 			return True
 		except Exception as err:
 			error(f'{err}')
@@ -899,7 +898,7 @@ class MongoBackend(Backend):
 				yield tank_stats
 
 		except Exception as err:
-			error(f'Error fetching accounts from Mongo DB: {err}')
+			error(f'Error fetching accounts from {self.name}: {err}')
 
 # Register backend
 
