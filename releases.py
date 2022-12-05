@@ -10,6 +10,7 @@ from os.path import isfile
 from pyutils.utils import export, JSONExportable, CSVExportable, TXTExportable
 from pyutils import EventCounter
 from backend import Backend
+from blitzutils.models import WGBlitzRelease
 from models import BSBlitzRelease
 from models_import import WG_Release
 
@@ -242,6 +243,7 @@ async def cmd_releases_import(db: Backend, args : Namespace) -> bool:
 		config 		: ConfigParser | None 	= None
 
 		importer : Task = create_task(db.releases_insert_worker(releaseQ=releaseQ, force=args.force))
+
 		if args.import_config is not None and isfile(args.import_config):
 			debug(f'Reading config from {args.config}')
 			config = ConfigParser()
@@ -255,7 +257,12 @@ async def cmd_releases_import(db: Backend, args : Namespace) -> bool:
 				raise ValueError('Cannot import from itself')
 		else:
 			raise ValueError(f'Could not init {args.accounts_import_backend} to import accounts from')
-		
+
+		release_type: type[WGBlitzRelease] = globals()[args.import_type]
+		assert issubclass(release_type, WGBlitzRelease), "--import-type has to be subclass of blitzutils.models.WGBlitzRelease" 
+
+		raise NotImplementedError
+		# missing release exporter...
 
 		await releaseQ.join()
 		importer.cancel()
