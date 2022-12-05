@@ -149,7 +149,7 @@ class Backend(metaclass=ABCMeta):
 							import_types: list[str] = list()) -> bool:
 		parser.add_argument('--import-type', metavar='IMPORT-TYPE', type=str, 
 							default=import_types[0], choices=import_types, 
-							help='Collection to use. Uses current database as default')
+							help='Data format to import. Default is blitz-stats native format.')
 		parser.add_argument('--import-config', metavar='CONFIG', type=str, default=None, 
 								help='Config file for backend to import from. \
 								Default is to use existing backend')
@@ -453,6 +453,14 @@ class Backend(metaclass=ABCMeta):
 	async def releases_get(self, release: str | None = None, since : date | None = None, 
 							first : BSBlitzRelease | None = None) -> list[BSBlitzRelease]:
 		raise NotImplementedError
+
+
+	@abstractmethod	
+	async def releases_export(self, release_type: type[WGBlitzRelease] = BSBlitzRelease,
+								sample : float = 0) -> AsyncGenerator[BSBlitzRelease, None]:
+		"""Import releases"""
+		raise NotImplementedError
+		yield BSBlitzRelease()
 
 
 	@abstractmethod
