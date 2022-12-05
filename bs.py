@@ -110,7 +110,7 @@ async def main(argv: list[str]):
 		# Parse command args
 		parser.add_argument('-h', '--help', action='store_true',  
 							help='Show help')
-		parser.add_argument('--backend', type=str, choices=['mongodb', 'postgresql', 'files'], 
+		parser.add_argument('--backend', type=str, choices=Backend.list_available(), 
 							default=BACKEND, help='Choose backend to use')
 		parser.add_argument('--force', action='store_true', default=False, help='Force action')
 
