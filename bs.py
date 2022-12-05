@@ -146,7 +146,7 @@ async def main(argv: list[str]):
 		debug('arguments given:')
 		debug(str(args))
 
-		backend : Backend | None  = Backend.create(args.backend, config)
+		backend : Backend | None  = Backend.create(args.backend, config=config)
 		assert backend is not None, 'Could not initialize backend'
 
 		if args.main_cmd == 'accounts':			
