@@ -1,6 +1,6 @@
 from argparse import ArgumentParser, Namespace
 from configparser import ConfigParser
-from typing import Optional, cast, Iterable
+from typing import Optional, cast, Iterable, Any
 import logging
 from asyncio import create_task, gather, Queue, CancelledError, Task
 from aiohttp import ClientResponse
@@ -8,8 +8,8 @@ from datetime import date
 from os.path import isfile
 
 from pyutils.utils import export, JSONExportable, CSVExportable, TXTExportable
-from pyutils.eventcounter import EventCounter
-from backend import Backend, MongoBackend
+from pyutils import EventCounter
+from backend import Backend
 from models import BSBlitzRelease
 from models_import import WG_Release
 
@@ -105,10 +105,11 @@ def add_args_releases_import(parser: ArgumentParser, config: Optional[ConfigPars
 														description='valid backends', 
 														metavar=', '.join(Backend.list_available()))
 		import_parsers.required = True
-		import_mongodb_parser = import_parsers.add_parser('mongodb', help='releases import mongodb help')
-		if not MongoBackend.add_args_import(import_mongodb_parser, config=config, 
-											import_types=['BSBlitzRelease', 'WG_Account']):
-			raise Exception("Failed to define argument parser for: releases import mongodb")
+
+		for backend in Backend.get_registered():
+			import_parser =  import_parsers.add_parser(backend.name, help=f'releases import {backend.name} help')
+			if not backend.add_args_import(import_parser, config=config, import_types=['BSBlitzRelease', 'WG_Release']):
+				raise Exception(f'Failed to define argument parser for: releases import {backend.name}')
 		
 		return True	
 	except Exception as err:
@@ -234,7 +235,7 @@ async def cmd_releases_export(db: Backend, args : Namespace) -> bool:
 
 
 async def cmd_releases_import(db: Backend, args : Namespace) -> bool:
-	"""Import accounts from other backend"""	
+	"""Import releases from other backend"""	
 	try:
 		stats 		: EventCounter 			= EventCounter('releases import')
 		releaseQ 	: Queue[BSBlitzRelease]	= Queue(100)
@@ -246,12 +247,15 @@ async def cmd_releases_import(db: Backend, args : Namespace) -> bool:
 			config = ConfigParser()
 			config.read(args.config)
 
-		if args.releases_import_backend == 'mongodb':
-			stats.merge_child(await cmd_releases_import_mongodb(db, args, releaseQ, config))
-		# elif args.releases_import_backend == 'files':
-		# 	stats.merge_child(await cmd_releases_import_files(db, args, releaseQ, config))
+		kwargs : dict[str, Any] = Backend.read_args(args, args.releases_import_backend)
+		if (import_db:= Backend.create(args.releases_import_backend, config=config, **kwargs)) is not None:
+			if args.collection is not None:
+				import_db.set_table('RELEASES', args.collection)
+			elif db == import_db and db.table_accounts == import_db.table_accounts:
+				raise ValueError('Cannot import from itself')
 		else:
-			raise ValueError(f'Unsupported import backend {args.accounts_import_backend}')
+			raise ValueError(f'Could not init {args.accounts_import_backend} to import accounts from')
+		
 
 		await releaseQ.join()
 		importer.cancel()
@@ -265,4 +269,3 @@ async def cmd_releases_import(db: Backend, args : Namespace) -> bool:
 	except Exception as err:
 		error(f'{err}')	
 	return False
-
