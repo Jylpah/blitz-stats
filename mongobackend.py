@@ -977,5 +977,5 @@ class MongoBackend(Backend):
 
 # Register backend
 
-message('Registering mongodb')
+debug('Registering mongodb')
 Backend.register(name=MongoBackend.name, backend=MongoBackend)
