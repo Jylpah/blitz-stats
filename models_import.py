@@ -48,10 +48,10 @@ class WG_Release(WGBlitzRelease):
 		allow_mutation 			= True
 		validate_assignment 	= True
 		
-	@validator('launch_date', pre=True)
-	def to_date(cls, v) -> date | None:
-		print(f'DEBUG: {v}')
-		if v is None:
-			return None
-		return datetime.fromisoformat(v).date()
+	# @validator('launch_date', pre=True)
+	# def to_date(cls, v) -> date | None:
+	# 	print(f'DEBUG: {v}')
+	# 	if v is None:
+	# 		return None
+	# 	return datetime.fromisoformat(v).date()
 
