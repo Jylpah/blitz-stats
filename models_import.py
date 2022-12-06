@@ -38,8 +38,10 @@ class WG_Account(Account):
 
 class WG_Release(WGBlitzRelease):
 	release		: str 				= Field(default=..., alias='Release')
-	launch_date	: date | None		= Field(default=None, alias='Date')
+	launch_date	: datetime | None	= Field(default=None, alias='Date')
 	cut_off		: int 				= Field(default=0, alias='Cut-off')
+	
+	_export_DB_by_alias = False
 
 	class Config:
 		allow_population_by_field_name = True
