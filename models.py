@@ -87,36 +87,29 @@ class BSAccount(Account):
 		setattr(self, stats.value, int(time()))
 
 
-class BSBlitzRelease(WGBlitzRelease, TXTExportable, CSVExportable):
+class BSBlitzRelease(WGBlitzRelease):
 	cut_off: int 	= Field(default=0)
 
-	class Config:		
-		allow_mutation 			= True
-		validate_assignment 	= True
+	# class Config:		
+	# 	allow_mutation 			= True
+	# 	validate_assignment 	= True
 
+
+	@validator('cut_off', pre=True)
+	def check_cut_off_now(cls, v):
+		if isinstance(v, str) and v == 'now':
+			return epoch_now()
+		else:
+			return int(v)
+		
 
 	@validator('cut_off')
-	def validate_cut_off(cls, v):
+	def validate_cut_off(cls, v: int) -> int:
+		ROUND_TO : int = 15*60
 		if v >= 0:
-			return v
+			return ceil(v / ROUND_TO) * ROUND_TO
 		raise ValueError('cut_off has to be >= 0')
 
 
-	def cut_off_now(self) -> None:
-		ROUND_TO : int = 15*60
-		self.cut_off = ceil(epoch_now() / ROUND_TO) * ROUND_TO
-	
-	# TXTExportable()
-	def txt_row(self, format : str = '') -> str:
-		"""export data as single row of text"""
-		return self.release
-
-
-	# CSVExportable()
-	def csv_headers(self) -> list[str]:
-		return list(self.dict(exclude_unset=False, by_alias=False).keys())
-
-
-	def csv_row(self) -> dict[str, str | int | float | bool]:
-		return self.dict(exclude_unset=False, by_alias=False)
-	
+	def cut_off_now(self) -> None:		
+		self.cut_off = epoch_now()
