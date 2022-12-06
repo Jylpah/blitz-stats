@@ -5,6 +5,7 @@
 from datetime import datetime
 from typing import Optional
 from backend import Backend
+from mongobackend import MongoBackend
 from pyutils import MultilevelFormatter
 from configparser import ConfigParser
 import logging
@@ -66,8 +67,7 @@ async def main(argv: list[str]):
 									help='Silent mode')
 	parser.add_argument('--log', type=str, nargs='?', default=None, const=f"{LOG}_{get_datestr()}", 
 						help='Enable file logging')
-	parser.add_argument('--config', type=str, default=CONFIG, 
-						help='Read config from CONFIG')
+	parser.add_argument('--config', type=str, default=CONFIG, metavar='CONFIG', help='Read config from CONFIG')
 	parser.set_defaults(LOG_LEVEL=logging.WARNING)
 
 	args, argv = parser.parse_known_args()
@@ -111,8 +111,7 @@ async def main(argv: list[str]):
 		parser.add_argument('-h', '--help', action='store_true',  
 							help='Show help')
 		parser.add_argument('--backend', type=str, choices=Backend.list_available(), 
-							default=BACKEND, help='Choose backend to use')
-		parser.add_argument('--force', action='store_true', default=False, help='Force action')
+							default=BACKEND, help='Choose backend to use')		
 
 		cmd_parsers = parser.add_subparsers(dest='main_cmd', 
 											title='main commands',
