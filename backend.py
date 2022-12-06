@@ -135,8 +135,6 @@ class Backend(metaclass=ABCMeta):
 			debug('starting')
 			if copy_from is not None and copy_from.name == backend:
 				return copy_from.copy(config, **kwargs)
-			# elif backend == 'mongodb':
-			# 	return MongoBackend(config=config, **kwargs)
 			elif backend in cls._backends:
 				return cls._backends[backend](config=config, **kwargs)
 			else:
@@ -481,7 +479,7 @@ class Backend(metaclass=ABCMeta):
 
 
 	@abstractmethod
-	async def release_update(self, release: BSBlitzRelease, upsert: bool = True) -> bool:
+	async def release_update(self, update: BSBlitzRelease, upsert=False) -> bool:
 		"""Update an release in the backend. Returns False 
 			if the release was not updated"""
 		raise NotImplementedError
