@@ -166,10 +166,11 @@ class MongoBackend(Backend):
 		if backend != cls.name:
 			raise ValueError(f'calling {cls}.read_args() for {backend} backend')
 		kwargs : dict[str, Any] = dict()
-		if args.server_url is not None:
-			kwargs['host'] = args.server_url
-		if args.database is not None:
+		if args.import_host is not None:
+			kwargs['host'] = args.import_host
+		if args.import_database is not None:
 			kwargs['database'] = args.import_database
+		debug(f'args={kwargs}')
 		return kwargs	
 	
 
@@ -183,6 +184,7 @@ class MongoBackend(Backend):
 		except Exception as err:
 			error(f'Error creating copy: {err}')
 		return False
+
 
 	@property
 	def database(self) -> str:
@@ -581,7 +583,7 @@ class MongoBackend(Backend):
 			debug('starting')
 			DBC : str = self.C['RELEASES']
 			dbc : AsyncIOMotorCollection = self.db[DBC]			
-			res = BSBlitzRelease.parse_obj(await dbc.find({ 'release' : release }))
+			res = BSBlitzRelease.parse_obj(await dbc.find_one({ 'release' : release }))
 			if res is None:
 				raise ValueError()
 		except ValidationError as err:
@@ -618,6 +620,7 @@ class MongoBackend(Backend):
 			dbc : AsyncIOMotorCollection = self.db[DBC]
 			async for r in dbc.find({ 'launch_date': { '$lte': date.today() } }).sort('launch_date', DESCENDING):
 				rel = BSBlitzRelease.parse_obj(r)
+				# This logic is questionable: to check if cut-off time has not been set for the last release
 				if rel is not None:
 					if rel.cut_off == 0:
 						return rel
@@ -706,19 +709,31 @@ class MongoBackend(Backend):
 		return False
 
 
-	async def release_update(self, release: BSBlitzRelease, upsert: bool = True) -> bool:
+	async def release_update(self, update: BSBlitzRelease, upsert=False) -> bool:
 		"""Update an release in the backend. Returns False 
 			if the release was not updated"""
 		try:
 			debug('starting')
 			DBC : str = self.C['RELEASES']
 			dbc : AsyncIOMotorCollection = self.db[DBC]
+			release : BSBlitzRelease | None
+			if (release := await self.release_get(release=update.release)) is None:
+				raise ValueError(f'Could not find release {update.release} from {self.name}')
+			release_dict : dict[str, Any] 	= release.dict(by_alias=False)
+			debug(f'release={release_dict}')
+			update_dict : dict[str, Any] 	= update.dict(by_alias=False, exclude_unset=True)
+			debug(f'update={update_dict}')
 			
-			await dbc.find_one_and_replace({ 'release': release.release }, release.obj_db(), upsert=upsert)
+			for key in update_dict.keys():
+				if key == 'release':
+					continue
+				release_dict[key] = update_dict[key]
+			
+			await dbc.find_one_and_replace({ 'release': release.release }, BSBlitzRelease(**release_dict).obj_db(), upsert=upsert)
 			debug(f'Updated: {release}')
 			return True			
 		except Exception as err:
-			debug(f'Failed to update release={release} to {self.name}: {err}')	
+			debug(f'Failed to update release={update.release} to {self.name}: {err}')	
 		return False
 
 ########################################################
