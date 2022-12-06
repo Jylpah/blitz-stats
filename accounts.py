@@ -198,7 +198,7 @@ def add_args_accounts_import(parser: ArgumentParser, config: Optional[ConfigPars
 
 		for backend in Backend.get_registered():
 			import_parser =  import_parsers.add_parser(backend.name, help=f'accounts import {backend.name} help')
-			if not backend.add_args_import(import_parser, config=config, import_types=['BSAccount', 'WG_Account']):
+			if not backend.add_args_import(import_parser, config=config):
 				raise Exception(f'Failed to define argument parser for: accounts import {backend.name}')
 		
 		# ## REFACTOR? This possibly could be made to dynamically add required subparsers with subclasses' add_args_import() methods
@@ -209,7 +209,10 @@ def add_args_accounts_import(parser: ArgumentParser, config: Optional[ConfigPars
 		# accounts_import_files_parser = import_parsers.add_parser('files', help='accounts import files help')
 		# if not add_args_accounts_import_files(accounts_import_files_parser, config=config):
 		# 	raise Exception("Failed to define argument parser for: accounts import files")
-		
+
+		parser.add_argument('--import-type', metavar='IMPORT-TYPE', type=str, 
+							default='BSAccount', choices=['BSAccount', 'WG_Account'], 
+							help='Data format to import. Default is blitz-stats native format.')
 		parser.add_argument('--region', type=str, nargs='*', 
 								choices=[ r.value for r in Region.has_stats() ], 
 								default=[ r.value for r in Region.has_stats() ], 

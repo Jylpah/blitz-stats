@@ -141,12 +141,11 @@ class MongoBackend(Backend):
 
 
 	@classmethod
-	def add_args_import(cls, parser: ArgumentParser, config: Optional[ConfigParser] = None, 
-							import_types: list[str] = list()) -> bool:
+	def add_args_import(cls, parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 		"""Add argument parser for import backend"""
 		try:
 			debug('starting')
-			super().add_args_import(parser=parser, config=config, import_types=import_types)
+			super().add_args_import(parser=parser, config=config)
 
 			parser.add_argument('--server-url', metavar='SERVER-URL', type=str, default=None, dest='import_host',
 										help='Server URL to connect to. Required if the imported other than the current backend')

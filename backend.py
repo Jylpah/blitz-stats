@@ -145,17 +145,11 @@ class Backend(metaclass=ABCMeta):
 
 
 	@classmethod	
-	def add_args_import(cls, parser: ArgumentParser, config: Optional[ConfigParser] = None, 
-							import_types: list[str] = list()) -> bool:
+	def add_args_import(cls, parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 		debug('starting')
-		parser.add_argument('--import-type', metavar='IMPORT-TYPE', type=str, 
-							default=import_types[0], choices=import_types, 
-							help='Data format to import. Default is blitz-stats native format.')
 		parser.add_argument('--import-config', metavar='CONFIG', type=str, default=None, 
 								help='Config file for backend to import from. \
 								Default is to use existing backend')
-		parser.add_argument('--sample', type=float, default=0, help='Sample size')
-
 		return True
 
 
