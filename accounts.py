@@ -532,8 +532,9 @@ async def cmd_accounts_import(db: Backend, args : Namespace) -> bool:
 			config.read(args.config)
 
 		kwargs : dict[str, Any] = Backend.read_args(args=args, backend=args.accounts_import_backend)
-		if (import_db:= Backend.create(args.accounts_import_backend, config=config, **kwargs)) is not None:
-			if args.collection is not None:
+		if (import_db:= Backend.create(args.accounts_import_backend, 
+										config=config, copy_from=db, **kwargs)) is not None:
+			if args.import_table is not None:
 				import_db.set_table('ACCOUNTS', args.import_table)
 			elif db == import_db and db.table_accounts == import_db.table_accounts:
 				raise ValueError('Cannot import from itself')
