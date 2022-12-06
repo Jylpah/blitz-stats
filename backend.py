@@ -103,6 +103,7 @@ class Backend(metaclass=ABCMeta):
 	@classmethod
 	def register(cls, name : str, backend: type['Backend']) -> bool:
 		try:
+			debug(f'Registering backend: {name}')
 			if name not in cls._backends:
 				cls._backends[name] = backend
 				return True
@@ -131,6 +132,7 @@ class Backend(metaclass=ABCMeta):
 					copy_from: Optional['Backend'] = None, 
 					**kwargs) -> Optional['Backend']:
 		try:
+			debug('starting')
 			if copy_from is not None and copy_from.name == backend:
 				return copy_from.copy(config, **kwargs)
 			# elif backend == 'mongodb':
@@ -147,6 +149,7 @@ class Backend(metaclass=ABCMeta):
 	@classmethod	
 	def add_args_import(cls, parser: ArgumentParser, config: Optional[ConfigParser] = None, 
 							import_types: list[str] = list()) -> bool:
+		debug('starting')
 		parser.add_argument('--import-type', metavar='IMPORT-TYPE', type=str, 
 							default=import_types[0], choices=import_types, 
 							help='Data format to import. Default is blitz-stats native format.')
@@ -161,6 +164,7 @@ class Backend(metaclass=ABCMeta):
 	@classmethod
 	def read_args(cls, args : Namespace, backend: str) -> dict[str, Any]:
 		"""Read Argparse args for creating a Backend()"""
+		debug('starting')
 		if backend in cls._backends:
 			return cls._backends[backend].read_args(args, backend=backend)
 		else:
@@ -457,7 +461,8 @@ class Backend(metaclass=ABCMeta):
 
 	@abstractmethod	
 	async def releases_export(self, release_type: type[WGBlitzRelease] = BSBlitzRelease,
-								sample : float = 0) -> AsyncGenerator[BSBlitzRelease, None]:
+							 	release: str | None = None, since : date | None = None, 
+								first : BSBlitzRelease | None = None) -> AsyncGenerator[BSBlitzRelease, None]:
 		"""Import releases"""
 		raise NotImplementedError
 		yield BSBlitzRelease()
@@ -485,6 +490,12 @@ class Backend(metaclass=ABCMeta):
 	@abstractmethod
 	async def release_insert(self, release: BSBlitzRelease) -> bool:
 		"""Insert new release to the backend"""
+		raise NotImplementedError
+
+	
+	@abstractmethod
+	async def release_delete(self, release: BSBlitzRelease) -> bool:
+		"""Delete a release from backend"""
 		raise NotImplementedError
 	
 
