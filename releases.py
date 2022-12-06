@@ -2,7 +2,8 @@ from argparse import ArgumentParser, Namespace
 from configparser import ConfigParser
 from typing import Optional, cast, Iterable, Any
 import logging
-from asyncio import create_task, gather, Queue, CancelledError, Task
+from asyncio import create_task, gather, Queue, CancelledError, Task, sleep
+
 from aiohttp import ClientResponse
 from datetime import date
 from os.path import isfile
@@ -112,6 +113,10 @@ def add_args_releases_import(parser: ArgumentParser, config: Optional[ConfigPars
 			if not backend.add_args_import(import_parser, config=config, import_types=['BSBlitzRelease', 'WG_Release']):
 				raise Exception(f'Failed to define argument parser for: releases import {backend.name}')
 		
+		parser.add_argument('--releases', type=str, metavar='RELEASE_MATCH', default=None, nargs='?',
+							help='Search by RELEASE_MATCH. By default list all.')
+		parser.add_argument('--since', type=str, metavar='LAUNCH_DATE', default=None, nargs='?',
+							help='Import release launched after LAUNCH_DATE. By default, imports all releases.')
 		return True	
 	except Exception as err:
 		error(f'add_args_releases_import() : {err}')
@@ -121,15 +126,16 @@ def add_args_releases_import(parser: ArgumentParser, config: Optional[ConfigPars
 def add_args_releases_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
-		parser.add_argument('release', type=str, metavar='RELEASE', default=None, nargs='?',
-							help='Search release. By default list all.')
+		parser.add_argument('releases', type=str, metavar='RELEASE', default=None, nargs='?',
+							help='Search by RELEASES_MATCH. By default list all.')
+		parser.add_argument('--since', type=str, metavar='LAUNCH_DATE', default=None, nargs='?',
+							help='Import release launched after LAUNCH_DATE. By default, imports all releases.')
 		parser.add_argument('--format', type=str, choices=['json', 'txt', 'csv'], 
 							metavar='FORMAT', default='txt', help='releases list format')
 		parser.add_argument('--file', metavar='FILE', type=str, default='-', 
 							help='File to export accounts to. Use \'-\' for STDIN')
 		parser.add_argument('--force', action='store_true', default=False, 
-							help='Overwrite existing file(s) when exporting')
-
+							help='Overwrite existing file(s) when exporting')							
 		return True	
 	except Exception as err:
 		error(f'add_args_releases_remove() : {err}')
@@ -173,7 +179,7 @@ async def cmd_releases(db: Backend, args : Namespace) -> bool:
 async def cmd_releases_add(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
-		release : str | None = args.releases_add_release
+		release : str | None = args.release
 		
 		rel :  BSBlitzRelease | None
 		if release is None:
@@ -182,12 +188,6 @@ async def cmd_releases_add(db: Backend, args : Namespace) -> bool:
 				raise ValueError('Could not find previous release and no new release set')
 			return await db.release_insert(rel.next())
 		else:
-			# cut_off : int = 0
-			# if args.cut_off is not None:
-			# 	cut_off = get_timestamp(args.cut_off)
-			# launch : date | None = None
-			# if args.launch is not None:
-			# 	launch = date.fromisoformat(args.launch)
 			return await db.release_insert(BSBlitzRelease(release=release, launch_date=args.launch, 
 															cut_off=args.cut_off))
 	except Exception as err:
@@ -199,6 +199,7 @@ async def cmd_releases_edit(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 
+
 		return True 
 	except Exception as err:
 		error(f'{err}')
@@ -208,8 +209,10 @@ async def cmd_releases_edit(db: Backend, args : Namespace) -> bool:
 async def cmd_releases_remove(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
-
-		return True 
+		message(f'Removing release={args.release} in 3 seconds. Press CTRL+C to cancel')
+		await sleep(3)
+		release = BSBlitzRelease(release=args.release)
+		return await db.release_delete(release=release) 
 	except Exception as err:
 		error(f'{err}')
 	return False
@@ -219,11 +222,15 @@ async def cmd_releases_export(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		releaseQ : Queue[BSBlitzRelease] = Queue(100)
+		since 	 : date | None 			 = None
 		export_worker : Task		
 		export_worker = create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], releaseQ), 
 											format=args.format, filename=args.file, force=args.force))
-		
-		for release in await db.releases_get(release=args.release):
+				
+		if args.since is not None:
+			since = date.fromisoformat(args.since)
+
+		for release in await db.releases_get(release=args.releases, since=since):
 			debug(f'adding release {release.release} to the export queue')
 			await releaseQ.put(release)
 		await releaseQ.join()
@@ -241,6 +248,11 @@ async def cmd_releases_import(db: Backend, args : Namespace) -> bool:
 		stats 		: EventCounter 			= EventCounter('releases import')
 		releaseQ 	: Queue[BSBlitzRelease]	= Queue(100)
 		config 		: ConfigParser | None 	= None
+		since 		: date | None 			= None
+		releases 	: str  | None 			= args.releases
+
+		if args.since is not None:
+			since = date.fromisoformat(args.since)		
 
 		importer : Task = create_task(db.releases_insert_worker(releaseQ=releaseQ, force=args.force))
 
@@ -261,8 +273,10 @@ async def cmd_releases_import(db: Backend, args : Namespace) -> bool:
 		release_type: type[WGBlitzRelease] = globals()[args.import_type]
 		assert issubclass(release_type, WGBlitzRelease), "--import-type has to be subclass of blitzutils.models.WGBlitzRelease" 
 
-		raise NotImplementedError
-		# missing release exporter...
+		async for release in import_db.releases_export(release_type=release_type, since=since, 
+														release=releases):
+			await releaseQ.put(release)
+			stats.log('read')
 
 		await releaseQ.join()
 		importer.cancel()
