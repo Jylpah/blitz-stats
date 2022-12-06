@@ -113,6 +113,8 @@ def add_args_releases_import(parser: ArgumentParser, config: Optional[ConfigPars
 			if not backend.add_args_import(import_parser, config=config, import_types=['BSBlitzRelease', 'WG_Release']):
 				raise Exception(f'Failed to define argument parser for: releases import {backend.name}')
 		
+		parser.add_argument('--force', action='store_true', default=False, 
+							help='Overwrite existing file(s) when exporting')
 		parser.add_argument('--releases', type=str, metavar='RELEASE_MATCH', default=None, nargs='?',
 							help='Search by RELEASE_MATCH. By default list all.')
 		parser.add_argument('--since', type=str, metavar='LAUNCH_DATE', default=None, nargs='?',
@@ -133,9 +135,9 @@ def add_args_releases_export(parser: ArgumentParser, config: Optional[ConfigPars
 		parser.add_argument('--format', type=str, choices=['json', 'txt', 'csv'], 
 							metavar='FORMAT', default='txt', help='releases list format')
 		parser.add_argument('--file', metavar='FILE', type=str, default='-', 
-							help='File to export accounts to. Use \'-\' for STDIN')
+							help='File to export releases to. Use \'-\' for STDIN')
 		parser.add_argument('--force', action='store_true', default=False, 
-							help='Overwrite existing file(s) when exporting')							
+							help='Overwrite existing file(s) when exporting')
 		return True	
 	except Exception as err:
 		error(f'add_args_releases_remove() : {err}')
@@ -179,17 +181,19 @@ async def cmd_releases(db: Backend, args : Namespace) -> bool:
 async def cmd_releases_add(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
-		release : str | None = args.release
-		
-		rel :  BSBlitzRelease | None
+		release : BSBlitzRelease | None = None
+		try:
+			release = BSBlitzRelease(release=args.release, launch_date=args.launch, cut_off=args.cut_off)
+		except:
+			debug(f'No valid release given as argument')
+
 		if release is None:
-			rel = await db.release_get_latest()
-			if rel is None:
+			release = await db.release_get_latest()
+			if release is None:
 				raise ValueError('Could not find previous release and no new release set')
-			return await db.release_insert(rel.next())
+			return await db.release_insert(release.next())
 		else:
-			return await db.release_insert(BSBlitzRelease(release=release, launch_date=args.launch, 
-															cut_off=args.cut_off))
+			return await db.release_insert(release=release)
 	except Exception as err:
 		error(f'{err}')
 	return False
@@ -198,9 +202,8 @@ async def cmd_releases_add(db: Backend, args : Namespace) -> bool:
 async def cmd_releases_edit(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
-
-
-		return True 
+		release = BSBlitzRelease(release=args.release, launch_date=args.launch, cut_off=args.cut_off)
+		return await db.release_update(release)		
 	except Exception as err:
 		error(f'{err}')
 	return False
@@ -212,7 +215,11 @@ async def cmd_releases_remove(db: Backend, args : Namespace) -> bool:
 		message(f'Removing release={args.release} in 3 seconds. Press CTRL+C to cancel')
 		await sleep(3)
 		release = BSBlitzRelease(release=args.release)
-		return await db.release_delete(release=release) 
+		if await db.release_delete(release=release):
+			message(f'release {release.release} removed')
+			return True
+		else:
+			error(f'Could not remove release {release.release}')		
 	except Exception as err:
 		error(f'{err}')
 	return False
@@ -262,13 +269,14 @@ async def cmd_releases_import(db: Backend, args : Namespace) -> bool:
 			config.read(args.config)
 
 		kwargs : dict[str, Any] = Backend.read_args(args, args.releases_import_backend)
-		if (import_db:= Backend.create(args.releases_import_backend, config=config, **kwargs)) is not None:
-			if args.collection is not None:
-				import_db.set_table('RELEASES', args.collection)
-			elif db == import_db and db.table_accounts == import_db.table_accounts:
+		if (import_db:= Backend.create(args.releases_import_backend, 
+										config=config, copy_from=db, **kwargs)) is not None:
+			if args.import_table is not None:
+				import_db.set_table('RELEASES', args.import_table)
+			elif db == import_db and db.table_releases == import_db.table_releases:
 				raise ValueError('Cannot import from itself')
 		else:
-			raise ValueError(f'Could not init {args.accounts_import_backend} to import accounts from')
+			raise ValueError(f'Could not init {args.releases_import_backend} to import releases from')
 
 		release_type: type[WGBlitzRelease] = globals()[args.import_type]
 		assert issubclass(release_type, WGBlitzRelease), "--import-type has to be subclass of blitzutils.models.WGBlitzRelease" 
