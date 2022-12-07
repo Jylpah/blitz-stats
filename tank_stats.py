@@ -9,8 +9,8 @@ from asyncstdlib import enumerate
 from alive_progress import alive_bar		# type: ignore
 
 from backend import Backend, OptAccountsInactive, ACCOUNTS_Q_MAX, CACHE_VALID
-from models import BSAccount, StatsTypes
-from pyutils import CounterQueue, EventCounter
+from models import BSAccount, BSBlitzRelease, StatsTypes
+from pyutils import BucketMapper, CounterQueue, EventCounter
 from pyutils.utils import get_url, get_url_JSON_model, epoch_now
 from blitzutils.models import WoTBlitzReplayJSON, Region, WGApiWoTBlitzTankStats, WGtankStat
 from blitzutils.wg import WGApi 
@@ -82,6 +82,8 @@ def add_args_tank_stats_update(parser: ArgumentParser, config: Optional[ConfigPa
 							help='Rate limit for WG API')
 		parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
 							default=[ r.value for r in Region.API_regions() ], help='Filter by region (default: eu + com + asia + ru)')
+		parser.add_argument('--force', action='store_true', default=False, 
+							help='Overwrite existing file(s) when exporting')
 		parser.add_argument('--sample', type=float, default=0, metavar='SAMPLE',
 							help='Update tank stats for SAMPLE of accounts. If 0 < SAMPLE < 1, SAMPLE defines a %% of users')
 		parser.add_argument('--cache_valid', type=int, default=None, metavar='DAYS',
@@ -256,7 +258,7 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 		statsQ	 : Queue[list[WGtankStat]] 	= Queue(maxsize=TANK_STATS_Q_MAX)
 
 		tasks : list[Task] = list()
-		tasks.append(create_task(add_tank_stats_worker(db, statsQ)))
+		tasks.append(create_task(update_tank_stats_worker(db, statsQ)))
 		for i in range(args.threads):
 			tasks.append(create_task(update_tank_stats_api_worker(wg, regions, accountQ, statsQ)))
 
@@ -282,7 +284,7 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 				message('Counting accounts to fetch stats...')
 				accounts_N = await db.accounts_count(stats_type=StatsTypes.tank_stats, regions=regions, 
 													inactive=inactive, disabled=args.check_invalid, 
-													sample=args.sample, force=args.force, cache_valid=args.older_than)
+													sample=args.sample, cache_valid=args.cache_valid)
 
 		if accounts_N == 0:
 			raise ValueError('No accounts to update tank stats for')		
@@ -329,7 +331,7 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 			else:
 				async for accounts_added, account in enumerate(db.accounts_get(stats_type=StatsTypes.tank_stats, 
 													regions=regions, inactive=inactive, disabled=args.check_invalid, 
-													sample=args.sample, force=args.force, cache_valid=args.older_than)):
+													sample=args.sample, cache_valid=args.cache_valid)):
 					try:
 						await accountQ.put(account)
 					except Exception as err:
@@ -405,7 +407,7 @@ async def update_tank_stats_api_worker(wg : WGApi, regions: set[Region], account
 	return stats
 
 
-async def add_tank_stats_worker(db: Backend, statsQ: Queue[list[WGtankStat]]) -> EventCounter:
+async def update_tank_stats_worker(db: Backend, statsQ: Queue[list[WGtankStat]]) -> EventCounter:
 	"""Async worker to add tank stats to backend. Assumes batch is for the same account"""
 	debug('starting')
 	stats 		: EventCounter = EventCounter(f'Backend ({db.name})')
@@ -414,7 +416,10 @@ async def add_tank_stats_worker(db: Backend, statsQ: Queue[list[WGtankStat]]) ->
 	account 	: BSAccount | None
 	account_id	: int
 	last_battle_time : int
-	try:		
+	try:
+		releases : BucketMapper[BSBlitzRelease] = BucketMapper[BSBlitzRelease](attr='cut_off')
+		for r in await db.releases_get():
+			releases.insert(r)
 		while True:
 			tank_stats : list[WGtankStat] = await statsQ.get()			
 			added 			= 0
@@ -423,24 +428,29 @@ async def add_tank_stats_worker(db: Backend, statsQ: Queue[list[WGtankStat]]) ->
 			account			= None
 			try:
 				if len(tank_stats) > 0:
-					debug(f'Read {len(tank_stats)} from queue')					
-					added, not_added, last_battle_time = await db.tank_stats_insert(tank_stats)	
+					debug(f'Read {len(tank_stats)} from queue')
+					last_battle_time = max( [ ts.last_battle_time for ts in tank_stats] )
+					for stat in tank_stats:
+						rel : BSBlitzRelease | None = releases.get(stat.last_battle_time)
+						if rel is not None:
+							stat.release = rel.release
+					added, not_added = await db.tank_stats_insert(tank_stats)	
 					account_id = tank_stats[0].account_id
 					if (account := await db.account_get(account_id=account_id)) is None:
 						account = BSAccount(id=account_id)
-					debug(f'{account}')
+					# debug(f'{account}')
 					account.stats_updated(StatsTypes.tank_stats)
 					if added > 0:
 						stats.log('accounts /w new stats')
 						if account.inactive:
 							stats.log('accounts marked active')
-						account.inactive = False						
+						account.inactive = False
 					else:
 						stats.log('accounts w/o new stats')
-						if epoch_now() - last_battle_time > db.cache_valid:							
+						if epoch_now() - last_battle_time > db.cache_valid:	
 							if not account.inactive:
 								stats.log('accounts marked inactive')
-							account.inactive = True							
+							account.inactive = True
 						
 					await db.account_update(account=account)
 			except Exception as err:
@@ -468,6 +478,7 @@ async def cmd_tank_stats_export(db: Backend, args : Namespace) -> bool:
 		debug('starting')		
 		assert type(args.sample) in [int, float], 'param "sample" has to be a number'
 
+		raise NotImplementedError
 		## not implemented...
 		# query_args : dict[str, str | int | float | bool ] = dict()
 		stats 		: EventCounter 			= EventCounter('tank-stats export')
@@ -574,6 +585,8 @@ async def cmd_tank_stats_import(db: Backend, args : Namespace) -> bool:
 			config = ConfigParser()
 			config.read(args.config)
 
+		# REWRITE ref accounts, releases
+		raise NotImplementedError
 		if args.tank_stats_import_backend == 'mongodb':
 			stats.merge_child(await cmd_tank_stats_import_mongodb(db, args, tank_statsQ, config))
 		elif args.tank_stats_import_backend == 'files':
