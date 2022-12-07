@@ -68,7 +68,7 @@ def add_args_releases_add(parser: ArgumentParser, config: Optional[ConfigParser]
 		debug('starting')
 		parser.add_argument('release', type=str, default=None, metavar='RELEASE',
 							help='RELEASE to add')
-		parser.add_argument('--cut-off', type=str, default='0', help='release cut-off time')
+		parser.add_argument('--cut-off', type=str, default=None, help='release cut-off time')
 		parser.add_argument('--launch', type=str, default=None, help='release launch date')
 
 		return True	
