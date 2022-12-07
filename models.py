@@ -1,3 +1,6 @@
+from enum import Enum, IntEnum, StrEnum
+from os.path import basename
+from sys import maxsize
 from datetime import datetime
 from time import time
 from typing import Any, Mapping, Optional, Tuple
@@ -8,8 +11,7 @@ from math import ceil
 from pydantic import BaseModel, Extra, root_validator, validator, Field, HttpUrl
 from pydantic.utils import ValueItems
 import json
-from enum import Enum, IntEnum, StrEnum
-from os.path import basename
+
 import logging
 import aiofiles
 from collections import defaultdict
@@ -35,10 +37,9 @@ class BSAccount(Account):
 	updated_tank_stats 			: int | None = Field(default=None, alias='ut')
 	updated_player_achievements : int | None = Field(default=None, alias='up')
 	
-	# added 						: int | None = Field(default=None, alias='a')
 	added 						: int 		= Field(default_factory=epoch_now, alias='a')
-	inactive					: bool 		 = Field(default=False, alias='i')
-	disabled					: bool		 = Field(default=False, alias='d')
+	inactive					: bool 		= Field(default=False, alias='i')
+	disabled					: bool		= Field(default=False, alias='d')
 
 	_exclude_export_DB_fields = None
 	_exclude_export_src_fields = None
@@ -88,7 +89,7 @@ class BSAccount(Account):
 
 
 class BSBlitzRelease(WGBlitzRelease):
-	cut_off: int 	= Field(default=0)
+	cut_off: int 	= Field(default=maxsize)
 
 	# class Config:		
 	# 	allow_mutation 			= True
@@ -97,7 +98,9 @@ class BSBlitzRelease(WGBlitzRelease):
 
 	@validator('cut_off', pre=True)
 	def check_cut_off_now(cls, v):
-		if isinstance(v, str) and v == 'now':
+		if v is None:
+			return maxsize
+		elif isinstance(v, str) and v == 'now':
 			return epoch_now()
 		else:
 			return int(v)
