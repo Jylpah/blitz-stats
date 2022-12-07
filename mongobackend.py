@@ -37,8 +37,7 @@ TANK_STATS_BATCH	: int = 1000
 class MongoBackend(Backend):
 
 	name : str = 'mongodb'
-	default_db : str = 'BlitzStats'
-	
+	default_db : str = 'BlitzStats'	
 
 	def __init__(self, config: ConfigParser | None = None, **kwargs):
 		"""Init MongoDB backend from config file and CLI args
@@ -331,7 +330,7 @@ class MongoBackend(Backend):
 							inactive : OptAccountsInactive = OptAccountsInactive.default(), 	
 							disabled: bool = False, 
 							dist : OptAccountsDistributed | None = None, sample : float = 0, 
-							force : bool = False, cache_valid: int | None = None ) -> int:
+							cache_valid: int | None = None ) -> int:
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
 		try:
 			debug('starting')
@@ -350,7 +349,7 @@ class MongoBackend(Backend):
 				pipeline : list[dict[str, Any]] | None = await self._accounts_mk_pipeline(stats_type=stats_type, regions=regions, 
 																		inactive=inactive, disabled=disabled, 
 																		dist=dist, sample=sample, 
-																		force=force, cache_valid=cache_valid)
+																		cache_valid=cache_valid)
 
 				if pipeline is None:
 					raise ValueError(f'could not create get-accounts {self.name} cursor')
@@ -371,7 +370,7 @@ class MongoBackend(Backend):
 							inactive : OptAccountsInactive = OptAccountsInactive.default(), 	
 							disabled: bool = False, 
 							dist : OptAccountsDistributed | None = None, sample : float = 0, 
-							force : bool = False, cache_valid: int | None = None ) -> AsyncGenerator[BSAccount, None]:
+							cache_valid: int | None = None ) -> AsyncGenerator[BSAccount, None]:
 		"""Get accounts from Mongo DB
 			inactive: true = only inactive, false = not inactive, none = AUTO
 		"""
@@ -383,7 +382,7 @@ class MongoBackend(Backend):
 			pipeline : list[dict[str, Any]] | None = await self._accounts_mk_pipeline(stats_type=stats_type, regions=regions, 
 																	inactive=inactive, disabled=disabled, 
 																	dist=dist, sample=sample, 
-																	force=force, cache_valid=cache_valid)
+																	cache_valid=cache_valid)
 
 			update_field : str | None = None
 			if stats_type is not None:
@@ -395,7 +394,8 @@ class MongoBackend(Backend):
 			async for account_obj in dbc.aggregate(pipeline, allowDiskUse=True):
 				try:
 					player = BSAccount.parse_obj(account_obj)
-					if not force and not disabled and inactive is None and player.inactive:
+					# if not force and not disabled and inactive is None and player.inactive:
+					if not disabled and inactive in [OptAccountsInactive.no, OptAccountsInactive.auto] and player.inactive:
 						assert update_field is not None, "automatic inactivity detection requires stat_type"
 						updated = dict(player)[update_field]
 						if (NOW - updated) < min(MAX_UPDATE_INTERVAL, (updated - player.last_battle_time)/2):
@@ -446,7 +446,7 @@ class MongoBackend(Backend):
 							inactive : OptAccountsInactive = OptAccountsInactive.default(), 
 							dist : OptAccountsDistributed | None = None,
 							disabled: bool|None = False, sample : float = 0, 
-							force : bool = False, cache_valid: int | None = None) -> list[dict[str, Any]] | None:
+							cache_valid: int | None = None) -> list[dict[str, Any]] | None:
 		try:
 			debug('starting')
 
@@ -489,9 +489,8 @@ class MongoBackend(Backend):
 				match.append({ 'd': { '$ne': True }})
 				# check inactive only if disabled == False
 				if inactive == OptAccountsInactive.auto:
-					if not force:
-						assert update_field is not None, "automatic inactivity detection requires stat_type"
-						match.append({ '$or': [ { update_field: None}, { update_field: { '$lt': NOW - cache_valid }} ] })				
+					assert update_field is not None, "automatic inactivity detection requires stat_type"
+					match.append({ '$or': [ { update_field: None}, { update_field: { '$lt': NOW - cache_valid }} ] })				
 				elif inactive == OptAccountsInactive.no:
 					match.append({ 'i': { '$ne': True }})
 
@@ -551,9 +550,9 @@ class MongoBackend(Backend):
 			dbc : AsyncIOMotorCollection = self.db[DBC]
 			res : InsertManyResult
 			
-			for account in accounts:
-				# modifying Iterable items is OK since the item object ref stays the sam
-				account.added = epoch_now()   
+			# for account in accounts:
+			# 	# modifying Iterable items is OK since the item object ref stays the sam
+			# 	account.added = epoch_now()   
 
 			res = await dbc.insert_many( (account.obj_db() for account in accounts), 
 										  ordered=False)
@@ -617,14 +616,8 @@ class MongoBackend(Backend):
 			debug('starting')
 			DBC : str = self.C['RELEASES']
 			dbc : AsyncIOMotorCollection = self.db[DBC]
-			async for r in dbc.find({ 'launch_date': { '$lte': date.today() } }).sort('launch_date', DESCENDING):
-				rel = BSBlitzRelease.parse_obj(r)
-				# This logic is questionable: to check if cut-off time has not been set for the last release
-				if rel is not None:
-					if rel.cut_off == 0:
-						return rel
-					else:
-						return None
+			async for r in dbc.find({ 'launch_date': { '$lte': date.today() } }).sort('launch_date', ASCENDING):
+				return BSBlitzRelease.parse_obj(r)
 		except ValidationError as err:
 			error(f'Incorrect data format: {err}')
 		except Exception as err:
@@ -840,8 +833,7 @@ class MongoBackend(Backend):
 
 	async def tank_stats_count(self, release: BSBlitzRelease | None = None,
 							regions: set[Region] = Region.API_regions(), 
-							sample : float = 0, 
-							force : bool = False) -> int:
+							sample : float = 0) -> int:
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
 		try:
 			debug('starting')
@@ -872,20 +864,20 @@ class MongoBackend(Backend):
 		except Exception as err:
 			error(f'counting accounts failed: {err}')
 		return -1
-	
 
-	async def tank_stats_insert(self, tank_stats: Iterable[WGtankStat]) -> tuple[int, int, int]:
+
+	async def tank_stats_insert(self, tank_stats: Iterable[WGtankStat]) -> tuple[int, int]:
 		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
 		debug('starting')
 		added			: int = 0
 		not_added 		: int = 0
-		last_battle_time: int = -1
+		# last_battle_time: int = -1
 
 		try:
 			DBC : str = self.C['TANK_STATS']
 			dbc : AsyncIOMotorCollection = self.db[DBC]
 			res : InsertManyResult
-			last_battle_time = max( [ ts.last_battle_time for ts in tank_stats] )	
+			# last_battle_time = max( [ ts.last_battle_time for ts in tank_stats] )	
 			res = await dbc.insert_many( (tank_stat.obj_db() for tank_stat in tank_stats), 
 										  ordered=False)
 			added = len(res.inserted_ids)
@@ -898,21 +890,21 @@ class MongoBackend(Backend):
 				error('BulkWriteError.details is None')
 		except Exception as err:
 			error(f'Unknown error when adding tank stats: {err}')
-		return added, not_added, last_battle_time
+		return added, not_added  # , last_battle_time
 
 
-	async def tank_stats_update(self, tank_stats: list[WGtankStat], upsert: bool = False) -> tuple[int, int, int]:
+	async def tank_stats_update(self, tank_stats: list[WGtankStat], upsert: bool = False) -> tuple[int, int]:
 		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
 		debug('starting')
 		updated			: int = 0
 		not_updated 	: int = 0
-		last_battle_time: int = -1
+		# last_battle_time: int = -1
 
 		try:
 			DBC : str = self.C['TANK_STATS']
 			dbc : AsyncIOMotorCollection = self.db[DBC]
 			res : UpdateResult
-			last_battle_time = max( [ ts.last_battle_time for ts in tank_stats] )	
+			# last_battle_time = max( [ ts.last_battle_time for ts in tank_stats] )	
 			res = await dbc.update_many( (ts.obj_db() for ts in tank_stats), 
 										  upsert=upsert, ordered=False)
 			updated = res.modified_count
@@ -920,7 +912,7 @@ class MongoBackend(Backend):
 		
 		except Exception as err:
 			error(f'Unknown error when updating tank stats: {err}')
-		return updated, not_updated, last_battle_time
+		return updated, not_updated
 
 
 	async def tank_stats_get(self, account: BSAccount, tank_id: int | None = None, 

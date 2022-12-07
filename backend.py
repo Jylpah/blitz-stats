@@ -282,7 +282,7 @@ class Backend(metaclass=ABCMeta):
 							inactive : OptAccountsInactive = OptAccountsInactive.default(), 	
 							disabled: bool = False, 
 							dist : OptAccountsDistributed | None = None, sample : float = 0, 
-							force : bool = False, cache_valid: int | None = None ) -> AsyncGenerator[BSAccount, None]:
+							cache_valid: int | None = None ) -> AsyncGenerator[BSAccount, None]:
 		"""Get accounts from backend"""
 		raise NotImplementedError
 		yield BSAccount(id=-1)
@@ -346,7 +346,7 @@ class Backend(metaclass=ABCMeta):
 							inactive : OptAccountsInactive = OptAccountsInactive.default(), 	
 							disabled: bool = False, 
 							dist : OptAccountsDistributed | None = None, sample : float = 0, 
-							force : bool = False, cache_valid: int | None = None ) -> int:
+							cache_valid: int | None = None ) -> int:
 		"""Get number of accounts from backend"""
 		raise NotImplementedError
 
@@ -375,13 +375,13 @@ class Backend(metaclass=ABCMeta):
 	#----------------------------------------
 
 	@abstractmethod
-	async def tank_stats_insert(self, tank_stats: Iterable[WGtankStat]) -> tuple[int, int, int]:
+	async def tank_stats_insert(self, tank_stats: Iterable[WGtankStat]) -> tuple[int, int]:
 		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
 		raise NotImplementedError
 
 	
 	@abstractmethod
-	async def tank_stats_update(self, tank_stats: list[WGtankStat], upsert: bool = False) -> tuple[int, int, int]:
+	async def tank_stats_update(self, tank_stats: list[WGtankStat], upsert: bool = False) -> tuple[int, int]:
 		"""Update or upsert tank stats to the backend. Returns number of stats updated and not updated"""
 		raise NotImplementedError
 
@@ -396,8 +396,7 @@ class Backend(metaclass=ABCMeta):
 	@abstractmethod
 	async def tank_stats_count(self, release: BSBlitzRelease | None = None,
 							regions: set[Region] = Region.API_regions(), 
-							sample : float = 0, 
-							force : bool = False) -> int:
+							sample : float = 0) -> int:
 		"""Get number of tank-stats from backend"""
 		raise NotImplementedError
 
@@ -417,11 +416,11 @@ class Backend(metaclass=ABCMeta):
 				try:
 					if force:
 						debug(f'Trying to upsert {read} tank stats into {self.name}:{self.database}.{self.table_tank_stats}')
-						added, not_added, _ = await self.tank_stats_update(tank_stats, upsert=True)
+						added, not_added = await self.tank_stats_update(tank_stats, upsert=True)
 						stats.log('tank stats added/updated', added)
 					else:
 						debug(f'Trying to insert {read} tank stats into {self.name}:{self.database}.{self.table_tank_stats}')
-						added, not_added, _ = await self.tank_stats_insert(tank_stats)
+						added, not_added = await self.tank_stats_insert(tank_stats)
 						stats.log('accounts added', added)
 					stats.log('accounts not added', not_added)
 				except Exception as err:

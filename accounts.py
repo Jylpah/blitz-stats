@@ -550,7 +550,7 @@ async def cmd_accounts_import(db: Backend, args : Namespace) -> bool:
 		message('Counting accounts to import ...')
 		N : int = await db.accounts_count(regions=regions,
 										inactive=OptAccountsInactive.both,
-										sample=args.sample, force=True)
+										sample=args.sample)
 		
 		# if args.import_type == 'BSAccount':	
 		# 	account_type=BSAccount
