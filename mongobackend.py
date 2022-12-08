@@ -1,6 +1,6 @@
 from configparser import ConfigParser
 from argparse import Namespace, ArgumentParser
-from datetime import date
+from datetime import date, datetime
 from os.path import isfile
 from typing import Optional, Any, Iterable, AsyncGenerator, TypeVar, cast
 import logging
@@ -10,10 +10,10 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncI
 from pymongo.results import InsertManyResult, InsertOneResult, UpdateResult, DeleteResult
 from pymongo.errors import BulkWriteError
 from pymongo import DESCENDING, ASCENDING
-from pydantic import ValidationError
+from pydantic import ValidationError, Field
 
 from backend import Backend, OptAccountsDistributed, OptAccountsInactive, BSTableType, \
-					MAX_UPDATE_INTERVAL, WG_ACCOUNT_ID_MAX, CACHE_VALID
+					MAX_UPDATE_INTERVAL, WG_ACCOUNT_ID_MAX, CACHE_VALID, ErrorLog
 from models import BSAccount, BSBlitzRelease, StatsTypes
 from pyutils.utils import epoch_now
 from blitzutils.models import Region, WoTBlitzReplayJSON, WGtankStat, Account, Tank, WGBlitzRelease
@@ -27,6 +27,18 @@ debug	= logger.debug
 
 # Constants
 TANK_STATS_BATCH	: int = 1000
+
+
+class MongoErrorLog(ErrorLog):
+	doc_id : ObjectId | int | str 	= Field(alias='did')
+	
+	class Config:
+		arbitrary_types_allowed = True
+		allow_mutation 			= True
+		validate_assignment 	= True
+		allow_population_by_field_name = True
+		json_encoders = { ObjectId: str }
+
 
 ##############################################
 #
@@ -914,6 +926,48 @@ class MongoBackend(Backend):
 
 		except Exception as err:
 			error(f'Error fetching accounts from {self.name}: {err}')
+
+	
+	async def error_log(self, error: ErrorLog) -> bool:
+		"""Log an error into the backend's ErrorLog"""
+		try:
+			debug('starting')
+			dbc : AsyncIOMotorCollection = self.db[self.table_error_log]
+			await dbc.insert_one(error.obj_db())
+			return True
+		except Exception as err:
+			debug(f'Could not log error: {error.table}: "{error.error}" into {self.name}:{self.database}.{self.table_error_log}: {err}')	
+		return False
+
+
+	async def errors_get(self, table_type: BSTableType | None = None, doc_id : Any | None = None, 
+							after: datetime | None = None) -> AsyncGenerator[ErrorLog, None]:
+		"""Return errors from backend ErrorLog"""
+		try:
+			debug('starting')
+			
+			dbc : AsyncIOMotorCollection = self.db[self.table_error_log]
+			query : dict[str, Any] = dict()
+
+			if after is not None:
+				query['d'] = { '$gte': after }
+			if table_type is not None:
+				query['t'] = self.get_table(table_type)
+			if doc_id is not None:
+				query['did'] = doc_id
+						
+			err	: MongoErrorLog
+			async for error_obj in dbc.find(query).sort('d', ASCENDING):
+				try:
+					err = MongoErrorLog.parse_obj(error_obj)
+					debug(f'Read "{err.error}" from {self.name} {self.database}.{self.table_error_log}')
+					
+					yield err
+				except Exception as e:
+					error(f'{e}')
+					continue			
+		except Exception as e:
+			error(f'Error getting errors from {self.name} {self.database}.{self.table_error_log}: {e}')	
 
 # Register backend
 
