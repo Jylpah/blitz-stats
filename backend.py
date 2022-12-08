@@ -7,6 +7,7 @@ from bson import ObjectId
 from os.path import isfile
 from typing import Optional, Any, Iterable, AsyncGenerator, TypeVar, cast
 from time import time
+from re import compile
 from datetime import date
 from enum import Enum, StrEnum
 from asyncio import Queue, CancelledError
@@ -14,7 +15,7 @@ from asyncio import Queue, CancelledError
 
 from models import BSAccount, BSBlitzRelease, StatsTypes
 from blitzutils.models import Region, WoTBlitzReplayJSON, WGtankStat, Account, Tank, WGBlitzRelease
-from pyutils.utils import epoch_now
+from pyutils.utils import epoch_now, is_alphanum_
 from pyutils import EventCounter
 # from mongobackend import MongoBackend
 
@@ -88,28 +89,30 @@ class BSTableType(StrEnum):
 class Backend(metaclass=ABCMeta):
 	"""Abstract class for a backend (mongo, postgres, files)"""
 
-	name : str = 'Backend'
+	name 		: str = 'Backend'
 	_cache_valid : int = CACHE_VALID
-	_backends : dict[str, type['Backend']] = dict()
+	_backends 	: dict[str, type['Backend']] = dict()	
 
-	@abstractmethod
+
 	def __init__(self, config: ConfigParser | None = None, 
-					**kwargs):
+					**kwargs):					
 		"""Init MongoDB backend from config file and CLI args
 			CLI arguments overide settings in the config file"""
-		raise NotImplementedError
+		
+		self._database : str 	= 'BlitzStats'
+		# default tables/collections
+		self._T 	: dict[BSTableType,str] = dict()
 
-	# @classmethod
-	# def create(cls, backend : str, 
-	# 			config : ConfigParser | None = None, **kwargs) -> Optional['Backend']:
-	# 	try:
-	# 		if backend == 'mongodb':
-	# 			return MongoBackend(config, **kwargs)
-	# 		else:				
-	# 			assert False, f'Backend not implemented: {backend}'
-	# 	except Exception as err:
-	# 		error(f'Error creating backend {backend}: {err}')
-	# 	return None
+		self._T[BSTableType.Accounts] 			= 'Accounts'
+		self._T[BSTableType.Tankopedia] 		= 'Tankopedia'
+		self._T[BSTableType.Releases] 			= 'Releases'
+		self._T[BSTableType.Replays] 			= 'Replays'
+		self._T[BSTableType.AccountLog] 		= 'AccountLog'
+		self._T[BSTableType.ErrorLog] 			= 'ErrorLog'	
+		self._T[BSTableType.TankStats] 			= 'TankStats'
+		self._T[BSTableType.PlayerAchievements] = 'PlayerAchievements'
+		# raise NotImplementedError
+
 
 	@classmethod
 	def register(cls, name : str, backend: type['Backend']) -> bool:
@@ -202,57 +205,61 @@ class Backend(metaclass=ABCMeta):
 
 
 	@property
-	@abstractmethod
 	def database(self) -> str:
-		raise NotImplementedError
+		return self._database
 
 
-	@abstractmethod
-	def set_database(self, database : str) -> bool:
+	def set_database(self, database : str) -> None:
 		"""Set database"""
-		raise NotImplementedError
+		assert is_alphanum_(database), f'Illegal characters in the table name: {database}'
+		self._database = database
 
 
 	@property
-	@abstractmethod
 	def table_accounts(self) -> str:
-		raise NotImplementedError
+		return self._T[BSTableType.Accounts]
 
 
 	@property
-	@abstractmethod
-	def table_tank_stats(self) -> str:
-		raise NotImplementedError
-
-
-	@property
-	@abstractmethod
-	def table_player_achievements(self) -> str:
-		raise NotImplementedError
-
-
-	@property
-	@abstractmethod
-	def table_releases(self) -> str:
-		raise NotImplementedError
-
-
-	@property
-	@abstractmethod
-	def table_replays(self) -> str:
-		raise NotImplementedError
-
-
-	@property
-	@abstractmethod
 	def table_tankopedia(self) -> str:
-		raise NotImplementedError
+		return self._T[BSTableType.Tankopedia]
 
 
-	@abstractmethod
-	def set_table(self, table_type: str, new: str) -> bool:
+	@property
+	def table_releases(self) -> str:
+		return self._T[BSTableType.Releases]
+
+
+	@property
+	def table_replays(self) -> str:
+		return self._T[BSTableType.Replays]
+
+
+	@property	
+	def table_tank_stats(self) -> str:
+		return self._T[BSTableType.TankStats]
+
+
+	@property
+	def table_player_achievements(self) -> str:
+		return self._T[BSTableType.PlayerAchievements]
+
+
+	@property	
+	def table_account_log(self) -> str:
+		return self._T[BSTableType.AccountLog]
+
+
+	@property	
+	def table_error_log(self) -> str:
+		return self._T[BSTableType.ErrorLog]
+
+
+	def set_table(self, table_type: BSTableType, new: str) -> None:
 		"""Set database table/collection"""
-		raise NotImplementedError
+		assert len(new) > 0, 'table name cannot be zero-sized'
+		assert is_alphanum_(new), f'Illegal characters in the table name: {new}'
+		self._T[table_type] = new
 
 
 	#----------------------------------------
