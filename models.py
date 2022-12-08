@@ -27,6 +27,7 @@ message	= logger.warning
 verbose	= logger.info
 debug	= logger.debug
 
+MIN_INACTIVITY_DAYS : int = 30 # days
 
 class StatsTypes(StrEnum):
 	tank_stats 			= 'updated_tank_stats'
@@ -41,6 +42,8 @@ class BSAccount(Account):
 	inactive					: bool 		= Field(default=False, alias='i')
 	disabled					: bool		= Field(default=False, alias='d')
 
+	_min_inactivity_days: int = MIN_INACTIVITY_DAYS
+
 	_exclude_export_DB_fields = None
 	_exclude_export_src_fields = None
 	_include_export_DB_fields = None
@@ -52,6 +55,16 @@ class BSAccount(Account):
 		validate_assignment 	= True
 
 	
+	@classmethod	
+	def inactivity_limit(cls) -> int:
+		return cls._min_inactivity_days
+
+	
+	@classmethod
+	def set_inactivity_limit(cls, days: int) -> None:
+		cls._min_inactivity_days = days
+	
+
 	@classmethod
 	def get_update_field(cls, stats_type : str | None ) -> str | None:
 		UPDATED : str = 'updated_'
@@ -76,7 +89,7 @@ class BSAccount(Account):
 	@validator('added')
 	def set_current_time(cls, v):
 		if v is None:
-			return int(time())
+			return epoch_now()
 		elif v >= 0:
 			return v
 		else:
@@ -85,7 +98,23 @@ class BSAccount(Account):
 
 	def stats_updated(self, stats: StatsTypes) -> None:
 		assert type(stats) is StatsTypes, "'stats' need to be type(StatsTypes)"
-		setattr(self, stats.value, int(time()))
+		setattr(self, stats.value, epoch_now())
+
+	
+	def is_inactive(self, stats_type: StatsTypes | None = None) -> bool:
+		stats_updated : int | None
+		if stats_type is None:
+			stats_updated = epoch_now()
+		else:
+			stats_updated = getattr(self, stats_type.value)
+
+		if stats_updated is None:
+			return False
+		elif self.last_battle_time is not None:
+			return stats_updated - self.last_battle_time > self._min_inactivity_days*24*3600
+		else:
+			# cannot tell, but assumption is that yes
+			return True
 
 
 class BSBlitzRelease(WGBlitzRelease):
