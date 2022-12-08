@@ -1,22 +1,23 @@
 from configparser import ConfigParser
 from argparse import Namespace, ArgumentParser
 import logging
-from abc import ABCMeta, abstractmethod
+from abc import ABCMeta, ABC, abstractmethod
 from bson import ObjectId
 #from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCursor, AsyncIOMotorCollection # type: ignore
 from os.path import isfile
 from typing import Optional, Any, Iterable, AsyncGenerator, TypeVar, cast
 from time import time
 from re import compile
-from datetime import date
+from datetime import date, datetime
 from enum import Enum, StrEnum
 from asyncio import Queue, CancelledError
-# from pydantic import ValidationError
+from pydantic import BaseModel, Field
+
 
 from models import BSAccount, BSBlitzRelease, StatsTypes
 from blitzutils.models import Region, WoTBlitzReplayJSON, WGtankStat, Account, Tank, WGBlitzRelease
 from pyutils.utils import epoch_now, is_alphanum_
-from pyutils import EventCounter
+from pyutils import EventCounter, JSONExportable
 # from mongobackend import MongoBackend
 
 # Setup logging
@@ -85,7 +86,21 @@ class BSTableType(StrEnum):
 	AccountLog			= 'AccountLog'
 
 
-# BackendSelf = TypeVar('BackendSelf', bound='Backend')
+
+class ErrorLog(JSONExportable, ABC):
+	table : str 					= Field(alias='t')
+	# doc_id : ObjectId | int | str 	= Field(alias='did')
+	date   : datetime				= Field(default=datetime.now(), alias='d')
+	error  : str 					= Field(alias='e')
+
+	class Config:
+		arbitrary_types_allowed = True
+		allow_mutation 			= True
+		validate_assignment 	= True
+		allow_population_by_field_name = True
+		# json_encoders = { ObjectId: str }
+
+
 class Backend(metaclass=ABCMeta):
 	"""Abstract class for a backend (mongo, postgres, files)"""
 
@@ -255,12 +270,16 @@ class Backend(metaclass=ABCMeta):
 		return self._T[BSTableType.ErrorLog]
 
 
+	def get_table(self, table_type: BSTableType) -> str:
+		"""Get database table/collection"""		
+		return self._T[table_type] 
+
+
 	def set_table(self, table_type: BSTableType, new: str) -> None:
 		"""Set database table/collection"""
 		assert len(new) > 0, 'table name cannot be zero-sized'
 		assert is_alphanum_(new), f'Illegal characters in the table name: {new}'
 		self._T[table_type] = new
-
 
 	#----------------------------------------
 	# replays
@@ -535,3 +554,20 @@ class Backend(metaclass=ABCMeta):
 		except Exception as err:
 			error(f'{err}')
 		return stats
+
+	#----------------------------------------
+	# ErrorLog
+	#----------------------------------------
+
+	@abstractmethod
+	async def error_log(self, error: ErrorLog) -> bool:
+		"""Log an error into the backend's ErrorLog"""
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def errors_get(self, table_type: BSTableType | None = None, doc_id : Any | None = None, 
+							after: datetime | None = None) -> AsyncGenerator[ErrorLog, None]:
+		"""Return errors from backend ErrorLog"""
+		raise NotImplementedError
+		return ErrorLog(table='foo', error='bar')
