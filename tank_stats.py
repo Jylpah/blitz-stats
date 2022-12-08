@@ -253,14 +253,15 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 
 	try:
 		stats 	 : EventCounter				= EventCounter('tank-stats update')
-		regions	 : set[Region] 				= { Region(r) for r in args.region }
-		accountQ : Queue[BSAccount] 			= Queue(maxsize=ACCOUNTS_Q_MAX)
-		statsQ	 : Queue[list[WGtankStat]] 	= Queue(maxsize=TANK_STATS_Q_MAX)
+		regions	 : set[Region]				= { Region(r) for r in args.region }
+		accountQ : Queue[BSAccount]			= Queue(maxsize=ACCOUNTS_Q_MAX)
+		retryQ 	 : Queue[BSAccount]| None	= Queue(maxsize=ACCOUNTS_Q_MAX)
+		statsQ	 : Queue[list[WGtankStat]]	= Queue(maxsize=TANK_STATS_Q_MAX)
 
 		tasks : list[Task] = list()
 		tasks.append(create_task(update_tank_stats_worker(db, statsQ)))
 		for i in range(args.threads):
-			tasks.append(create_task(update_tank_stats_api_worker(wg, regions, accountQ, statsQ)))
+			tasks.append(create_task(update_tank_stats_api_worker(db, wg_api=wg, regions=regions, accountQ=accountQ, statsQ=statsQ, retryQ=retryQ)))
 
 		accounts_N 		: int = 0
 		accounts_added 	: int = 0 
@@ -348,6 +349,11 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 				bar(1)
 
 		await accountQ.join()
+
+		if retryQ is not None and not retryQ.empty():
+			tasks.append(create_task(update_tank_stats_api_worker(db, wg_api=wg, regions=regions, accountQ=retryQ, statsQ=statsQ)))
+			await retryQ.join()
+
 		await statsQ.join()
 
 		for task in tasks:
@@ -369,8 +375,10 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 		await wg.close()
 	return False
 
-async def update_tank_stats_api_worker(wg : WGApi, regions: set[Region], accountQ: Queue[BSAccount], 
-										statsQ: Queue[list[WGtankStat]]) -> EventCounter:
+async def update_tank_stats_api_worker(db: Backend, wg_api : WGApi, regions: set[Region], 
+										accountQ: Queue[BSAccount], 
+										statsQ: Queue[list[WGtankStat]], 
+										retryQ: Queue[BSAccount] | None = None) -> EventCounter:
 	"""Async worker to fetch tank stats from WG API"""
 	debug('starting')
 	stats = EventCounter('WG API')
@@ -383,12 +391,19 @@ async def update_tank_stats_api_worker(wg : WGApi, regions: set[Region], account
 				
 				if account.region not in regions:
 					raise ValueError(f"account_id's ({account.id}) region ({account.region}) is not in defined regions ({', '.join(regions)})")
-				tank_stats : list[WGtankStat] | None = await wg.get_tank_stats(account.id, account.region)
+				tank_stats : list[WGtankStat] | None = await wg_api.get_tank_stats(account.id, account.region)
 
 				if tank_stats is None:
-					verbose(f'Could not fetch account: {account.id}')
-					stats.log('accounts w/o stats')
-					continue
+					
+					debug(f'Could not fetch account: {account.id}')
+					if retryQ is not None:
+						stats.log('accounts to re-try')
+						await retryQ.put(account)
+					else:
+						stats.log('accounts w/o stats')
+						account.disabled = True
+						await db.account_update(account=account)
+						stats.log('accounts disabled')
 				else:
 					await statsQ.put(tank_stats)
 					stats.log('tank stats fetched', len(tank_stats))
@@ -404,6 +419,7 @@ async def update_tank_stats_api_worker(wg : WGApi, regions: set[Region], account
 		debug(f'Cancelled')	
 	except Exception as err:
 		error(f'{err}')
+	stats.log('accounts total', - stats.get_value('accounts to re-try'))  # remove re-tried accounts from total
 	return stats
 
 
@@ -416,6 +432,7 @@ async def update_tank_stats_worker(db: Backend, statsQ: Queue[list[WGtankStat]])
 	account 	: BSAccount | None
 	account_id	: int
 	last_battle_time : int
+
 	try:
 		releases : BucketMapper[BSBlitzRelease] = BucketMapper[BSBlitzRelease](attr='cut_off')
 		for r in await db.releases_get():
@@ -438,7 +455,7 @@ async def update_tank_stats_worker(db: Backend, statsQ: Queue[list[WGtankStat]])
 					account_id = tank_stats[0].account_id
 					if (account := await db.account_get(account_id=account_id)) is None:
 						account = BSAccount(id=account_id)
-					# debug(f'{account}')
+					account.last_battle_time = last_battle_time
 					account.stats_updated(StatsTypes.tank_stats)
 					if added > 0:
 						stats.log('accounts /w new stats')
@@ -447,7 +464,7 @@ async def update_tank_stats_worker(db: Backend, statsQ: Queue[list[WGtankStat]])
 						account.inactive = False
 					else:
 						stats.log('accounts w/o new stats')
-						if epoch_now() - last_battle_time > db.cache_valid:	
+						if account.is_inactive(StatsTypes.tank_stats): 
 							if not account.inactive:
 								stats.log('accounts marked inactive')
 							account.inactive = True
