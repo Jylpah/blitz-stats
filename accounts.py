@@ -11,7 +11,7 @@ from sys import stdout
 
 from csv import DictWriter, DictReader, Dialect, Sniffer, excel
 
-from backend import Backend, OptAccountsInactive, OptAccountsDistributed, ACCOUNTS_Q_MAX
+from backend import Backend, OptAccountsInactive, OptAccountsDistributed, BSTableType, ACCOUNTS_Q_MAX
 from models import BSAccount, StatsTypes
 from models_import import WG_Account
 from pyutils.eventcounter import EventCounter
@@ -538,7 +538,7 @@ async def cmd_accounts_import(db: Backend, args : Namespace) -> bool:
 		if (import_db:= Backend.create(args.accounts_import_backend, 
 										config=config, copy_from=db, **kwargs)) is not None:
 			if args.import_table is not None:
-				import_db.set_table('ACCOUNTS', args.import_table)
+				import_db.set_table(BSTableType.Accounts, args.import_table)
 			elif db == import_db and db.table_accounts == import_db.table_accounts:
 				raise ValueError('Cannot import from itself')
 		else:
@@ -551,13 +551,6 @@ async def cmd_accounts_import(db: Backend, args : Namespace) -> bool:
 		N : int = await db.accounts_count(regions=regions,
 										inactive=OptAccountsInactive.both,
 										sample=args.sample)
-		
-		# if args.import_type == 'BSAccount':	
-		# 	account_type=BSAccount
-		# elif args.import_type == 'WG_Account':
-		# 	account_type=WG_Account
-		# else:
-		# 	raise ValueError(f'Unsupported account --import-type: {args.import_type}')
 
 		with alive_bar(N, title="Importing accounts ", enrich_print=False) as bar:
 			async for account in import_db.accounts_export(account_type=account_type, regions=regions, 

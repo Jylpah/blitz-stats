@@ -10,7 +10,7 @@ from os.path import isfile
 
 from pyutils.utils import export, JSONExportable, CSVExportable, TXTExportable
 from pyutils import EventCounter
-from backend import Backend
+from backend import Backend, BSTableType
 from blitzutils.models import WGBlitzRelease
 from models import BSBlitzRelease
 from models_import import WG_Release
@@ -276,7 +276,7 @@ async def cmd_releases_import(db: Backend, args : Namespace) -> bool:
 		if (import_db:= Backend.create(args.releases_import_backend, 
 										config=config, copy_from=db, **kwargs)) is not None:
 			if args.import_table is not None:
-				import_db.set_table('RELEASES', args.import_table)
+				import_db.set_table(BSTableType.Releases, args.import_table)
 			elif db == import_db and db.table_releases == import_db.table_releases:
 				raise ValueError('Cannot import from itself')
 		else:
