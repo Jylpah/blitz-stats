@@ -395,7 +395,7 @@ class MongoBackend(Backend):
 				try:
 					player = BSAccount.parse_obj(account_obj)
 					# if not force and not disabled and inactive is None and player.inactive:
-					if not disabled and inactive in [OptAccountsInactive.no, OptAccountsInactive.auto] and player.inactive:
+					if not disabled and inactive == OptAccountsInactive.auto and player.inactive:
 						assert update_field is not None, "automatic inactivity detection requires stat_type"
 						updated = dict(player)[update_field]
 						if (NOW - updated) < min(MAX_UPDATE_INTERVAL, (updated - player.last_battle_time)/2):
