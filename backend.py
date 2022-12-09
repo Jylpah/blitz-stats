@@ -1,7 +1,7 @@
 from configparser import ConfigParser
 from argparse import Namespace, ArgumentParser
 import logging
-from abc import ABCMeta, ABC, abstractmethod
+from abc import ABC, abstractmethod
 from bson import ObjectId
 #from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCursor, AsyncIOMotorCollection # type: ignore
 from os.path import isfile
@@ -9,7 +9,7 @@ from typing import Optional, Any, Iterable, AsyncGenerator, TypeVar, cast
 from time import time
 from re import compile
 from datetime import date, datetime
-from enum import Enum, StrEnum
+from enum import Enum, StrEnum, IntEnum
 from asyncio import Queue, CancelledError
 from pydantic import BaseModel, Field
 
@@ -85,13 +85,27 @@ class BSTableType(StrEnum):
 	ErrorLog			= 'ErrorLog'
 	AccountLog			= 'AccountLog'
 
+class ErrorLogType(IntEnum):
+	OK				= 0
+	Info			= 1
+	Warning 		= 2
+	Error 			= 3
+	Critical 		= 4
+	
+	ValidationError = 10
+	ValueError		= 11
+	NotFoundError 	= 12
+
+	Duplicate 		= 20
 
 
 class ErrorLog(JSONExportable, ABC):
-	table : str 					= Field(alias='t')
-	# doc_id : ObjectId | int | str 	= Field(alias='did')
-	date   : datetime				= Field(default=datetime.now(), alias='d')
-	error  : str 					= Field(alias='e')
+	table 	: str 					= Field(alias='t')
+	doc_id 	: Any | None			= Field(default=None, alias='did')
+	date 	: datetime				= Field(default=datetime.now(), alias='d')
+	msg 	: str | None			= Field(default=None, alias='e')
+	type 	: ErrorLogType			= Field(default=ErrorLogType.Error, alias='t')
+
 
 	class Config:
 		arbitrary_types_allowed = True
@@ -101,10 +115,10 @@ class ErrorLog(JSONExportable, ABC):
 		# json_encoders = { ObjectId: str }
 
 
-class Backend(metaclass=ABCMeta):
+class Backend(ABC):
 	"""Abstract class for a backend (mongo, postgres, files)"""
 
-	name 		: str = 'Backend'
+	driver 		: str = 'Backend'
 	_cache_valid : int = CACHE_VALID
 	_backends 	: dict[str, type['Backend']] = dict()	
 
@@ -122,8 +136,9 @@ class Backend(metaclass=ABCMeta):
 		self._T[BSTableType.Tankopedia] 		= 'Tankopedia'
 		self._T[BSTableType.Releases] 			= 'Releases'
 		self._T[BSTableType.Replays] 			= 'Replays'
-		self._T[BSTableType.AccountLog] 		= 'AccountLog'
-		self._T[BSTableType.ErrorLog] 			= 'ErrorLog'	
+		self._T[BSTableType.AccountLog] 		= 'BSAccountLog' 	# Rename after transition
+		self._T[BSTableType.ErrorLog] 			= 'BSErrorLog'		# Rename after transition
+		message('Reminder: Rename Backend ErrorLog & AccountLog')
 		self._T[BSTableType.TankStats] 			= 'TankStats'
 		self._T[BSTableType.PlayerAchievements] = 'PlayerAchievements'
 		# raise NotImplementedError
@@ -162,7 +177,7 @@ class Backend(metaclass=ABCMeta):
 					**kwargs) -> Optional['Backend']:
 		try:
 			debug('starting')
-			if copy_from is not None and copy_from.name == backend:
+			if copy_from is not None and copy_from.driver == backend:
 				return copy_from.copy(config, **kwargs)
 			elif backend in cls._backends:
 				return cls._backends[backend](config=config, **kwargs)
@@ -218,12 +233,17 @@ class Backend(metaclass=ABCMeta):
 		"""Create a copy of backend"""
 		raise NotImplementedError
 
+	@property
+	@abstractmethod
+	def backend(self) -> str:
+		raise NotImplementedError
+
 
 	@property
 	def database(self) -> str:
 		return self._database
 
-
+	
 	def set_database(self, database : str) -> None:
 		"""Set database"""
 		assert is_alphanum_(database), f'Illegal characters in the table name: {database}'
@@ -356,10 +376,10 @@ class Backend(metaclass=ABCMeta):
 				account = await accountQ.get()
 				try:
 					if force:
-						debug(f'Trying to upsert account_id={account.id} into {self.name}:{self.database}.{self.table_accounts}')
+						debug(f'Trying to upsert account_id={account.id} into {self.driver}:{self.database}.{self.table_accounts}')
 						await self.account_update(account, upsert=True)
 					else:
-						debug(f'Trying to insert account_id={account.id} into {self.name}:{self.database}.{self.table_accounts}')
+						debug(f'Trying to insert account_id={account.id} into {self.driver}:{self.database}.{self.table_accounts}')
 						await self.account_insert(account)
 					if force:
 						stats.log('accounts added/updated')
@@ -452,11 +472,11 @@ class Backend(metaclass=ABCMeta):
 				read = len(tank_stats)
 				try:
 					if force:
-						debug(f'Trying to upsert {read} tank stats into {self.name}:{self.database}.{self.table_tank_stats}')
+						debug(f'Trying to upsert {read} tank stats into {self.backend}.{self.table_tank_stats}')
 						added, not_added = await self.tank_stats_update(tank_stats, upsert=True)
 						stats.log('tank stats added/updated', added)
 					else:
-						debug(f'Trying to insert {read} tank stats into {self.name}:{self.database}.{self.table_tank_stats}')
+						debug(f'Trying to insert {read} tank stats into {self.backend}.{self.table_tank_stats}')
 						added, not_added = await self.tank_stats_insert(tank_stats)
 						stats.log('accounts added', added)
 					stats.log('accounts not added', not_added)
@@ -535,10 +555,10 @@ class Backend(metaclass=ABCMeta):
 				release = await releaseQ.get()
 				try:
 					if force:
-						debug(f'Trying to upsert release={release.release} into {self.name}:{self.database}.{self.table_releases}')
+						debug(f'Trying to upsert release={release.release} into {self.backend}.{self.table_releases}')
 						await self.release_update(release, upsert=True)
 					else:
-						debug(f'Trying to insert release={release.release} into {self.name}:{self.database}.{self.table_releases}')
+						debug(f'Trying to insert release={release.release} into {self.backend}.{self.table_releases}')
 						await self.release_insert(release)
 					if force:
 						stats.log('releases added/updated')
@@ -570,4 +590,12 @@ class Backend(metaclass=ABCMeta):
 							after: datetime | None = None) -> AsyncGenerator[ErrorLog, None]:
 		"""Return errors from backend ErrorLog"""
 		raise NotImplementedError
-		return ErrorLog(table='foo', error='bar')
+		yield ErrorLog(table='foo', error='bar')
+	
+
+	@abstractmethod
+	async def errors_clear(self, table_type: BSTableType, doc_id : Any | None = None, 
+							after: datetime | None = None) -> int:
+		"""Clear errors from backend ErrorLog"""
+		raise NotImplementedError
+		
