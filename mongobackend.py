@@ -13,7 +13,7 @@ from pymongo import DESCENDING, ASCENDING
 from pydantic import ValidationError, Field
 
 from backend import Backend, OptAccountsDistributed, OptAccountsInactive, BSTableType, \
-					MAX_UPDATE_INTERVAL, WG_ACCOUNT_ID_MAX, CACHE_VALID, ErrorLog
+					MAX_UPDATE_INTERVAL, WG_ACCOUNT_ID_MAX, CACHE_VALID, ErrorLog, ErrorLogType
 from models import BSAccount, BSBlitzRelease, StatsTypes
 from pyutils.utils import epoch_now
 from blitzutils.models import Region, WoTBlitzReplayJSON, WGtankStat, Account, Tank, WGBlitzRelease
@@ -30,7 +30,7 @@ TANK_STATS_BATCH	: int = 1000
 
 
 class MongoErrorLog(ErrorLog):
-	doc_id : ObjectId | int | str 	= Field(alias='did')
+	doc_id : ObjectId | int | str | None	= Field(default=None, alias='did')
 	
 	class Config:
 		arbitrary_types_allowed = True
@@ -200,10 +200,9 @@ class MongoBackend(Backend):
 	# 	return False
 
 
-	# @property
-	# def database(self) -> str:
-	# 	return self._database
-
+	@property
+	def backend(self) -> str:
+		return f'{self.driver}://{self._client.HOST}/{self.database}'
 
 
 	def __eq__(self, __o: object) -> bool:
@@ -288,8 +287,13 @@ class MongoBackend(Backend):
 			# DBC : str = self.table_accounts
 			dbc : AsyncIOMotorCollection = self.db[self.table_accounts]
 			return BSAccount.parse_obj(await dbc.find_one({'_id': account_id}))
+		except ValidationError as err:
+			error(f'Could not validate account_id={account_id} from {self.name}: {self}')
+			await self.error_log(MongoErrorLog(table=self.table_accounts, doc_id=account_id, type=ErrorLogType.ValidationError))
+		
 		except Exception as err:
-			error(f'Error fetching account_id: {account_id}) from {self.name}.{self.table_accounts}: {err}')	
+			error(f'Error fetching account_id: {account_id}) from {self.name}.{self.table_accounts}: {err}')
+				
 		return None
 
 
@@ -417,15 +421,6 @@ class MongoBackend(Backend):
 							cache_valid: int | None = None) -> list[dict[str, Any]] | None:
 		try:
 			debug('starting')
-
-			# id						: int		= Field(default=..., alias='_id')
-			# region 					: Region | None= Field(default=None, alias='r')
-			# last_battle_time			: int | None = Field(default=None, alias='l')
-			# updated_tank_stats 		: int | None = Field(default=None, alias='ut')
-			# updated_player_achievements : int | None = Field(default=None, alias='up')
-			# added 					: int | None = Field(default=None, alias='a')
-			# inactive					: bool | None = Field(default=None, alias='i')
-			# disabled					: bool | None = Field(default=None, alias='d')
 			
 			NOW = epoch_now()
 			# DBC : str = self.table_accounts
@@ -884,7 +879,7 @@ class MongoBackend(Backend):
 
 
 	async def tank_stats_export(self, tank_stats_type: type[WGtankStat] = WGtankStat, 
-								# regions: set[Region] = Region.has_stats(), 
+								regions: set[Region] = Region.has_stats(), 
 								accounts: list[BSAccount] | None = None,
 								tanks: list[Tank] | None = None,  
 								sample : float = 0) -> AsyncGenerator[list[WGtankStat], None]:
@@ -928,15 +923,23 @@ class MongoBackend(Backend):
 			error(f'Error fetching accounts from {self.name}: {err}')
 
 	
+	########################################################
+	# 
+	# MongoBackend(): error_
+	#
+	########################################################
+
+
 	async def error_log(self, error: ErrorLog) -> bool:
 		"""Log an error into the backend's ErrorLog"""
 		try:
 			debug('starting')
+			debug(f'Logging error: {error.table}: {error.msg}')
 			dbc : AsyncIOMotorCollection = self.db[self.table_error_log]
 			await dbc.insert_one(error.obj_db())
 			return True
 		except Exception as err:
-			debug(f'Could not log error: {error.table}: "{error.error}" into {self.name}:{self.database}.{self.table_error_log}: {err}')	
+			debug(f'Could not log error: {error.table}: "{error.msg}" into {self.name}:{self.database}.{self.table_error_log}: {err}')	
 		return False
 
 
@@ -960,7 +963,7 @@ class MongoBackend(Backend):
 			async for error_obj in dbc.find(query).sort('d', ASCENDING):
 				try:
 					err = MongoErrorLog.parse_obj(error_obj)
-					debug(f'Read "{err.error}" from {self.name} {self.database}.{self.table_error_log}')
+					debug(f'Read "{err.msg}" from {self.name} {self.database}.{self.table_error_log}')
 					
 					yield err
 				except Exception as e:
@@ -968,6 +971,28 @@ class MongoBackend(Backend):
 					continue			
 		except Exception as e:
 			error(f'Error getting errors from {self.name} {self.database}.{self.table_error_log}: {e}')	
+
+
+	async def errors_clear(self, table_type: BSTableType, doc_id : Any | None = None, 
+							after: datetime | None = None) -> int:
+		"""Clear errors from backend ErrorLog"""
+		try:
+			debug('starting')
+			
+			dbc : AsyncIOMotorCollection = self.db[self.table_error_log]
+			query : dict[str, Any] = dict()
+
+			query['t'] = self.get_table(table_type)
+			if after is not None:
+				query['d'] = { '$gte': after }
+			if doc_id is not None:
+				query['did'] = doc_id
+			
+			res : DeleteResult = await dbc.delete_many(query)
+			return res.deleted_count	
+		except Exception as e:
+			error(f'Error clearing errors from {self.name} {self.database}.{self.table_error_log}: {e}')
+		return 0
 
 # Register backend
 
