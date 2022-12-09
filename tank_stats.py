@@ -255,17 +255,20 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 		stats 	 : EventCounter				= EventCounter('tank-stats update')
 		regions	 : set[Region]				= { Region(r) for r in args.region }
 		accountQ : Queue[BSAccount]			= Queue(maxsize=ACCOUNTS_Q_MAX)
-		retryQ 	 : Queue[BSAccount]| None	= Queue(maxsize=ACCOUNTS_Q_MAX)
+		retryQ 	 : Queue[BSAccount] | None	= None
 		statsQ	 : Queue[list[WGtankStat]]	= Queue(maxsize=TANK_STATS_Q_MAX)
+		accounts_N 		: int = 0
+		accounts_added 	: int = 0
 
+		if not args.check_invalid:
+			retryQ = Queue(maxsize=ACCOUNTS_Q_MAX)
+		
 		tasks : list[Task] = list()
 		tasks.append(create_task(update_tank_stats_worker(db, statsQ)))
-		for i in range(args.threads):
-			tasks.append(create_task(update_tank_stats_api_worker(db, wg_api=wg, regions=regions, accountQ=accountQ, statsQ=statsQ, retryQ=retryQ)))
-
-		accounts_N 		: int = 0
-		accounts_added 	: int = 0 
-		# qsize 			: int = 0
+		for _ in range(args.threads):
+			tasks.append(create_task(update_tank_stats_api_worker(db, wg_api=wg, regions=regions, 
+																	accountQ=accountQ, statsQ=statsQ, 
+																	retryQ=retryQ, check_invalid=args.check_invalid)))
 
 		# count number of accounts
 		if args.accounts is not None:
@@ -378,7 +381,8 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 async def update_tank_stats_api_worker(db: Backend, wg_api : WGApi, regions: set[Region], 
 										accountQ: Queue[BSAccount], 
 										statsQ: Queue[list[WGtankStat]], 
-										retryQ: Queue[BSAccount] | None = None) -> EventCounter:
+										retryQ: Queue[BSAccount] | None = None, 
+										check_invalid : bool = False) -> EventCounter:
 	"""Async worker to fetch tank stats from WG API"""
 	debug('starting')
 	stats = EventCounter('WG API')
@@ -405,9 +409,14 @@ async def update_tank_stats_api_worker(db: Backend, wg_api : WGApi, regions: set
 						await db.account_update(account=account)
 						stats.log('accounts disabled')
 				else:
+					
 					await statsQ.put(tank_stats)
 					stats.log('tank stats fetched', len(tank_stats))
 					stats.log('accounts /w stats')
+					if check_invalid:
+						account.disabled = False
+						await db.account_update(account=account)
+						stats.log('accounts enabled')
 
 			except Exception as err:
 				stats.log('errors')
@@ -426,7 +435,7 @@ async def update_tank_stats_api_worker(db: Backend, wg_api : WGApi, regions: set
 async def update_tank_stats_worker(db: Backend, statsQ: Queue[list[WGtankStat]]) -> EventCounter:
 	"""Async worker to add tank stats to backend. Assumes batch is for the same account"""
 	debug('starting')
-	stats 		: EventCounter = EventCounter(f'Backend ({db.name})')
+	stats 		: EventCounter = EventCounter(f'Backend ({db.driver})')
 	added 		: int
 	not_added 	: int
 	account 	: BSAccount | None
@@ -537,7 +546,7 @@ async def cmd_tank_stats_export(db: Backend, args : Namespace) -> bool:
 		# 												inactive=inactive, disabled=disabled, sample=sample)))
 		# 	# split by region
 		# 	export_workers.append(create_task(accounts_split_Q_by_region(Q_all=accountQs['all'], 
-		# 							regionQs=cast(dict[str, Queue[BSAccount]], accountQs))))
+		## 							regionQs=cast(dict[str, Queue[BSAccount]], accountQs))))
 		# else:
 		# 	accountQs['all'] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)
 		# 	account_workers.append(create_task(db.accounts_get_worker(accountQs['all'], regions=regions, 
