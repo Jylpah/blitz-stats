@@ -197,9 +197,9 @@ def add_args_accounts_import(parser: ArgumentParser, config: Optional[ConfigPars
 		import_parsers.required = True
 
 		for backend in Backend.get_registered():
-			import_parser =  import_parsers.add_parser(backend.name, help=f'accounts import {backend.name} help')
+			import_parser =  import_parsers.add_parser(backend.driver, help=f'accounts import {backend.driver} help')
 			if not backend.add_args_import(import_parser, config=config):
-				raise Exception(f'Failed to define argument parser for: accounts import {backend.name}')
+				raise Exception(f'Failed to define argument parser for: accounts import {backend.driver}')
 		
 		# ## REFACTOR? This possibly could be made to dynamically add required subparsers with subclasses' add_args_import() methods
 		# import_mongodb_parser = import_parsers.add_parser('mongodb', help='accounts import mongodb help')
@@ -333,7 +333,7 @@ async def cmd_accounts_update(db: Backend, args : Namespace) -> bool:
 			if type(res) is EventCounter:
 				stats.merge_child(res)
 			elif type(res) is BaseException:
-				error(f'Backend ({db.name}) add_accounts_worker() returned error: {str(res)}')
+				error(f'{db.driver}: add_accounts_worker() returned error: {str(res)}')
 
 		stats.print()
 
@@ -345,7 +345,7 @@ async def cmd_accounts_update(db: Backend, args : Namespace) -> bool:
 async def accounts_add_worker(db: Backend, accountQ: Queue[list[int]]) -> EventCounter:
 	"""worker to read accounts from queue and add those to backend"""
 	debug('starting')
-	stats : EventCounter = EventCounter(f'{db.name}')
+	stats : EventCounter = EventCounter(f'{db.driver}')
 	added 		: int
 	not_added 	: int
 	try:
@@ -366,7 +366,7 @@ async def accounts_add_worker(db: Backend, accountQ: Queue[list[int]]) -> EventC
 					stats.log('old accounts found', not_added)
 				except Exception as err:
 					stats.log('errors')
-					error(f'Cound not add accounts do {db.name}: {err}')
+					error(f'Cound not add accounts do {db.backend}: {err}')
 			except Exception as err:
 				error(f'{err}')
 			finally:
@@ -470,7 +470,7 @@ async def accounts_update_wi_spider_replays(db: Backend, wi: WoTinspector, args:
 					for replay_id in replay_ids:
 						res: WoTBlitzReplayJSON | None = await db.replay_get(replay_id)
 						if res is not None:
-							debug(f'Replay already in the {db.name}: {replay_id}')
+							debug(f'Replay already in the {db.backend}: {replay_id}')
 							stats.log('old replays found')
 							if not force:
 								old_replays += 1
@@ -577,7 +577,7 @@ async def cmd_accounts_import(db: Backend, args : Namespace) -> bool:
 # 										config: ConfigParser | None = None) -> EventCounter:
 # 	stats : EventCounter = EventCounter('accounts import mongodb')
 # 	try:
-# 		regions : set[Region] ={ Region(r) for r in args.region }
+## 		regions : set[Region] ={ Region(r) for r in args.region }
 		
 # 		kwargs : dict[str, Any] = dict()
 # 		if args.server_url is not None:
@@ -710,7 +710,7 @@ async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 			if type(res) is EventCounter:
 				stats.merge_child(res)
 			elif type(res) is BaseException:
-				error(f'Backend ({db.name}) accounts_get_worker() returned error: {res}')
+				error(f'{db.driver}: accounts_get_worker() returned error: {res}')
 		for worker in export_workers:
 			worker.cancel()
 		for res in await gather(*export_workers):

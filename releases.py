@@ -109,9 +109,9 @@ def add_args_releases_import(parser: ArgumentParser, config: Optional[ConfigPars
 		import_parsers.required = True
 
 		for backend in Backend.get_registered():
-			import_parser =  import_parsers.add_parser(backend.name, help=f'releases import {backend.name} help')
+			import_parser =  import_parsers.add_parser(backend.driver, help=f'releases import {backend.driver} help')
 			if not backend.add_args_import(import_parser, config=config):
-				raise Exception(f'Failed to define argument parser for: releases import {backend.name}')
+				raise Exception(f'Failed to define argument parser for: releases import {backend.driver}')
 		
 		parser.add_argument('--import-type', metavar='IMPORT-TYPE', type=str, 
 							default='BSBlitzRelease', choices=['BSBlitzRelease', 'WG_Release'], 
