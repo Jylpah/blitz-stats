@@ -103,9 +103,9 @@ def add_args_releases_import(parser: ArgumentParser, config: Optional[ConfigPars
 	try:
 		debug('starting')
 		import_parsers = parser.add_subparsers(dest='releases_import_backend', 	
-														title='releases import backend',
-														description='valid backends', 
-														metavar=', '.join(Backend.list_available()))
+												title='releases import backend',
+												description='valid import backends', 
+												metavar=', '.join(Backend.list_available()))
 		import_parsers.required = True
 
 		for backend in Backend.get_registered():
@@ -285,8 +285,7 @@ async def cmd_releases_import(db: Backend, args : Namespace) -> bool:
 		release_type: type[WGBlitzRelease] = globals()[args.import_type]
 		assert issubclass(release_type, WGBlitzRelease), "--import-type has to be subclass of blitzutils.models.WGBlitzRelease" 
 
-		async for release in import_db.releases_export(release_type=release_type, since=since, 
-														release=releases):
+		async for release in import_db.releases_export(release_type=release_type, sample=args.sample):
 			await releaseQ.put(release)
 			stats.log('read')
 

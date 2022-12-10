@@ -1,8 +1,10 @@
 from pydantic import Field, root_validator, validator
 from datetime import datetime, date
-from blitzutils.models import Account, WGBlitzRelease
-
+from sys import maxsize
 import logging
+
+from blitzutils.models import Account
+from models import BSBlitzRelease
 
 logger 	= logging.getLogger()
 error 	= logger.error
@@ -36,10 +38,10 @@ class WG_Account(Account):
 			raise ValueError('time field must be >= 0')
 
 
-class WG_Release(WGBlitzRelease):
+class WG_Release(BSBlitzRelease):
 	release		: str 				= Field(default=..., alias='Release')
 	launch_date	: datetime | None	= Field(default=None, alias='Date')
-	cut_off		: int | None		= Field(default=None, alias='Cut-off')
+	cut_off		: int 				= Field(default=maxsize, alias='Cut-off')
 	
 	_export_DB_by_alias = False
 

@@ -553,8 +553,7 @@ async def cmd_accounts_import(db: Backend, args : Namespace) -> bool:
 										sample=args.sample)
 
 		with alive_bar(N, title="Importing accounts ", enrich_print=False) as bar:
-			async for account in import_db.accounts_export(account_type=account_type, regions=regions, 
-															sample=args.sample):
+			async for account in import_db.accounts_export(account_type=account_type, sample=args.sample):
 				await accountQ.put(account)
 				bar()
 				stats.log('read')

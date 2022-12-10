@@ -2,7 +2,7 @@ from configparser import ConfigParser
 from argparse import Namespace, ArgumentParser
 from datetime import date, datetime
 from os.path import isfile
-from typing import Optional, Any, Iterable, AsyncGenerator, TypeVar, cast
+from typing import Optional, Any, Iterable, AsyncGenerator, TypeVar, ClassVar, cast, Generic
 import logging
 
 from bson import ObjectId
@@ -10,12 +10,12 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncI
 from pymongo.results import InsertManyResult, InsertOneResult, UpdateResult, DeleteResult
 from pymongo.errors import BulkWriteError
 from pymongo import DESCENDING, ASCENDING
-from pydantic import ValidationError, Field
+from pydantic import BaseModel, ValidationError, Field
 
 from backend import Backend, OptAccountsDistributed, OptAccountsInactive, BSTableType, \
 					MAX_UPDATE_INTERVAL, WG_ACCOUNT_ID_MAX, CACHE_VALID, ErrorLog, ErrorLogType
 from models import BSAccount, BSBlitzRelease, StatsTypes
-from pyutils.utils import epoch_now
+from pyutils.utils import epoch_now, JSONExportable
 from blitzutils.models import Region, WoTBlitzReplayJSON, WGtankStat, Account, Tank, WGBlitzRelease
 
 # Setup logging
@@ -45,6 +45,9 @@ class MongoErrorLog(ErrorLog):
 ## class MongoBackend(Backend)
 #
 ##############################################
+
+I = TypeVar('I')
+D = TypeVar('D', bound=BaseModel)
 
 class MongoBackend(Backend):
 
@@ -188,18 +191,6 @@ class MongoBackend(Backend):
 		return kwargs	
 	
 
-	# def set_database(self, database : str) -> bool:
-	# 	"""Set database"""
-	# 	try:
-	# 		debug('starting')
-	# 		self.db = self._client[database]
-	# 		self._database = database
-	# 		return True
-	# 	except Exception as err:
-	# 		error(f'Error creating copy: {err}')
-	# 	return False
-
-
 	@property
 	def backend(self) -> str:
 		return f'{self.driver}://{self._client.HOST}/{self.database}'
@@ -275,12 +266,50 @@ class MongoBackend(Backend):
 
 ########################################################
 # 
-# MongoBackend(): account
+# MongoBackend(): generic data_funcs
 #
 ########################################################
 
 
-	async def account_get(self, account_id: int) -> BSAccount | None:
+	async def _data_get1(self, dbc : AsyncIOMotorCollection, 
+						data_type: type[BaseModel], 
+						id: Any) -> Optional[BaseModel]:
+		"""Generic method to get one object of data_type"""
+		try:
+			debug('starting')			
+			return data_type.parse_obj(await dbc.find_one({ '_id': id}))
+		except ValidationError as err:
+			error(f'Could not validate document from {self.backend}.{dbc.name}: {err}')
+			await self.error_log(MongoErrorLog(table=dbc.name, doc_id=id, type=ErrorLogType.ValidationError))
+		except Exception as err:
+			error(f'{self.backend}: {err}')
+		return None
+
+
+	async def _data_get(self, dbc : AsyncIOMotorCollection, 
+						data_type: type[D], 
+						id: Any) -> Optional[D]:
+		"""Generic method to get one object of data_type"""
+		try:
+			debug('starting')			
+			return data_type.parse_obj(await dbc.find_one({ '_id': id}))
+		except ValidationError as err:
+			error(f'Could not validate document from {self.backend}.{dbc.name}: {err}')
+			await self.error_log(MongoErrorLog(table=dbc.name, doc_id=id, type=ErrorLogType.ValidationError))
+		except Exception as err:
+			error(f'{self.backend}: {err}')
+		return None
+
+
+
+########################################################
+# 
+# MongoBackend(): account
+#
+########################################################
+		
+
+	async def account_get_org(self, account_id: int) -> BSAccount | None:
 		"""Get account from backend"""
 		try:
 			debug('starting')
@@ -292,8 +321,28 @@ class MongoBackend(Backend):
 			await self.error_log(MongoErrorLog(table=self.table_accounts, doc_id=account_id, type=ErrorLogType.ValidationError))
 		
 		except Exception as err:
-			error(f'Error fetching account_id: {account_id}) from {self.name}.{self.table_accounts}: {err}')
+			error(f'Error fetching account_id: {account_id}) from {self.backend}.{self.table_accounts}: {err}')
 				
+		return None
+
+	async def account_get1(self, account_id: int) -> BSAccount | None:
+		"""Get account from backend"""
+		
+		try:
+			debug('starting')
+			return cast(BSAccount | None, await self._data_get1(self.db[self.table_accounts], BSAccount, id=account_id))
+		except Exception as err:
+			error(f'{self.backend}: {err}')
+		return None
+
+
+	async def account_get(self, account_id: int) -> BSAccount | None:
+		"""Get account from backend"""
+		try:
+			debug('starting')			
+			return await self._data_get(self.db[self.table_accounts], BSAccount, id=account_id)
+		except Exception as err:
+			error(f'Error fetching account_id={account_id} from {self.backend}.{self.table_accounts}: {err}')
 		return None
 
 
@@ -381,7 +430,6 @@ class MongoBackend(Backend):
 
 
 	async def accounts_export(self, account_type: type[Account] = BSAccount, 
-								regions: set[Region] = Region.has_stats(), 
 								sample : float = 0) -> AsyncGenerator[BSAccount, None]:
 		"""Import accounts from Mongo DB"""
 		try:
@@ -389,10 +437,7 @@ class MongoBackend(Backend):
 			# DBC : str = self.table_accounts
 			dbc : AsyncIOMotorCollection = self.db[self.table_accounts]
 
-			pipeline : list[dict[str, Any]] = list()
-			if regions != Region.has_stats():
-				pipeline.append({ '$match': { 'r': { '$in':  [ r.value for r in regions ] } }})
-			
+			pipeline : list[dict[str, Any]] = list()			
 			if sample > 0 and sample < 1:
 				N : int = await dbc.estimated_document_count()
 				pipeline.append({ '$sample' : N * sample })
@@ -593,21 +638,6 @@ class MongoBackend(Backend):
 		debug('starting')
 		releases : list[BSBlitzRelease] = list()
 		try:
-			async for rel in self.releases_export(release=release, since=since, first=first):				
-				releases.append(rel)				
-		except Exception as err:
-			error(f'Error getting releases: {err}')
-		return releases
-
-
-	async def releases_export(self, release_type: type[WGBlitzRelease] = BSBlitzRelease,
-								release: str | None = None, since : date | None = None, 
-								first : BSBlitzRelease | None = None) -> AsyncGenerator[BSBlitzRelease, None]:
-		"""Import relaseses from Mongo DB"""
-		try:
-			debug('starting')
-			debug(f'release={release}, since={since}, first={first}')
-
 			dbc : AsyncIOMotorCollection = self.db[self.table_releases]
 			query : dict[str, Any] = dict()
 
@@ -618,9 +648,30 @@ class MongoBackend(Backend):
 			
 			if release is not None:
 				query['release'] = { '$regex' : '^' + release }
-			
+
 			rel	: BSBlitzRelease
 			async for release_obj in dbc.find(query).sort('launch_date', ASCENDING):
+				try:
+					rel = BSBlitzRelease.parse_obj(release_obj)
+					releases.append(rel)
+				except ValidationError as err:					
+					error(f'Could not validate document: {err}')				
+				except Exception as err:
+					error(f'{err}')
+		except Exception as err:
+			error(f'Error getting releases: {err}')
+		return releases
+
+
+	async def releases_export(self, release_type: type[WGBlitzRelease] = BSBlitzRelease, 
+								sample : float = 0) -> AsyncGenerator[BSBlitzRelease, None]:
+		"""Import relaseses from Mongo DB"""
+		try:
+			debug('starting')
+			dbc : AsyncIOMotorCollection = self.db[self.table_releases]
+						
+			rel	: BSBlitzRelease
+			async for release_obj in dbc.find():
 				try:
 					release_in = release_type.parse_obj(release_obj)
 					debug(f'Read {release_in} from {self.database}.{self.table_releases}')
@@ -725,9 +776,45 @@ class MongoBackend(Backend):
 	
 
 	# replay fields that can be searched: protagonist, battle_start_timestamp, account_id, vehicle_tier
-	async def replay_find(self, **kwargs) -> AsyncGenerator[WoTBlitzReplayJSON, None]:
-		"""Find a replay from backend based on search string"""
-		raise NotImplementedError
+	async def replays_get(self, since: date | None = None, protagonist: int | None = None
+							) ->  AsyncGenerator[WoTBlitzReplayJSON, None]:
+		"""Get replays from mongodb backend"""
+		try:
+			debug('starting')			
+			dbc : AsyncIOMotorCollection = self.db[self.table_replays]
+			query : dict[str, Any] = dict()
+
+			if since is not None:
+				query['d.s.bts'] = { '$gte': since }
+			if protagonist is not None:
+				query['d.s.p'] = protagonist
+			
+			async for replay_obj in dbc.find(query):
+				try:
+					yield WoTBlitzReplayJSON.parse_obj(replay_obj)
+				except Exception as err:
+					error(f'{err}')
+		except Exception as err:
+			error(f'Error exporting replays from {self.name}: {err}')	
+
+
+	# replay fields that can be searched: protagonist, battle_start_timestamp, account_id, vehicle_tier
+	async def replays_export(self, replay_type: type[WoTBlitzReplayJSON] = WoTBlitzReplayJSON) -> AsyncGenerator[WoTBlitzReplayJSON, None]:
+		"""Export replays from Mongo DB"""
+		try:
+			debug('starting')			
+			dbc : AsyncIOMotorCollection = self.db[self.table_replays]
+			
+			async for replay_obj in dbc.find():
+				try:
+					replay_in = replay_type.parse_obj(replay_obj)
+					debug(f'Read {replay_in} from {self.database}.{self.table_replays}')
+					yield WoTBlitzReplayJSON.parse_obj(replay_in.obj_db())
+				except Exception as err:
+					error(f'{err}')
+					continue			
+		except Exception as err:
+			error(f'Error exporting replays from {self.name}: {err}')	
 
 
 

@@ -301,6 +301,204 @@ class Backend(ABC):
 		assert is_alphanum_(new), f'Illegal characters in the table name: {new}'
 		self._T[table_type] = new
 
+
+	#----------------------------------------
+	# accounts
+	#----------------------------------------
+	
+	@abstractmethod
+	async def account_insert(self, account: BSAccount) -> bool:
+		"""Store account to the backend. Returns False 
+			if the account was not added"""
+		raise NotImplementedError
+	
+
+	@abstractmethod
+	async def account_get(self, account_id: int) -> BSAccount | None:
+		"""Get account from backend"""
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def account_update(self, account: BSAccount, upsert: bool = True) -> bool:
+		"""Update an account in the backend. Returns False 
+			if the account was not updated"""
+		raise NotImplementedError
+	
+
+	@abstractmethod
+	async def account_delete(self, account: BSAccount) -> bool:
+		"""Delete account from the backend. Returns False 
+			if the account was not found/deleted"""
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def accounts_get(self, stats_type : StatsTypes | None = None, 
+							regions: set[Region] = Region.API_regions(), 
+							inactive : OptAccountsInactive = OptAccountsInactive.default(), 
+							disabled: bool = False, 
+							dist : OptAccountsDistributed | None = None, 
+							sample : float = 0, 
+							cache_valid: int | None = None ) -> AsyncGenerator[BSAccount, None]:
+		"""Get accounts from backend"""
+		raise NotImplementedError
+		yield BSAccount(id=-1)
+	
+
+	@abstractmethod
+	async def accounts_count(self, stats_type : StatsTypes | None = None, 
+							regions: set[Region] = Region.API_regions(), 
+							inactive : OptAccountsInactive = OptAccountsInactive.default(), 	
+							disabled: bool = False, 
+							dist : OptAccountsDistributed | None = None, sample : float = 0, 
+							cache_valid: int | None = None ) -> int:
+		"""Get number of accounts from backend"""
+		raise NotImplementedError
+
+
+	async def accounts_get_worker(self, accountQ : Queue[BSAccount], **getargs) -> EventCounter:
+		debug('starting')
+		stats : EventCounter = EventCounter('accounts')
+		try:
+			async for account in self.accounts_get(**getargs):
+				await accountQ.put(account)
+				stats.log('queued')		
+		except CancelledError as err:
+			debug(f'Cancelled')
+		except Exception as err:
+			error(f'{err}')
+		return stats
+
+
+	@abstractmethod
+	async def accounts_insert(self, accounts: Iterable[BSAccount]) -> tuple[int, int]:
+		"""Store accounts to the backend. Returns number of accounts inserted and not inserted"""
+		raise NotImplementedError
+
+
+	async def accounts_insert_worker(self, accountQ : Queue[BSAccount], force: bool = False) -> EventCounter:
+		debug(f'starting, force={force}')
+		stats : EventCounter = EventCounter('accounts insert')
+		try:
+			while True:
+				account = await accountQ.get()
+				try:
+					if force:
+						debug(f'Trying to upsert account_id={account.id} into {self.backend}.{self.table_accounts}')
+						await self.account_update(account, upsert=True)
+					else:
+						debug(f'Trying to insert account_id={account.id} into {self.backend}.{self.table_accounts}')
+						await self.account_insert(account)
+					if force:
+						stats.log('accounts added/updated')
+					else:
+						stats.log('accounts added')
+				except Exception as err:
+					debug(f'Error: {err}')
+					stats.log('accounts not added')
+				finally:
+					accountQ.task_done()
+		except CancelledError as err:
+			debug(f'Cancelled')
+		except Exception as err:
+			error(f'{err}')
+		return stats
+
+
+	@abstractmethod
+	async def accounts_export(self, account_type: type[Account] = BSAccount, 
+								sample : float = 0) -> AsyncGenerator[BSAccount, None]:
+		"""import accounts"""
+		raise NotImplementedError
+		yield BSAccount()
+
+
+	#----------------------------------------
+	# Releases
+	#----------------------------------------
+
+	@abstractmethod
+	async def release_insert(self, release: BSBlitzRelease) -> bool:
+		"""Insert new release to the backend"""
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def release_get(self, release : str) -> BSBlitzRelease | None:
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def release_update(self, update: BSBlitzRelease, upsert=False) -> bool:
+		"""Update an release in the backend. Returns False 
+			if the release was not updated"""
+		raise NotImplementedError
+
+	
+	@abstractmethod
+	async def release_delete(self, release: BSBlitzRelease) -> bool:
+		"""Delete a release from backend"""
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def release_get_latest(self) -> BSBlitzRelease | None:
+		"""Get the latest release in the backend"""
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def release_get_current(self) -> BSBlitzRelease | None:
+		"""Get the latest release in the backend"""
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def releases_get(self, release_match: str | None = None, 
+							since : date | None = None, 
+							first : BSBlitzRelease | None = None) -> AsyncGenerator[BSBlitzRelease, None]:
+		raise NotImplementedError
+		yield BSBlitzRelease()
+
+
+	@abstractmethod	
+	async def releases_export(self, release_type: type[BSBlitzRelease] = BSBlitzRelease, 
+								sample: float = 0) -> AsyncGenerator[BSBlitzRelease, None]:
+		"""Import releases"""
+		raise NotImplementedError
+		yield BSBlitzRelease()
+
+
+	async def releases_insert_worker(self, releaseQ : Queue[BSBlitzRelease], force: bool = False) -> EventCounter:
+		debug(f'starting, force={force}')
+		stats : EventCounter = EventCounter('releases insert')
+		try:
+			while True:
+				release = await releaseQ.get()
+				try:
+					if force:
+						debug(f'Trying to upsert release={release.release} into {self.backend}.{self.table_releases}')
+						await self.release_update(release, upsert=True)
+					else:
+						debug(f'Trying to insert release={release.release} into {self.backend}.{self.table_releases}')
+						await self.release_insert(release)
+					if force:
+						stats.log('releases added/updated')
+					else:
+						stats.log('releases added')
+				except Exception as err:
+					debug(f'Error: {err}')
+					stats.log('releases not added')
+				finally:
+					releaseQ.task_done()
+		except CancelledError as err:
+			debug(f'Cancelled')
+		except Exception as err:
+			error(f'{err}')
+		return stats
+
+
 	#----------------------------------------
 	# replays
 	#----------------------------------------
@@ -317,79 +515,51 @@ class Backend(ABC):
 		raise NotImplementedError
 
 
+	@abstractmethod
+	async def replay_delete(self, replay_id: str | ObjectId) -> WoTBlitzReplayJSON | None:
+		"""Delete replay from backend based on replayID"""
+		raise NotImplementedError
+
+
 	# replay fields that can be searched: protagonist, battle_start_timestamp, account_id, vehicle_tier
 	@abstractmethod
-	async def replay_find(self, **kwargs) -> AsyncGenerator[WoTBlitzReplayJSON, None]:
-		"""Find a replay from backend based on search string"""
+	async def replays_get(self, protagonist: int | None = None,
+							since: date | None = None,
+							**summary_fields) -> AsyncGenerator[WoTBlitzReplayJSON, None]:
+		"""Get replays from backed"""
 		raise NotImplementedError
+		yield WoTBlitzReplayJSON()
 
-	#----------------------------------------
-	# accounts
-	#----------------------------------------
+
+	@abstractmethod
+	async def replays_count(self, protagonist: int | None = None,
+							since: date | None = None,
+							**summary_fields) -> int:
+		"""Get replays from backed"""
+		raise NotImplementedError
 	
-	@abstractmethod
-	async def account_get(self, account_id: int) -> BSAccount | None:
-		"""Get account from backend"""
-		raise NotImplementedError
-
 
 	@abstractmethod
-	async def accounts_get(self, stats_type : StatsTypes | None = None, 
-							regions: set[Region] = Region.API_regions(), 
-							inactive : OptAccountsInactive = OptAccountsInactive.default(), 	
-							disabled: bool = False, 
-							dist : OptAccountsDistributed | None = None, sample : float = 0, 
-							cache_valid: int | None = None ) -> AsyncGenerator[BSAccount, None]:
-		"""Get accounts from backend"""
-		raise NotImplementedError
-		yield BSAccount(id=-1)
+	async def replays_insert(self, replays: Iterable[WoTBlitzReplayJSON]) -> tuple[int, int]:
+		"""Store replays to the backend. Returns number of replays inserted and not inserted"""
+		raise NotImplementedError	
 
 
-	async def accounts_get_worker(self, accountQ : Queue[BSAccount], **kwargs) -> EventCounter:
-		debug('starting')
-		stats : EventCounter = EventCounter('accounts')
-		try:
-			async for account in self.accounts_get(**kwargs):
-				await accountQ.put(account)
-				stats.log('queued')		
-		except CancelledError as err:
-			debug(f'Cancelled')
-		except Exception as err:
-			error(f'{err}')
-		return stats
-
-	
-	@abstractmethod
-	async def accounts_export(self, account_type: type[Account] = BSAccount, 
-								regions: set[Region] = Region.has_stats(), 
-								sample : float = 0) -> AsyncGenerator[BSAccount, None]:
-		"""import accounts"""
-		raise NotImplementedError
-		yield BSAccount()
-
-
-	async def accounts_insert_worker(self, accountQ : Queue[BSAccount], force: bool = False) -> EventCounter:
+	async def replay_insert_worker(self, replayQ : Queue[WoTBlitzReplayJSON], force: bool = False) -> EventCounter:
 		debug(f'starting, force={force}')
-		stats : EventCounter = EventCounter('accounts insert')
+		stats : EventCounter = EventCounter('replays insert')
 		try:
 			while True:
-				account = await accountQ.get()
+				replay = await replayQ.get()
 				try:
-					if force:
-						debug(f'Trying to upsert account_id={account.id} into {self.driver}:{self.database}.{self.table_accounts}')
-						await self.account_update(account, upsert=True)
-					else:
-						debug(f'Trying to insert account_id={account.id} into {self.driver}:{self.database}.{self.table_accounts}')
-						await self.account_insert(account)
-					if force:
-						stats.log('accounts added/updated')
-					else:
-						stats.log('accounts added')
+					debug(f'Insertting replay={replay.id} into {self.backend}.{self.table_replays}')
+					await self.replay_insert(replay)					
+					stats.log('added')
 				except Exception as err:
 					debug(f'Error: {err}')
-					stats.log('accounts not added')
+					stats.log('not added')
 				finally:
-					accountQ.task_done()
+					replayQ.task_done()
 		except CancelledError as err:
 			debug(f'Cancelled')
 		except Exception as err:
@@ -397,59 +567,50 @@ class Backend(ABC):
 		return stats
 	
 
-	@abstractmethod
-	async def accounts_count(self, stats_type : StatsTypes | None = None, 
-							regions: set[Region] = Region.API_regions(), 
-							inactive : OptAccountsInactive = OptAccountsInactive.default(), 	
-							disabled: bool = False, 
-							dist : OptAccountsDistributed | None = None, sample : float = 0, 
-							cache_valid: int | None = None ) -> int:
-		"""Get number of accounts from backend"""
+	async def replays_export(self, replay_type: type[WoTBlitzReplayJSON] = WoTBlitzReplayJSON) -> AsyncGenerator[WoTBlitzReplayJSON, None]:			
+		"""Export replays from Mongo DB"""
 		raise NotImplementedError
+		yield WoTBlitzReplayJSON()
 
-
-	@abstractmethod
-	async def account_update(self, account: BSAccount, upsert: bool = True) -> bool:
-		"""Update an account in the backend. Returns False 
-			if the account was not updated"""
-		raise NotImplementedError
-
-
-	@abstractmethod
-	async def account_insert(self, account: BSAccount) -> bool:
-		"""Store account to the backend. Returns False 
-			if the account was not added"""
-		raise NotImplementedError
-	
-
-	@abstractmethod
-	async def accounts_insert(self, accounts: Iterable[BSAccount]) -> tuple[int, int]:
-		"""Store accounts to the backend. Returns number of accounts inserted and not inserted""" 			
-		raise NotImplementedError
 
 	#----------------------------------------
 	# tank stats
 	#----------------------------------------
 
 	@abstractmethod
+	async def tank_stat_insert(self, tank_stat: WGtankStat) -> bool:
+		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def tank_stat_get(self, account: BSAccount, 
+							tank_id: int | None, last_battle_time: int) -> WGtankStat | None:
+		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def tank_stat_delete(self, account: BSAccount, 
+								tank_id: int | None, last_battle_time: int) -> bool:
+		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
+		raise NotImplementedError
+
+
+	@abstractmethod
 	async def tank_stats_insert(self, tank_stats: Iterable[WGtankStat]) -> tuple[int, int]:
 		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
 		raise NotImplementedError
 
-	
-	@abstractmethod
-	async def tank_stats_update(self, tank_stats: list[WGtankStat], upsert: bool = False) -> tuple[int, int]:
-		"""Update or upsert tank stats to the backend. Returns number of stats updated and not updated"""
-		raise NotImplementedError
-
 
 	@abstractmethod
-	async def tank_stats_get(self, account: BSAccount, tank_id: int | None = None, 
-								last_battle_time: int | None = None) -> AsyncGenerator[WGtankStat, None]:
+	async def tank_stats_get(self, release: BSBlitzRelease | None = None,
+							regions: set[Region] = Region.API_regions(), 
+							sample : float = 0) -> AsyncGenerator[WGtankStat, None]:
 		"""Return tank stats from the backend"""
 		raise NotImplementedError
 
-	
+
 	@abstractmethod
 	async def tank_stats_count(self, release: BSBlitzRelease | None = None,
 							regions: set[Region] = Region.API_regions(), 
@@ -458,7 +619,22 @@ class Backend(ABC):
 		raise NotImplementedError
 
 
-	async def tank_stats_insert_worker(self, tank_statsQ : Queue[list[WGtankStat]], force: bool = False) -> EventCounter:
+	@abstractmethod
+	async def tank_stats_update(self, tank_stats: list[WGtankStat], upsert: bool = False) -> tuple[int, int]:
+		"""Update or upsert tank stats to the backend. Returns number of stats updated and not updated"""
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def tank_stats_export(self, replay_type: type[WGtankStat] = WGtankStat
+									) -> AsyncGenerator[WGtankStat, None]:
+		"""Export tank stats from Mongo DB"""
+		raise NotImplementedError
+		yield WGtankStat()
+
+
+	async def tank_stats_insert_worker(self, tank_statsQ : Queue[list[WGtankStat]], 
+										force: bool = False) -> EventCounter:
 		debug(f'starting, force={force}')
 		stats : EventCounter = EventCounter('tank-stats insert')
 		try:
@@ -491,89 +667,6 @@ class Backend(ABC):
 			error(f'{err}')
 		return stats
 
-
-	#----------------------------------------
-	# Releases
-	#----------------------------------------
-
-	@abstractmethod
-	async def release_get(self, release : str) -> BSBlitzRelease | None:
-		raise NotImplementedError
-	
-
-	@abstractmethod
-	async def releases_get(self, release: str | None = None, since : date | None = None, 
-							first : BSBlitzRelease | None = None) -> list[BSBlitzRelease]:
-		raise NotImplementedError
-
-
-	@abstractmethod	
-	async def releases_export(self, release_type: type[WGBlitzRelease] = BSBlitzRelease,
-							 	release: str | None = None, since : date | None = None, 
-								first : BSBlitzRelease | None = None) -> AsyncGenerator[BSBlitzRelease, None]:
-		"""Import releases"""
-		raise NotImplementedError
-		yield BSBlitzRelease()
-
-
-	@abstractmethod
-	async def release_get_latest(self) -> BSBlitzRelease | None:
-		"""Get the latest release in the backend"""
-		raise NotImplementedError
-
-
-	@abstractmethod
-	async def release_get_current(self) -> BSBlitzRelease | None:
-		"""Get the latest release in the backend"""
-		raise NotImplementedError
-
-
-	@abstractmethod
-	async def release_update(self, update: BSBlitzRelease, upsert=False) -> bool:
-		"""Update an release in the backend. Returns False 
-			if the release was not updated"""
-		raise NotImplementedError
-
-
-	@abstractmethod
-	async def release_insert(self, release: BSBlitzRelease) -> bool:
-		"""Insert new release to the backend"""
-		raise NotImplementedError
-
-	
-	@abstractmethod
-	async def release_delete(self, release: BSBlitzRelease) -> bool:
-		"""Delete a release from backend"""
-		raise NotImplementedError
-	
-
-	async def releases_insert_worker(self, releaseQ : Queue[BSBlitzRelease], force: bool = False) -> EventCounter:
-		debug(f'starting, force={force}')
-		stats : EventCounter = EventCounter('accounts insert')
-		try:
-			while True:
-				release = await releaseQ.get()
-				try:
-					if force:
-						debug(f'Trying to upsert release={release.release} into {self.backend}.{self.table_releases}')
-						await self.release_update(release, upsert=True)
-					else:
-						debug(f'Trying to insert release={release.release} into {self.backend}.{self.table_releases}')
-						await self.release_insert(release)
-					if force:
-						stats.log('releases added/updated')
-					else:
-						stats.log('releases added')
-				except Exception as err:
-					debug(f'Error: {err}')
-					stats.log('releases not added')
-				finally:
-					releaseQ.task_done()
-		except CancelledError as err:
-			debug(f'Cancelled')
-		except Exception as err:
-			error(f'{err}')
-		return stats
 
 	#----------------------------------------
 	# ErrorLog

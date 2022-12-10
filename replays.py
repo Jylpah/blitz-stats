@@ -21,8 +21,9 @@ WI_MAX_PAGES 	: int 				= 100
 WI_MAX_OLD_REPLAYS: int 			= 30
 WI_RATE_LIMIT	: Optional[float] 	= 20/3600
 WI_AUTH_TOKEN	: Optional[str] 	= None
-ACCOUNTS_Q_MAX 	: int				= 100
-ACCOUNT_Q_MAX 	: int				= 5000
+REPLAY_Q_MAX : int 					= 500
+# ACCOUNTS_Q_MAX 	: int				= 100
+# ACCOUNT_Q_MAX 	: int				= 5000
 
 ###########################################
 # 
@@ -104,34 +105,25 @@ def add_args_replays_export_find(parser: ArgumentParser, config: Optional[Config
 
 def add_args_replays_import(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
-		parser.add_argument('--replace', action='store_true', default=False, 
-							dest='replay_import_replace', 
-							help='Replace existing documents in the backend with the same primary key')
-		# Add selection --id | --all
-		replays_import_parsers = parser.add_subparsers(dest='replays_import_source', 	
-														title='replays import source',
-														description='valid import sources', 
+		import_parsers = parser.add_subparsers(dest='replays_import_backend', 	
+														title='replays import backend',
+														description='valid import backends', 
 														metavar=' | '.join(Backend.list_available()))
-		replays_import_parsers.required = True
+		import_parsers.required = True
 		
-		replays_import_mongodb_parser = replays_import_parsers.add_parser('mongodb', help='replays import mongodb help')
-		if not add_args_replays_import_mongodb(replays_import_mongodb_parser, config=config):
-			raise Exception("Failed to define argument parser for: replays import mongodb")
-		
-		## Not implemented yet
-		# replays_export_find_parser = replays_export_parsers.add_parser('find', help='replays export find help')
-		# if not add_args_replays_export_find(replays_export_find_parser, config=config):
-		# 	raise Exception("Failed to define argument parser for: replays export find")		
-		
+		for backend in Backend.get_registered():
+			import_parser =  import_parsers.add_parser(backend.driver, help=f'replays import {backend.driver} help')
+			if not backend.add_args_import(import_parser, config=config):
+				raise Exception(f'Failed to define argument parser for: replays import {backend.driver}')
+
+		parser.add_argument('--sample', type=float, default=0, help='Sample size')
+		parser.add_argument('--force', action='store_true', default=False, 
+							help='Overwrite existing file(s) when exporting')
+				
 		return True	
 	except Exception as err:
-		error(f'add_args_replays_export() : {err}')
+		error(f'add_args_replays_import() : {err}')
 	return False
-
-
-def add_args_replays_import_mongodb(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
-	return True
-	raise NotImplementedError
 
 
 ###########################################
@@ -154,6 +146,8 @@ async def cmd_replays(db: Backend, args : Namespace) -> bool:
 				return await cmd_replays_export_find(db, args)
 			else:
 				error('replays: unknown or missing subcommand')
+		elif args.replays_cmd == 'import':
+			return await cmd_replays_import(db, args)
 
 	except Exception as err:
 		error(f'{err}')
@@ -184,4 +178,51 @@ async def replays_export_files(args: Namespace, replays: Iterable[WoTBlitzReplay
 
 async def cmd_replays_export_find(db: Backend, args : Namespace) -> bool:
 	raise NotImplementedError
+	return False
+
+
+async def  cmd_replays_import(db: Backend, args : Namespace) -> bool:
+	"""Import replays from other backend"""	
+	try:
+		stats 		: EventCounter 			= EventCounter('replays import')
+		replayQ 	: Queue[WoTBlitzReplayJSON]	= Queue(REPLAY_Q_MAX)
+		config 		: ConfigParser | None 	= None
+		sample  	: float 				= args.sample
+
+		importer : Task = create_task(db.releases_insert_worker(releaseQ=releaseQ, force=args.force))
+
+		if args.import_config is not None and isfile(args.import_config):
+			debug(f'Reading config from {args.config}')
+			config = ConfigParser()
+			config.read(args.config)
+
+		kwargs : dict[str, Any] = Backend.read_args(args, args.releases_import_backend)
+		if (import_db:= Backend.create(args.releases_import_backend, 
+										config=config, copy_from=db, **kwargs)) is not None:
+			if args.import_table is not None:
+				import_db.set_table(BSTableType.Releases, args.import_table)
+			elif db == import_db and db.table_releases == import_db.table_releases:
+				raise ValueError('Cannot import from itself')
+		else:
+			raise ValueError(f'Could not init {args.releases_import_backend} to import releases from')
+
+		release_type: type[WGBlitzRelease] = globals()[args.import_type]
+		assert issubclass(release_type, WGBlitzRelease), "--import-type has to be subclass of blitzutils.models.WGBlitzRelease" 
+
+		async for release in import_db.releases_export(release_type=release_type, since=since, 
+														release=releases):
+			await releaseQ.put(release)
+			stats.log('read')
+
+		await releaseQ.join()
+		importer.cancel()
+		worker_res : tuple[EventCounter|BaseException] = await gather(importer,return_exceptions=True)
+		if type(worker_res[0]) is EventCounter:
+			stats.merge_child(worker_res[0])
+		elif type(worker_res[0]) is BaseException:
+			error(f'releases insert worker threw an exception: {worker_res[0]}')
+		stats.print()
+		return True
+	except Exception as err:
+		error(f'{err}')	
 	return False
