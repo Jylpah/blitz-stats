@@ -363,7 +363,8 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 			task.cancel()
 		
 		for ec in await gather(*tasks, return_exceptions=True):
-			stats.merge_child(ec)
+			if issubclass(EventCounter, ec):
+				stats.merge_child(ec)
 		message(stats.print(do_print=False))
 		return True
 	except Exception as err:
@@ -377,6 +378,7 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 				message(f'{server.capitalize():7s}: {wg_stats[server]}')
 		await wg.close()
 	return False
+
 
 async def update_tank_stats_api_worker(db: Backend, wg_api : WGApi, regions: set[Region], 
 										accountQ: Queue[BSAccount], 
