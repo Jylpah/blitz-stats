@@ -5,9 +5,10 @@ import logging
 from asyncio import create_task, gather, wait, Queue, CancelledError, Task, sleep
 from aiofiles import open
 from os.path import isfile
+from sys import stdout
 
 from alive_progress import alive_bar		# type: ignore
-from sys import stdout
+from bson import ObjectId
 
 from csv import DictWriter, DictReader, Dialect, Sniffer, excel
 
@@ -86,6 +87,9 @@ def add_args_accounts_update(parser: ArgumentParser, config: Optional[ConfigPars
 		if not add_args_accounts_update_files(accounts_update_files_parser, config=config):
 			raise Exception("Failed to define argument parser for: accounts update files")		
 		
+		parser.add_argument('--force', action='store_true', default=False, 
+							help='Ignore existing accounts exporting')
+		
 		return True	
 	except Exception as err:
 		error(f'{err}')
@@ -108,7 +112,6 @@ def add_args_accounts_update_wi(parser: ArgumentParser, config: Optional[ConfigP
 			WI_MAX_PAGES	= configWI.getint('max_pages', WI_MAX_PAGES)
 			WI_WORKERS		= configWI.getint('workers', WI_WORKERS)
 			WI_AUTH_TOKEN	= configWI.get('auth_token', WI_AUTH_TOKEN)
-
 		parser.add_argument('--max', '--max-pages', dest='wi_max_pages', 
 							type=int, default=WI_MAX_PAGES, metavar='MAX_PAGES',
 							help='Maximum number of pages to spider')
@@ -141,7 +144,6 @@ def add_args_accounts_update_files(parser: ArgumentParser, config: Optional[Conf
 		if config is not None and 'ACCOUNTS' in config.sections():
 			configAccs 	= config['ACCOUNTS']
 			IMPORT_FORMAT	= configAccs.get('import_format', IMPORT_FORMAT)
-
 		parser.add_argument('--format', type=str, choices=['json', 'txt', 'csv', 'auto'], 
 							default=IMPORT_FORMAT, help='Accounts list file format')
 		parser.add_argument('files', metavar='FILE1 [FILE2 ...]', type=str, nargs='*', 
@@ -439,7 +441,7 @@ async def cmd_accounts_update_wi(db: Backend, args : Namespace, accountQ : Queue
 
 
 async def accounts_update_wi_spider_replays(db: Backend, wi: WoTinspector, args: Namespace,
-                                           replay_idQ: Queue[str], pages: range) -> EventCounter:
+											replay_idQ: Queue[str], pages: range) -> EventCounter:
 	"""Spider replays.WoTinspector.com and feed found replay IDs into replayQ. Return stats"""
 	debug('starting')
 	stats			: EventCounter = EventCounter('Crawler')
@@ -468,7 +470,7 @@ async def accounts_update_wi_spider_replays(db: Backend, wi: WoTinspector, args:
 					if len(replay_ids) == 0:
 						break
 					for replay_id in replay_ids:
-						res: WoTBlitzReplayJSON | None = await db.replay_get(replay_id)
+						res: WoTBlitzReplayJSON | None = await db.replay_get(replay_id=replay_id)
 						if res is not None:
 							debug(f'Replay already in the {db.backend}: {replay_id}')
 							stats.log('old replays found')
@@ -499,9 +501,7 @@ async def accounts_update_wi_fetch_replays(db: Backend, wi: WoTinspector, replay
 			replay_id = await replay_idQ.get()
 			try:
 				url : str = wi.get_url_replay_JSON(replay_id)
-				replay : WoTBlitzReplayJSON | None = cast(WoTBlitzReplayJSON, 
-														await get_url_JSON_model(wi.session, url, 
-																			WoTBlitzReplayJSON ))
+				replay : WoTBlitzReplayJSON | None = await get_url_JSON_model(wi.session, url, WoTBlitzReplayJSON )
 				if replay is None:
 					verbose(f'Could not fetch replay id: {replay_id}')
 					continue

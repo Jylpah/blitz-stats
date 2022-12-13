@@ -3,7 +3,7 @@ from enum import StrEnum
 from sys import maxsize
 # from datetime import datetime
 from time import time
-# from typing import Any, Mapping, Optional, Tuple
+from typing import Optional, ClassVar
 # from bson.objectid import ObjectId
 # from bson.int64 import Int64
 # from isort import place_module
@@ -14,11 +14,11 @@ from pydantic import validator, Field, HttpUrl
 
 import logging
 # import aiofiles
-from collections import defaultdict
+# from collections import defaultdict
 
 from blitzutils.models import Region, Account, WGBlitzRelease
 	# type: ignore
-from pyutils.utils import epoch_now
+from pyutils.utils import epoch_now, TypeExcludeDict
 
 TYPE_CHECKING = True
 logger 	= logging.getLogger()
@@ -119,6 +119,8 @@ class BSAccount(Account):
 
 class BSBlitzRelease(WGBlitzRelease):
 	cut_off: int 	= Field(default=maxsize)
+
+	# _excluide_export_DB_fields	: ClassVar[Optional[TypeExcludeDict]] = { 'cut_off': False }
 
 	# class Config:		
 	# 	allow_mutation 			= True

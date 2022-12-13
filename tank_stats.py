@@ -8,7 +8,7 @@ from os.path import isfile
 from asyncstdlib import enumerate
 from alive_progress import alive_bar		# type: ignore
 
-from backend import Backend, OptAccountsInactive, ACCOUNTS_Q_MAX, CACHE_VALID
+from backend import Backend, OptAccountsInactive, ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL
 from models import BSAccount, BSBlitzRelease, StatsTypes
 from pyutils import BucketMapper, CounterQueue, EventCounter
 from pyutils.utils import get_url, get_url_JSON_model, epoch_now
@@ -406,7 +406,7 @@ async def update_tank_stats_api_worker(db: Backend, wg_api : WGApi, regions: set
 					else:
 						stats.log('accounts w/o stats')
 						account.disabled = True
-						await db.account_update(account=account)
+						await db.account_update(account=account, fields=['disabled'])
 						stats.log('accounts disabled')
 				else:
 					
@@ -415,7 +415,7 @@ async def update_tank_stats_api_worker(db: Backend, wg_api : WGApi, regions: set
 					stats.log('accounts /w stats')
 					if check_invalid:
 						account.disabled = False
-						await db.account_update(account=account)
+						await db.account_update(account=account, fields=['disabled'])
 						stats.log('accounts enabled')
 
 			except Exception as err:
@@ -444,7 +444,7 @@ async def update_tank_stats_worker(db: Backend, statsQ: Queue[list[WGtankStat]])
 
 	try:
 		releases : BucketMapper[BSBlitzRelease] = BucketMapper[BSBlitzRelease](attr='cut_off')
-		for r in await db.releases_get():
+		async for r in db.releases_get():
 			releases.insert(r)
 		while True:
 			tank_stats : list[WGtankStat] = await statsQ.get()			
@@ -456,10 +456,10 @@ async def update_tank_stats_worker(db: Backend, statsQ: Queue[list[WGtankStat]])
 				if len(tank_stats) > 0:
 					debug(f'Read {len(tank_stats)} from queue')
 					last_battle_time = max( [ ts.last_battle_time for ts in tank_stats] )
-					for stat in tank_stats:
-						rel : BSBlitzRelease | None = releases.get(stat.last_battle_time)
+					for ts in tank_stats:
+						rel : BSBlitzRelease | None = releases.get(ts.last_battle_time)
 						if rel is not None:
-							stat.release = rel.release
+							ts.release = rel.release
 					added, not_added = await db.tank_stats_insert(tank_stats)	
 					account_id = tank_stats[0].account_id
 					if (account := await db.account_get(account_id=account_id)) is None:
@@ -478,7 +478,7 @@ async def update_tank_stats_worker(db: Backend, statsQ: Queue[list[WGtankStat]])
 								stats.log('accounts marked inactive')
 							account.inactive = True
 						
-					await db.account_update(account=account)
+					await db.account_replace(account=account, upsert=True)
 			except Exception as err:
 				error(f'{err}')
 			finally:

@@ -8,7 +8,7 @@ import logging
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCursor, AsyncIOMotorCollection # type: ignore
 from pymongo.results import InsertManyResult, InsertOneResult, UpdateResult, DeleteResult
-from pymongo.errors import BulkWriteError
+from pymongo.errors import BulkWriteError, CollectionInvalid
 from pymongo import DESCENDING, ASCENDING
 from pydantic import BaseModel, ValidationError, Field
 
@@ -51,7 +51,7 @@ O = TypeVar('O', bound=JSONExportable)
 
 class MongoBackend(Backend):
 
-	name : str = 'mongodb'
+	driver : str = 'mongodb'
 	# default_db : str = 'BlitzStats'	
 
 	def __init__(self, config: ConfigParser | None = None, **kwargs):
@@ -180,7 +180,7 @@ class MongoBackend(Backend):
 	@classmethod
 	def read_args(cls, args : Namespace, backend: str) -> dict[str, Any]:
 		debug('starting')
-		if backend != cls.name:
+		if backend != cls.driver:
 			raise ValueError(f'calling {cls}.read_args() for {backend} backend')
 		kwargs : dict[str, Any] = dict()
 		if args.import_host is not None:
@@ -193,7 +193,13 @@ class MongoBackend(Backend):
 
 	@property
 	def backend(self) -> str:
-		return f'{self.driver}://{self._client.HOST}/{self.database}'
+		host : str = 'UNKNOWN'
+		try:
+			host, port = self._client.address
+			return f'{self.driver}://{host}:{port}/{self.database}'
+		except Exception as err:
+			error(f'Error determing host')
+		return f'{self.driver}://{host}/{self.database}'
 
 
 	def __eq__(self, __o: object) -> bool:
@@ -212,55 +218,83 @@ class MongoBackend(Backend):
 
 			try:
 				DBC = self.table_accounts
+				try:
+					self.db.create_collection('DBC')
+					debug(f'Collection created: {DBC}')
+				except CollectionInvalid:
+					debug(f'Collection exists: {DBC}')
 				dbc = self.db[DBC]
 
 				verbose(f'Adding index: {DBC}: [ region, inactive, disabled]')
 				await dbc.create_index([ ('r', DESCENDING), ('i', DESCENDING), 
 										 ('d', DESCENDING) ], background=True)
 			except Exception as err:
-				error(f'{self.name}: Could not init collection {DBC} for accounts: {err}')	
+				error(f'{self.backend}: Could not init collection {DBC} for accounts: {err}')	
 			
 			try:
 				DBC = self.table_releases
+				try:
+					self.db.create_collection('DBC')
+					debug(f'Collection created: {DBC}')
+				except CollectionInvalid:
+					debug(f'Collection exists: {DBC}')
 				dbc = self.db[DBC]
 
 				verbose(f'Adding index: {DBC}: [ release: -1, launch_date: -1]')
-				await dbc.create_index([ ('release', DESCENDING), ('launch_date', DESCENDING)], background=True)
+				await dbc.create_index([ ('_id', DESCENDING), ('launch_date', DESCENDING)], background=True)
 			except Exception as err:
-				error(f'{self.name}: Could not init collection {DBC} for releases: {err}')
+				error(f'{self.backend}: Could not init collection {DBC} for releases: {err}')
 
 			try:
 				DBC = self.table_replays
+				try:
+					self.db.create_collection('DBC')
+					debug(f'Collection created: {DBC}')
+				except CollectionInvalid:
+					debug(f'Collection exists: {DBC}')
 				dbc = self.db[DBC]
 
 				verbose(f'Adding index: {DBC}: [ data.summary.protagonist, data.summary.room_type, data.summary.vehicle_tier]')
 				await dbc.create_index([ ('d.s.p', DESCENDING), ('d.s.rt', DESCENDING), 
 										 ('d.s.vx', DESCENDING) ], background=True)
 			except Exception as err:
-				error(f'{self.name}: Could not init collection {DBC} for replays: {err}')
+				error(f'{self.backend}: Could not init collection {DBC} for replays: {err}')
 
 			try:
 				DBC = self.table_tank_stats
+				try:
+					self.db.create_collection('DBC')
+					debug(f'Collection created: {DBC}')
+				except CollectionInvalid:
+					debug(f'Collection exists: {DBC}')
 				dbc = self.db[DBC]
 
-				verbose(f'Adding index: {DBC}: [ tank_id, account_id, last_battle_time]')
+				verbose(f'Adding index: {DBC}: [ account_id, tank_id, last_battle_time]')
 				await dbc.create_index([ ('a', DESCENDING), ('t', DESCENDING),
 										 ('lb', DESCENDING) ], background=True)
+				verbose(f'Adding index: {DBC}: [ region, account_id, last_battle_time]')
+				await dbc.create_index([ ('r', DESCENDING), ('a', DESCENDING), 
+										 ('lb', DESCENDING) ], background=True)
 			except Exception as err:
-				error(f'{self.name}: Could not init collection {DBC} for tank_stats: {err}')
+				error(f'{self.backend}: Could not init collection {DBC} for tank_stats: {err}')
 
 			try:
 				DBC = self.table_player_achievements
+				try:
+					self.db.create_collection('DBC')
+					debug(f'Collection created: {DBC}')
+				except CollectionInvalid:
+					debug(f'Collection exists: {DBC}')
 				dbc = self.db[DBC]
 
 				verbose(f'Adding index: {DBC}: [ account_id, updated]')
 				# await dbc.create_index([ ('a', DESCENDING), ('u', DESCENDING)], background=True)
 			except Exception as err:
-				error(f'{self.name}: Could not init collection {DBC} for player_achievements: {err}')
+				error(f'{self.backend}: Could not init collection {DBC} for player_achievements: {err}')
 
 
 		except Exception as err:
-			error(f'Error initializing {self.name}: {err}')
+			error(f'Error initializing {self.backend}: {err}')
 		return False
 
 
@@ -285,21 +319,6 @@ class MongoBackend(Backend):
 	# 		error(f'{self.backend}: {err}')
 	# 	return None
 
-
-	async def _data_get(self, dbc : AsyncIOMotorCollection, 
-						data_type: type[D], 
-						id: I) -> Optional[D]:
-		"""Generic method to get one object of data_type"""
-		try:
-			debug('starting')			
-			return data_type.parse_obj(await dbc.find_one({ '_id': id}))
-		except ValidationError as err:
-			error(f'Could not validate {type(data_type)} _id={id} from {self.backend}.{dbc.name}: {err}')
-			await self.error_log(MongoErrorLog(table=dbc.name, doc_id=id, type=ErrorLogType.ValidationError))
-		except Exception as err:
-			error(f'Error getting {type(data_type)} _id={id} from {self.backend}.{dbc.name}: {err}')
-		return None
-
 	
 	async def _data_insert(self, dbc : AsyncIOMotorCollection, data: D) -> bool:  		# type: ignore
 		"""Generic method to get one object of data_type"""
@@ -313,6 +332,25 @@ class MongoBackend(Backend):
 		return False
 
 	
+	async def _data_get(self, dbc : AsyncIOMotorCollection, 
+						data_type: type[D], 
+						id: I) -> Optional[D]:
+		"""Generic method to get one object of data_type"""
+		try:
+			debug('starting')
+			res : Any = await dbc.find_one({ '_id': id})
+			if res is not None:
+				return data_type.parse_obj(res)
+			else: 
+				return None
+		except ValidationError as err:
+			error(f'Could not validate {type(data_type)} _id={id} from {self.backend}.{dbc.name}: {err}')
+			await self.error_log(MongoErrorLog(table=dbc.name, doc_id=id, type=ErrorLogType.ValidationError))
+		except Exception as err:
+			error(f'Error getting {type(data_type)} _id={id} from {self.backend}.{dbc.name}: {err}')
+		return None
+
+
 	async def _data_update(self, dbc : AsyncIOMotorCollection, id: I, update: dict) -> bool:
 		"""Generic method to update an object of data_type"""
 		try:
@@ -403,7 +441,7 @@ class MongoBackend(Backend):
 				try:
 					yield data_type.parse_obj(obj)
 				except ValidationError as err:
-					error(f'Could not validate {type(data_type)} ob={obj} from {self.backend}.{dbc.name}: {err}')
+					error(f'Could not validate {type(data_type)} ob={obj._id} from {self.backend}.{dbc.name}: {err}')
 				except Exception as err:
 					error(f'{err}')
 		except Exception as err:
@@ -498,7 +536,7 @@ class MongoBackend(Backend):
 
 	async def account_update(self, account: BSAccount, 
 							 update: dict | None = None, 
-							 fields: list[str] | None= None) -> bool:
+							 fields: list[str] | None = None) -> bool:
 		"""Update an account in the backend. Returns False 
 			if the account was not updated"""
 		try: 
@@ -525,6 +563,7 @@ class MongoBackend(Backend):
 
 	async def account_delete(self, account_id: int) -> bool:
 		"""Deleta account from MongoDB backend"""
+		debug('starting')
 		return await self._data_delete(self.db[self.table_accounts], id=account_id)
 
 
@@ -648,7 +687,7 @@ class MongoBackend(Backend):
 				update_field = stats_type.value
 
 			if pipeline is None:
-				raise ValueError(f'could not create get-accounts {self.name} cursor')
+				raise ValueError(f'could not create get-accounts {self.backend}.{self.table_accounts} cursor')
 
 			async for player in self._datas_get(self.db[self.table_accounts], BSAccount, pipeline):
 				try:					
@@ -729,6 +768,7 @@ class MongoBackend(Backend):
 	async def accounts_export(self, account_type: type[Account] = BSAccount, 
 								sample : float = 0) -> AsyncGenerator[BSAccount, None]:
 		"""Import accounts from Mongo DB"""
+		debug('starting')
 		async for account in self._datas_export(self.db[self.table_accounts], 
 												in_type=account_type, 
 												out_type=BSAccount, 
@@ -768,6 +808,7 @@ class MongoBackend(Backend):
 
 	async def accounts_insert(self, accounts: Iterable[BSAccount]) -> tuple[int, int]:
 		"""Store account to the backend. Returns the number of added and not added"""
+		debug('starting')
 		return await self._datas_insert(self.db[self.table_accounts], accounts)
 
 ########################################################
@@ -801,10 +842,9 @@ class MongoBackend(Backend):
 
 	async def release_get_latest(self) -> BSBlitzRelease | None:
 		"""Get the latest release in the backend"""
+		debug('starting')
 		rel : BSBlitzRelease | None = None
 		try:
-			debug('starting')
-			# DBC : str = self.table_releases
 			dbc : AsyncIOMotorCollection = self.db[self.table_releases]
 			async for r in dbc.find().sort('launch_date', DESCENDING):
 				rel = BSBlitzRelease.parse_obj(r)
@@ -813,15 +853,15 @@ class MongoBackend(Backend):
 		except ValidationError as err:
 			error(f'Incorrect data format: {err}')
 		except Exception as err:
-			error(f'Could not find the latest release from {self.name}:{self.database}.{self.table_releases}: {err}')
+			error(f'Could not find the latest release from {self.backend}.{self.table_releases}: {err}')
 		return None
 
 
 	async def release_get_current(self) -> BSBlitzRelease | None:
 		"""Get the latest release in the backend"""
-		rel : BSBlitzRelease | None = None
+		debug('starting')		
 		try:
-			debug('starting')
+			
 			dbc : AsyncIOMotorCollection = self.db[self.table_releases]
 			async for r in dbc.find({ 'launch_date': { '$lte': date.today() } }).sort('launch_date', ASCENDING):
 				return BSBlitzRelease.parse_obj(r)
@@ -834,11 +874,13 @@ class MongoBackend(Backend):
 
 	async def release_insert(self, release: BSBlitzRelease) -> bool:
 		"""Insert new release to the backend"""
-		return await self._data_insert(self.db[self.table_releases], release)
+		debug('starting')
+		return await self._data_insert(self.db[self.table_releases], data=release)
 
 
 	async def release_delete(self, release: str) -> bool:
 		"""Delete a release from backend"""
+		debug('starting')
 		return await self._data_delete(self.db[self.table_releases], id=release)
 
 
@@ -969,10 +1011,12 @@ class MongoBackend(Backend):
 	async def releases_export(self, release_type: type[WGBlitzRelease] = BSBlitzRelease, 
 							sample : float = 0) -> AsyncGenerator[BSBlitzRelease, None]:
 		"""Import relaseses from Mongo DB"""
+		debug('starting')
 		async for release in self._datas_export(self.db[self.table_releases], 
 												in_type=release_type, 
 												out_type=BSBlitzRelease, 
 												sample=sample):
+			debug(f'Exporting release {release}: {release.json_src()}')
 			yield release
 
 
@@ -1008,14 +1052,15 @@ class MongoBackend(Backend):
 	
 
 
-	async def replay_get(self, replay_id:  ObjectId) -> WoTBlitzReplayJSON | None:
+	async def replay_get(self, replay_id: str) -> WoTBlitzReplayJSON | None:
 		"""Get replay from backend"""
 		debug('starting')			
 		return await self._data_get(self.db[self.table_replays], WoTBlitzReplayJSON, id=replay_id)
 		
 
-	async def replay_delete(self, replay_id: ObjectId) -> bool:
+	async def replay_delete(self, replay_id: str) -> bool:
 		"""Delete a replay from backend"""
+		debug('starting')
 		return await self._data_delete(self.db[self.table_replays], id=replay_id)	
 
 
@@ -1029,7 +1074,7 @@ class MongoBackend(Backend):
 									**summary_fields) -> list[dict[str, Any]]:
 		"""Build pipeline for replays"""
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
-
+		debug('starting')
 		match : list[dict[str, str|int|float|dict|list]] = list()
 		pipeline : list[dict[str, Any]] = list()
 		dbc : AsyncIOMotorCollection = self.db[self.table_replays]
@@ -1061,6 +1106,7 @@ class MongoBackend(Backend):
 	async def replays_get(self, since: date | None = None, sample : float = 0,
 							**summary_fields) ->  AsyncGenerator[WoTBlitzReplayJSON, None]:
 		"""Get replays from mongodb backend"""
+		debug('starting')
 		try:
 			debug('starting')
 			pipeline : list[dict[str, Any]] 
@@ -1068,7 +1114,7 @@ class MongoBackend(Backend):
 			async for replay in self._datas_get(self.db[self.table_replays], WoTBlitzReplayJSON, pipeline):
 				yield replay
 		except Exception as err:
-			error(f'Error exporting replays from {self.name}: {err}')	
+			error(f'Error exporting replays from {self.backend}.{self.table_replays}: {err}')	
 
 
 	async def replays_count(self, since: date | None = None, sample : float = 0,
@@ -1080,7 +1126,7 @@ class MongoBackend(Backend):
 			return await self._datas_count(self.db[self.table_replays], pipeline)
 
 		except Exception as err:
-			error(f'Error exporting replays from {self.name}: {err}')
+			error(f'Error exporting replays from {self.backend}.{self.table_replays}: {err}')
 		return -1
 
 	# # replay fields that can be searched: protagonist, battle_start_timestamp, account_id, vehicle_tier
@@ -1105,6 +1151,7 @@ class MongoBackend(Backend):
 	async def replays_export(self, replay_type: type[WoTBlitzReplayJSON] = WoTBlitzReplayJSON,
 								sample: float = 0) -> AsyncGenerator[WoTBlitzReplayJSON, None]:
 		"""Export replays from Mongo DB"""
+		debug('starting')
 		async for replay in self._datas_export(self.db[self.table_replays], 
 												in_type=replay_type, 
 												out_type=WoTBlitzReplayJSON, 
@@ -1180,10 +1227,10 @@ class MongoBackend(Backend):
 
 			if regions != Region.has_stats():
 				match.append({ 'r' : { '$in' : [ r.value for r in regions ]} })
-			if tanks is not None:
-				match.append({ 't': { '$in': [ t.tank_id for t in tanks ]}})
 			if accounts is not None:
 				match.append({ 'a': { '$in': [ a.id for a in accounts ]}})
+			if tanks is not None:
+				match.append({ 't': { '$in': [ t.tank_id for t in tanks ]}})
 			if release is not None:
 				match.append({ 'u': release.release })
 
@@ -1202,10 +1249,10 @@ class MongoBackend(Backend):
 
 	
 	async def tank_stats_get(self, release: BSBlitzRelease | None = None,
-							regions: set[Region] = Region.API_regions(), 
+							regions : set[Region] = Region.API_regions(), 
 							accounts: Iterable[Account] | None = None,
-							tanks: Iterable[Tank] | None = None, 
-							sample : float = 0) -> AsyncGenerator[WGtankStat, None]:
+							tanks 	: Iterable[Tank] | None = None, 
+							sample 	: float = 0) -> AsyncGenerator[WGtankStat, None]:
 		"""Return tank stats from the backend"""
 		try:
 			debug('starting')
@@ -1248,7 +1295,7 @@ class MongoBackend(Backend):
 														sample=sample)
 
 				if pipeline is None:
-					raise ValueError(f'could not create get-accounts {self.name} cursor')
+					raise ValueError(f'could not create get-accounts {self.backend}.{self.table_accounts} cursor')
 				return await self._datas_count(dbc, pipeline)
 		except Exception as err:
 			error(f'counting accounts failed: {err}')
@@ -1283,6 +1330,7 @@ class MongoBackend(Backend):
 
 	async def tank_stats_insert(self, tank_stats: Iterable[WGtankStat]) -> tuple[int, int]:
 		"""Store tank stats to the backend. Returns the number of added and not added"""
+		debug('starting')
 		return await self._datas_insert(self.db[self.table_tank_stats], tank_stats)
 
 
@@ -1319,6 +1367,7 @@ class MongoBackend(Backend):
 	async def tank_stats_export(self, tank_stat_type: type[WGtankStat] = WGtankStat, 
 								sample: float = 0) -> AsyncGenerator[WGtankStat, None]:
 		"""Export tank stats from Mongo DB"""
+		debug('starting')
 		async for tank_stat in self._datas_export(self.db[self.table_tank_stats], 
 												in_type=tank_stat_type, 
 												out_type=WGtankStat, 
@@ -1387,7 +1436,7 @@ class MongoBackend(Backend):
 			await dbc.insert_one(error.obj_db())
 			return True
 		except Exception as err:
-			debug(f'Could not log error: {error.table}: "{error.msg}" into {self.name}:{self.database}.{self.table_error_log}: {err}')	
+			debug(f'Could not log error: {error.table}: "{error.msg}" into {self.backend}.{self.table_error_log}: {err}')	
 		return False
 
 
@@ -1395,8 +1444,7 @@ class MongoBackend(Backend):
 							after: datetime | None = None) -> AsyncGenerator[ErrorLog, None]:
 		"""Return errors from backend ErrorLog"""
 		try:
-			debug('starting')
-			
+			debug('starting')			
 			dbc : AsyncIOMotorCollection = self.db[self.table_error_log]
 			query : dict[str, Any] = dict()
 
@@ -1411,14 +1459,14 @@ class MongoBackend(Backend):
 			async for error_obj in dbc.find(query).sort('d', ASCENDING):
 				try:
 					err = MongoErrorLog.parse_obj(error_obj)
-					debug(f'Read "{err.msg}" from {self.name} {self.database}.{self.table_error_log}')
+					debug(f'Read "{err.msg}" from {self.backend}.{self.table_error_log}')
 					
 					yield err
 				except Exception as e:
 					error(f'{e}')
 					continue			
 		except Exception as e:
-			error(f'Error getting errors from {self.name} {self.database}.{self.table_error_log}: {e}')	
+			error(f'Error getting errors from {self.backend}.{self.table_error_log}: {e}')	
 
 
 	async def errors_clear(self, table_type: BSTableType, doc_id : Any | None = None, 
@@ -1439,10 +1487,10 @@ class MongoBackend(Backend):
 			res : DeleteResult = await dbc.delete_many(query)
 			return res.deleted_count	
 		except Exception as e:
-			error(f'Error clearing errors from {self.name} {self.database}.{self.table_error_log}: {e}')
+			error(f'Error clearing errors from {self.backend}.{self.table_error_log}: {e}')
 		return 0
 
 # Register backend
 
 debug('Registering mongodb')
-Backend.register(name=MongoBackend.name, backend=MongoBackend)
+Backend.register(name=MongoBackend.driver, backend=MongoBackend)

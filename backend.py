@@ -495,20 +495,22 @@ class Backend(ABC):
 		try:
 			while True:
 				release = await releaseQ.get()
-				try:
+				try:					
 					if force:
-						debug(f'Trying to upsert release={release.release} into {self.backend}.{self.table_releases}')
-						await self.release_replace(release, upsert=True)
+						debug(f'Trying to upsert release={release} into {self.backend}.{self.table_releases}')
+						if await self.release_replace(release, upsert=True):
+							stats.log('releases added/updated')
+						else:
+							stats.log('releases not added')
 					else:
-						debug(f'Trying to insert release={release.release} into {self.backend}.{self.table_releases}')
-						await self.release_insert(release)
-					if force:
-						stats.log('releases added/updated')
-					else:
-						stats.log('releases added')
+						debug(f'Trying to insert release={release} into {self.backend}.{self.table_releases}')
+						if await self.release_insert(release):
+							stats.log('releases added')
+						else:
+							stats.log('releases not added')
 				except Exception as err:
 					debug(f'Error: {err}')
-					stats.log('releases not added')
+					stats.log('errors')
 				finally:
 					releaseQ.task_done()
 		except CancelledError as err:
@@ -529,13 +531,13 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def replay_get(self, replay_id: ObjectId) -> WoTBlitzReplayJSON | None:
+	async def replay_get(self, replay_id: str) -> WoTBlitzReplayJSON | None:
 		"""Get a replay from backend based on replayID"""
 		raise NotImplementedError
 
 
 	@abstractmethod
-	async def replay_delete(self, replay_id: ObjectId) -> bool:
+	async def replay_delete(self, replay_id: str) -> bool:
 		"""Delete replay from backend based on replayID"""
 		raise NotImplementedError
 
@@ -563,7 +565,7 @@ class Backend(ABC):
 		raise NotImplementedError	
 
 
-	async def replay_insert_worker(self, replayQ : Queue[WoTBlitzReplayJSON], force: bool = False) -> EventCounter:
+	async def replays_insert_worker(self, replayQ : Queue[WoTBlitzReplayJSON], force: bool = False) -> EventCounter:
 		debug(f'starting, force={force}')
 		stats : EventCounter = EventCounter('replays insert')
 		try:
@@ -571,11 +573,13 @@ class Backend(ABC):
 				replay = await replayQ.get()
 				try:
 					debug(f'Insertting replay={replay.id} into {self.backend}.{self.table_replays}')
-					await self.replay_insert(replay)					
-					stats.log('added')
+					if await self.replay_insert(replay):
+						stats.log('added')
+					else:
+						stats.log('not added')
 				except Exception as err:
 					debug(f'Error: {err}')
-					stats.log('not added')
+					stats.log('errors')
 				finally:
 					replayQ.task_done()
 		except CancelledError as err:

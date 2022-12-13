@@ -1,11 +1,12 @@
 from argparse import ArgumentParser, Namespace
 from configparser import ConfigParser
-from typing import Optional, cast, Iterable
+from typing import Optional, cast, Iterable, Any
 import logging
 from asyncio import create_task, gather, Queue, CancelledError, Task
-from aiohttp import ClientResponse
+#from aiohttp import ClientResponse
+from os.path import isfile
 
-from backend import Backend
+from backend import Backend, BSTableType
 from pyutils.eventcounter import EventCounter
 from pyutils.utils import get_url, get_url_JSON_model, epoch_now
 from blitzutils.models import WoTBlitzReplayJSON, Region
@@ -189,38 +190,39 @@ async def  cmd_replays_import(db: Backend, args : Namespace) -> bool:
 		config 		: ConfigParser | None 	= None
 		sample  	: float 				= args.sample
 
-		importer : Task = create_task(db.releases_insert_worker(releaseQ=releaseQ, force=args.force))
+		importer : Task = create_task(db.replays_insert_worker(replayQ=replayQ, force=args.force))
 
 		if args.import_config is not None and isfile(args.import_config):
 			debug(f'Reading config from {args.config}')
 			config = ConfigParser()
 			config.read(args.config)
+		else:
+			debug('Not using config')
 
-		kwargs : dict[str, Any] = Backend.read_args(args, args.releases_import_backend)
-		if (import_db:= Backend.create(args.releases_import_backend, 
+		kwargs : dict[str, Any] = Backend.read_args(args, args.replays_import_backend)
+		if (import_db:= Backend.create(args.replays_import_backend, 
 										config=config, copy_from=db, **kwargs)) is not None:
 			if args.import_table is not None:
-				import_db.set_table(BSTableType.Releases, args.import_table)
-			elif db == import_db and db.table_releases == import_db.table_releases:
+				import_db.set_table(BSTableType.Replays, args.import_table)
+			elif db == import_db and db.table_replays == import_db.table_replays:
 				raise ValueError('Cannot import from itself')
 		else:
-			raise ValueError(f'Could not init {args.releases_import_backend} to import releases from')
+			raise ValueError(f'Could not init {args.replays_import_backend} to import replays from')
 
-		release_type: type[WGBlitzRelease] = globals()[args.import_type]
-		assert issubclass(release_type, WGBlitzRelease), "--import-type has to be subclass of blitzutils.models.WGBlitzRelease" 
+		replay_type: type[WoTBlitzReplayJSON] = globals()[args.import_type]
+		assert issubclass(replay_type, WoTBlitzReplayJSON), "--import-type has to be subclass of blitzutils.models.WoTBlitzReplayJSON" 
 
-		async for release in import_db.releases_export(release_type=release_type, since=since, 
-														release=releases):
-			await releaseQ.put(release)
+		async for replay in import_db.replays_export(replay_type=replay_type, sample=sample):
+			await replayQ.put(replay)
 			stats.log('read')
 
-		await releaseQ.join()
+		await replayQ.join()
 		importer.cancel()
 		worker_res : tuple[EventCounter|BaseException] = await gather(importer,return_exceptions=True)
 		if type(worker_res[0]) is EventCounter:
 			stats.merge_child(worker_res[0])
 		elif type(worker_res[0]) is BaseException:
-			error(f'releases insert worker threw an exception: {worker_res[0]}')
+			error(f'replays insert worker threw an exception: {worker_res[0]}')
 		stats.print()
 		return True
 	except Exception as err:

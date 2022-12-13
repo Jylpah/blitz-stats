@@ -219,7 +219,7 @@ async def cmd_releases_remove(db: Backend, args : Namespace) -> bool:
 		message(f'Removing release={args.release} in 3 seconds. Press CTRL+C to cancel')
 		await sleep(3)
 		release = BSBlitzRelease(release=args.release)
-		if await db.release_delete(release=release):
+		if await db.release_delete(release=release.release):
 			message(f'release {release.release} removed')
 			return True
 		else:
@@ -241,7 +241,7 @@ async def cmd_releases_export(db: Backend, args : Namespace) -> bool:
 		if args.since is not None:
 			since = date.fromisoformat(args.since)
 
-		for release in await db.releases_get(release=args.releases, since=since):
+		async for release in db.releases_get(release_match=args.releases, since=since):
 			debug(f'adding release {release.release} to the export queue')
 			await releaseQ.put(release)
 		await releaseQ.join()
@@ -282,8 +282,8 @@ async def cmd_releases_import(db: Backend, args : Namespace) -> bool:
 		else:
 			raise ValueError(f'Could not init {args.releases_import_backend} to import releases from')
 
-		release_type: type[WGBlitzRelease] = globals()[args.import_type]
-		assert issubclass(release_type, WGBlitzRelease), "--import-type has to be subclass of blitzutils.models.WGBlitzRelease" 
+		release_type: type[BSBlitzRelease] = globals()[args.import_type]
+		assert issubclass(release_type, BSBlitzRelease), "--import-type has to be subclass of blitzutils.models.WGBlitzRelease" 
 
 		async for release in import_db.releases_export(release_type=release_type, sample=args.sample):
 			await releaseQ.put(release)

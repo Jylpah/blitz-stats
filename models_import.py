@@ -1,6 +1,8 @@
 from pydantic import Field, root_validator, validator
+from typing import Any
 from datetime import datetime, date
 from sys import maxsize
+from bson import ObjectId
 import logging
 
 from blitzutils.models import Account
@@ -39,6 +41,8 @@ class WG_Account(Account):
 
 
 class WG_Release(BSBlitzRelease):
+	"""For import purposes only"""
+	id 			: ObjectId | str    = Field(default=..., alias='_id')
 	release		: str 				= Field(default=..., alias='Release')
 	launch_date	: datetime | None	= Field(default=None, alias='Date')
 	cut_off		: int 				= Field(default=maxsize, alias='Cut-off')
@@ -46,10 +50,19 @@ class WG_Release(BSBlitzRelease):
 	_export_DB_by_alias = False
 
 	class Config:
-		allow_population_by_field_name = True
+		arbitrary_types_allowed = True
+		json_encoders 			= { ObjectId: str }
 		allow_mutation 			= True
 		validate_assignment 	= True
+		allow_population_by_field_name = True
 		
+
+	@root_validator
+	def transform_id(cls, values: dict[str, Any]):
+		if 'release' in values:
+			del values['id']
+		return values
+
 	# @validator('launch_date', pre=True)
 	# def to_date(cls, v) -> date | None:
 	# 	print(f'DEBUG: {v}')
