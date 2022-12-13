@@ -625,6 +625,8 @@ class Backend(ABC):
 	@abstractmethod
 	async def tank_stats_get(self, release: BSBlitzRelease | None = None,
 							regions: set[Region] = Region.API_regions(), 
+							accounts: Iterable[Account] | None = None,
+							tanks: Iterable[Tank] | None = None, 
 							sample : float = 0) -> AsyncGenerator[WGtankStat, None]:
 		"""Return tank stats from the backend"""
 		raise NotImplementedError
@@ -634,6 +636,8 @@ class Backend(ABC):
 	@abstractmethod
 	async def tank_stats_count(self, release: BSBlitzRelease | None = None,
 							regions: set[Region] = Region.API_regions(), 
+							accounts: Iterable[Account] | None = None,
+							tanks: Iterable[Tank] | None = None, 
 							sample : float = 0) -> int:
 		"""Get number of tank-stats from backend"""
 		raise NotImplementedError

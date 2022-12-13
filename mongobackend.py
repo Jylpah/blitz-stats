@@ -1147,11 +1147,10 @@ class MongoBackend(Backend):
 		return False
 
 
-
 	async def _tank_stats_mk_pipeline(self, release: BSBlitzRelease|None = None, 
 										regions: set[Region] = Region.API_regions(), 
-										tanks: list[Tank]| None = None, 
-										accounts : list[Account] |None = None,
+										accounts: Iterable[Account] | None = None,
+										tanks: Iterable[Tank] | None = None, 
 										sample: float = 0) -> list[dict[str, Any]] | None:
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
 		try:
@@ -1204,13 +1203,15 @@ class MongoBackend(Backend):
 	
 	async def tank_stats_get(self, release: BSBlitzRelease | None = None,
 							regions: set[Region] = Region.API_regions(), 
+							accounts: Iterable[Account] | None = None,
+							tanks: Iterable[Tank] | None = None, 
 							sample : float = 0) -> AsyncGenerator[WGtankStat, None]:
 		"""Return tank stats from the backend"""
 		try:
 			debug('starting')
 			pipeline : list[dict[str, Any]] | None 
 			pipeline = await self._tank_stats_mk_pipeline(release=release, regions=regions, 
-														tanks=None, accounts=None, 
+														tanks=tanks, accounts=accounts, 
 														sample=sample)
 			
 			if pipeline is None:
@@ -1224,6 +1225,8 @@ class MongoBackend(Backend):
 
 	async def tank_stats_count(self, release: BSBlitzRelease | None = None,
 							regions: set[Region] = Region.API_regions(), 
+							accounts: Iterable[Account] | None = None,
+							tanks: Iterable[Tank] | None = None, 
 							sample : float = 0) -> int:
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
 		try:
@@ -1240,7 +1243,9 @@ class MongoBackend(Backend):
 					return int(min(total, sample))
 			else:
 				pipeline : list[dict[str, Any]] | None 
-				pipeline = await self._tank_stats_mk_pipeline(release=release, regions=regions, sample=sample)
+				pipeline = await self._tank_stats_mk_pipeline(release=release, regions=regions, 
+														tanks=tanks, accounts=accounts, 
+														sample=sample)
 
 				if pipeline is None:
 					raise ValueError(f'could not create get-accounts {self.name} cursor')
