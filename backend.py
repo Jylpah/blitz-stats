@@ -32,7 +32,7 @@ MAX_UPDATE_INTERVAL : int = 4*30*24*60*60 # 4 months
 INACTIVE_THRESHOLD 	: int = 2*30*24*60*60 # 2 months
 WG_ACCOUNT_ID_MAX 	: int = int(31e8)
 MAX_RETRIES 		: int = 3
-CACHE_VALID 		: int = 3   # days
+MIN_UPDATE_INTERVAL 		: int = 3   # days
 ACCOUNTS_Q_MAX 		: int = 10000
 TANK_STATS_BATCH	: int = 1000
 
@@ -119,7 +119,7 @@ class Backend(ABC):
 	"""Abstract class for a backend (mongo, postgres, files)"""
 
 	driver 		: str = 'Backend'
-	_cache_valid : int = CACHE_VALID
+	_cache_valid : int = MIN_UPDATE_INTERVAL
 	_backends 	: dict[str, type['Backend']] = dict()	
 
 
@@ -320,14 +320,23 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def account_update(self, account: BSAccount, upsert: bool = True) -> bool:
+	async def account_update(self, account: BSAccount,
+								update: dict | None = None, 
+								fields: list[str] | None = None) -> bool:
 		"""Update an account in the backend. Returns False 
 			if the account was not updated"""
 		raise NotImplementedError
 	
 
 	@abstractmethod
-	async def account_delete(self, account: BSAccount) -> bool:
+	async def account_replace(self, account: BSAccount,
+								upsert: bool = False) -> bool:
+		"""Update an account in the backend. Returns False 
+			if the account was not updated"""
+		raise NotImplementedError
+
+	@abstractmethod
+	async def account_delete(self, account_id: int) -> bool:
 		"""Delete account from the backend. Returns False 
 			if the account was not found/deleted"""
 		raise NotImplementedError
@@ -386,7 +395,7 @@ class Backend(ABC):
 				try:
 					if force:
 						debug(f'Trying to upsert account_id={account.id} into {self.backend}.{self.table_accounts}')
-						await self.account_update(account, upsert=True)
+						await self.account_replace(account, upsert=True)
 					else:
 						debug(f'Trying to insert account_id={account.id} into {self.backend}.{self.table_accounts}')
 						await self.account_insert(account)
@@ -430,14 +439,24 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def release_update(self, update: BSBlitzRelease, upsert=False) -> bool:
+	async def release_update(self, release: BSBlitzRelease, 
+								update: dict | None = None, 
+								fields: list[str] | None= None) -> bool:
+		"""Update an release in the backend. Returns False 
+			if the release was not updated"""
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def release_replace(self, release: BSBlitzRelease, 
+								upsert: bool = False) -> bool:
 		"""Update an release in the backend. Returns False 
 			if the release was not updated"""
 		raise NotImplementedError
 
 	
 	@abstractmethod
-	async def release_delete(self, release: BSBlitzRelease) -> bool:
+	async def release_delete(self, release: str) -> bool:
 		"""Delete a release from backend"""
 		raise NotImplementedError
 
@@ -479,7 +498,7 @@ class Backend(ABC):
 				try:
 					if force:
 						debug(f'Trying to upsert release={release.release} into {self.backend}.{self.table_releases}')
-						await self.release_update(release, upsert=True)
+						await self.release_replace(release, upsert=True)
 					else:
 						debug(f'Trying to insert release={release.release} into {self.backend}.{self.table_releases}')
 						await self.release_insert(release)
@@ -510,21 +529,20 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def replay_get(self, replay_id: str | ObjectId) -> WoTBlitzReplayJSON | None:
+	async def replay_get(self, replay_id: ObjectId) -> WoTBlitzReplayJSON | None:
 		"""Get a replay from backend based on replayID"""
 		raise NotImplementedError
 
 
 	@abstractmethod
-	async def replay_delete(self, replay_id: str | ObjectId) -> WoTBlitzReplayJSON | None:
+	async def replay_delete(self, replay_id: ObjectId) -> bool:
 		"""Delete replay from backend based on replayID"""
 		raise NotImplementedError
 
 
 	# replay fields that can be searched: protagonist, battle_start_timestamp, account_id, vehicle_tier
 	@abstractmethod
-	async def replays_get(self, protagonist: int | None = None,
-							since: date | None = None,
+	async def replays_get(self, since: date | None = None,
 							**summary_fields) -> AsyncGenerator[WoTBlitzReplayJSON, None]:
 		"""Get replays from backed"""
 		raise NotImplementedError
@@ -532,10 +550,10 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def replays_count(self, protagonist: int | None = None,
-							since: date | None = None,
+	async def replays_count(self, since: date | None = None, 
+							sample : float = 0,
 							**summary_fields) -> int:
-		"""Get replays from backed"""
+		"""Count replays in backed"""
 		raise NotImplementedError
 	
 
@@ -567,7 +585,8 @@ class Backend(ABC):
 		return stats
 	
 
-	async def replays_export(self, replay_type: type[WoTBlitzReplayJSON] = WoTBlitzReplayJSON) -> AsyncGenerator[WoTBlitzReplayJSON, None]:			
+	async def replays_export(self, replay_type: type[WoTBlitzReplayJSON] = WoTBlitzReplayJSON,
+							 sample: float = 0) -> AsyncGenerator[WoTBlitzReplayJSON, None]:			
 		"""Export replays from Mongo DB"""
 		raise NotImplementedError
 		yield WoTBlitzReplayJSON()
@@ -584,15 +603,15 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def tank_stat_get(self, account: BSAccount, 
-							tank_id: int | None, last_battle_time: int) -> WGtankStat | None:
+	async def tank_stat_get(self, account: BSAccount, tank_id: int, 
+							last_battle_time: int) -> WGtankStat | None:
 		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
 		raise NotImplementedError
 
 
 	@abstractmethod
-	async def tank_stat_delete(self, account: BSAccount, 
-								tank_id: int | None, last_battle_time: int) -> bool:
+	async def tank_stat_delete(self, account: BSAccount, tank_id: int, 
+								last_battle_time: int) -> bool:
 		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
 		raise NotImplementedError
 
@@ -609,6 +628,7 @@ class Backend(ABC):
 							sample : float = 0) -> AsyncGenerator[WGtankStat, None]:
 		"""Return tank stats from the backend"""
 		raise NotImplementedError
+		yield WGtankStat()
 
 
 	@abstractmethod
@@ -626,8 +646,8 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def tank_stats_export(self, replay_type: type[WGtankStat] = WGtankStat
-									) -> AsyncGenerator[WGtankStat, None]:
+	async def tank_stats_export(self, tank_stat_type: type[WGtankStat] = WGtankStat, 
+								sample: float = 0) -> AsyncGenerator[WGtankStat, None]:
 		"""Export tank stats from Mongo DB"""
 		raise NotImplementedError
 		yield WGtankStat()
