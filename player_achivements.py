@@ -2,7 +2,7 @@ from argparse import ArgumentParser, Namespace
 from configparser import ConfigParser
 from typing import Optional, Iterable, cast
 import logging
-from asyncio import create_task, gather, Queue, CancelledError, Task, sleep
+from asyncio import create_task, gather, Queue, CancelledError, Task, sleep, Condition
 from aiofiles import open
 from os.path import isfile
 from asyncstdlib import enumerate
@@ -10,6 +10,8 @@ from alive_progress import alive_bar		# type: ignore
 
 from backend import Backend, OptAccountsInactive, ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL
 from models import BSAccount, BSBlitzRelease, StatsTypes
+from accounts import split_accountQ_by_region, create_accountQ
+
 from pyutils import BucketMapper, CounterQueue, EventCounter
 from pyutils.utils import get_url, get_url_JSON_model, epoch_now
 from blitzutils.models import Region, WGApiWoTBlitzPlayerAchievements, WGplayerAchievementsMaxSeries
@@ -153,119 +155,42 @@ async def cmd_player_achievements_update(db: Backend, args : Namespace) -> bool:
 	wg 	: WGApi = WGApi(WG_app_id=args.wg_app_id, rate_limit=args.rate_limit)
 
 	try:
-		stats 	 : EventCounter				= EventCounter('player-achievements update')
-		regions	 : list[Region]				=  [ Region(r) for r in args.region ]
-		accountQs : dict[str, Queue[BSAccount]]	= dict()
-		# Queue(maxsize=ACCOUNTS_Q_MAX)
-		retryQs  : dict[str, Queue[BSAccount] | None]	= dict() 
-		statsQ	 : Queue[list[WGplayerAchievementsMaxSeries]]	= Queue(maxsize=PLAYER_ACHIEVEMENTS_Q_MAX)
-		accounts_N 		: int = 0
-		accounts_added 	: int = 0
+		stats 	 	: EventCounter								= EventCounter('player-achievements update')
+		regions	 	: set[Region]								= { Region(r) for r in args.region }
+		regionQs 	: dict[str, Queue[BSAccount]]				= dict()
+		accountQ	: Queue[BSAccount] 							= Queue(maxsize=ACCOUNTS_Q_MAX)
+		retryQ  	: Queue[BSAccount] 							= Queue() 
+		statsQ	 	: Queue[list[WGplayerAchievementsMaxSeries]] = Queue(maxsize=PLAYER_ACHIEVEMENTS_Q_MAX)
 
 		tasks : list[Task] = list()
 		tasks.append(create_task(update_player_achievements_worker(db, statsQ)))
+		
+		accounts_left : Condition = Condition()
+		await accounts_left.acquire()
+
 		for r in regions:
-			accountQs[r.name] = Queue(maxsize=ACCOUNTS_Q_MAX)
-			retryQs[r.name] = Queue(maxsize=ACCOUNTS_Q_MAX)
-			
+			regionQs[r.name] = Queue(maxsize=100)			
 			for _ in range(int(args.threads/len(regions))):
-				tasks.append(create_task(update_player_achievements_api_worker(db, wg_api=wg, region=r, 
-																	accountQ=accountQs[r.name], statsQ=statsQ, 
-																	retryQ=retryQs[r.name])))
-
-		# count number of accounts
-		if args.accounts is not None:
-			accounts_N = len(args.accounts)			
-		elif args.file is not None:
-			message(f'Reading accounts from {args.file}')
-			async with open(args.file, mode='r') as f:
-				async for accounts_N, _ in enumerate(f):
-					pass
-			accounts_N += 1
-			if args.file.endswith('.csv'):
-				accounts_N -= 1
-		else:
-			if args.sample > 1:
-				accounts_N = int(args.sample)
-			else:				
-				message('Counting accounts to fetch stats...')
-				accounts_N = await db.accounts_count(stats_type=StatsTypes.player_achievements, 
-													regions=set(regions), sample=args.sample, 
-													cache_valid=args.cache_valid)
-
-		if accounts_N == 0:
-			raise ValueError('No accounts to update player achievements for')		
-		aq : int = 0
-		with alive_bar(accounts_N, title= "Fetching player achievements", manual=True, enrich_print=False) as bar:
-			
-			if args.accounts is not None:	
-				async for accounts_added, account_id in enumerate(args.accounts):
-					try:
-						a : BSAccount = BSAccount(id=account_id)
-						ar : Region | None = a.region
-						if ar is None:
-							continue
-						await accountQs[ar.name].put(a)
-					except Exception as err:
-						error(f'Could not add account ({account_id}) to queue')
-					finally:
-						aq : int = 0
-						for r in regions:
-							aq += accountQs[r.name].qsize()
-						bar((accounts_added + 1 - aq)/accounts_N)
-
-			elif args.file is not None:
-
-				if args.file.endswith('.txt'):
-					async for accounts_added, account in enumerate(BSAccount.import_txt(args.file)):
-						try:
-							await accountQ.put(account)
-						except Exception as err:
-							error(f'Could not add account to the queue: {err}')
-						finally:
-							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
-
-				elif args.file.endswith('.csv'):					
-					async for accounts_added, account in enumerate(BSAccount.import_csv(args.file)):
-						try:
-							await accountQ.put(account)
-						except Exception as err:
-							error(f'Could not add account to the queue: {err}')
-						finally:
-							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
-
-				elif args.file.endswith('.json'):				
-					async for accounts_added, account in enumerate(BSAccount.import_json(args.file)):
-						try:
-							await accountQ.put(account)
-						except Exception as err:
-							error(f'Could not add account to the queue: {err}')
-						finally:
-							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
-			
-			else:
-				async for accounts_added, account in enumerate(db.accounts_get(stats_type=StatsTypes.player_achievements, 
-													regions=regions, sample=args.sample, cache_valid=args.cache_valid)):
-					try:
-						await accountQ.put(account)
-					except Exception as err:
-						error(f'Could not add account ({account.id}) to queue')
-					finally:	
-						bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
-
-			incomplete : bool = False				
-			while accountQ.qsize() > 0:
-				incomplete = True
-				await sleep(1)
-				bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
-			if incomplete:						# FIX the edge case of queue getting processed before while loop
-				bar(1)
-
-		await accountQ.join()
-
+				tasks.append(create_task(update_player_achievements_api_region_worker(wg_api=wg, region=r, 
+																	accountQ=regionQs[r.name], 
+																	statsQ=statsQ,
+																	accounts_left=accounts_left, 
+																	retryQ=retryQ)))
+		
+		tasks.append(create_task(split_accountQ_by_region(accountQ, regionQs)))
+		await create_accountQ(db, args, accountQ, StatsTypes.player_achievements,
+								bar_title='Fetching player achievements')
+		accounts_left.release()
 		if retryQ is not None and not retryQ.empty():
-			tasks.append(create_task(update_player_achievements_api_worker(db, wg_api=wg, regions=regions, accountQ=retryQ, statsQ=statsQ)))
-			await retryQ.join()
+			for r in regions:
+				regionQs[r.name] = Queue(maxsize=100) # do not fill the old queues or it will never complete
+				for _ in range(int(args.threads/len(regions))):
+					tasks.append(create_task(update_player_achievements_api_worker(db, wg_api=wg, region=r, 
+																					accountQ=regionQs[r.name], 
+																					statsQ=statsQ)))
+			tasks.append(create_task(split_accountQ_by_region(retryQ, regionQs)))
+
+		await retryQ.join()
 
 		await statsQ.join()
 
@@ -290,8 +215,51 @@ async def cmd_player_achievements_update(db: Backend, args : Namespace) -> bool:
 	return False
 
 
+async def update_player_achievements_api_region_worker(wg_api: WGApi, region: Region,  
+														accountQ: Queue[BSAccount], 
+														statsQ:   Queue[list[WGplayerAchievementsMaxSeries]],
+														accounts_left : Condition,
+														retryQ:   Queue[BSAccount] | None = None) -> EventCounter:
+	"""Fetch stats from a single region"""
+	debug('starting')
+	stats = EventCounter(f'WG API {region.name}')
+	try:
+		while True:
+			accounts : list[BSAccount] = list()
+			account_ids : list[int] = list()
+			try:				
+				while not accountQ.empty() and len(accounts) < 100:
+					accounts.append(await accountQ.get())
+
+				account_ids = [ a.id for a in accounts ]
+				if (res:= await wg_api.get_player_achievements(account_ids, region)) is None:
+					if retryQ is not None :
+						stats.log('re-tries', len(account_ids))
+						for a in accounts:
+							await retryQ.put(a)
+					else:
+						stats.log('no stats', len(account_ids))
+					continue
+				else:
+					await statsQ.put(res)
+			finally:
+				for _ in range(len(accounts)):
+					accountQ.task_done()
+			if accountQ.empty():
+				await sleep(1)
+				if not accounts_left.locked() and accountQ.empty():
+					break
+
+	except Exception as err:
+		error(f'{err}')
+	return stats
+
+
+
+
+
 async def update_player_achievements_api_worker(db: Backend, wg_api : WGApi, region: Region, 
-										accountQ: Queue[list[BSAccount]], 
+										accountQ: Queue[BSAccount], 
 										statsQ: Queue[list[WGplayerAchievementsMaxSeries]], 
 										retryQ: Queue[BSAccount] | None = None, 
 										check_invalid : bool = False) -> EventCounter:
