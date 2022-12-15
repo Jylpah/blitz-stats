@@ -1,17 +1,19 @@
 from argparse import ArgumentParser, Namespace
 from configparser import ConfigParser
-from typing import Optional, Iterable, cast
+from typing import Optional, Iterable, Any, cast
 import logging
-from asyncio import create_task, gather, Queue, CancelledError, Task, sleep
+from asyncio import create_task, gather, Queue, CancelledError, Task, sleep, wait
 from aiofiles import open
 from os.path import isfile
 from asyncstdlib import enumerate
 from alive_progress import alive_bar		# type: ignore
 
-from backend import Backend, OptAccountsInactive, ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL
+from backend import Backend, OptAccountsInactive, BSTableType, ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL
 from models import BSAccount, BSBlitzRelease, StatsTypes
+from accounts import create_accountQ
 from pyutils import BucketMapper, CounterQueue, EventCounter
-from pyutils.utils import get_url, get_url_JSON_model, epoch_now
+from pyutils.utils import get_url, get_url_JSON_model, epoch_now, alive_queue_bar, \
+							JSONExportable, TXTExportable, CSVExportable, export
 from blitzutils.models import WoTBlitzReplayJSON, Region, WGApiWoTBlitzTankStats, WGtankStat
 from blitzutils.wg import WGApi 
 
@@ -23,7 +25,7 @@ debug	= logger.debug
 
 # Constants
 
-WORKERS_WGAPI 		: int = 40
+WORKERS_WGAPI 		: int = 50
 TANK_STATS_Q_MAX 	: int = 1000
 
 ########################################################
@@ -114,58 +116,27 @@ def add_args_tank_stats_import(parser: ArgumentParser, config: Optional[ConfigPa
 	try:
 		debug('starting')
 		
-		tank_stats_import_parsers = parser.add_subparsers(dest='tank_stats_import_backend', 	
+		import_parsers = parser.add_subparsers(dest='tank_stats_import_backend', 	
 														title='tank-stats import backend',
 														description='valid backends', 
 														metavar=', '.join(Backend.list_available()))
-		tank_stats_import_parsers.required = True
-		tank_stats_import_mongodb_parser = tank_stats_import_parsers.add_parser('mongodb', help='tank-stats import mongodb help')
-		if not add_args_tank_stats_import_mongodb(tank_stats_import_mongodb_parser, config=config):
-			raise Exception("Failed to define argument parser for: tank-stats import mongodb")
+		import_parsers.required = True
 
-		tank_stats_import_files_parser = tank_stats_import_parsers.add_parser('files', help='tank-stats import files help')
-		if not add_args_tank_stats_import_files(tank_stats_import_files_parser, config=config):
-			raise Exception("Failed to define argument parser for: tank-stats import files")
-		
-		parser.add_argument('--sample', type=float, default=0, help='Sample tank-stats')
-		parser.add_argument('--import-config', metavar='CONFIG', type=str, default=None, 
-								help='Config file for backend to import from. \
-								Default is to use existing backend')
-		
-		return True
-	except Exception as err:
-		error(f'{err}')
-	return False
+		for backend in Backend.get_registered():
+			import_parser =  import_parsers.add_parser(backend.driver, help=f'tank-stats import {backend.driver} help')
+			if not backend.add_args_import(import_parser, config=config):
+				raise Exception(f'Failed to define argument parser for: tank-stats import {backend.driver}')
 
+		parser.add_argument('--import-type', metavar='IMPORT-TYPE', type=str, 
+							default='WGtankStat', choices=['WGtankStat'], 
+							help='Data format to import. Default is blitz-stats native format.')
+		parser.add_argument('--region', type=str, nargs='*', 
+								choices=[ r.value for r in Region.has_stats() ], 
+								default=[ r.value for r in Region.has_stats() ], 
+								help='Filter by region (default is API = eu + com + asia)')
+		parser.add_argument('--sample', type=float, default=0, 
+							help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
 
-def add_args_tank_stats_import_mongodb(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
-	"""Add argument parser for tank-stats import mongodb"""
-	try:
-		debug('starting')
-		parser.add_argument('--server-url', metavar='SERVER-URL', type=str, default=None, 
-										help='MongoDB server URL to connect the server. \
-											Required if the current backend is not the same MongoDB instance')
-		parser.add_argument('--database', metavar='DATABASE', type=str, default=None, 
-										help='Database to use. Uses current database as default')
-		parser.add_argument('--collection', metavar='COLLECTION', type=str, default=None, 
-										help='Collection to use. Uses current database as default')
-		parser.add_argument('--import-type', metavar='IMPORT-TYPE', type=str, default='BSAccount', 
-										choices=['WG_Account', 'BSAccount'], 
-										help='Collection to use. Uses current database as default')
-
-
-		return True
-	except Exception as err:
-		error(f'{err}')
-	return False
-
-
-def add_args_tank_stats_import_files(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
-	"""Add argument parser for tank-stats import files"""
-	try:
-		debug('starting')
-		parser.add_argument('files', type=str, nargs='+', metavar='FILE [FILE1 ...]', 
-							help='Files to import')
 		return True
 	except Exception as err:
 		error(f'{err}')
@@ -197,9 +168,9 @@ def add_args_tank_stats_export(parser: ArgumentParser, config: Optional[ConfigPa
 								default=[ r.value for r in Region.API_regions() ], help='Filter by region (default is API = eu + com + asia)')
 		parser.add_argument('--by-region', action='store_true', default=False, help='Export tank-stats by region')
 		parser.add_argument('--sample', type=float, default=0, 
-							help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
+								help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
 		parser.add_argument('--accounts', type=str, default=None, nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
-							help="Update tank stats for the listed ACCOUNT_ID(s). ACCOUNT_ID format 'account_id:region' or 'account_id'")
+								help="Update tank stats for the listed ACCOUNT_ID(s). ACCOUNT_ID format 'account_id:region' or 'account_id'")
 
 		return True	
 	except Exception as err:
@@ -223,7 +194,7 @@ async def cmd_tank_stats(db: Backend, args : Namespace) -> bool:
 			return await cmd_tank_stats_export(db, args)
 
 		elif args.tank_stats_cmd == 'import':
-			# return await cmd_tank_stats_import(db, args)
+			return await cmd_tank_stats_import(db, args)
 			pass
 			
 	except Exception as err:
@@ -261,7 +232,7 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 		accounts_added 	: int = 0
 
 		if not args.check_invalid:
-			retryQ = Queue(maxsize=ACCOUNTS_Q_MAX)
+			retryQ = Queue()		# must not use maxsize
 		
 		tasks : list[Task] = list()
 		tasks.append(create_task(update_tank_stats_worker(db, statsQ)))
@@ -270,89 +241,8 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 																	accountQ=accountQ, statsQ=statsQ, 
 																	retryQ=retryQ, check_invalid=args.check_invalid)))
 
-		# count number of accounts
-		if args.accounts is not None:
-			accounts_N = len(args.accounts)			
-		elif args.file is not None:
-			message(f'Reading accounts from {args.file}')
-			async with open(args.file, mode='r') as f:
-				async for accounts_N, _ in enumerate(f):
-					pass
-			accounts_N += 1
-			if args.file.endswith('.csv'):
-				accounts_N -= 1
-		else:
-			if args.sample > 1:
-				accounts_N = int(args.sample)
-			else:				
-				message('Counting accounts to fetch stats...')
-				accounts_N = await db.accounts_count(stats_type=StatsTypes.tank_stats, regions=regions, 
-													inactive=inactive, disabled=args.check_invalid, 
-													sample=args.sample, cache_valid=args.cache_valid)
-
-		if accounts_N == 0:
-			raise ValueError('No accounts to update tank stats for')		
-
-		with alive_bar(accounts_N, title= "Fetching tank stats", manual=True, enrich_print=False) as bar:
-			if args.accounts is not None:	
-				async for accounts_added, account_id in enumerate(args.accounts):
-					try:
-						await accountQ.put(BSAccount(id=account_id))
-					except Exception as err:
-						error(f'Could not add account ({account_id}) to queue')
-					finally:
-						bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
-
-			elif args.file is not None:
-
-				if args.file.endswith('.txt'):
-					async for accounts_added, account in enumerate(BSAccount.import_txt(args.file)):
-						try:
-							await accountQ.put(account)
-						except Exception as err:
-							error(f'Could not add account to the queue: {err}')
-						finally:
-							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
-
-				elif args.file.endswith('.csv'):					
-					async for accounts_added, account in enumerate(BSAccount.import_csv(args.file)):
-						try:
-							await accountQ.put(account)
-						except Exception as err:
-							error(f'Could not add account to the queue: {err}')
-						finally:
-							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
-
-				elif args.file.endswith('.json'):				
-					async for accounts_added, account in enumerate(BSAccount.import_json(args.file)):
-						try:
-							await accountQ.put(account)
-						except Exception as err:
-							error(f'Could not add account to the queue: {err}')
-						finally:
-							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
-			
-			else:
-				async for accounts_added, account in enumerate(db.accounts_get(stats_type=StatsTypes.tank_stats, 
-													regions=regions, inactive=inactive, disabled=args.check_invalid, 
-													sample=args.sample, cache_valid=args.cache_valid)):
-					try:
-						await accountQ.put(account)
-					except Exception as err:
-						error(f'Could not add account ({account.id}) to queue')
-					finally:	
-						bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
-
-			incomplete : bool = False				
-			while accountQ.qsize() > 0:
-				incomplete = True
-				await sleep(1)
-				bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
-			if incomplete:						# FIX the edge case of queue getting processed before while loop
-				bar(1)
-
-		await accountQ.join()
-
+		await create_accountQ(db, args, accountQ, StatsTypes.tank_stats, bar_title="Fetching tank stats")
+		
 		if retryQ is not None and not retryQ.empty():
 			tasks.append(create_task(update_tank_stats_api_worker(db, wg_api=wg, regions=regions, accountQ=retryQ, statsQ=statsQ)))
 			await retryQ.join()
@@ -363,7 +253,7 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 			task.cancel()
 		
 		for ec in await gather(*tasks, return_exceptions=True):
-			if issubclass(EventCounter, ec):
+			if isinstance(ec, EventCounter):
 				stats.merge_child(ec)
 		message(stats.print(do_print=False))
 		return True
@@ -449,11 +339,12 @@ async def update_tank_stats_worker(db: Backend, statsQ: Queue[list[WGtankStat]])
 		async for r in db.releases_get():
 			releases.insert(r)
 		while True:
-			tank_stats : list[WGtankStat] = await statsQ.get()			
 			added 			= 0
 			not_added 		= 0
 			last_battle_time = -1
 			account			= None
+			tank_stats : list[WGtankStat] = await statsQ.get()
+			
 			try:
 				if len(tank_stats) > 0:
 					debug(f'Read {len(tank_stats)} from queue')
@@ -505,10 +396,7 @@ async def cmd_tank_stats_export(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')		
 		assert type(args.sample) in [int, float], 'param "sample" has to be a number'
-
-		raise NotImplementedError
-		## not implemented...
-		# query_args : dict[str, str | int | float | bool ] = dict()
+		
 		stats 		: EventCounter 			= EventCounter('tank-stats export')
 		regions		: set[Region] 			= { Region(r) for r in args.region }
 		filename	: str					= args.filename
@@ -516,77 +404,67 @@ async def cmd_tank_stats_export(db: Backend, args : Namespace) -> bool:
 		export_stdout : bool 				= filename == '-'
 		sample 		: float = args.sample
 
-		accountQs 	: dict[str, CounterQueue[BSAccount]] = dict()
-		account_workers : list[Task] = list()
-		export_workers 	: list[Task] = list()
+		tank_statQs 		: dict[str, CounterQueue[WGtankStat]] = dict()
+		tank_stat_workers 	: list[Task] = list()
+		export_workers 		: list[Task] = list()
 		
-		# total : int = await db.tank_stats_count(regions=regions, sample=sample)
+		total : int = await db.tank_stats_count(regions=regions, sample=sample)
 
-		# if args.distributed > 0:
-		# 	for i in range(args.distributed):
-		# 		accountQs[str(i)] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)
-		# 		distributed = OptAccountsDistributed(i, args.distributed)
-		# 		account_workers.append(create_task(db.accounts_get_worker(accountQs[str(i)], regions=regions, 
-		# 												inactive=inactive, disabled=disabled, sample=sample,
-		# 												distributed=distributed)))
-		# 		export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], 
-		# 													accountQs[str(i)]), 
-		# 												format=args.format, filename=f'{filename}.{i}', 
-		# 												force=force, append=args.append)))
-		# elif args.by_region:
-		# 	accountQs['all'] = CounterQueue(maxsize=ACCOUNTS_Q_MAX, count_items=False)
-		# 	# by region
-		# 	for region in regions:
-		# 		accountQs[region.name] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)											
-		# 		export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], 
-		# 														accountQs[region.name]), 
-		# 									format=args.format, filename=f'{filename}.{region.name}', 
-		# 									force=force, append=args.append)))
+		if args.by_region:
+			tank_statQs['all'] = CounterQueue(maxsize=ACCOUNTS_Q_MAX, count_items=False)
+			# by region
+			for region in regions:
+				tank_statQs[region.name] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)											
+				export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], 
+																tank_statQs[region.name]), 
+											format=args.format, filename=f'{filename}.{region.name}', 
+											force=force, append=args.append)))
 			
-		# 	# fetch accounts for all the regios
-		# 	account_workers.append(create_task(db.accounts_get_worker(accountQs['all'], regions=regions, 
-		# 												inactive=inactive, disabled=disabled, sample=sample)))
-		# 	# split by region
-		# 	export_workers.append(create_task(accounts_split_Q_by_region(Q_all=accountQs['all'], 
-		## 							regionQs=cast(dict[str, Queue[BSAccount]], accountQs))))
-		# else:
-		# 	accountQs['all'] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)
-		# 	account_workers.append(create_task(db.accounts_get_worker(accountQs['all'], regions=regions, 
-		# 												inactive=inactive, disabled=disabled, sample=sample)))
+			# fetch tank_stats for all the regios
+			tank_stat_workers.append(create_task(db.tank_stats_get_worker(tank_statQs['all'], 
+													regions=regions, sample=sample)))
+			# split by region
+			export_workers.append(create_task(split_tank_statQ_by_region(Q_all=tank_statQs['all'], 
+									regionQs=cast(dict[str, Queue[WGtankStat]], tank_statQs))))
+		else:
+			tank_statQs['all'] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)
+			tank_stat_workers.append(create_task(db.tank_stats_get_worker(tank_statQs['all'], 
+													regions=regions, sample=sample)))
 
-		# 	if filename != '-':
-		# 		filename += '.all'
-		# 	export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], accountQs['all']), 
-		# 									format=args.format, filename=filename, 
-		# 									force=force, append=args.append)))
+			if filename != '-':
+				filename += '.all'
+			export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], tank_statQs['all']), 
+											format=args.format, filename=filename, 
+											force=force, append=args.append)))
 		
-		# bar : Task | None = None
-		# if not export_stdout:
-		# 	bar = create_task(alive_queue_bar(list(accountQs.values()), 'Exporting accounts', total=total, enrich_print=False))
+		bar : Task | None = None
+		if not export_stdout:
+			bar = create_task(alive_queue_bar(list(tank_statQs.values()), 'Exporting tank_stats', total=total, enrich_print=False))
 			
-		# await wait(account_workers)
-		# for queue in accountQs.values():
-		# 	await queue.join() 
-		# if bar is not None:
-		# 	bar.cancel()
-		# for res in await gather(*account_workers):
-		# 	if type(res) is EventCounter:
-		# 		stats.merge_child(res)
-		# 	elif type(res) is BaseException:
-		# 		error(f'Backend ({db.name}) accounts_get_worker() returned error: {res}')
-		# for worker in export_workers:
-		# 	worker.cancel()
-		# for res in await gather(*export_workers):
-		# 	if type(res) is EventCounter:
-		# 		stats.merge_child(res)
-		# 	elif type(res) is BaseException:
-		# 		error(f'export(format={args.format}) returned error: {res}')
-		# if not export_stdout:
-		# 	stats.print()
+		await wait(tank_stat_workers)
+		for queue in tank_statQs.values():
+			await queue.join() 
+		if bar is not None:
+			bar.cancel()
+		for res in await gather(*tank_stat_workers):
+			if isinstance(res, EventCounter):
+				stats.merge_child(res)
+			elif type(res) is BaseException:
+				error(f'{db.driver}: tank_stats_get_worker() returned error: {res}')
+		for worker in export_workers:
+			worker.cancel()
+		for res in await gather(*export_workers):
+			if isinstance(res, EventCounter):
+				stats.merge_child(res)
+			elif type(res) is BaseException:
+				error(f'export(format={args.format}) returned error: {res}')
+		if not export_stdout:
+			stats.print()
 
 	except Exception as err:
 		error(f'{err}')
 	return False
+
 
 
 
@@ -597,13 +475,13 @@ async def cmd_tank_stats_export(db: Backend, args : Namespace) -> bool:
 ########################################################
 
 async def cmd_tank_stats_import(db: Backend, args : Namespace) -> bool:
-	"""Import tank stats from other backend"""
-	
+	"""Import tank stats from other backend"""	
 	try:
 		stats 		: EventCounter 				= EventCounter('tank-stats import')
-		accountQ 	: Queue[BSAccount]			= Queue(ACCOUNTS_Q_MAX)
-		tank_statsQ	: Queue[list[WGtankStat]]	= Queue(ACCOUNTS_Q_MAX)
-		config 		: ConfigParser | None 	= None
+		tank_statsQ	: Queue[list[WGtankStat]]	= Queue(TANK_STATS_Q_MAX)
+		config 		: ConfigParser | None 		= None
+		regions 	: set[Region] 				= { Region(r) for r in args.region }
+		IMPORT_BATCH : int 						= 500
 
 		importer : Task = create_task(db.tank_stats_insert_worker(tank_statsQ=tank_statsQ, 
 																	force=args.force))
@@ -613,22 +491,46 @@ async def cmd_tank_stats_import(db: Backend, args : Namespace) -> bool:
 			config = ConfigParser()
 			config.read(args.config)
 
-		# REWRITE ref accounts, releases
-		raise NotImplementedError
-		if args.tank_stats_import_backend == 'mongodb':
-			stats.merge_child(await cmd_tank_stats_import_mongodb(db, args, tank_statsQ, config))
-		elif args.tank_stats_import_backend == 'files':
-			stats.merge_child(await cmd_tank_stats_import_files(db, args, tank_statsQ, config))
+		kwargs : dict[str, Any] = Backend.read_args(args=args, backend=args.tank_stats_import_backend)
+		if (import_db:= Backend.create(args.tank_stats_import_backend, 
+										config=config, copy_from=db, **kwargs)) is not None:
+			if args.import_table is not None:
+				import_db.set_table(BSTableType.TankStats, args.import_table)
+			elif db == import_db and db.table_tank_stats == import_db.table_tank_stats:
+				raise ValueError('Cannot import from itself')
 		else:
-			raise ValueError(f'Unsupported import backend {args.tank_stats_import_backend}')
+			raise ValueError(f'Could not init {args.tank_stats_import_backend} to import tank stats from')
 
-		await accountQ.join()
+		tank_stats_type: type[WGtankStat] = globals()[args.import_type]
+		assert issubclass(tank_stats_type, WGtankStat), "--import-type has to be subclass of blitzutils.models.WGtankStat" 
+
+		message('Counting tank stats to import ...')
+		N : int = await db.tank_stats_count(regions=regions, sample=args.sample)
+		i : int = 0
+		ts_list : list[WGtankStat] = list()
+		with alive_bar(N, title="Importing tank stats ", enrich_print=False) as bar:
+			async for tank_stat in import_db.tank_stats_export(data_type=tank_stats_type, sample=args.sample):
+				if i < IMPORT_BATCH:
+					ts_list.append(tank_stat)
+					i += 1
+				else:
+					await tank_statsQ.put(ts_list)
+					bar(IMPORT_BATCH)
+					i = 0
+					ts_list = list()
+					stats.log('read', IMPORT_BATCH)
+
+			if len(ts_list) > 0:
+				await tank_statsQ.put(ts_list)
+				stats.log('read', len(ts_list))
+
+		await tank_statsQ.join()
 		importer.cancel()
-		worker_res : tuple[EventCounter|BaseException] = await gather(importer,return_exceptions=True)
-		if type(worker_res[0]) is EventCounter:
+		worker_res : tuple[EventCounter|BaseException] = await gather(importer, return_exceptions=True)
+		if isinstance(worker_res[0], EventCounter):
 			stats.merge_child(worker_res[0])
 		elif type(worker_res[0]) is BaseException:
-			error(f'account insert worker threw an exception: {worker_res[0]}')
+			error(f'tank stats insert worker threw an exception: {worker_res[0]}')
 		stats.print()
 		return True
 	except Exception as err:
@@ -636,21 +538,38 @@ async def cmd_tank_stats_import(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def cmd_tank_stats_import_mongodb(db: Backend, args : Namespace, tank_statsQ: Queue[list[WGtankStat]],
-										config: ConfigParser | None = None) -> EventCounter:
-	stats : EventCounter = EventCounter('accounts import mongodb')
+async def split_tank_statQ_by_region(Q_all, regionQs : dict[str, Queue[WGtankStat]], 
+								progress: bool = False, 
+								bar_title: str = 'Splitting tank stats queue') -> EventCounter:
+	debug('starting')
+	stats : EventCounter = EventCounter('By region')
 	try:
-		pass
-	except Exception as err:
-		error(f'{err}')	
-	return stats
+		with alive_bar(Q_all.qsize(), title=bar_title, manual=True, 
+						enrich_print=False, disable=not progress) as bar:
+			while True:
+				tank_stat : WGtankStat = await Q_all.get()
+				try:
+					if tank_stat.region is None:
+						raise ValueError(f'account ({tank_stat.id}) does not have region defined')
+					if tank_stat.region.name in regionQs: 
+						await regionQs[tank_stat.region.name].put(tank_stat)
+						stats.log(tank_stat.region.name)
+					else:
+						stats.log(f'excluded region: {tank_stat.region.name}')
+				except CancelledError:
+					raise CancelledError from None
+				except Exception as err:
+					stats.log('errors')
+					error(f'{err}')
+				finally:
+					stats.log('total')
+					Q_all.task_done()
+					bar()
+					if progress and Q_all.qsize() == 0:
+						break
 
-
-async def cmd_tank_stats_import_files(db: Backend, args : Namespace, tank_statsQ: Queue[list[WGtankStat]], 
-									config: ConfigParser | None = None) -> EventCounter:
-	stats : EventCounter = EventCounter('accounts import files')
-	try:
-		raise NotImplementedError
+	except CancelledError as err:
+		debug(f'Cancelled')
 	except Exception as err:
-		error(f'{err}')	
+		error(f'{err}')
 	return stats

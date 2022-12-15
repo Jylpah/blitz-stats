@@ -478,7 +478,7 @@ class MongoBackend(Backend):
 			async for obj in dbc.aggregate(pipeline, allowDiskUse=True):
 				try:
 					obj_in = in_type.parse_obj(obj)
-					debug(f'Read {obj_in} from {self.backend}.{dbc.name}')
+					debug(f'Read {obj_in} from {self.backend}.{dbc.name}')   # comment out
 					yield out_type.parse_obj(obj_in.obj_db())
 				except Exception as err:
 					error(f'{err}')
