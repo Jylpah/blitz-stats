@@ -13,13 +13,13 @@ from argparse import ArgumentParser
 import sys
 from os import chdir
 from os.path import isfile, dirname
-import asyncio
+from asyncio import run
 
-import models
 import accounts as acc
 import replays as rep
-import tank_stats as ts
 import releases as rel
+import tank_stats as ts
+import player_achievements as pa
 import setup as se
 
 # import blitzutils as bu
@@ -152,6 +152,8 @@ async def main(argv: list[str]):
 			await acc.cmd_accounts(backend, args)
 		elif args.main_cmd == 'tank-stats':
 			await ts.cmd_tank_stats(backend, args)
+		elif args.main_cmd == 'player-achievements':
+			await pa.cmd_player_achievements(backend, args)
 		elif args.main_cmd == 'replays':
 			await rep.cmd_replays(backend, args)
 		elif args.main_cmd == 'releases':
@@ -167,7 +169,13 @@ async def main(argv: list[str]):
 		error(f'{err}')
 	
 
-### main()
+########################################################
+# 
+# main() entry
+#
+########################################################
+
 if __name__ == "__main__":
-   #asyncio.run(main(sys.argv[1:]), debug=True)
-   asyncio.run(main(sys.argv[1:]))
+	#asyncio.run(main(sys.argv[1:]), debug=True)
+	run(main(sys.argv[1:]))
+
