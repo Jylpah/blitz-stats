@@ -4,6 +4,7 @@ from typing import Optional, cast, Type, Any, TypeVar
 import logging
 from asyncio import create_task, gather, wait, Queue, CancelledError, Task, sleep
 from aiofiles import open
+from asyncstdlib import enumerate
 from os.path import isfile
 from sys import stdout
 
@@ -202,16 +203,7 @@ def add_args_accounts_import(parser: ArgumentParser, config: Optional[ConfigPars
 			import_parser =  import_parsers.add_parser(backend.driver, help=f'accounts import {backend.driver} help')
 			if not backend.add_args_import(import_parser, config=config):
 				raise Exception(f'Failed to define argument parser for: accounts import {backend.driver}')
-		
-		# ## REFACTOR? This possibly could be made to dynamically add required subparsers with subclasses' add_args_import() methods
-		# import_mongodb_parser = import_parsers.add_parser('mongodb', help='accounts import mongodb help')
-		# if not MongoBackend.add_args_import(import_mongodb_parser, config=config, import_types=['BSAccount', 'WG_Account']):
-		# 	raise Exception("Failed to define argument parser for: accounts import mongodb")
-
-		# accounts_import_files_parser = import_parsers.add_parser('files', help='accounts import files help')
-		# if not add_args_accounts_import_files(accounts_import_files_parser, config=config):
-		# 	raise Exception("Failed to define argument parser for: accounts import files")
-
+				
 		parser.add_argument('--import-type', metavar='IMPORT-TYPE', type=str, 
 							default='BSAccount', choices=['BSAccount', 'WG_Account'], 
 							help='Data format to import. Default is blitz-stats native format.')
@@ -219,7 +211,9 @@ def add_args_accounts_import(parser: ArgumentParser, config: Optional[ConfigPars
 								choices=[ r.value for r in Region.has_stats() ], 
 								default=[ r.value for r in Region.has_stats() ], 
 								help='Filter by region (default is API = eu + com + asia)')
-		
+		parser.add_argument('--sample', type=float, default=0, 
+								help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
+
 		return True
 	except Exception as err:
 		error(f'{err}')
@@ -525,8 +519,8 @@ async def cmd_accounts_import(db: Backend, args : Namespace) -> bool:
 		stats 		: EventCounter 			= EventCounter('accounts import')
 		accountQ 	: Queue[BSAccount]		= Queue(ACCOUNTS_Q_MAX)
 		config 		: ConfigParser | None 	= None
+		regions 	: set[Region]			= { Region(r) for r in args.region }
 
-		regions : set[Region] ={ Region(r) for r in args.region }		
 		importer : Task = create_task(db.accounts_insert_worker(accountQ=accountQ, force=args.force))
 
 		if args.import_config is not None and isfile(args.import_config):
@@ -553,7 +547,7 @@ async def cmd_accounts_import(db: Backend, args : Namespace) -> bool:
 										sample=args.sample)
 
 		with alive_bar(N, title="Importing accounts ", enrich_print=False) as bar:
-			async for account in import_db.accounts_export(account_type=account_type, sample=args.sample):
+			async for account in import_db.accounts_export(data_type=account_type, sample=args.sample):
 				await accountQ.put(account)
 				bar()
 				stats.log('read')
@@ -643,6 +637,10 @@ async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 		filename	: str					= args.filename
 		force		: bool 					= args.force
 		export_stdout : bool 				= filename == '-'
+		sample 		: float = args.sample
+		accountQs 	: dict[str, CounterQueue[BSAccount]] = dict()
+		account_workers : list[Task] = list()
+		export_workers 	: list[Task] = list()
 
 		try: 
 			inactive = OptAccountsInactive(args.inactive)
@@ -650,11 +648,6 @@ async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 				inactive = OptAccountsInactive.no
 		except ValueError as err:
 			assert False, f"Incorrect value for argument 'inactive': {args.inactive}"
-
-		sample 		: float = args.sample
-		accountQs 	: dict[str, CounterQueue[BSAccount]] = dict()
-		account_workers : list[Task] = list()
-		export_workers 	: list[Task] = list()
 		
 		total : int = await db.accounts_count(regions=regions, inactive=inactive, disabled=disabled, sample=sample)
 
@@ -683,7 +676,7 @@ async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 			account_workers.append(create_task(db.accounts_get_worker(accountQs['all'], regions=regions, 
 														inactive=inactive, disabled=disabled, sample=sample)))
 			# split by region
-			export_workers.append(create_task(accounts_split_Q_by_region(Q_all=accountQs['all'], 
+			export_workers.append(create_task(split_accountQ_by_region(Q_all=accountQs['all'], 
 									regionQs=cast(dict[str, Queue[BSAccount]], accountQs))))
 		else:
 			accountQs['all'] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)
@@ -706,14 +699,14 @@ async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 		if bar is not None:
 			bar.cancel()
 		for res in await gather(*account_workers):
-			if type(res) is EventCounter:
+			if isinstance(res, EventCounter):
 				stats.merge_child(res)
 			elif type(res) is BaseException:
 				error(f'{db.driver}: accounts_get_worker() returned error: {res}')
 		for worker in export_workers:
 			worker.cancel()
 		for res in await gather(*export_workers):
-			if type(res) is EventCounter:
+			if isinstance(res, EventCounter):
 				stats.merge_child(res)
 			elif type(res) is BaseException:
 				error(f'export(format={args.format}) returned error: {res}')
@@ -725,34 +718,6 @@ async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def accounts_split_Q_by_region(Q_all, regionQs : dict[str, Queue[BSAccount]]) -> EventCounter:
-	debug('starting')
-	stats : EventCounter = EventCounter('By region')
-	try:
-		while True:
-			account : BSAccount = await Q_all.get()			
-			try:
-				if account.region is None:
-					raise ValueError(f'account ({account.id}) does not have region defined')
-				await regionQs[account.region.name].put(account)
-				stats.log(account.region.name)
-			
-			except CancelledError:
-				raise CancelledError from None
-			except Exception as err:
-				stats.log('errors')
-				error(f'{err}')
-			finally:
-				stats.log('total')
-				Q_all.task_done()
-
-	except CancelledError as err:
-		debug(f'Cancelled')
-	except Exception as err:
-		error(f'{err}')
-	return stats
-
-
 async def cmd_accounts_remove(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
@@ -761,3 +726,138 @@ async def cmd_accounts_remove(db: Backend, args : Namespace) -> bool:
 	except Exception as err:
 		error(f'{err}')
 	return False
+
+
+async def split_accountQ_by_region(Q_all, regionQs : dict[str, Queue[BSAccount]], 
+									progress: bool = False, 
+									bar_title: str = 'Splitting account queue') -> EventCounter:
+	debug('starting')
+	stats : EventCounter = EventCounter('By region')
+	try:
+		with alive_bar(Q_all.qsize(), title=bar_title, manual=True, 
+						enrich_print=False, disable=not progress) as bar:
+			while True:
+				account : BSAccount = await Q_all.get()
+				try:
+					if account.region is None:
+						raise ValueError(f'account ({account.id}) does not have region defined')
+					if account.region.name in regionQs: 
+						await regionQs[account.region.name].put(account)
+						stats.log(account.region.name)
+					else:
+						stats.log(f'excluded region: {account.region.name}')
+				except CancelledError:
+					raise CancelledError from None
+				except Exception as err:
+					stats.log('errors')
+					error(f'{err}')
+				finally:
+					stats.log('total')
+					Q_all.task_done()
+					bar()
+					if progress and Q_all.qsize() == 0:
+						break
+
+	except CancelledError as err:
+		debug(f'Cancelled')
+	except Exception as err:
+		error(f'{err}')
+	return stats
+
+
+async def create_accountQ(db: Backend, args : Namespace, 
+							accountQ: Queue[BSAccount], 
+							stats_type: StatsTypes | None, 
+							bar_title = 'Processing accounts') -> None:
+	"""Helper to make accountQ from arguments"""	
+	try:
+		regions	 	: set[Region]	= { Region(r) for r in args.region }
+		accounts_N 		: int = 0
+		accounts_added 	: int = 0
+
+		# count number of accounts
+		if args.accounts is not None:
+			accounts_N = len(args.accounts)			
+		elif args.file is not None:
+			message(f'Reading accounts from {args.file}')
+			async with open(args.file, mode='r') as f:
+				async for accounts_N, _ in enumerate(f):
+					pass
+			accounts_N += 1
+			if args.file.endswith('.csv'):
+				accounts_N -= 1
+		else:
+			if args.sample > 1:
+				accounts_N = int(args.sample)
+			else:				
+				message('Counting accounts to fetch stats...')
+				accounts_N = await db.accounts_count(stats_type=stats_type, regions=regions, 
+													sample=args.sample, cache_valid=args.cache_valid)
+
+		if accounts_N == 0:
+			raise ValueError('No accounts found')		
+
+		with alive_bar(accounts_N, title= bar_title, manual=True, enrich_print=False) as bar:
+			
+			if args.accounts is not None:	
+				async for accounts_added, account_id in enumerate(args.accounts):
+					try:
+						await accountQ.put(BSAccount(id=account_id))
+					except Exception as err:
+						error(f'Could not add account ({account_id}) to queue')
+					finally:
+						bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
+
+			elif args.file is not None:
+
+				if args.file.endswith('.txt'):
+					async for accounts_added, account in enumerate(BSAccount.import_txt(args.file)):
+						try:
+							await accountQ.put(account)
+						except Exception as err:
+							error(f'Could not add account to the queue: {err}')
+						finally:
+							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
+
+				elif args.file.endswith('.csv'):					
+					async for accounts_added, account in enumerate(BSAccount.import_csv(args.file)):
+						try:
+							await accountQ.put(account)
+						except Exception as err:
+							error(f'Could not add account to the queue: {err}')
+						finally:
+							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
+
+				elif args.file.endswith('.json'):				
+					async for accounts_added, account in enumerate(BSAccount.import_json(args.file)):
+						try:
+							await accountQ.put(account)
+						except Exception as err:
+							error(f'Could not add account to the queue: {err}')
+						finally:
+							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
+			
+			else:
+				async for accounts_added, account in enumerate(db.accounts_get(stats_type=StatsTypes.player_achievements, 
+													regions=regions, sample=args.sample, cache_valid=args.cache_valid)):
+					try:
+						await accountQ.put(account)
+					except Exception as err:
+						error(f'Could not add account ({account.id}) to queue')
+					finally:	
+						bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
+
+			incomplete : bool = False				
+			while accountQ.qsize() > 0:
+				incomplete = True
+				await sleep(1)
+				bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
+			if incomplete:						# FIX the edge case of queue getting processed before while loop
+				bar(1)
+
+		await accountQ.join()
+	except CancelledError as err:
+		debug(f'Cancelled')
+	except Exception as err:
+		error(f'{err}')
+	return None
