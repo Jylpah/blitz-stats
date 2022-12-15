@@ -661,6 +661,20 @@ class Backend(ABC):
 		yield WGtankStat()
 
 
+	async def tank_stats_get_worker(self, tank_statsQ : Queue[WGtankStat], **getargs) -> EventCounter:
+		debug('starting')
+		stats : EventCounter = EventCounter('tank_stats')
+		try:
+			async for ts in self.tank_stats_get(**getargs):
+				await tank_statsQ.put(ts)
+				stats.log('queued')		
+		except CancelledError as err:
+			debug(f'Cancelled')
+		except Exception as err:
+			error(f'{err}')
+		return stats
+
+
 	async def tank_stats_insert_worker(self, tank_statsQ : Queue[list[WGtankStat]], 
 										force: bool = False) -> EventCounter:
 		debug(f'starting, force={force}')
