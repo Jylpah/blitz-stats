@@ -270,18 +270,15 @@ async def update_player_achievements_worker(db: Backend, statsQ: Queue[list[WGpl
 	stats 		: EventCounter = EventCounter(f'Backend ({db.driver})')
 	added 		: int
 	not_added 	: int
-	account 	: BSAccount | None
-	account_id	: int
 	
 	try:
 		releases : BucketMapper[BSBlitzRelease] = BucketMapper[BSBlitzRelease](attr='cut_off')
 		async for r in db.releases_get():
 			releases.insert(r)
 		while True:
-			player_achievements : list[WGplayerAchievementsMaxSeries] = await statsQ.get()			
 			added 			= 0
 			not_added 		= 0
-			account			= None
+			player_achievements : list[WGplayerAchievementsMaxSeries] = await statsQ.get()
 			try:
 				if len(player_achievements) > 0:
 					debug(f'Read {len(player_achievements)} from queue')
@@ -290,30 +287,12 @@ async def update_player_achievements_worker(db: Backend, statsQ: Queue[list[WGpl
 						for pa in player_achievements:
 							pa.release = rel.release
 					added, not_added = await db.player_achievements_insert(player_achievements)
-					account_id = player_achievements[0].account_id
-					if (account := await db.account_get(account_id=account_id)) is None:
-						account = BSAccount(id=account_id)
-					account.last_battle_time = last_battle_time
-					account.stats_updated(StatsTypes.player_achievements)
-					if added > 0:
-						stats.log('accounts /w new stats')
-						if account.inactive:
-							stats.log('accounts marked active')
-						account.inactive = False
-					else:
-						stats.log('accounts w/o new stats')
-						if account.is_inactive(StatsTypes.player_achievements): 
-							if not account.inactive:
-								stats.log('accounts marked inactive')
-							account.inactive = True
-						
-					await db.account_replace(account=account, upsert=True)
 			except Exception as err:
 				error(f'{err}')
 			finally:
-				stats.log('player achievements added', added)
-				stats.log('old player achievements found', not_added)
-				debug(f'{added} player achievements added, {not_added} old player achievements found')				
+				stats.log('added', added)
+				stats.log('not found', not_added)
+				debug(f'{added} player achievements added, {not_added} old player achievements found')
 				statsQ.task_done()
 	except CancelledError as err:
 		debug(f'Cancelled')	
