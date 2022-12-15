@@ -285,7 +285,7 @@ async def cmd_releases_import(db: Backend, args : Namespace) -> bool:
 		release_type: type[BSBlitzRelease] = globals()[args.import_type]
 		assert issubclass(release_type, BSBlitzRelease), "--import-type has to be subclass of blitzutils.models.WGBlitzRelease" 
 
-		async for release in import_db.releases_export(release_type=release_type, sample=args.sample):
+		async for release in import_db.releases_export(data_type=release_type, sample=args.sample):
 			await releaseQ.put(release)
 			stats.log('read')
 

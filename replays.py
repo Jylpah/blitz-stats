@@ -212,7 +212,7 @@ async def  cmd_replays_import(db: Backend, args : Namespace) -> bool:
 		replay_type: type[WoTBlitzReplayJSON] = globals()[args.import_type]
 		assert issubclass(replay_type, WoTBlitzReplayJSON), "--import-type has to be subclass of blitzutils.models.WoTBlitzReplayJSON" 
 
-		async for replay in import_db.replays_export(replay_type=replay_type, sample=sample):
+		async for replay in import_db.replays_export(data_type=replay_type, sample=sample):
 			await replayQ.put(replay)
 			stats.log('read')
 
