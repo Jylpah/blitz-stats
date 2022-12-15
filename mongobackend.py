@@ -16,7 +16,8 @@ from backend import Backend, OptAccountsDistributed, OptAccountsInactive, BSTabl
 					MAX_UPDATE_INTERVAL, WG_ACCOUNT_ID_MAX, MIN_UPDATE_INTERVAL, ErrorLog, ErrorLogType
 from models import BSAccount, BSBlitzRelease, StatsTypes
 from pyutils.utils import epoch_now, JSONExportable
-from blitzutils.models import Region, WoTBlitzReplayJSON, WoTBlitzReplaySummary, WGtankStat, Account, Tank, WGBlitzRelease
+from blitzutils.models import Region, Account, Tank, WoTBlitzReplayJSON, WoTBlitzReplaySummary, \
+								WGtankStat, WGBlitzRelease, WGplayerAchievementsMaxSeries
 
 # Setup logging
 logger	= logging.getLogger()
@@ -730,7 +731,7 @@ class MongoBackend(Backend):
 															dist=dist, sample=sample, 
 															cache_valid=cache_valid)
 				if pipeline is None:
-					raise ValueError(f'Could not create get-accounts pipeline for {self.backend}')
+					raise ValueError(f'Could not create pipeline for accounts {self.backend}.{dbc.name}')
 				return await self._datas_count(dbc, pipeline)
 		except Exception as err:
 			error(f'counting accounts failed: {err}')
@@ -765,12 +766,12 @@ class MongoBackend(Backend):
 	# 	except Exception as err:
 	# 		error(f'Error fetching accounts from {self.name}:{self.database}.{self.table_accounts}: {err}')	
 
-	async def accounts_export(self, account_type: type[Account] = BSAccount, 
+	async def accounts_export(self, data_type: type[Account] = BSAccount, 
 								sample : float = 0) -> AsyncGenerator[BSAccount, None]:
 		"""Import accounts from Mongo DB"""
 		debug('starting')
 		async for account in self._datas_export(self.db[self.table_accounts], 
-												in_type=account_type, 
+												in_type=data_type, 
 												out_type=BSAccount, 
 												sample=sample):
 			yield account
@@ -813,25 +814,162 @@ class MongoBackend(Backend):
 
 ########################################################
 # 
-# MongoBackend(): releases
+# MongoBackend(): player_achievements
 #
 ########################################################
 
 
-	# async def release_get(self, release : str) -> BSBlitzRelease | None:
-	# 	res : BSBlitzRelease | None = None
-	# 	try:
-	# 		debug('starting')
-	# 		# DBC : str = self.table_releases
-	# 		dbc : AsyncIOMotorCollection = self.db[self.table_releases]			
-	# 		res = BSBlitzRelease.parse_obj(await dbc.find_one({ 'release' : release }))
-	# 		if res is None:
-	# 			raise ValueError()
-	# 	except ValidationError as err:
-	# 		error(f'Incorrect data format: {err}')
-	# 	except Exception as err:
-	# 		error(f'Could not find release {release} from {self.name}:{self.database}.{self.table_releases}: {err}')
-	# 	return res
+	async def player_achievement_insert(self, player_achievement: WGplayerAchievementsMaxSeries) -> bool:		
+		"""Insert a single player achievement"""
+		debug('starting')
+		return await self._data_insert(self.db[self.table_player_achievements], player_achievement)
+
+
+	async def player_achievement_get(self, account: BSAccount, added: int) -> WGplayerAchievementsMaxSeries | None:
+		"""Return a player_achievement from the backend"""
+		try:
+			debug('starting')
+			_id : ObjectId = WGplayerAchievementsMaxSeries.mk_id(account.id, region=account.region, added=added)
+			return await self._data_get(self.db[self.table_player_achievements], WGplayerAchievementsMaxSeries, id=_id)
+		except Exception as err:
+			error(f'Unknown error: {err}')
+		return None
+
+
+	async def player_achievement_delete(self, account: BSAccount, added: int) -> bool:
+		"""Delete a player achievements from the backend"""
+		try:
+			debug('starting')
+			_id : ObjectId = WGplayerAchievementsMaxSeries.mk_id(account.id, region=account.region, added=added)
+			return await self._data_delete(self.db[self.table_player_achievements], id=_id)
+		except Exception as err:
+			error(f'Unknown error: {err}')
+		return False
+
+
+	async def player_achievements_insert(self, player_achievements: Iterable[WGplayerAchievementsMaxSeries]) -> tuple[int, int]:
+		"""Store player achievements to the backend. Returns number of stats inserted and not inserted"""
+		debug('starting')
+		return await self._datas_insert(self.db[self.table_player_achievements], player_achievements)
+
+
+	async def _player_achievements_mk_pipeline(self, release: BSBlitzRelease|None = None, 
+										regions: set[Region] = Region.API_regions(), 
+										accounts: Iterable[Account] | None = None,
+										sample: float = 0) -> list[dict[str, Any]] | None:
+		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
+		try:
+			debug('starting')
+
+			# class WGplayerAchievementsMaxSeries(JSONExportable):
+			# 	id 			: ObjectId | None	= Field(default=None, alias='_id')
+			# 	jointVictory: int 				= Field(default=0, alias='jv')
+			# 	account_id	: int		 		= Field(default=0, alias='a')	
+			## 	region		: Region | None 	= Field(default=None, alias='r')
+			# 	release 	: str  | None 		= Field(default=None, alias='u')
+			# 	added		: int 				= Field(default=epoch_now(), alias='t')
+
+			dbc : AsyncIOMotorCollection = self.db[self.table_player_achievements]
+			pipeline : list[dict[str, Any]] = list()
+			match : list[dict[str, str|int|float|dict|list]] = list()
+			
+			# Pipeline build based on ESR rule
+			# https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
+
+			if regions != Region.has_stats():
+				match.append({ 'r' : { '$in' : [ r.value for r in regions ]} })
+			if accounts is not None:
+				match.append({ 'a': { '$in': [ a.id for a in accounts ]}})	
+			if release is not None:
+				match.append({ 'u': release.release })
+
+			if len(match) > 0:
+				pipeline.append( { '$match' : { '$and' : match } })
+
+			if sample >= 1:				
+				pipeline.append({'$sample': {'size' : int(sample) } })
+			elif sample > 0:
+				n : int = cast(int, await dbc.estimated_document_count())
+				pipeline.append({'$sample': {'size' : int(n * sample) } })
+			return pipeline		
+		except Exception as err:
+			error(f'{err}')
+		return None
+
+
+	async def player_achievements_get(self, release: BSBlitzRelease | None = None,
+							regions: set[Region] = Region.API_regions(), 
+							accounts: Iterable[Account] | None = None,
+							sample : float = 0) -> AsyncGenerator[WGplayerAchievementsMaxSeries, None]:
+		"""Return player achievements from the backend"""
+		try:
+			debug('starting')
+			pipeline : list[dict[str, Any]] | None 
+			pipeline = await self._player_achievements_mk_pipeline(release=release, regions=regions, 
+														accounts=accounts, 
+														sample=sample)			
+			if pipeline is None:
+				raise ValueError(f'could not create pipeline for get player achievements {self.backend}')
+
+			async for pa in self._datas_get(self.db[self.table_player_achievements], WGplayerAchievementsMaxSeries, pipeline):
+				yield pa
+		except Exception as err:
+			error(f'Error fetching player achievements from {self.backend}.{self.table_player_achievements}: {err}')	
+
+
+	async def player_achievements_count(self, release: BSBlitzRelease | None = None,
+							regions: set[Region] = Region.API_regions(), 
+							accounts: Iterable[Account] | None = None,
+							sample : float = 0) -> int:
+		"""Get number of player achievements from backend"""
+		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
+		try:
+			debug('starting')
+			dbc : AsyncIOMotorCollection = self.db[self.table_player_achievements]
+
+			if release is None and regions == Region.has_stats(): 
+				total : int = cast(int, await dbc.estimated_document_count())
+				if sample == 0:
+					return total
+				if sample < 1:
+					return int(total * sample)
+				else:
+					return int(min(total, sample))
+			else:
+				pipeline : list[dict[str, Any]] | None 
+				pipeline = await self._player_achievements_mk_pipeline(release=release, regions=regions, 
+																accounts=accounts, sample=sample)
+
+				if pipeline is None:
+					raise ValueError(f'could not create pipeline for player achievements {self.backend}.{dbc.name}')
+				return await self._datas_count(dbc, pipeline)
+		except Exception as err:
+			error(f'counting player achievements failed: {err}')
+		return -1
+
+
+	async def player_achievements_update(self, player_achievements: list[WGplayerAchievementsMaxSeries], upsert: bool = False) -> tuple[int, int]:
+		"""Update or upsert player achievements to the backend. Returns number of stats updated and not updated"""
+		debug('starting')
+		return await self._datas_update(self.db[self.table_player_achievements], 
+										datas=player_achievements, upsert=upsert)
+
+
+	async def player_achievements_export(self, data_type: type[WGplayerAchievementsMaxSeries] = WGplayerAchievementsMaxSeries, 
+								sample: float = 0) -> AsyncGenerator[WGplayerAchievementsMaxSeries, None]:
+		"""Export player achievements from Mongo DB"""
+		async for pa in self._datas_export(self.db[self.table_tank_stats], 
+												in_type=data_type, 
+												out_type=WGplayerAchievementsMaxSeries, 
+												sample=sample):
+			yield pa
+
+
+########################################################
+# 
+# MongoBackend(): releases
+#
+########################################################
 
 
 	async def release_get(self, release : str) -> BSBlitzRelease | None:
@@ -1008,12 +1146,12 @@ class MongoBackend(Backend):
 	# 		error(f'Error exporting releases from {self.name}: {err}')	
 
 
-	async def releases_export(self, release_type: type[WGBlitzRelease] = BSBlitzRelease, 
+	async def releases_export(self, data_type: type[WGBlitzRelease] = BSBlitzRelease, 
 							sample : float = 0) -> AsyncGenerator[BSBlitzRelease, None]:
 		"""Import relaseses from Mongo DB"""
 		debug('starting')
 		async for release in self._datas_export(self.db[self.table_releases], 
-												in_type=release_type, 
+												in_type=data_type, 
 												out_type=BSBlitzRelease, 
 												sample=sample):
 			debug(f'Exporting release {release}: {release.json_src()}')
@@ -1148,12 +1286,12 @@ class MongoBackend(Backend):
 	# 		error(f'Error exporting replays from {self.name}: {err}')	
 
 
-	async def replays_export(self, replay_type: type[WoTBlitzReplayJSON] = WoTBlitzReplayJSON,
+	async def replays_export(self, data_type: type[WoTBlitzReplayJSON] = WoTBlitzReplayJSON,
 								sample: float = 0) -> AsyncGenerator[WoTBlitzReplayJSON, None]:
 		"""Export replays from Mongo DB"""
 		debug('starting')
 		async for replay in self._datas_export(self.db[self.table_replays], 
-												in_type=replay_type, 
+												in_type=data_type, 
 												out_type=WoTBlitzReplayJSON, 
 												sample=sample):
 			yield replay
@@ -1192,6 +1330,12 @@ class MongoBackend(Backend):
 		except Exception as err:
 			error(f'Unknown error: {err}')
 		return False
+
+
+	async def tank_stats_insert(self, tank_stats: Iterable[WGtankStat]) -> tuple[int, int]:
+		"""Store tank stats to the backend. Returns the number of added and not added"""
+		debug('starting')
+		return await self._datas_insert(self.db[self.table_tank_stats], tank_stats)
 
 
 	async def _tank_stats_mk_pipeline(self, release: BSBlitzRelease|None = None, 
@@ -1295,10 +1439,10 @@ class MongoBackend(Backend):
 														sample=sample)
 
 				if pipeline is None:
-					raise ValueError(f'could not create get-accounts {self.backend}.{self.table_accounts} cursor')
+					raise ValueError(f'could not create pipeline for tank stats {self.backend}.{dbc.name}')
 				return await self._datas_count(dbc, pipeline)
 		except Exception as err:
-			error(f'counting accounts failed: {err}')
+			error(f'counting tank stats failed: {err}')
 		return -1
 
 
@@ -1326,12 +1470,6 @@ class MongoBackend(Backend):
 	# 	except Exception as err:
 	# 		error(f'Unknown error when adding tank stats: {err}')
 	# 	return added, not_added  # , last_battle_time
-
-
-	async def tank_stats_insert(self, tank_stats: Iterable[WGtankStat]) -> tuple[int, int]:
-		"""Store tank stats to the backend. Returns the number of added and not added"""
-		debug('starting')
-		return await self._datas_insert(self.db[self.table_tank_stats], tank_stats)
 
 
 	# async def tank_stats_update(self, tank_stats: list[WGtankStat], upsert: bool = False) -> tuple[int, int]:
@@ -1364,12 +1502,12 @@ class MongoBackend(Backend):
 
 
 
-	async def tank_stats_export(self, tank_stat_type: type[WGtankStat] = WGtankStat, 
+	async def tank_stats_export(self, data_type: type[WGtankStat] = WGtankStat, 
 								sample: float = 0) -> AsyncGenerator[WGtankStat, None]:
 		"""Export tank stats from Mongo DB"""
 		debug('starting')
 		async for tank_stat in self._datas_export(self.db[self.table_tank_stats], 
-												in_type=tank_stat_type, 
+												in_type=data_type, 
 												out_type=WGtankStat, 
 												sample=sample):
 			yield tank_stat
