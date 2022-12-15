@@ -180,17 +180,26 @@ async def cmd_player_achievements_update(db: Backend, args : Namespace) -> bool:
 		tasks.append(create_task(split_accountQ_by_region(accountQ, regionQs)))
 		await create_accountQ(db, args, accountQ, StatsTypes.player_achievements,
 								bar_title='Fetching player achievements')
-		accounts_left.release()
+		accounts_left.release()		# All accounts have been added to region Queues
+
+		# waiting for region queues to finish
+		for rname, Q in regionQs.items():
+			debug(f'waiting for region queue to finish: {rname}')
+			await Q.join()
+
 		if retryQ is not None and not retryQ.empty():
+			retries_left : Condition = Condition()
+			await retries_left.acquire()
 			for r in regions:
 				regionQs[r.name] = Queue(maxsize=100) # do not fill the old queues or it will never complete
 				for _ in range(int(args.threads/len(regions))):
-					tasks.append(create_task(update_player_achievements_api_worker(db, wg_api=wg, region=r, 
-																					accountQ=regionQs[r.name], 
+					tasks.append(create_task(update_player_achievements_api_region_worker(wg_api=wg, region=r, 
+																					accountQ=regionQs[r.name],
+																					accounts_left=retries_left, 
 																					statsQ=statsQ)))
-			tasks.append(create_task(split_accountQ_by_region(retryQ, regionQs)))
-
-		await retryQ.join()
+			ec_retries : EventCounter = await split_accountQ_by_region(retryQ, regionQs, progress=True, bar_title='Re-trying failed accounts')
+			stats.merge_child(ec_retries)
+			await retryQ.join()		
 
 		await statsQ.join()
 
@@ -255,63 +264,6 @@ async def update_player_achievements_api_region_worker(wg_api: WGApi, region: Re
 	return stats
 
 
-
-
-
-async def update_player_achievements_api_worker(db: Backend, wg_api : WGApi, region: Region, 
-										accountQ: Queue[BSAccount], 
-										statsQ: Queue[list[WGplayerAchievementsMaxSeries]], 
-										retryQ: Queue[BSAccount] | None = None, 
-										check_invalid : bool = False) -> EventCounter:
-	"""Async worker to fetch player achievements from WG API"""
-	debug('starting')
-	stats = EventCounter('WG API')
-	try:
-		while True:
-			accounts : list[BSAccount] = await accountQ.get()
-			try:
-				debug(f'account_id: {account.id}')
-				stats.log('accounts total')
-				
-				if account.region != region:
-					raise ValueError(f"account_id's ({account.id}) region ({account.region}) is different from API region ({region})")
-				player_achievements : list[WGplayerAchievementsMaxSeries] | None = await wg_api.get_player_achievements(account.id, account.region)
-
-				if player_achievements is None:
-					
-					debug(f'Could not fetch account: {account.id}')
-					if retryQ is not None:
-						stats.log('accounts to re-try')
-						await retryQ.put(account)
-					else:
-						stats.log('accounts w/o stats')
-						account.disabled = True
-						await db.account_update(account=account, fields=['disabled'])
-						stats.log('accounts disabled')
-				else:
-					
-					await statsQ.put(player_achievements)
-					stats.log('player achievements fetched', len(player_achievements))
-					stats.log('accounts /w stats')
-					if check_invalid:
-						account.disabled = False
-						await db.account_update(account=account, fields=['disabled'])
-						stats.log('accounts enabled')
-
-			except Exception as err:
-				stats.log('errors')
-				error(f'{err}')
-			finally:
-				accountQ.task_done()
-		
-	except CancelledError as err:
-		debug(f'Cancelled')	
-	except Exception as err:
-		error(f'{err}')
-	stats.log('accounts total', - stats.get_value('accounts to re-try'))  # remove re-tried accounts from total
-	return stats
-
-
 async def update_player_achievements_worker(db: Backend, statsQ: Queue[list[WGplayerAchievementsMaxSeries]]) -> EventCounter:
 	"""Async worker to add player achievements to backend. Assumes batch is for the same account"""
 	debug('starting')
@@ -320,8 +272,7 @@ async def update_player_achievements_worker(db: Backend, statsQ: Queue[list[WGpl
 	not_added 	: int
 	account 	: BSAccount | None
 	account_id	: int
-	last_battle_time : int
-
+	
 	try:
 		releases : BucketMapper[BSBlitzRelease] = BucketMapper[BSBlitzRelease](attr='cut_off')
 		async for r in db.releases_get():
@@ -330,17 +281,15 @@ async def update_player_achievements_worker(db: Backend, statsQ: Queue[list[WGpl
 			player_achievements : list[WGplayerAchievementsMaxSeries] = await statsQ.get()			
 			added 			= 0
 			not_added 		= 0
-			last_battle_time = -1
 			account			= None
 			try:
 				if len(player_achievements) > 0:
 					debug(f'Read {len(player_achievements)} from queue')
-					last_battle_time = max( [ ts.last_battle_time for ts in player_achievements] )
-					for ts in player_achievements:
-						rel : BSBlitzRelease | None = releases.get(ts.last_battle_time)
-						if rel is not None:
-							ts.release = rel.release
-					added, not_added = await db.player_achievements_insert(player_achievements)	
+					rel : BSBlitzRelease | None = releases.get(epoch_now())
+					if rel is not None:
+						for pa in player_achievements:
+							pa.release = rel.release
+					added, not_added = await db.player_achievements_insert(player_achievements)
 					account_id = player_achievements[0].account_id
 					if (account := await db.account_get(account_id=account_id)) is None:
 						account = BSAccount(id=account_id)
