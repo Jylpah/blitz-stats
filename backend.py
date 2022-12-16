@@ -16,8 +16,7 @@ from pydantic import BaseModel, Field
 
 from models import BSAccount, BSBlitzRelease, StatsTypes
 from blitzutils.models import Region, WoTBlitzReplayJSON, WGtankStat, Account, Tank, WGplayerAchievementsMaxSeries
-from pyutils.utils import epoch_now, is_alphanum_
-from pyutils import EventCounter, JSONExportable
+from pyutils import EventCounter, JSONExportable, epoch_now, is_alphanum
 # from mongobackend import MongoBackend
 
 # Setup logging
@@ -129,8 +128,11 @@ class Backend(ABC):
 			CLI arguments overide settings in the config file"""
 		
 		self._database : str 	= 'BlitzStats'
+		
 		# default tables/collections
 		self._T 	: dict[BSTableType,str] = dict()
+		self._Tr 	: dict[str, BSTableType] = dict()
+		self._M 	: dict[BSTableType | str, type[JSONExportable]] = dict()
 
 		self._T[BSTableType.Accounts] 			= 'Accounts'
 		self._T[BSTableType.Tankopedia] 		= 'Tankopedia'
@@ -141,7 +143,18 @@ class Backend(ABC):
 		message('Reminder: Rename Backend ErrorLog & AccountLog')
 		self._T[BSTableType.TankStats] 			= 'TankStats'
 		self._T[BSTableType.PlayerAchievements] = 'PlayerAchievements'
-		# raise NotImplementedError
+		
+		for k, v in self._T.items():
+			self._Tr[v] = k
+		
+		self._M[BSTableType.Accounts] 			= BSAccount
+		self._M[BSTableType.Tankopedia] 		= Tank
+		self._M[BSTableType.Releases] 			= BSBlitzRelease
+		self._M[BSTableType.Replays] 			= WoTBlitzReplayJSON
+		self._M[BSTableType.AccountLog] 		= ErrorLog	
+		self._M[BSTableType.ErrorLog] 			= ErrorLog		
+		self._M[BSTableType.TankStats] 			= WGtankStat
+		self._M[BSTableType.PlayerAchievements] = WGplayerAchievementsMaxSeries
 
 
 	@classmethod
@@ -246,48 +259,8 @@ class Backend(ABC):
 	
 	def set_database(self, database : str) -> None:
 		"""Set database"""
-		assert is_alphanum_(database), f'Illegal characters in the table name: {database}'
+		assert is_alphanum(database), f'Illegal characters in the table name: {database}'
 		self._database = database
-
-
-	@property
-	def table_accounts(self) -> str:
-		return self._T[BSTableType.Accounts]
-
-
-	@property
-	def table_tankopedia(self) -> str:
-		return self._T[BSTableType.Tankopedia]
-
-
-	@property
-	def table_releases(self) -> str:
-		return self._T[BSTableType.Releases]
-
-
-	@property
-	def table_replays(self) -> str:
-		return self._T[BSTableType.Replays]
-
-
-	@property	
-	def table_tank_stats(self) -> str:
-		return self._T[BSTableType.TankStats]
-
-
-	@property
-	def table_player_achievements(self) -> str:
-		return self._T[BSTableType.PlayerAchievements]
-
-
-	@property	
-	def table_account_log(self) -> str:
-		return self._T[BSTableType.AccountLog]
-
-
-	@property	
-	def table_error_log(self) -> str:
-		return self._T[BSTableType.ErrorLog]
 
 
 	def get_table(self, table_type: BSTableType) -> str:
@@ -295,11 +268,104 @@ class Backend(ABC):
 		return self._T[table_type] 
 
 
-	def set_table(self, table_type: BSTableType, new: str) -> None:
+	def set_table(self, table_type: BSTableType, name: str) -> None:
 		"""Set database table/collection"""
-		assert len(new) > 0, 'table name cannot be zero-sized'
-		assert is_alphanum_(new), f'Illegal characters in the table name: {new}'
-		self._T[table_type] = new
+		assert len(name) > 0, 'table name cannot be zero-sized'
+		assert is_alphanum(name), f'Illegal characters in the table name: {name}'
+		self._T[table_type] = name
+		self._Tr[name] 		= table_type
+
+
+	def get_model(self, table: BSTableType | str) -> type[JSONExportable]:
+		"""Get collection model"""
+		return self._M[table]
+		
+
+	def set_model(self, table: BSTableType | str, model: type[JSONExportable]) -> None:
+		"""Set collection model"""	
+		if type(table) is BSTableType:
+			self._M[self.get_table(table)] = model	
+		self._M[table] = model
+		
+
+	@property
+	def table_accounts(self) -> str:
+		return self.get_table(BSTableType.Accounts)
+
+
+	@property
+	def table_tankopedia(self) -> str:
+		return self.get_table(BSTableType.Tankopedia)
+
+
+	@property
+	def table_releases(self) -> str:
+		return self.get_table(BSTableType.Releases)
+
+
+	@property
+	def table_replays(self) -> str:
+		return self.get_table(BSTableType.Replays)
+
+
+	@property	
+	def table_tank_stats(self) -> str:
+		return self.get_table(BSTableType.TankStats)
+
+
+	@property
+	def table_player_achievements(self) -> str:
+		return self.get_table(BSTableType.PlayerAchievements)
+
+
+	@property	
+	def table_account_log(self) -> str:
+		return self.get_table(BSTableType.AccountLog)
+
+
+	@property	
+	def table_error_log(self) -> str:
+		return self.get_table(BSTableType.ErrorLog)
+
+
+	@property
+	def model_accounts(self) -> type[JSONExportable]:
+		return self.get_model(BSTableType.Accounts)
+
+
+	@property
+	def model_tankopedia(self) -> type[JSONExportable]:
+		return self.get_model(BSTableType.Tankopedia)
+
+
+	@property
+	def model_releases(self) -> type[JSONExportable]:
+		return self.get_model(BSTableType.Releases)
+
+
+	@property
+	def model_replays(self) -> type[JSONExportable]:
+		return self.get_model(BSTableType.Replays)
+
+
+	@property	
+	def model_tank_stats(self) -> type[JSONExportable]:
+		return self.get_model(BSTableType.TankStats)
+
+
+	@property
+	def model_player_achievements(self) -> type[JSONExportable]:
+		return self.get_model(BSTableType.PlayerAchievements)
+
+
+	@property	
+	def model_account_log(self) -> type[JSONExportable]:
+		return self.get_model(BSTableType.AccountLog)
+
+
+	@property	
+	def model_error_log(self) -> type[JSONExportable]:
+		return self.get_model(BSTableType.ErrorLog)
 
 
 	#----------------------------------------
