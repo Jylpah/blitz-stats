@@ -2,7 +2,7 @@ from configparser import ConfigParser
 from argparse import Namespace, ArgumentParser
 from datetime import date, datetime
 from os.path import isfile
-from typing import Optional, Any, Iterable, AsyncGenerator, TypeVar, ClassVar, cast, Generic
+from typing import Optional, Any, Iterable, AsyncGenerator, TypeVar, ClassVar, cast, Generic, Callable
 import logging
 
 from bson import ObjectId
@@ -15,7 +15,7 @@ from pydantic import BaseModel, ValidationError, Field
 from backend import Backend, OptAccountsDistributed, OptAccountsInactive, BSTableType, \
 					MAX_UPDATE_INTERVAL, WG_ACCOUNT_ID_MAX, MIN_UPDATE_INTERVAL, ErrorLog, ErrorLogType
 from models import BSAccount, BSBlitzRelease, StatsTypes
-from pyutils.utils import epoch_now, JSONExportable
+from pyutils import epoch_now, JSONExportable, AliasMapper, alias_mapper
 from blitzutils.models import Region, Account, Tank, WoTBlitzReplayJSON, WoTBlitzReplaySummary, \
 								WGtankStat, WGBlitzRelease, WGplayerAchievementsMaxSeries
 
@@ -84,15 +84,6 @@ class MongoBackend(Backend):
 
 		try:			
 			self.db 	: AsyncIOMotorDatabase
-			# self.C 		: dict[str,str] = dict()
-
-			# default collections
-			# self.C['ACCOUNTS'] 			= 'Accounts'
-			# self.C['TANKOPEDIA'] 		= 'Tankopedia'
-			# self.C['RELEASES'] 			= 'Releases'
-			# self.C['REPLAYS'] 			= 'Replays'
-			# self.table_tank_stats 		= 'TankStats'
-			# self.C['PLAYER_ACHIEVEMENTS'] = 'PlayerAchievements'
 
 			if config is not None:
 				if 'GENERAL' in config.sections():
@@ -115,13 +106,13 @@ class MongoBackend(Backend):
 					mongodb_rc['password']				= configMongo.get('password', mongodb_rc['password'])
 
 					self.set_table(BSTableType.Accounts, 	configMongo.get('c_accounts', 	self.table_accounts))
-					self.set_table(BSTableType.Tankopedia, 	configMongo.get('c_tankopedia', 	self.table_tankopedia))
+					self.set_table(BSTableType.Tankopedia, 	configMongo.get('c_tankopedia', self.table_tankopedia))
 					self.set_table(BSTableType.Releases, 	configMongo.get('c_releases', 	self.table_releases))
-					self.set_table(BSTableType.Replays, 	configMongo.get('c_replays', 		self.table_replays))
-					self.set_table(BSTableType.TankStats, 	configMongo.get('c_tank_stats', 	self.table_tank_stats))
+					self.set_table(BSTableType.Replays, 	configMongo.get('c_replays', 	self.table_replays))
+					self.set_table(BSTableType.TankStats, 	configMongo.get('c_tank_stats', self.table_tank_stats))
 					self.set_table(BSTableType.PlayerAchievements, configMongo.get('c_player_achievements', 
 																				self.table_player_achievements))
-					self.set_table(BSTableType.AccountLog, 	configMongo.get('c_account_log', 	self.table_account_log))
+					self.set_table(BSTableType.AccountLog, 	configMongo.get('c_account_log',self.table_account_log))
 					self.set_table(BSTableType.ErrorLog,	configMongo.get('c_error_log', 	self.table_error_log))
 
 				else:					
@@ -157,6 +148,36 @@ class MongoBackend(Backend):
 		except Exception as err:
 			error(f'Error creating copy: {err}')
 		return None
+
+
+	def get_collection(self, table_type: BSTableType) -> AsyncIOMotorCollection:
+		return self.db[self.get_table(table_type)]
+
+
+	@property
+	def collection_accounts(self) -> AsyncIOMotorCollection:
+		return self.get_collection(BSTableType.Accounts)
+
+	@property
+	def collection_releases(self) -> AsyncIOMotorCollection:
+		return self.get_collection(BSTableType.Releases)
+	
+	@property
+	def collection_replays(self) -> AsyncIOMotorCollection:
+		return self.get_collection(BSTableType.Replays)
+
+	@property
+	def collection_tankopedia(self) -> AsyncIOMotorCollection:
+		return self.get_collection(BSTableType.Tankopedia)
+
+	@property
+	def collection_player_achievements(self) -> AsyncIOMotorCollection:
+		return self.get_collection(BSTableType.PlayerAchievements)
+
+	@property
+	def collection_tank_stats(self) -> AsyncIOMotorCollection:
+		return self.get_collection(BSTableType.TankStats)
+
 
 
 	@classmethod
@@ -214,7 +235,7 @@ class MongoBackend(Backend):
 		try:
 			debug('starting')
 
-			DBC : str = 'NOT DEFINED'
+			DBC : str = ''
 			dbc : AsyncIOMotorCollection
 
 			try:
@@ -356,7 +377,9 @@ class MongoBackend(Backend):
 		"""Generic method to update an object of data_type"""
 		try:
 			debug('starting')
-			if (res := await dbc.find_one_and_update({ '_id': id}, { '$set': update})) is None:
+			model = self.get_model(dbc.name)			
+			alias_fields : dict[str, Any] = alias_mapper(model, update)
+			if (res := await dbc.find_one_and_update({ '_id': id}, { '$set': alias_fields})) is None:
 				debug(f'Failed to update _id={id} into {self.backend}.{dbc.name}')
 				return False
 			debug(f'Updated (_id={id}) into {self.backend}.{dbc.name}')
@@ -610,7 +633,7 @@ class MongoBackend(Backend):
 	# 	except Exception as err:
 	# 		error(f'Error fetching accounts from {self.backend}.{self.table_accounts}: {err}')	
 
-	async def _accounts_mk_pipeline(self, stats_type : StatsTypes | None = None, 
+	async def _mk_pipeline_accounts(self, stats_type : StatsTypes | None = None, 
 							regions: set[Region] = Region.API_regions(), 
 							inactive : OptAccountsInactive = OptAccountsInactive.default(), 
 							dist : OptAccountsDistributed | None = None,
@@ -619,11 +642,14 @@ class MongoBackend(Backend):
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
 		try:
 			debug('starting')
+			a = AliasMapper(BSAccount)
+			alias : Callable = a.alias
+
 			if cache_valid is None:
 				cache_valid = self._cache_valid
 			update_field : str | None = None
 			if stats_type is not None:
-				update_field = stats_type.value
+				update_field = alias(stats_type.value)
 			dbc : AsyncIOMotorCollection = self.db[self.table_accounts]
 			match : list[dict[str, str|int|float|dict|list]] = list()
 			pipeline : list[dict[str, Any]] = list()
@@ -631,27 +657,29 @@ class MongoBackend(Backend):
 			# Pipeline build based on ESR rule
 			# https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
 
+
+
 			if disabled:
-				match.append({ 'd': True })
+				match.append({ alias('disabled') : True })
 			elif inactive == OptAccountsInactive.yes:
-				match.append({ 'i': True })
+				match.append({ alias('inactive'): True })
 			
 			if regions != Region.has_stats():
-				match.append({ 'r' : { '$in' : [ r.value for r in regions ]} })
+				match.append({ alias('region') : { '$in' : [ r.value for r in regions ]} })
 
-			match.append({ '_id' : {  '$lt' : WG_ACCOUNT_ID_MAX}})  # exclude Chinese account ids
+			match.append({ alias('id') : {  '$lt' : WG_ACCOUNT_ID_MAX}})  # exclude Chinese account ids
 			
 			if dist is not None:
-				match.append({ '_id' : {  '$mod' :  [ dist.div, dist.mod ]}})			
+				match.append({ alias('id') : {  '$mod' :  [ dist.div, dist.mod ]}})			
 	
 			if disabled is not None and not disabled:
-				match.append({ 'd': { '$ne': True }})
+				match.append({ alias('disabled'): { '$ne': True }})
 				# check inactive only if disabled == False
 				if inactive == OptAccountsInactive.auto:
 					assert update_field is not None, "automatic inactivity detection requires stat_type"
 					match.append({ '$or': [ { update_field: None}, { update_field: { '$lt': epoch_now() - cache_valid }} ] })				
 				elif inactive == OptAccountsInactive.no:
-					match.append({ 'i': { '$ne': True }})
+					match.append({ alias('inactive'): { '$ne': True }})
 
 			if len(match) > 0:
 				pipeline.append( { '$match' : { '$and' : match } })
@@ -679,7 +707,7 @@ class MongoBackend(Backend):
 			debug('starting')
 			NOW = epoch_now()	
 			pipeline : list[dict[str, Any]] | None 
-			pipeline = await self._accounts_mk_pipeline(stats_type=stats_type, regions=regions, 
+			pipeline = await self._mk_pipeline_accounts(stats_type=stats_type, regions=regions, 
 														inactive=inactive, disabled=disabled, 
 														dist=dist, sample=sample, cache_valid=cache_valid)
 
@@ -726,7 +754,7 @@ class MongoBackend(Backend):
 					return int(min(total, sample))
 			else:
 				pipeline : list[dict[str, Any]] | None 
-				pipeline = await self._accounts_mk_pipeline(stats_type=stats_type, regions=regions, 
+				pipeline = await self._mk_pipeline_accounts(stats_type=stats_type, regions=regions, 
 															inactive=inactive, disabled=disabled, 
 															dist=dist, sample=sample, 
 															cache_valid=cache_valid)
@@ -853,14 +881,14 @@ class MongoBackend(Backend):
 		return await self._datas_insert(self.db[self.table_player_achievements], player_achievements)
 
 
-	async def _player_achievements_mk_pipeline(self, release: BSBlitzRelease|None = None, 
+	async def _mk_pipeline_player_achievements(self, release: BSBlitzRelease|None = None, 
 										regions: set[Region] = Region.API_regions(), 
 										accounts: Iterable[Account] | None = None,
 										sample: float = 0) -> list[dict[str, Any]] | None:
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
 		try:
 			debug('starting')
-
+			
 			# class WGplayerAchievementsMaxSeries(JSONExportable):
 			# 	id 			: ObjectId | None	= Field(default=None, alias='_id')
 			# 	jointVictory: int 				= Field(default=0, alias='jv')
@@ -868,6 +896,9 @@ class MongoBackend(Backend):
 			## 	region		: Region | None 	= Field(default=None, alias='r')
 			# 	release 	: str  | None 		= Field(default=None, alias='u')
 			# 	added		: int 				= Field(default=epoch_now(), alias='t')
+
+			a = AliasMapper(WGplayerAchievementsMaxSeries)
+			alias : Callable = a.alias
 
 			dbc : AsyncIOMotorCollection = self.db[self.table_player_achievements]
 			pipeline : list[dict[str, Any]] = list()
@@ -877,11 +908,11 @@ class MongoBackend(Backend):
 			# https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
 
 			if regions != Region.has_stats():
-				match.append({ 'r' : { '$in' : [ r.value for r in regions ]} })
+				match.append({ alias('region') : { '$in' : [ r.value for r in regions ]} })
 			if accounts is not None:
-				match.append({ 'a': { '$in': [ a.id for a in accounts ]}})	
+				match.append({ alias('account_id'): { '$in': [ a.id for a in accounts ]}})	
 			if release is not None:
-				match.append({ 'u': release.release })
+				match.append({ alias('release'): release.release })
 
 			if len(match) > 0:
 				pipeline.append( { '$match' : { '$and' : match } })
@@ -905,7 +936,7 @@ class MongoBackend(Backend):
 		try:
 			debug('starting')
 			pipeline : list[dict[str, Any]] | None 
-			pipeline = await self._player_achievements_mk_pipeline(release=release, regions=regions, 
+			pipeline = await self._mk_pipeline_player_achievements(release=release, regions=regions, 
 														accounts=accounts, 
 														sample=sample)			
 			if pipeline is None:
@@ -937,7 +968,7 @@ class MongoBackend(Backend):
 					return int(min(total, sample))
 			else:
 				pipeline : list[dict[str, Any]] | None 
-				pipeline = await self._player_achievements_mk_pipeline(release=release, regions=regions, 
+				pipeline = await self._mk_pipeline_player_achievements(release=release, regions=regions, 
 																accounts=accounts, sample=sample)
 
 				if pipeline is None:
@@ -1079,7 +1110,7 @@ class MongoBackend(Backend):
 	# 	return False
 	
 
-	async def _releases_mk_pipeline(self, release_match: str | None = None, 
+	async def _mk_pipeline_releases(self, release_match: str | None = None, 
 							since : date | None = None, 
 							first : BSBlitzRelease | None = None) -> list[dict[str, Any]]:
 		"""Build aggregation pipeline for releases"""
@@ -1087,22 +1118,24 @@ class MongoBackend(Backend):
 			debug('starting')
 			match : list[dict[str, str|int|float|datetime|dict|list]] = list()
 			pipeline : list[dict[str, Any]] = list()
+			a = AliasMapper(BSBlitzRelease)
+			alias : Callable = a.alias
 			if since is not None:
-				match.append( {'launch_date':  { '$gte': datetime.combine(since, datetime.min.time()) }})
+				match.append( { alias('launch_date'):  { '$gte': datetime.combine(since, datetime.min.time()) }})
 			if first is not None:
-				match.append( {'launch_date':  { '$gte': first.launch_date }})
+				match.append( { alias('launch_date'):  { '$gte': first.launch_date }})
 			if release_match is not None:
-				match.append( { 'release': { '$regex' : '^' + release_match } } )
+				match.append( { alias('release'): { '$regex' : '^' + release_match } } )
 			
 			if len(match) > 0:
 				pipeline.append( { '$match' : { '$and' : match } })
 
-			pipeline.append( { '$sort': { 'launch_date': ASCENDING } })
+			pipeline.append( { '$sort': { alias('launch_date'): ASCENDING } })
+			debug(f'pipeline: {pipeline}')
 			return pipeline
 		except Exception as err:
 			error(f'Error creating pipeline: {err}')
 			raise err
-		
 
 
 	async def releases_get(self, release_match: str | None = None, 
@@ -1113,7 +1146,7 @@ class MongoBackend(Backend):
 		
 		try:
 			pipeline : list[dict[str, Any]]
-			pipeline = await self._releases_mk_pipeline(release_match=release_match, since=since, first=first)
+			pipeline = await self._mk_pipeline_releases(release_match=release_match, since=since, first=first)
 			
 			async for release in self._datas_get(self.db[self.table_releases], 
 													data_type=BSBlitzRelease, 
@@ -1208,7 +1241,7 @@ class MongoBackend(Backend):
 		return await self._datas_insert(self.db[self.table_replays], replays)
 
 
-	async def _replays_mk_pipeline(self, since: date | None = None, sample : float = 0, 
+	async def _mk_pipeline_replays(self, since: date | None = None, sample : float = 0, 
 									**summary_fields) -> list[dict[str, Any]]:
 		"""Build pipeline for replays"""
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
@@ -1216,18 +1249,19 @@ class MongoBackend(Backend):
 		match : list[dict[str, str|int|float|dict|list]] = list()
 		pipeline : list[dict[str, Any]] = list()
 		dbc : AsyncIOMotorCollection = self.db[self.table_replays]
+		a : AliasMapper = AliasMapper(WoTBlitzReplaySummary)
+		alias : Callable = a.alias
 
 		if since is not None:
 			match.append( {'d.s.bts': { '$gte': datetime.combine(since, datetime.min.time()).timestamp() }})
 		
 		for sf, value in summary_fields.items():
-			try:
-				alias : str = WoTBlitzReplaySummary.__fields__[sf].alias
-				match.append( { f'd.s.{alias}': value })
-			except KeyError as err:
-				error(f'No such a key in WoTBlitzReplaySummary(): {sf}')
+			try:				
+				match.append( { f'd.s.{alias(sf)}': value })
+			except KeyError:
+				error(f'No such a key in WoTBlitzReplaySummary(): {alias(sf)}')
 			except Exception as err:
-				error(f"Error setting filter for summary field '{sf}'")
+				error(f"Error setting filter for summary field '{alias(sf)}': {err}")
 
 		if len(match) > 0:
 			pipeline.append( { '$match' : { '$and' : match } })
@@ -1248,7 +1282,7 @@ class MongoBackend(Backend):
 		try:
 			debug('starting')
 			pipeline : list[dict[str, Any]] 
-			pipeline = await self._replays_mk_pipeline(since=since, sample=sample, **summary_fields)
+			pipeline = await self._mk_pipeline_replays(since=since, sample=sample, **summary_fields)
 			async for replay in self._datas_get(self.db[self.table_replays], WoTBlitzReplayJSON, pipeline):
 				yield replay
 		except Exception as err:
@@ -1260,7 +1294,7 @@ class MongoBackend(Backend):
 		"""Count replays in backed"""
 		try:
 			debug('starting')
-			pipeline : list[dict[str, Any]] = await self._replays_mk_pipeline(since=since, sample=sample, **summary_fields)
+			pipeline : list[dict[str, Any]] = await self._mk_pipeline_replays(since=since, sample=sample, **summary_fields)
 			return await self._datas_count(self.db[self.table_replays], pipeline)
 
 		except Exception as err:
@@ -1338,7 +1372,7 @@ class MongoBackend(Backend):
 		return await self._datas_insert(self.db[self.table_tank_stats], tank_stats)
 
 
-	async def _tank_stats_mk_pipeline(self, release: BSBlitzRelease|None = None, 
+	async def _mk_pipeline_tank_stats(self, release: BSBlitzRelease|None = None, 
 										regions: set[Region] = Region.API_regions(), 
 										accounts: Iterable[Account] | None = None,
 										tanks: Iterable[Tank] | None = None, 
@@ -1362,6 +1396,8 @@ class MongoBackend(Backend):
 			# frags					: int  | None
 			# in_garage 			: bool | None
 			
+			a = AliasMapper(WGtankStat)
+			alias : Callable = a.alias
 			dbc : AsyncIOMotorCollection = self.db[self.table_tank_stats]
 			pipeline : list[dict[str, Any]] = list()
 			match : list[dict[str, str|int|float|dict|list]] = list()
@@ -1370,13 +1406,13 @@ class MongoBackend(Backend):
 			# https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
 
 			if regions != Region.has_stats():
-				match.append({ 'r' : { '$in' : [ r.value for r in regions ]} })
+				match.append({ alias('region') : { '$in' : [ r.value for r in regions ]} })
 			if accounts is not None:
-				match.append({ 'a': { '$in': [ a.id for a in accounts ]}})
+				match.append({ alias('account_id'): { '$in': [ a.id for a in accounts ]}})
 			if tanks is not None:
-				match.append({ 't': { '$in': [ t.tank_id for t in tanks ]}})
+				match.append({ alias('tank_id'): { '$in': [ t.tank_id for t in tanks ]}})
 			if release is not None:
-				match.append({ 'u': release.release })
+				match.append({ alias('release'): release.release })
 
 			if len(match) > 0:
 				pipeline.append( { '$match' : { '$and' : match } })
@@ -1401,7 +1437,7 @@ class MongoBackend(Backend):
 		try:
 			debug('starting')
 			pipeline : list[dict[str, Any]] | None 
-			pipeline = await self._tank_stats_mk_pipeline(release=release, regions=regions, 
+			pipeline = await self._mk_pipeline_tank_stats(release=release, regions=regions, 
 														tanks=tanks, accounts=accounts, 
 														sample=sample)
 			
@@ -1434,7 +1470,7 @@ class MongoBackend(Backend):
 					return int(min(total, sample))
 			else:
 				pipeline : list[dict[str, Any]] | None 
-				pipeline = await self._tank_stats_mk_pipeline(release=release, regions=regions, 
+				pipeline = await self._mk_pipeline_tank_stats(release=release, regions=regions, 
 														tanks=tanks, accounts=accounts, 
 														sample=sample)
 
