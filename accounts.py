@@ -796,7 +796,13 @@ async def create_accountQ(db: Backend, args : Namespace,
 				accounts_N = int(args.sample)
 			else:				
 				message('Counting accounts to fetch stats...')
-				accounts_N = await db.accounts_count(stats_type=stats_type, regions=regions, 
+				inactive : OptAccountsInactive = OptAccountsInactive.default()
+				try: 
+					inactive = OptAccountsInactive(args.inactive)
+				except ValueError as err:
+					assert False, f"Incorrect value for argument 'inactive': {args.inactive}"
+
+				accounts_N = await db.accounts_count(stats_type=stats_type, regions=regions, inactive=inactive,
 													sample=args.sample, cache_valid=args.cache_valid)
 
 		if accounts_N == 0:
