@@ -44,7 +44,7 @@ class WG_Release(BSBlitzRelease):
 	"""For import purposes only"""
 	id 			: ObjectId | str    = Field(default=..., alias='_id')
 	release		: str 				= Field(default=..., alias='Release')
-	launch_date	: datetime | None	= Field(default=None, alias='Date')
+	launch_date	: datetime 			= Field(default=datetime.combine(date.today(), datetime.min.time()), alias='Date')
 	cut_off		: int 				= Field(default=maxsize, alias='Cut-off')
 	
 	_export_DB_by_alias = False
