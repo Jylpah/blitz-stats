@@ -41,12 +41,16 @@ def add_args_tank_stats(parser: ArgumentParser, config: Optional[ConfigParser] =
 		tank_stats_parsers = parser.add_subparsers(dest='tank_stats_cmd', 	
 												title='tank-stats commands',
 												description='valid commands',
-												metavar='update | prune | import | export')
+												metavar='update | prune | edit | import | export')
 		tank_stats_parsers.required = True
 		
 		update_parser = tank_stats_parsers.add_parser('update', aliases=['get'], help="tank-stats update help")
 		if not add_args_tank_stats_update(update_parser, config=config):
 			raise Exception("Failed to define argument parser for: tank-stats update")
+
+		edit_parser = tank_stats_parsers.add_parser('edit', help="tank-stats edit help")
+		if not add_args_tank_stats_edit(edit_parser, config=config):
+			raise Exception("Failed to define argument parser for: tank-stats edit")
 		
 		prune_parser = tank_stats_parsers.add_parser('prune', help="tank-stats prune help")
 		if not add_args_tank_stats_prune(prune_parser, config=config):
@@ -106,6 +110,37 @@ def add_args_tank_stats_update(parser: ArgumentParser, config: Optional[ConfigPa
 	except Exception as err:
 		error(f'{err}')
 	return False
+
+def add_args_tank_stats_edit(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+	debug('starting')
+	try:
+		parser.add_argument('tank_stats_edit_cmd', type=str, nargs=1, choices=['remap-release'], 
+		 					metavar='ACTION' , help='Choose edit action')
+		parser.add_argument('--commit', action='store_true', default=False, 
+							help='Do changes instead of just showing what would be changed')
+		parser.add_argument('--sample', type=float, default=0, 
+							help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
+		# filters
+		parser.add_argument('--region', type=str, nargs='*', 
+								choices=[ r.value for r in Region.has_stats() ], 
+								default=[ r.value for r in Region.has_stats() ], 
+								help='Filter by region (default is API = eu + com + asia)')
+		parser.add_argument('--release', type=str, metavar='RELEASES', default=None, nargs='*',
+							help='Apply edits to RELEASES')
+		parser.add_argument('--since', type=str, metavar='LAUNCH_DATE', default=None, nargs='?',
+							help='Import release launched after LAUNCH_DATE. By default, imports all releases.')
+		parser.add_argument('--accounts', type=str, default=None, nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
+								help="Edit tank stats for the listed ACCOUNT_ID(s). ACCOUNT_ID format 'account_id:region' or 'account_id'")
+		parser.add_argument('--tank_ids', type=int, default=None, nargs='*', metavar='TANK_ID [TANK_ID1 ...]',
+								help="Edit tank stats for the listed TANK_ID(S).")
+
+		return True
+	except Exception as err:
+		error(f'{err}')
+	return False
+
+
+
 
 def add_args_tank_stats_prune(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	debug('starting')
@@ -216,11 +251,6 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 	assert 'region' in args and type(args.region) is list, "'region' must be set and a list"
 	
 	debug('starting')
-	inactive : OptAccountsInactive = OptAccountsInactive.default()
-	try: 
-		inactive = OptAccountsInactive(args.inactive)
-	except ValueError as err:
-		assert False, f"Incorrect value for argument 'inactive': {args.inactive}"
 	wg 	: WGApi = WGApi(WG_app_id=args.wg_app_id, rate_limit=args.rate_limit)
 
 	try:
@@ -229,8 +259,6 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 		accountQ : Queue[BSAccount]			= Queue(maxsize=ACCOUNTS_Q_MAX)
 		retryQ 	 : Queue[BSAccount] | None	= None
 		statsQ	 : Queue[list[WGtankStat]]	= Queue(maxsize=TANK_STATS_Q_MAX)
-		accounts_N 		: int = 0
-		accounts_added 	: int = 0
 
 		if not args.check_invalid:
 			retryQ = Queue()		# must not use maxsize
