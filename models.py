@@ -147,3 +147,9 @@ class BSBlitzRelease(WGBlitzRelease):
 
 	def cut_off_now(self) -> None:		
 		self.cut_off = epoch_now()
+
+	def txt_row(self, format: str = '') -> str:
+		extra : str = ''
+		if format == 'rich':
+			extra = f"\t{self.cut_off}"
+		return super().txt_row(format) + extra
