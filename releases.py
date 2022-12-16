@@ -8,8 +8,7 @@ from aiohttp import ClientResponse
 from datetime import date
 from os.path import isfile
 
-from pyutils.utils import export, JSONExportable, CSVExportable, TXTExportable
-from pyutils import EventCounter
+from pyutils import EventCounter, is_alphanum, export, JSONExportable, CSVExportable, TXTExportable
 from backend import Backend, BSTableType
 from blitzutils.models import WGBlitzRelease
 from models import BSBlitzRelease
@@ -102,7 +101,7 @@ def add_args_releases_remove(parser: ArgumentParser, config: Optional[ConfigPars
 def add_args_releases_import(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
-		import_parsers = parser.add_subparsers(dest='releases_import_backend', 	
+		import_parsers = parser.add_subparsers(dest='import_backend', 	
 												title='releases import backend',
 												description='valid import backends', 
 												metavar=', '.join(Backend.list_available()))
@@ -129,11 +128,12 @@ def add_args_releases_import(parser: ArgumentParser, config: Optional[ConfigPars
 	return False
 
 
+
 def add_args_releases_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
-		parser.add_argument('releases', type=str, metavar='RELEASE', default=None, nargs='?',
-							help='Search by RELEASES_MATCH. By default list all.')
+		parser.add_argument('release_match', type=str, metavar='RELEASE_MATCH', default=None, nargs='?',
+							help='Search by RELEASE_MATCH. By default list all.')
 		parser.add_argument('--since', type=str, metavar='LAUNCH_DATE', default=None, nargs='?',
 							help='Import release launched after LAUNCH_DATE. By default, imports all releases.')
 		parser.add_argument('--format', type=str, choices=['json', 'txt', 'csv'], 
@@ -241,7 +241,7 @@ async def cmd_releases_export(db: Backend, args : Namespace) -> bool:
 		if args.since is not None:
 			since = date.fromisoformat(args.since)
 
-		async for release in db.releases_get(release_match=args.releases, since=since):
+		async for release in db.releases_get(release_match=args.release_match, since=since):
 			debug(f'adding release {release.release} to the export queue')
 			await releaseQ.put(release)
 		await releaseQ.join()
@@ -256,14 +256,19 @@ async def cmd_releases_export(db: Backend, args : Namespace) -> bool:
 async def cmd_releases_import(db: Backend, args : Namespace) -> bool:
 	"""Import releases from other backend"""	
 	try:
+		assert is_alphanum(args.import_type), f'invalid --import-type: {args.import_type}'
+
 		stats 		: EventCounter 			= EventCounter('releases import')
 		releaseQ 	: Queue[BSBlitzRelease]	= Queue(100)
 		config 		: ConfigParser | None 	= None
-		since 		: date | None 			= None
-		releases 	: str  | None 			= args.releases
+		import_type 	: str 				= args.import_type
+		import_backend 	: str 				= args.import_backend
+		import_table	: str | None		= args.import_table
 
-		if args.since is not None:
-			since = date.fromisoformat(args.since)		
+		# since 		: date | None 			= None			# TBD
+		# releases 	: str  | None 			= args.releases		# TBD
+		# if args.since is not None:
+		# 	since = date.fromisoformat(args.since)		
 
 		importer : Task = create_task(db.releases_insert_worker(releaseQ=releaseQ, force=args.force))
 
@@ -272,18 +277,19 @@ async def cmd_releases_import(db: Backend, args : Namespace) -> bool:
 			config = ConfigParser()
 			config.read(args.config)
 
-		kwargs : dict[str, Any] = Backend.read_args(args, args.releases_import_backend)
-		if (import_db:= Backend.create(args.releases_import_backend, 
+		kwargs : dict[str, Any] = Backend.read_args(args, import_backend)
+		if (import_db:= Backend.create(import_backend, 
 										config=config, copy_from=db, **kwargs)) is not None:
-			if args.import_table is not None:
-				import_db.set_table(BSTableType.Releases, args.import_table)
+			if import_table is not None:
+				import_db.set_table(BSTableType.Releases, import_table)
 			elif db == import_db and db.table_releases == import_db.table_releases:
 				raise ValueError('Cannot import from itself')
 		else:
-			raise ValueError(f'Could not init {args.releases_import_backend} to import releases from')
+			raise ValueError(f'Could not init {import_backend} to import releases from')
 
-		release_type: type[BSBlitzRelease] = globals()[args.import_type]
+		release_type: type[BSBlitzRelease] = globals()[import_type]
 		assert issubclass(release_type, BSBlitzRelease), "--import-type has to be subclass of blitzutils.models.WGBlitzRelease" 
+		import_db.set_model(import_db.table_releases, release_type)
 
 		async for release in import_db.releases_export(data_type=release_type, sample=args.sample):
 			await releaseQ.put(release)

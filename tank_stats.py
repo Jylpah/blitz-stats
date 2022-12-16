@@ -11,9 +11,10 @@ from alive_progress import alive_bar		# type: ignore
 from backend import Backend, OptAccountsInactive, BSTableType, ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL
 from models import BSAccount, BSBlitzRelease, StatsTypes
 from accounts import create_accountQ
-from pyutils import BucketMapper, CounterQueue, EventCounter
-from pyutils.utils import get_url, get_url_JSON_model, epoch_now, alive_queue_bar, \
-							JSONExportable, TXTExportable, CSVExportable, export
+
+from pyutils import get_url, get_url_JSON_model, epoch_now, alive_queue_bar, \
+					is_alphanum, JSONExportable, TXTExportable, CSVExportable, export, \
+					BucketMapper, CounterQueue, EventCounter
 from blitzutils.models import WoTBlitzReplayJSON, Region, WGApiWoTBlitzTankStats, WGtankStat
 from blitzutils.wg import WGApi 
 
@@ -116,7 +117,7 @@ def add_args_tank_stats_import(parser: ArgumentParser, config: Optional[ConfigPa
 	try:
 		debug('starting')
 		
-		import_parsers = parser.add_subparsers(dest='tank_stats_import_backend', 	
+		import_parsers = parser.add_subparsers(dest='import_backend', 	
 														title='tank-stats import backend',
 														description='valid backends', 
 														metavar=', '.join(Backend.list_available()))
@@ -477,9 +478,14 @@ async def cmd_tank_stats_export(db: Backend, args : Namespace) -> bool:
 async def cmd_tank_stats_import(db: Backend, args : Namespace) -> bool:
 	"""Import tank stats from other backend"""	
 	try:
+		assert is_alphanum(args.import_type), f'invalid --import-type: {args.import_type}'
 		stats 		: EventCounter 				= EventCounter('tank-stats import')
 		tank_statsQ	: Queue[list[WGtankStat]]	= Queue(TANK_STATS_Q_MAX)
 		config 		: ConfigParser | None 		= None
+		import_type 	: str 					= args.import_type
+		import_backend 	: str 					= args.import_backend
+		import_table	: str | None			= args.import_table
+
 		regions 	: set[Region] 				= { Region(r) for r in args.region }
 		IMPORT_BATCH : int 						= 500
 
@@ -491,18 +497,19 @@ async def cmd_tank_stats_import(db: Backend, args : Namespace) -> bool:
 			config = ConfigParser()
 			config.read(args.config)
 
-		kwargs : dict[str, Any] = Backend.read_args(args=args, backend=args.tank_stats_import_backend)
-		if (import_db:= Backend.create(args.tank_stats_import_backend, 
+		kwargs : dict[str, Any] = Backend.read_args(args=args, backend=import_backend)
+		if (import_db:= Backend.create(args.import_backend, 
 										config=config, copy_from=db, **kwargs)) is not None:
-			if args.import_table is not None:
-				import_db.set_table(BSTableType.TankStats, args.import_table)
+			if import_table is not None:
+				import_db.set_table(BSTableType.TankStats, import_table)
 			elif db == import_db and db.table_tank_stats == import_db.table_tank_stats:
 				raise ValueError('Cannot import from itself')
 		else:
-			raise ValueError(f'Could not init {args.tank_stats_import_backend} to import tank stats from')
+			raise ValueError(f'Could not init {args.import_backend} to import tank stats from')
 
-		tank_stats_type: type[WGtankStat] = globals()[args.import_type]
+		tank_stats_type: type[WGtankStat] = globals()[import_type]
 		assert issubclass(tank_stats_type, WGtankStat), "--import-type has to be subclass of blitzutils.models.WGtankStat" 
+		import_db.set_model(import_db.table_tank_stats, tank_stats_type)
 
 		message('Counting tank stats to import ...')
 		N : int = await db.tank_stats_count(regions=regions, sample=args.sample)

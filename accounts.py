@@ -16,9 +16,9 @@ from csv import DictWriter, DictReader, Dialect, Sniffer, excel
 from backend import Backend, OptAccountsInactive, OptAccountsDistributed, BSTableType, ACCOUNTS_Q_MAX
 from models import BSAccount, StatsTypes
 from models_import import WG_Account
-from pyutils.eventcounter import EventCounter
-from pyutils.counterqueue import CounterQueue
-from pyutils.utils import get_url, get_url_JSON_model, epoch_now, export, TXTExportable, CSVExportable, JSONExportable, alive_queue_bar
+from pyutils import CounterQueue, EventCounter,  TXTExportable, CSVExportable, JSONExportable,\
+					alive_queue_bar, get_url, get_url_JSON_model, epoch_now, export, \
+					alias_mapper, is_alphanum
 from blitzutils.models import WoTBlitzReplayJSON, Region, Account
 from blitzutils.wotinspector import WoTinspector
 
@@ -193,7 +193,7 @@ def add_args_accounts_import(parser: ArgumentParser, config: Optional[ConfigPars
 	try:
 		debug('starting')
 		
-		import_parsers = parser.add_subparsers(dest='accounts_import_backend', 	
+		import_parsers = parser.add_subparsers(dest='import_backend', 
 												title='accounts import backend',
 												description='valid backends', 
 												metavar=' | '.join(Backend.list_available()))
@@ -516,10 +516,15 @@ async def accounts_update_wi_fetch_replays(db: Backend, wi: WoTinspector, replay
 async def cmd_accounts_import(db: Backend, args : Namespace) -> bool:
 	"""Import accounts from other backend"""	
 	try:
+		assert is_alphanum(args.import_type), f'invalid --import-type: {args.import_type}'
+
 		stats 		: EventCounter 			= EventCounter('accounts import')
 		accountQ 	: Queue[BSAccount]		= Queue(ACCOUNTS_Q_MAX)
 		config 		: ConfigParser | None 	= None
 		regions 	: set[Region]			= { Region(r) for r in args.region }
+		import_type : str 					= args.import_type
+		import_backend 	: str 				= args.import_backend
+		import_table	: str | None		= args.import_table
 
 		importer : Task = create_task(db.accounts_insert_worker(accountQ=accountQ, force=args.force))
 
@@ -528,18 +533,18 @@ async def cmd_accounts_import(db: Backend, args : Namespace) -> bool:
 			config = ConfigParser()
 			config.read(args.config)
 
-		kwargs : dict[str, Any] = Backend.read_args(args=args, backend=args.accounts_import_backend)
-		if (import_db:= Backend.create(args.accounts_import_backend, 
-										config=config, copy_from=db, **kwargs)) is not None:
-			if args.import_table is not None:
-				import_db.set_table(BSTableType.Accounts, args.import_table)
+		kwargs : dict[str, Any] = Backend.read_args(args=args, backend=import_backend)
+		if (import_db:= Backend.create(import_backend, config=config, copy_from=db, **kwargs)) is not None:
+			if import_table is not None:
+				import_db.set_table(BSTableType.Accounts, import_table)
 			elif db == import_db and db.table_accounts == import_db.table_accounts:
 				raise ValueError('Cannot import from itself')
 		else:
-			raise ValueError(f'Could not init {args.accounts_import_backend} to import accounts from')
+			raise ValueError(f'Could not init {import_backend} to import accounts from')
 
-		account_type: type[Account] = globals()[args.import_type]
+		account_type: type[Account] = globals()[import_type]
 		assert issubclass(account_type, Account), "--import-type has to be subclass of blitzutils.models.Account" 
+		import_db.set_model(import_db.table_accounts, account_type)
 
 		message('Counting accounts to import ...')
 		N : int = await db.accounts_count(regions=regions,
