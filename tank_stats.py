@@ -116,7 +116,7 @@ def add_args_tank_stats_update(parser: ArgumentParser, config: Optional[ConfigPa
 def add_args_tank_stats_edit(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	debug('starting')
 	try:
-		parser.add_argument('tank_stats_edit_cmd', type=str, nargs=1, choices=['remap-releases'], 
+		parser.add_argument('tank_stats_edit_cmd', type=str, nargs=1, choices=['remap-release'], 
 		 					metavar='ACTION' , help='Choose edit action')
 		parser.add_argument('--commit', action='store_true', default=False, 
 							help='Do changes instead of just showing what would be changed')
@@ -140,8 +140,6 @@ def add_args_tank_stats_edit(parser: ArgumentParser, config: Optional[ConfigPars
 	except Exception as err:
 		error(f'{err}')
 	return False
-
-
 
 
 def add_args_tank_stats_prune(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
@@ -485,19 +483,22 @@ async def cmd_tank_stats_edit_rel_remap(db: Backend, tank_statQ : Queue[WGtankSt
 				if ts.release != release.release:
 					if commit:
 						ts.release = release.release
+						debug(f'Remapping {ts.release} to {release.release}: {ts}')
 						if await db.tank_stat_update(ts, fields=['release']):
+							debug(f'remapped release for {ts}')
 							stats.log('updated')
 						else:
+							debug(f'failed to remap release for {ts}')
 							stats.log('failed to update')
 					else:
-						message(f'Remapping {ts.release} to {release.release}: {ts}')
+						message(f'Would update release {ts.release} to {release.release} for {ts}')
 				else:
 					debug(f'No need to remap: {ts}')
-					stats.log('OK')
-			except CancelledError as err:
-				raise err
+					stats.log('OK')			
 			except Exception as err:
 				error(f'could not remap {ts}: {err}')
+			finally:
+				tank_statQ.task_done()
 	except CancelledError as err:
 		debug(f'Cancelled')
 	except Exception as err:
