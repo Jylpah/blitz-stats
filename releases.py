@@ -8,7 +8,8 @@ from aiohttp import ClientResponse
 from datetime import date
 from os.path import isfile
 
-from pyutils import EventCounter, is_alphanum, export, JSONExportable, CSVExportable, TXTExportable
+from pyutils import EventCounter, is_alphanum, export, JSONExportable, CSVExportable, \
+					TXTExportable, BucketMapper
 from backend import Backend, BSTableType
 from blitzutils.models import WGBlitzRelease
 from models import BSBlitzRelease
@@ -322,3 +323,11 @@ async def get_releases(db: Backend, releases: list[str]) -> list[BSBlitzRelease]
 	except Exception as err:
 		error(f'{err}')	
 	return res
+
+
+async def release_mapper(db: Backend) -> BucketMapper[BSBlitzRelease]:
+	"""Fetch all releases and create a release BucketMapper object"""
+	releases : BucketMapper[BSBlitzRelease] = BucketMapper[BSBlitzRelease](attr='cut_off')
+	async for r in db.releases_get():
+		releases.insert(r)
+	return releases
