@@ -10,7 +10,7 @@ from alive_progress import alive_bar		# type: ignore
 
 from backend import Backend, OptAccountsInactive, BSTableType, ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL
 from models import BSAccount, BSBlitzRelease, StatsTypes
-from accounts import create_accountQ
+from releases import get_releases, release_mapper
 
 from pyutils import get_url, get_url_JSON_model, epoch_now, alive_queue_bar, \
 					is_alphanum, JSONExportable, TXTExportable, CSVExportable, export, \
@@ -364,9 +364,7 @@ async def update_tank_stats_worker(db: Backend, statsQ: Queue[list[WGtankStat]])
 	last_battle_time : int
 
 	try:
-		releases : BucketMapper[BSBlitzRelease] = BucketMapper[BSBlitzRelease](attr='cut_off')
-		async for r in db.releases_get():
-			releases.insert(r)
+		releases : BucketMapper[BSBlitzRelease] = await release_mapper(db)
 		while True:
 			added 			= 0
 			not_added 		= 0

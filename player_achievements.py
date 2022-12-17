@@ -11,9 +11,9 @@ from alive_progress import alive_bar		# type: ignore
 from backend import Backend, OptAccountsInactive, ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL
 from models import BSAccount, BSBlitzRelease, StatsTypes
 from accounts import split_accountQ_by_region, create_accountQ
+from releases import release_mapper
 
-from pyutils import BucketMapper, CounterQueue, EventCounter
-from pyutils.utils import get_url, get_url_JSON_model, epoch_now
+from pyutils import BucketMapper, CounterQueue, EventCounter, get_url, get_url_JSON_model, epoch_now
 from blitzutils.models import Region, WGApiWoTBlitzPlayerAchievements, WGplayerAchievementsMaxSeries
 from blitzutils.wg import WGApi 
 
@@ -272,9 +272,7 @@ async def update_player_achievements_worker(db: Backend, statsQ: Queue[list[WGpl
 	not_added 	: int
 	
 	try:
-		releases : BucketMapper[BSBlitzRelease] = BucketMapper[BSBlitzRelease](attr='cut_off')
-		async for r in db.releases_get():
-			releases.insert(r)
+		releases : BucketMapper[BSBlitzRelease] = await release_mapper(db)
 		while True:
 			added 			= 0
 			not_added 		= 0
