@@ -663,9 +663,14 @@ async def cmd_tank_stats_import(db: Backend, args : Namespace) -> bool:
 		message('Counting tank stats to import ...')
 		N : int = await db.tank_stats_count(regions=regions, sample=args.sample)
 		i : int = 0
+		release_map : BucketMapper[BSBlitzRelease] = await release_mapper(db)
+		release 	: BSBlitzRelease | None
 		ts_list : list[WGtankStat] = list()
 		with alive_bar(N, title="Importing tank stats ", enrich_print=False) as bar:
 			async for tank_stat in import_db.tank_stats_export(data_type=tank_stats_type, sample=args.sample):
+				if tank_stat.release is None:
+					if (release := release_map.get(tank_stat.last_battle_time)) is not None:
+						tank_stat.release = release.release
 				if i < IMPORT_BATCH:
 					ts_list.append(tank_stat)
 					i += 1
