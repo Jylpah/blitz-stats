@@ -578,7 +578,8 @@ async def cmd_tank_stats_export(db: Backend, args : Namespace) -> bool:
 		else:
 			tank_statQs['all'] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)
 			tank_stat_workers.append(create_task(db.tank_stats_get_worker(tank_statQs['all'], 
-													regions=regions, sample=sample)))
+													regions=regions, sample=sample, 
+													accounts=accounts)))
 
 			if filename != '-':
 				filename += '.all'
