@@ -17,7 +17,8 @@ from releases import get_releases, release_mapper
 from pyutils import get_url, get_url_JSON_model, epoch_now, alive_queue_bar, \
 					is_alphanum, JSONExportable, TXTExportable, CSVExportable, export, \
 					BucketMapper, CounterQueue, EventCounter
-from blitzutils.models import WoTBlitzReplayJSON, Region, WGApiWoTBlitzTankStats, WGtankStat
+from blitzutils.models import WoTBlitzReplayJSON, Region, WGApiWoTBlitzTankStats, \
+								WGtankStat, Tank
 from blitzutils.wg import WGApi 
 
 logger = logging.getLogger()
@@ -92,7 +93,7 @@ def add_args_tank_stats_update(parser: ArgumentParser, config: Optional[ConfigPa
 		parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
 							default=[ r.value for r in Region.API_regions() ], help='Filter by region (default: eu + com + asia + ru)')
 		parser.add_argument('--force', action='store_true', default=False, 
-							help='Overwrite existing file(s) when exporting')
+							help='UPDATE HELP TEXT ')
 		parser.add_argument('--sample', type=float, default=0, metavar='SAMPLE',
 							help='Update tank stats for SAMPLE of accounts. If 0 < SAMPLE < 1, SAMPLE defines a %% of users')
 		parser.add_argument('--cache_valid', type=int, default=None, metavar='DAYS',
@@ -107,6 +108,7 @@ def add_args_tank_stats_update(parser: ArgumentParser, config: Optional[ConfigPa
 							help='Update tank stats for the listed ACCOUNT_ID(s)')
 		parser.add_argument('--file',type=str, metavar='FILENAME', default=None, 
 							help='Read account_ids from FILENAME one account_id per line')
+		parser.add_argument('--last', action='store_true', default=False, help=SUPPRESS)
 
 		return True
 	except Exception as err:
@@ -124,10 +126,7 @@ def add_args_tank_stats_edit(parser: ArgumentParser, config: Optional[ConfigPars
 		
 		remap_parser = edit_parsers.add_parser('remap-release', help="tank-stats edit remap-release help")
 		if not add_args_tank_stats_edit_remap_release(remap_parser, config=config):
-			raise Exception("Failed to define argument parser for: tank-stats edit remap-release")
-
-		
-		
+			raise Exception("Failed to define argument parser for: tank-stats edit remap-release")		
 
 		return True
 	except Exception as err:
@@ -192,6 +191,9 @@ def add_args_tank_stats_import(parser: ArgumentParser, config: Optional[ConfigPa
 								help='Filter by region (default is API = eu + com + asia)')
 		parser.add_argument('--sample', type=float, default=0, 
 							help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
+		parser.add_argument('--force', action='store_true', default=False, 
+							help='Overwrite existing stats when importing')
+		parser.add_argument('--last', action='store_true', default=False, help=SUPPRESS)
 
 		return True
 	except Exception as err:
@@ -227,7 +229,8 @@ def add_args_tank_stats_export(parser: ArgumentParser, config: Optional[ConfigPa
 								help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
 		parser.add_argument('--accounts', type=str, default=[], nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
 								help="Update tank stats for the listed ACCOUNT_ID(s). ACCOUNT_ID format 'account_id:region' or 'account_id'")
-
+		parser.add_argument('--tanks', type=int, default=[], nargs='*', metavar='TANK_ID [TANK_ID1 ...]',
+								help="Update tank stats for the listed TANK_ID(s)")
 		return True	
 	except Exception as err:
 		error(f'{err}')
@@ -551,6 +554,7 @@ async def cmd_tank_stats_export(db: Backend, args : Namespace) -> bool:
 		export_stdout : bool 				= filename == '-'
 		sample 		: float = args.sample
 		accounts 	: list[BSAccount] | None= read_account_strs(args.accounts)
+		tanks 		: list[Tank] | None 	= read_args_tanks(args.tanks)
 
 		tank_statQs 		: dict[str, CounterQueue[WGtankStat]] = dict()
 		tank_stat_workers 	: list[Task] = list()
@@ -571,7 +575,7 @@ async def cmd_tank_stats_export(db: Backend, args : Namespace) -> bool:
 			# fetch tank_stats for all the regios
 			tank_stat_workers.append(create_task(db.tank_stats_get_worker(tank_statQs['all'], 
 													regions=regions, sample=sample, 
-													accounts=accounts)))
+													accounts=accounts, tanks=tanks)))
 			# split by region
 			export_workers.append(create_task(split_tank_statQ_by_region(Q_all=tank_statQs['all'], 
 									regionQs=cast(dict[str, Queue[WGtankStat]], tank_statQs))))
@@ -579,7 +583,7 @@ async def cmd_tank_stats_export(db: Backend, args : Namespace) -> bool:
 			tank_statQs['all'] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)
 			tank_stat_workers.append(create_task(db.tank_stats_get_worker(tank_statQs['all'], 
 													regions=regions, sample=sample, 
-													accounts=accounts)))
+													accounts=accounts, tanks=tanks)))
 
 			if filename != '-':
 				filename += '.all'
