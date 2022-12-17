@@ -872,3 +872,15 @@ async def create_accountQ(db: Backend, args : Namespace,
 	except Exception as err:
 		error(f'{err}')
 	return None
+
+
+def read_account_strs(accounts: list[str]) -> list[BSAccount] | None:
+	res : list[BSAccount] = list()
+	for a in accounts:
+		try:
+			res.append(BSAccount.from_str(a))
+		except Exception as err:
+			error(f'{err}')
+	if len(res) == 0:
+		return None
+	return res
