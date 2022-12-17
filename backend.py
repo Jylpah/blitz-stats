@@ -697,6 +697,7 @@ class Backend(ABC):
 							regions: set[Region] = Region.API_regions(), 
 							accounts: Iterable[Account] | None = None,
 							tanks: Iterable[Tank] | None = None, 
+							since:  datetime | None = None,
 							sample : float = 0) -> AsyncGenerator[WGtankStat, None]:
 		"""Return tank stats from the backend"""
 		raise NotImplementedError
@@ -708,6 +709,7 @@ class Backend(ABC):
 							regions: set[Region] = Region.API_regions(), 
 							accounts: Iterable[Account] | None = None,
 							tanks: Iterable[Tank] | None = None, 
+							since:  datetime | None = None,
 							sample : float = 0) -> int:
 		"""Get number of tank-stats from backend"""
 		raise NotImplementedError
