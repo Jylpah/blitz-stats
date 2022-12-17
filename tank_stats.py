@@ -204,7 +204,7 @@ def add_args_tank_stats_export(parser: ArgumentParser, config: Optional[ConfigPa
 		debug('starting')
 		EXPORT_FORMAT 	= 'json'
 		EXPORT_FILE 	= 'tank_stats'
-		EXPORT_SUPPORTED_FORMATS : list[str] = ['json', 'csv']
+		EXPORT_SUPPORTED_FORMATS : list[str] = ['json']    # , 'csv'
 
 		if config is not None and 'TANK_STATS' in config.sections():
 			configTS 	= config['TANK_STATS']
