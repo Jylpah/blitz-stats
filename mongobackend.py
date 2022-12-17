@@ -559,7 +559,7 @@ class MongoBackend(Backend):
 
 
 	async def account_update(self, account: BSAccount, 
-							 update: dict | None = None, 
+							 update: dict[str, Any] | None = None, 
 							 fields: list[str] | None = None) -> bool:
 		"""Update an account in the backend. Returns False 
 			if the account was not updated"""
@@ -1005,7 +1005,8 @@ class MongoBackend(Backend):
 
 	async def release_get(self, release : str) -> BSBlitzRelease | None:
 		"""Get release from backend"""
-		debug('starting')			
+		debug('starting')
+		release = WGBlitzRelease.validate_release(release)
 		return await self._data_get(self.db[self.table_releases], BSBlitzRelease, id=release)
 
 
@@ -1050,11 +1051,12 @@ class MongoBackend(Backend):
 	async def release_delete(self, release: str) -> bool:
 		"""Delete a release from backend"""
 		debug('starting')
+		release = WGBlitzRelease.validate_release(release)
 		return await self._data_delete(self.db[self.table_releases], id=release)
 
 
 	async def release_update(self, release: BSBlitzRelease, 
-								update: dict | None = None, 
+								update: dict[str, Any] | None = None, 
 								fields: list[str] | None= None) -> bool:
 		"""Update an release in the backend. Returns False 
 			if the release was not updated"""
@@ -1187,7 +1189,7 @@ class MongoBackend(Backend):
 												in_type=data_type, 
 												out_type=BSBlitzRelease, 
 												sample=sample):
-			debug(f'Exporting release {release}: {release.json_src()}')
+			# debug(f'Exporting release {release}: {release.json_src()}')
 			yield release
 
 
@@ -1376,6 +1378,7 @@ class MongoBackend(Backend):
 										regions: set[Region] = Region.API_regions(), 
 										accounts: Iterable[Account] | None = None,
 										tanks: Iterable[Tank] | None = None, 
+										since:  datetime | None = None,
 										sample: float = 0) -> list[dict[str, Any]] | None:
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
 		try:
@@ -1413,6 +1416,8 @@ class MongoBackend(Backend):
 				match.append({ alias('tank_id'): { '$in': [ t.tank_id for t in tanks ]}})
 			if release is not None:
 				match.append({ alias('release'): release.release })
+			if since is not None:
+				match.append({ alias('last_battle_time'): { '$gte': since.timestamp() } })
 
 			if len(match) > 0:
 				pipeline.append( { '$match' : { '$and' : match } })
@@ -1432,6 +1437,7 @@ class MongoBackend(Backend):
 							regions : set[Region] = Region.API_regions(), 
 							accounts: Iterable[Account] | None = None,
 							tanks 	: Iterable[Tank] | None = None, 
+							since:  datetime | None = None,
 							sample 	: float = 0) -> AsyncGenerator[WGtankStat, None]:
 		"""Return tank stats from the backend"""
 		try:
@@ -1439,7 +1445,7 @@ class MongoBackend(Backend):
 			pipeline : list[dict[str, Any]] | None 
 			pipeline = await self._mk_pipeline_tank_stats(release=release, regions=regions, 
 														tanks=tanks, accounts=accounts, 
-														sample=sample)
+														since=since, sample=sample)
 			
 			if pipeline is None:
 				raise ValueError(f'could not create pipeline for get tank stats {self.backend}')
@@ -1454,6 +1460,7 @@ class MongoBackend(Backend):
 							regions: set[Region] = Region.API_regions(), 
 							accounts: Iterable[Account] | None = None,
 							tanks: Iterable[Tank] | None = None, 
+							since:  datetime | None = None,
 							sample : float = 0) -> int:
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
 		try:
@@ -1472,7 +1479,7 @@ class MongoBackend(Backend):
 				pipeline : list[dict[str, Any]] | None 
 				pipeline = await self._mk_pipeline_tank_stats(release=release, regions=regions, 
 														tanks=tanks, accounts=accounts, 
-														sample=sample)
+														since=since, sample=sample)
 
 				if pipeline is None:
 					raise ValueError(f'could not create pipeline for tank stats {self.backend}.{dbc.name}')
