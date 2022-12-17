@@ -729,3 +729,12 @@ async def split_tank_statQ_by_region(Q_all, regionQs : dict[str, Queue[WGtankSta
 	except Exception as err:
 		error(f'{err}')
 	return stats
+
+
+def read_args_tanks(tank_ids : list[int]) -> list[Tank] | None:
+	tanks : list[Tank] = list() 
+	for id in tank_ids:
+		tanks.append(Tank(tank_id=id))
+	if len(tanks) == 0:
+		return None
+	return tanks
