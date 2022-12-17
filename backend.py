@@ -387,7 +387,7 @@ class Backend(ABC):
 
 	@abstractmethod
 	async def account_update(self, account: BSAccount,
-								update: dict | None = None, 
+								update: dict[str, Any] | None = None, 
 								fields: list[str] | None = None) -> bool:
 		"""Update an account in the backend. Returns False 
 			if the account was not updated"""
@@ -506,7 +506,7 @@ class Backend(ABC):
 
 	@abstractmethod
 	async def release_update(self, release: BSBlitzRelease, 
-								update: dict | None = None, 
+								update: dict[str, Any] | None = None, 
 								fields: list[str] | None= None) -> bool:
 		"""Update an release in the backend. Returns False 
 			if the release was not updated"""
