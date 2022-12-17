@@ -777,12 +777,14 @@ async def create_accountQ(db: Backend, args : Namespace,
 	"""Helper to make accountQ from arguments"""	
 	try:
 		regions	 	: set[Region]	= { Region(r) for r in args.region }
+		accounts 	: list[BSAccount] | None= read_account_strs(args.accounts)
+
 		accounts_N 		: int = 0
 		accounts_added 	: int = 0
 
 		# count number of accounts
-		if args.accounts is not None:
-			accounts_N = len(args.accounts)			
+		if accounts is not None:
+			accounts_N = len(accounts)
 		elif args.file is not None:
 			message(f'Reading accounts from {args.file}')
 			async with open(args.file, mode='r') as f:
@@ -810,12 +812,13 @@ async def create_accountQ(db: Backend, args : Namespace,
 
 		with alive_bar(accounts_N, title= bar_title, manual=True, enrich_print=False) as bar:
 			
-			if args.accounts is not None:	
-				async for accounts_added, account_id in enumerate(args.accounts):
+			if accounts is not None:
+					
+				async for accounts_added, account in enumerate(accounts):
 					try:
-						await accountQ.put(BSAccount(id=account_id))
+						await accountQ.put(account)
 					except Exception as err:
-						error(f'Could not add account ({account_id}) to queue')
+						error(f'Could not add account ({account.id}) to queue')
 					finally:
 						bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
 
