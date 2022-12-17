@@ -1,5 +1,6 @@
 from argparse import ArgumentParser, Namespace
 from configparser import ConfigParser
+from datetime import datetime
 from typing import Optional, Iterable, Any, cast
 import logging
 from asyncio import create_task, gather, Queue, CancelledError, Task, sleep, wait
@@ -10,6 +11,7 @@ from alive_progress import alive_bar		# type: ignore
 
 from backend import Backend, OptAccountsInactive, BSTableType, ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL
 from models import BSAccount, BSBlitzRelease, StatsTypes
+from accounts import create_accountQ, read_account_strs
 from releases import get_releases, release_mapper
 
 from pyutils import get_url, get_url_JSON_model, epoch_now, alive_queue_bar, \
@@ -114,7 +116,7 @@ def add_args_tank_stats_update(parser: ArgumentParser, config: Optional[ConfigPa
 def add_args_tank_stats_edit(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	debug('starting')
 	try:
-		parser.add_argument('tank_stats_edit_cmd', type=str, nargs=1, choices=['remap-release'], 
+		parser.add_argument('tank_stats_edit_cmd', type=str, nargs=1, choices=['remap-releases'], 
 		 					metavar='ACTION' , help='Choose edit action')
 		parser.add_argument('--commit', action='store_true', default=False, 
 							help='Do changes instead of just showing what would be changed')
@@ -125,8 +127,8 @@ def add_args_tank_stats_edit(parser: ArgumentParser, config: Optional[ConfigPars
 								choices=[ r.value for r in Region.has_stats() ], 
 								default=[ r.value for r in Region.has_stats() ], 
 								help='Filter by region (default is API = eu + com + asia)')
-		parser.add_argument('--release', type=str, metavar='RELEASES', default=None, nargs='*',
-							help='Apply edits to RELEASES')
+		parser.add_argument('--release', type=str, metavar='RELEASE', default=None, 
+								help='Apply edits to a RELEASE')
 		parser.add_argument('--since', type=str, metavar='LAUNCH_DATE', default=None, nargs='?',
 							help='Import release launched after LAUNCH_DATE. By default, imports all releases.')
 		parser.add_argument('--accounts', type=str, default=None, nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
@@ -226,12 +228,15 @@ async def cmd_tank_stats(db: Backend, args : Namespace) -> bool:
 		if args.tank_stats_cmd == 'update':
 			return await cmd_tank_stats_update(db, args)
 
+		elif args.tank_stats_cmd == 'edit':
+			return await cmd_tank_stats_edit(db, args)
+
 		elif args.tank_stats_cmd == 'export':
 			return await cmd_tank_stats_export(db, args)
 
 		elif args.tank_stats_cmd == 'import':
 			return await cmd_tank_stats_import(db, args)
-			pass
+			
 			
 	except Exception as err:
 		error(f'{err}')
@@ -408,6 +413,93 @@ async def update_tank_stats_worker(db: Backend, statsQ: Queue[list[WGtankStat]])
 				statsQ.task_done()
 	except CancelledError as err:
 		debug(f'Cancelled')	
+	except Exception as err:
+		error(f'{err}')
+	return stats
+
+
+########################################################
+# 
+# cmd_tank_stats_edit()
+#
+########################################################
+
+async def cmd_tank_stats_edit(db: Backend, args : Namespace) -> bool:
+	try:
+		debug('starting')
+		release 	: BSBlitzRelease | None = None
+		if args.release is not None:
+			release = BSBlitzRelease(release=args.release)
+		stats 		: EventCounter 			= EventCounter('tank-stats edit')
+		regions		: set[Region] 			= { Region(r) for r in args.region }
+		since		: datetime | None 		= None
+		if args.since is not None:
+			since = datetime.fromisoformat(args.since)
+		accounts 	: list[BSAccount] | None= read_account_strs(args.accounts)
+		sample 		: float 				= args.sample
+		commit 		: bool  				= args.commit
+
+		tank_statQ : Queue[WGtankStat] 		= Queue(maxsize=TANK_STATS_Q_MAX)
+		edit_task : Task
+
+		if args.tank_stats_edit_cmd == 'remap-release':
+			edit_task = create_task(cmd_tank_stats_edit_rel_remap(db, tank_statQ, commit))
+		else:
+			raise NotImplementedError		
+
+		stats.merge_child(await db.tank_stats_get_worker(tank_statQ, release=release, 
+														regions=regions, accounts=accounts,
+														since=since, sample=sample))
+		await tank_statQ.join()
+		edit_task.cancel()
+
+		res : EventCounter | BaseException
+		for res in await gather(edit_task):
+			if isinstance(res, EventCounter):
+				stats.merge_child(res)
+			elif type(res) is BaseException:
+				error(f'{db.backend}: tank-stats edit remap-release returned error: {res}')
+		stats.print()
+
+	except Exception as err:
+		error(f'{err}')
+	return False
+
+
+async def cmd_tank_stats_edit_rel_remap(db: Backend, tank_statQ : Queue[WGtankStat], 
+										commit: bool = False) -> EventCounter:
+	"""Remap tank stat's releases"""
+	debug('starting')
+	stats : EventCounter = EventCounter('remap releases')
+	try:
+		release 	: BSBlitzRelease | None
+		release_map : BucketMapper[BSBlitzRelease] = await release_mapper(db)
+		while True:
+			ts : WGtankStat = await tank_statQ.get()			
+			try:
+				release = release_map.get(ts.last_battle_time)
+				if release is None:
+					error(f'Could not map: {ts}')
+					stats.log('errors')
+					continue
+				if ts.release != release.release:
+					if commit:
+						ts.release = release.release
+						if await db.tank_stat_update(ts, fields=['release']):
+							stats.log('updated')
+						else:
+							stats.log('failed to update')
+					else:
+						message(f'Remapping {ts.release} to {release.release}: {ts}')
+				else:
+					debug(f'No need to remap: {ts}')
+					stats.log('OK')
+			except CancelledError as err:
+				raise err
+			except Exception as err:
+				error(f'could not remap {ts}: {err}')
+	except CancelledError as err:
+		debug(f'Cancelled')
 	except Exception as err:
 		error(f'{err}')
 	return stats
