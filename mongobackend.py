@@ -473,11 +473,11 @@ class MongoBackend(Backend):
 				try:
 					yield data_type.parse_obj(obj)
 				except ValidationError as err:
-					error(f'Could not validate {type(data_type)} ob={obj._id} from {self.backend}.{dbc.name}: {err}')
+					error(f'Could not validate {data_type} ob={obj} from {self.backend}.{dbc.name}: {err}')
 				except Exception as err:
 					error(f'{err}')
 		except Exception as err:
-			error(f'Error fetching data from {self.backend}.{dbc.name}: {err}')
+			error(f'Error fetching {data_type} from {self.backend}.{dbc.name}: {err}')
 
 
 	async def _datas_count(self, dbc : AsyncIOMotorCollection, 
