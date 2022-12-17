@@ -680,6 +680,15 @@ class Backend(ABC):
 
 
 	@abstractmethod
+	async def tank_stat_update(self, tank_stat: WGtankStat, 
+							 update: dict[str, Any] | None = None, 
+							 fields: list[str] | None = None) -> bool:
+		"""Update an tank stat in the backend. Returns False 
+			if the tank stat was not updated"""
+		raise NotImplementedError
+
+
+	@abstractmethod
 	async def tank_stat_delete(self, account: BSAccount, tank_id: int, 
 								last_battle_time: int) -> bool:
 		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
@@ -735,7 +744,7 @@ class Backend(ABC):
 		try:
 			async for ts in self.tank_stats_get(**getargs):
 				await tank_statsQ.put(ts)
-				stats.log('queued')		
+				stats.log('queued')
 		except CancelledError as err:
 			debug(f'Cancelled')
 		except Exception as err:

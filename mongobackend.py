@@ -1357,6 +1357,26 @@ class MongoBackend(Backend):
 		return None
 
 	
+	async def tank_stat_update(self, tank_stat: WGtankStat, 
+							 update: dict[str, Any] | None = None, 
+							 fields: list[str] | None = None) -> bool:
+		"""Update an tank stat in the backend. Returns False 
+			if the tank stat was not updated"""
+		try: 
+			debug('starting')
+			if update is not None:
+				pass
+			elif fields is not None:
+				# by_alias=False since _data_update remaps alias fields
+				update = tank_stat.obj_db(by_alias=False, fields=fields)
+			else:
+				return False
+			return await self._data_update(self.collection_tank_stats, id=tank_stat.id, update=update)
+		except Exception as err:
+			debug(f'Error while updating tank stat (id={tank_stat.id}) into {self.backend}.{self.table_tank_stats}: {err}')	
+		return False
+
+
 	async def tank_stat_delete(self, account: BSAccount, tank_id: int, 
 								last_battle_time: int) -> bool:
 		try:
