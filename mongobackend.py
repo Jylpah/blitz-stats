@@ -502,9 +502,9 @@ class MongoBackend(Backend):
 			pipeline : list[dict[str, Any]] = list()
 			if sample > 0 and sample < 1:
 				N : int = await dbc.estimated_document_count()
-				pipeline.append({ '$sample' : N * sample })
+				pipeline.append({ '$sample' : { 'size' : int(N * sample) }})
 			elif sample >= 1:
-				pipeline.append({ '$sample' : sample })
+				pipeline.append({ '$sample' : { 'size' : int(sample) }})
 						
 			async for obj in dbc.aggregate(pipeline, allowDiskUse=True):
 				try:
@@ -693,10 +693,10 @@ class MongoBackend(Backend):
 				pipeline.append( { '$match' : { '$and' : match } })
 			
 			if sample >= 1:				
-				pipeline.append({'$sample': {'size' : int(sample) } })
+				pipeline.append({ '$sample' : {'size' : int(sample) } })
 			elif sample > 0:
 				n : int = cast(int, await dbc.estimated_document_count())
-				pipeline.append({'$sample': {'size' : int(n * sample) } })
+				pipeline.append({ '$sample' : {'size' : int(n * sample) } })
 			return pipeline		
 		except Exception as err:
 			error(f'{err}')
@@ -773,34 +773,6 @@ class MongoBackend(Backend):
 			error(f'counting accounts failed: {err}')
 		return -1
 
-
-	# async def accounts_export(self, account_type: type[Account] = BSAccount, 
-	# 							sample : float = 0) -> AsyncGenerator[BSAccount, None]:
-	# 	"""Import accounts from Mongo DB"""
-	# 	try:
-	# 		debug('starting')
-	# 		# DBC : str = self.table_accounts
-	# 		dbc : AsyncIOMotorCollection = self.collection_accounts]
-
-	# 		pipeline : list[dict[str, Any]] = list()			
-	# 		if sample > 0 and sample < 1:
-	# 			N : int = await dbc.estimated_document_count()
-	# 			pipeline.append({ '$sample' : N * sample })
-	# 		elif sample >= 1:
-	# 			pipeline.append({ '$sample' : sample })
-			
-	# 		account 	: BSAccount
-	# 		async for account_obj in dbc.aggregate(pipeline, allowDiskUse=True):
-	# 			try:
-	# 				account_in = account_type.parse_obj(account_obj)
-	# 				debug(f'Read {account_in} from {self.database}.{self.table_accounts}')
-	# 				account = BSAccount.parse_obj(account_in.obj_db())
-	# 				yield account
-	# 			except Exception as err:
-	# 				error(f'{err}')
-	# 				continue
-	# 	except Exception as err:
-	# 		error(f'Error fetching accounts from {self.name}:{self.database}.{self.table_accounts}: {err}')	
 
 	async def accounts_export(self, data_type: type[Account] = BSAccount, 
 								sample : float = 0) -> AsyncGenerator[BSAccount, None]:
@@ -926,10 +898,10 @@ class MongoBackend(Backend):
 				pipeline.append( { '$match' : { '$and' : match } })
 
 			if sample >= 1:				
-				pipeline.append({'$sample': {'size' : int(sample) } })
+				pipeline.append({ '$sample' : {'size' : int(sample) } })
 			elif sample > 0:
 				n : int = cast(int, await dbc.estimated_document_count())
-				pipeline.append({'$sample': {'size' : int(n * sample) } })
+				pipeline.append({ '$sample' : {'size' : int(n * sample) } })
 			return pipeline		
 		except Exception as err:
 			error(f'{err}')
@@ -1277,10 +1249,10 @@ class MongoBackend(Backend):
 			pipeline.append( { '$match' : { '$and' : match } })
 
 		if sample >= 1:				
-			pipeline.append({'$sample': {'size' : int(sample) } })
+			pipeline.append({ '$sample' : {'size' : int(sample) } })
 		elif sample > 0:
 			n : int = cast(int, await dbc.estimated_document_count())
-			pipeline.append({'$sample': {'size' : int(n * sample) } })
+			pipeline.append({ '$sample' : {'size' : int(n * sample) } })
 
 		return pipeline
 
@@ -1451,10 +1423,10 @@ class MongoBackend(Backend):
 				pipeline.append( { '$match' : { '$and' : match } })
 
 			if sample >= 1:				
-				pipeline.append({'$sample': {'size' : int(sample) } })
+				pipeline.append({ '$sample' : {'size' : int(sample) } })
 			elif sample > 0:
 				n : int = cast(int, await dbc.estimated_document_count())
-				pipeline.append({'$sample': {'size' : int(n * sample) } })
+				pipeline.append({ '$sample' : {'size' : int(n * sample) } })
 			return pipeline		
 		except Exception as err:
 			error(f'{err}')
@@ -1585,51 +1557,6 @@ class MongoBackend(Backend):
 			yield tank_stat
 
 
-	# async def tank_stats_export(self, tank_stats_type: type[WGtankStat] = WGtankStat, 
-	##							regions: set[Region] = Region.has_stats(), 
-	# 							accounts: list[BSAccount] | None = None,
-	# 							tanks: list[Tank] | None = None,  
-	# 							sample : float = 0) -> AsyncGenerator[list[WGtankStat], None]:
-	# 	"""Import accounts from Mongo DB"""
-	# 	try:
-	# 		debug('starting')
-
-	# 		dbc : AsyncIOMotorCollection = self.collection_tank_stats]
-	# 		pipeline : list[dict[str, Any]] = list()
-	# 		match : list[dict[str, Any]] = list()
-
-	# 		if accounts is not None:
-	# 			match.append({ 'a': { '$in' : [ a.id for a in accounts ]}})
-	# 		if tanks is not None:
-	# 			match.append({ 't': { '$in' : [ t.tank_id for t in tanks ]}})
-	# 		if len(match) > 0:
-	# 			pipeline.append({ '$match': { '$and' : match }})
-			
-	# 		if sample > 0 and sample < 1:
-	# 			N : int = await dbc.estimated_document_count()
-	# 			pipeline.append({ '$sample' : N * sample })
-	# 		elif sample >= 1:
-	# 			pipeline.append({ '$sample' : sample })
-			
-	# 		tank_stats	: list[WGtankStat] = list()
-	# 		async for tank_stat_obj in dbc.aggregate(pipeline, allowDiskUse=True):
-	# 			try:
-	# 				tank_stat_in = tank_stats_type.parse_obj(tank_stat_obj)
-	# 				debug(f'Read account={tank_stat_in.account_id} tank_id={tank_stat_in.tank_id} from {self.database}.{self.table_tank_stats}')
-	# 				tank_stats.append(WGtankStat.parse_obj(tank_stat_in.obj_db()))
-	# 				if len(tank_stats) >= TANK_STATS_BATCH:
-	# 					yield tank_stats
-	# 					tank_stats = list()
-	# 			except Exception as err:
-	# 				error(f'{err}')
-	# 				continue
-	# 		if len(tank_stats) > 0:
-	# 			yield tank_stats
-
-	# 	except Exception as err:
-	# 		error(f'Error fetching accounts from {self.name}: {err}')
-
-	
 	########################################################
 	# 
 	# MongoBackend(): error_
