@@ -1,4 +1,4 @@
-from argparse import ArgumentParser, Namespace
+from argparse import ArgumentParser, Namespace, SUPPRESS
 from configparser import ConfigParser
 from datetime import datetime
 from typing import Optional, Iterable, Any, cast
@@ -103,7 +103,7 @@ def add_args_tank_stats_update(parser: ArgumentParser, config: Optional[ConfigPa
 							help='Re-check invalid accounts')
 		parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
 								default=OptAccountsInactive.default().value, help='Include inactive accounts')
-		parser.add_argument('--accounts', type=int, default=None, nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
+		parser.add_argument('--accounts', type=int, default=[], nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
 							help='Update tank stats for the listed ACCOUNT_ID(s)')
 		parser.add_argument('--file',type=str, metavar='FILENAME', default=None, 
 							help='Read account_ids from FILENAME one account_id per line')
@@ -116,30 +116,50 @@ def add_args_tank_stats_update(parser: ArgumentParser, config: Optional[ConfigPa
 def add_args_tank_stats_edit(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	debug('starting')
 	try:
-		parser.add_argument('tank_stats_edit_cmd', type=str, nargs=1, choices=['remap-release'], 
-		 					metavar='ACTION' , help='Choose edit action')
-		parser.add_argument('--commit', action='store_true', default=False, 
-							help='Do changes instead of just showing what would be changed')
-		parser.add_argument('--sample', type=float, default=0, 
-							help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
-		# filters
-		parser.add_argument('--region', type=str, nargs='*', 
-								choices=[ r.value for r in Region.has_stats() ], 
-								default=[ r.value for r in Region.has_stats() ], 
-								help='Filter by region (default is API = eu + com + asia)')
-		parser.add_argument('--release', type=str, metavar='RELEASE', default=None, 
-								help='Apply edits to a RELEASE')
-		parser.add_argument('--since', type=str, metavar='LAUNCH_DATE', default=None, nargs='?',
-							help='Import release launched after LAUNCH_DATE. By default, imports all releases.')
-		parser.add_argument('--accounts', type=str, default=None, nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
-								help="Edit tank stats for the listed ACCOUNT_ID(s). ACCOUNT_ID format 'account_id:region' or 'account_id'")
-		parser.add_argument('--tank_ids', type=int, default=None, nargs='*', metavar='TANK_ID [TANK_ID1 ...]',
-								help="Edit tank stats for the listed TANK_ID(S).")
+		edit_parsers = parser.add_subparsers(dest='tank_stats_edit_cmd', 	
+												title='tank-stats edit commands',
+												description='valid commands',
+												metavar='remap-release')
+		edit_parsers.required = True
+		
+		remap_parser = edit_parsers.add_parser('remap-release', help="tank-stats edit remap-release help")
+		if not add_args_tank_stats_edit_remap_release(remap_parser, config=config):
+			raise Exception("Failed to define argument parser for: tank-stats edit remap-release")
+
+		
+		
 
 		return True
 	except Exception as err:
 		error(f'{err}')
 	return False
+
+def add_args_tank_stats_edit_common(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+	"""Adds common arguments to edit subparser. Required for meaningful helps and usability"""
+	debug('starting')
+	parser.add_argument('--commit', action='store_true', default=False, 
+							help='Do changes instead of just showing what would be changed')
+	parser.add_argument('--sample', type=float, default=0, 
+						help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
+	# filters
+	parser.add_argument('--region', type=str, nargs='*', 
+							choices=[ r.value for r in Region.has_stats() ], 
+							default=[ r.value for r in Region.has_stats() ], 
+							help='Filter by region (default is API = eu + com + asia)')
+	parser.add_argument('--release', type=str, metavar='RELEASE', default=None, 
+							help='Apply edits to a RELEASE')
+	parser.add_argument('--since', type=str, metavar='LAUNCH_DATE', default=None, nargs='?',
+						help='Import release launched after LAUNCH_DATE. By default, imports all releases.')
+	parser.add_argument('--accounts', type=str, default=[], nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
+							help="Edit tank stats for the listed ACCOUNT_ID(s). ACCOUNT_ID format 'account_id:region' or 'account_id'")
+	parser.add_argument('--tank_ids', type=int, default=None, nargs='*', metavar='TANK_ID [TANK_ID1 ...]',
+							help="Edit tank stats for the listed TANK_ID(S).")
+	return True
+
+
+def add_args_tank_stats_edit_remap_release(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+	debug('starting')
+	return add_args_tank_stats_edit_common(parser, config)
 
 
 def add_args_tank_stats_prune(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
@@ -205,7 +225,7 @@ def add_args_tank_stats_export(parser: ArgumentParser, config: Optional[ConfigPa
 		parser.add_argument('--by-region', action='store_true', default=False, help='Export tank-stats by region')
 		parser.add_argument('--sample', type=float, default=0, 
 								help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
-		parser.add_argument('--accounts', type=str, default=None, nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
+		parser.add_argument('--accounts', type=str, default=[], nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
 								help="Update tank stats for the listed ACCOUNT_ID(s). ACCOUNT_ID format 'account_id:region' or 'account_id'")
 
 		return True	
@@ -259,9 +279,11 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 	try:
 		stats 	 : EventCounter				= EventCounter('tank-stats update')
 		regions	 : set[Region]				= { Region(r) for r in args.region }
+		
 		accountQ : Queue[BSAccount]			= Queue(maxsize=ACCOUNTS_Q_MAX)
 		retryQ 	 : Queue[BSAccount] | None	= None
 		statsQ	 : Queue[list[WGtankStat]]	= Queue(maxsize=TANK_STATS_Q_MAX)
+		
 
 		if not args.check_invalid:
 			retryQ = Queue()		# must not use maxsize
@@ -440,11 +462,13 @@ async def cmd_tank_stats_edit(db: Backend, args : Namespace) -> bool:
 		tank_statQ : Queue[WGtankStat] 		= Queue(maxsize=TANK_STATS_Q_MAX)
 		edit_task : Task
 
+		N : int = await db.tank_stats_count(release=release, regions=regions, 
+											accounts=accounts,since=since, sample=sample)
 		if args.tank_stats_edit_cmd == 'remap-release':
-			edit_task = create_task(cmd_tank_stats_edit_rel_remap(db, tank_statQ, commit))
+			edit_task = create_task(cmd_tank_stats_edit_rel_remap(db, tank_statQ, commit, N))
 		else:
 			raise NotImplementedError		
-
+		
 		stats.merge_child(await db.tank_stats_get_worker(tank_statQ, release=release, 
 														regions=regions, accounts=accounts,
 														since=since, sample=sample))
@@ -465,40 +489,43 @@ async def cmd_tank_stats_edit(db: Backend, args : Namespace) -> bool:
 
 
 async def cmd_tank_stats_edit_rel_remap(db: Backend, tank_statQ : Queue[WGtankStat], 
-										commit: bool = False) -> EventCounter:
+										commit: bool = False, total: int | None = None) -> EventCounter:
 	"""Remap tank stat's releases"""
 	debug('starting')
 	stats : EventCounter = EventCounter('remap releases')
 	try:
 		release 	: BSBlitzRelease | None
 		release_map : BucketMapper[BSBlitzRelease] = await release_mapper(db)
-		while True:
-			ts : WGtankStat = await tank_statQ.get()			
-			try:
-				release = release_map.get(ts.last_battle_time)
-				if release is None:
-					error(f'Could not map: {ts}')
-					stats.log('errors')
-					continue
-				if ts.release != release.release:
-					if commit:
-						ts.release = release.release
-						debug(f'Remapping {ts.release} to {release.release}: {ts}')
-						if await db.tank_stat_update(ts, fields=['release']):
-							debug(f'remapped release for {ts}')
-							stats.log('updated')
+		with alive_bar(total, title="Remapping tank stats' releases ", 
+						enrich_print=False, disable=not commit) as bar:
+			while True:
+				ts : WGtankStat = await tank_statQ.get()			
+				try:
+					release = release_map.get(ts.last_battle_time)
+					if release is None:
+						error(f'Could not map: {ts}')
+						stats.log('errors')
+						continue
+					if ts.release != release.release:
+						if commit:
+							ts.release = release.release
+							debug(f'Remapping {ts.release} to {release.release}: {ts}')
+							if await db.tank_stat_update(ts, fields=['release']):
+								debug(f'remapped release for {ts}')
+								stats.log('updated')
+							else:
+								debug(f'failed to remap release for {ts}')
+								stats.log('failed to update')
 						else:
-							debug(f'failed to remap release for {ts}')
-							stats.log('failed to update')
+							message(f'Would update release {ts.release} to {release.release} for {ts}')
 					else:
-						message(f'Would update release {ts.release} to {release.release} for {ts}')
-				else:
-					debug(f'No need to remap: {ts}')
-					stats.log('OK')			
-			except Exception as err:
-				error(f'could not remap {ts}: {err}')
-			finally:
-				tank_statQ.task_done()
+						debug(f'No need to remap: {ts}')
+						stats.log('no need')			
+				except Exception as err:
+					error(f'could not remap {ts}: {err}')
+				finally:
+					tank_statQ.task_done()
+					bar()
 	except CancelledError as err:
 		debug(f'Cancelled')
 	except Exception as err:
@@ -523,6 +550,7 @@ async def cmd_tank_stats_export(db: Backend, args : Namespace) -> bool:
 		force		: bool 					= args.force
 		export_stdout : bool 				= filename == '-'
 		sample 		: float = args.sample
+		accounts 	: list[BSAccount] | None= read_account_strs(args.accounts)
 
 		tank_statQs 		: dict[str, CounterQueue[WGtankStat]] = dict()
 		tank_stat_workers 	: list[Task] = list()
@@ -542,7 +570,8 @@ async def cmd_tank_stats_export(db: Backend, args : Namespace) -> bool:
 			
 			# fetch tank_stats for all the regios
 			tank_stat_workers.append(create_task(db.tank_stats_get_worker(tank_statQs['all'], 
-													regions=regions, sample=sample)))
+													regions=regions, sample=sample, 
+													accounts=accounts)))
 			# split by region
 			export_workers.append(create_task(split_tank_statQ_by_region(Q_all=tank_statQs['all'], 
 									regionQs=cast(dict[str, Queue[WGtankStat]], tank_statQs))))
