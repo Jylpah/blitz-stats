@@ -207,7 +207,9 @@ async def cmd_releases_edit(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		release = BSBlitzRelease(release=args.release, launch_date=args.launch, cut_off=args.cut_off)
-		return await db.release_update(release)		
+		update : dict[str, Any] = release.dict(exclude_unset=True, exclude_none=True)
+		del update['release']
+		return await db.release_update(release, update=update)
 	except Exception as err:
 		error(f'{err}')
 	return False
