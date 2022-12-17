@@ -59,11 +59,11 @@ async def main(argv: list[str]):
 
 	parser = ArgumentParser(description='Fetch and manage WoT Blitz stats', add_help=False)
 	arggroup_verbosity = parser.add_mutually_exclusive_group()
-	arggroup_verbosity.add_argument('-d', '--debug',dest='LOG_LEVEL', action='store_const', const=logging.DEBUG,  
+	arggroup_verbosity.add_argument('--debug', '-d', dest='LOG_LEVEL', action='store_const', const=logging.DEBUG,  
 									help='Debug mode')
-	arggroup_verbosity.add_argument('-v', '--verbose', dest='LOG_LEVEL', action='store_const', const=logging.INFO,
+	arggroup_verbosity.add_argument('--verbose', '-v', dest='LOG_LEVEL', action='store_const', const=logging.INFO,
 									help='Verbose mode')
-	arggroup_verbosity.add_argument('--silent', dest='LOG_LEVEL', action='store_const', const=logging.CRITICAL,
+	arggroup_verbosity.add_argument('--silent', '-s', dest='LOG_LEVEL', action='store_const', const=logging.CRITICAL,
 									help='Silent mode')
 	parser.add_argument('--log', type=str, nargs='?', default=None, const=f"{LOG}_{get_datestr()}", 
 						help='Enable file logging')
@@ -78,7 +78,7 @@ async def main(argv: list[str]):
 		logger_conf: dict[int, str] = { 
 			logging.INFO: 		'%(message)s',
 			logging.WARNING: 	'%(message)s',
-			logging.ERROR: 		'%(levelname)s: %(message)s'
+			# logging.ERROR: 		'%(levelname)s: %(message)s'
 		}
 		MultilevelFormatter.setLevels(logger, fmts=logger_conf, 
 							fmt='%(levelname)s: %(funcName)s(): %(message)s', 
