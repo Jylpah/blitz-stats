@@ -11,9 +11,10 @@ from configparser import ConfigParser
 import logging
 from argparse import ArgumentParser
 import sys
-from os import chdir
+from os import chdir, linesep
 from os.path import isfile, dirname
 from asyncio import run
+from yappi import start, stop, get_func_stats, set_clock_type, COLUMNS_FUNCSTATS 	# type: ignore
 
 import accounts as acc
 import replays as rep
@@ -30,7 +31,7 @@ import setup as se
 logging.getLogger("asyncio").setLevel(logging.DEBUG)
 logger = logging.getLogger()
 error 	= logger.error
-verbose_std	= logger.warning
+message	= logger.warning
 verbose	= logger.info
 debug	= logger.debug
 
@@ -43,7 +44,7 @@ def get_datestr(_datetime: datetime = datetime.now()) -> str:
 
 async def main(argv: list[str]):
 	# set the directory for the script
-	global logger, error, debug, verbose, verbose_std,db, wi, bs, MAX_PAGES
+	global logger, error, debug, verbose, message, db, wi, bs, MAX_PAGES
 
 	chdir(dirname(sys.argv[0]))
 	
@@ -59,14 +60,14 @@ async def main(argv: list[str]):
 
 	parser = ArgumentParser(description='Fetch and manage WoT Blitz stats', add_help=False)
 	arggroup_verbosity = parser.add_mutually_exclusive_group()
-	arggroup_verbosity.add_argument('--debug', '-d', dest='LOG_LEVEL', action='store_const', const=logging.DEBUG,  
-									help='Debug mode')
-	arggroup_verbosity.add_argument('--verbose', '-v', dest='LOG_LEVEL', action='store_const', const=logging.INFO,
-									help='Verbose mode')
-	arggroup_verbosity.add_argument('--silent', '-s', dest='LOG_LEVEL', action='store_const', const=logging.CRITICAL,
-									help='Silent mode')
+	arggroup_verbosity.add_argument('--debug', '-d', dest='LOG_LEVEL', action='store_const', 
+									const=logging.DEBUG, help='Debug mode')
+	arggroup_verbosity.add_argument('--verbose', '-v', dest='LOG_LEVEL', action='store_const', 
+									const=logging.INFO, help='Verbose mode')
+	arggroup_verbosity.add_argument('--silent', '-s', dest='LOG_LEVEL', action='store_const', 
+									const=logging.CRITICAL, help='Silent mode')
 	parser.add_argument('--log', type=str, nargs='?', default=None, const=f"{LOG}_{get_datestr()}", 
-						help='Enable file logging')
+						help='Enable file logging')	
 	parser.add_argument('--config', type=str, default=CONFIG, metavar='CONFIG', help='Read config from CONFIG')
 	parser.set_defaults(LOG_LEVEL=logging.WARNING)
 
@@ -84,7 +85,7 @@ async def main(argv: list[str]):
 							fmt='%(levelname)s: %(funcName)s(): %(message)s', 
 							log_file=args.log)
 		error 		= logger.error
-		verbose_std	= logger.warning
+		message		= logger.warning
 		verbose		= logger.info
 		debug		= logger.debug
 
@@ -110,6 +111,8 @@ async def main(argv: list[str]):
 		# Parse command args
 		parser.add_argument('-h', '--help', action='store_true',  
 							help='Show help')
+		parser.add_argument('--profile', type=int, default=0, metavar='N',
+							help='Profile performance for N slowest function calls')
 		parser.add_argument('--backend', type=str, choices=Backend.list_available(), 
 							default=BACKEND, help='Choose backend to use')		
 
@@ -130,7 +133,7 @@ async def main(argv: list[str]):
 		if not acc.add_args_accounts(accounts_parser, config):
 			raise Exception("Failed to define argument parser for: accounts")
 		if not ts.add_args_tank_stats(tank_stats_parser, config):
-			raise Exception("Failed to define argument parser for: replays")
+			raise Exception("Failed to define argument parser for: tank-stats")
 		if not rep.add_args_replays(replays_parser, config):
 			raise Exception("Failed to define argument parser for: replays")
 		if not rel.add_args_releases(releases_parser, config):
@@ -147,6 +150,11 @@ async def main(argv: list[str]):
 
 		backend : Backend | None  = Backend.create(args.backend, config=config)
 		assert backend is not None, 'Could not initialize backend'
+
+		if args.profile > 0:
+			print('Starting profiling...')
+			set_clock_type('cpu')
+			start(builtins=True)
 
 		if args.main_cmd == 'accounts':			
 			await acc.cmd_accounts(backend, args)
@@ -165,9 +173,27 @@ async def main(argv: list[str]):
 		else:
 			parser.print_help()
 
+		if args.profile > 0:
+			print('Stopping profiling')
+			stop()
+			stats = get_func_stats().sort(sort_type='ttot', sort_order='desc')			
+			print_all(stats, sys.stdout, args.profile)
+			
 	except Exception as err:
 		error(f'{err}')
 	
+
+def print_all(stats, out, limit: int | None =None) -> None:
+	if stats.empty():
+		return
+	sizes = [150, 12, 8, 8, 8]
+	columns = dict(zip(range(len(COLUMNS_FUNCSTATS)), zip(COLUMNS_FUNCSTATS, sizes)))
+	show_stats = stats
+	if limit:
+		show_stats = stats[:limit]
+	out.write(linesep)
+	for stat in show_stats:
+		stat._print(out, columns) 
 
 ########################################################
 # 
