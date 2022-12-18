@@ -8,6 +8,7 @@ from aiofiles import open
 from os.path import isfile
 from asyncstdlib import enumerate
 from alive_progress import alive_bar		# type: ignore
+from yappi import profile 					# type: ignore
 
 from backend import Backend, OptAccountsInactive, BSTableType, ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL
 from models import BSAccount, BSBlitzRelease, StatsTypes
@@ -16,7 +17,7 @@ from releases import get_releases, release_mapper
 
 from pyutils import get_url, get_url_JSON_model, epoch_now, alive_queue_bar, \
 					is_alphanum, JSONExportable, TXTExportable, CSVExportable, export, \
-					BucketMapper, CounterQueue, EventCounter
+					BucketMapper, CounterQueue, EventCounter, gather_stats
 from blitzutils.models import WoTBlitzReplayJSON, Region, WGApiWoTBlitzTankStats, \
 								WGtankStat, Tank
 from blitzutils.wg import WGApi 
@@ -29,7 +30,8 @@ debug	= logger.debug
 
 # Constants
 
-WORKERS_WGAPI 		: int = 50
+WORKERS_WGAPI 		: int = 75
+WORKERS_IMPORTERS	: int = 1
 TANK_STATS_Q_MAX 	: int = 1000
 
 ########################################################
@@ -181,18 +183,16 @@ def add_args_tank_stats_import(parser: ArgumentParser, config: Optional[ConfigPa
 			import_parser =  import_parsers.add_parser(backend.driver, help=f'tank-stats import {backend.driver} help')
 			if not backend.add_args_import(import_parser, config=config):
 				raise Exception(f'Failed to define argument parser for: tank-stats import {backend.driver}')
-
+		parser.add_argument('--threads', type=int, default=WORKERS_IMPORTERS, help='Set number of asynchronous threads')
 		parser.add_argument('--import-type', metavar='IMPORT-TYPE', type=str, 
 							default='WGtankStat', choices=['WGtankStat'], 
 							help='Data format to import. Default is blitz-stats native format.')
-		parser.add_argument('--region', type=str, nargs='*', 
-								choices=[ r.value for r in Region.has_stats() ], 
-								default=[ r.value for r in Region.has_stats() ], 
-								help='Filter by region (default is API = eu + com + asia)')
 		parser.add_argument('--sample', type=float, default=0, 
 							help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
 		parser.add_argument('--force', action='store_true', default=False, 
 							help='Overwrite existing stats when importing')
+		parser.add_argument('--no-release-map', action='store_true', default=False, 
+							help='Do not map releases when importing')
 		parser.add_argument('--last', action='store_true', default=False, help=SUPPRESS)
 
 		return True
@@ -257,7 +257,6 @@ async def cmd_tank_stats(db: Backend, args : Namespace) -> bool:
 
 		elif args.tank_stats_cmd == 'import':
 			return await cmd_tank_stats_import(db, args)
-			
 			
 	except Exception as err:
 		error(f'{err}')
@@ -499,7 +498,7 @@ async def cmd_tank_stats_edit_rel_remap(db: Backend, tank_statQ : Queue[WGtankSt
 	try:
 		release 	: BSBlitzRelease | None
 		release_map : BucketMapper[BSBlitzRelease] = await release_mapper(db)
-		with alive_bar(total, title="Remapping tank stats' releases ", 
+		with alive_bar(total, title="Remapping tank stats' releases ", refresh_secs=1,
 						enrich_print=False, disable=not commit) as bar:
 			while True:
 				ts : WGtankStat = await tank_statQ.get()			
@@ -593,7 +592,8 @@ async def cmd_tank_stats_export(db: Backend, args : Namespace) -> bool:
 		
 		bar : Task | None = None
 		if not export_stdout:
-			bar = create_task(alive_queue_bar(list(tank_statQs.values()), 'Exporting tank_stats', total=total, enrich_print=False))
+			bar = create_task(alive_queue_bar(list(tank_statQs.values()), 'Exporting tank_stats', 
+												total=total, enrich_print=False, refresh_secs=1))
 			
 		await wait(tank_stat_workers)
 		for queue in tank_statQs.values():
@@ -628,22 +628,34 @@ async def cmd_tank_stats_export(db: Backend, args : Namespace) -> bool:
 #
 ########################################################
 
+
 async def cmd_tank_stats_import(db: Backend, args : Namespace) -> bool:
 	"""Import tank stats from other backend"""	
 	try:
+		debug('starting')
 		assert is_alphanum(args.import_type), f'invalid --import-type: {args.import_type}'
 		stats 		: EventCounter 				= EventCounter('tank-stats import')
 		tank_statsQ	: Queue[list[WGtankStat]]	= Queue(TANK_STATS_Q_MAX)
+		rel_mapQ	: Queue[WGtankStat]			= Queue()
 		config 		: ConfigParser | None 		= None
 		import_type 	: str 					= args.import_type
 		import_backend 	: str 					= args.import_backend
 		import_table	: str | None			= args.import_table
+		map_releases	: bool 					= not args.no_release_map
+		tank_stats_type: type[WGtankStat] 		= globals()[import_type]
+		
+		WORKERS 	 : int 						= args.threads
 
-		regions 	: set[Region] 				= { Region(r) for r in args.region }
-		IMPORT_BATCH : int 						= 500
+		release_map : BucketMapper[BSBlitzRelease] = await release_mapper(db)
 
-		importer : Task = create_task(db.tank_stats_insert_worker(tank_statsQ=tank_statsQ, 
-																	force=args.force))
+		workers : list[Task] = list()
+		for _ in range(WORKERS):
+			workers.append(create_task(db.tank_stats_insert_worker(tank_statsQ=tank_statsQ, 
+																	force=args.force)))
+		workers.append(create_task(tank_stats_map_releases_worker(release_map, inputQ=rel_mapQ, 
+																outputQ=tank_statsQ, 
+																map_releases=map_releases)))
+		
 
 		if args.import_config is not None and isfile(args.import_config):
 			debug(f'Reading config from {args.config}')
@@ -660,47 +672,71 @@ async def cmd_tank_stats_import(db: Backend, args : Namespace) -> bool:
 		else:
 			raise ValueError(f'Could not init {args.import_backend} to import tank stats from')
 
-		tank_stats_type: type[WGtankStat] = globals()[import_type]
+		
 		assert issubclass(tank_stats_type, WGtankStat), "--import-type has to be subclass of blitzutils.models.WGtankStat" 
 		import_db.set_model(import_db.table_tank_stats, tank_stats_type)
 
 		message('Counting tank stats to import ...')
-		N : int = await db.tank_stats_count(regions=regions, sample=args.sample)
-		i : int = 0
-		release_map : BucketMapper[BSBlitzRelease] = await release_mapper(db)
-		release 	: BSBlitzRelease | None
-		ts_list : list[WGtankStat] = list()
-		with alive_bar(N, title="Importing tank stats ", enrich_print=False) as bar:
+		N : int = await db.tank_stats_count(sample=args.sample)
+		
+		with alive_bar(N, title="Importing tank stats ", enrich_print=False, refresh_secs=1) as bar:
 			async for tank_stat in import_db.tank_stats_export(data_type=tank_stats_type, sample=args.sample):
-				if tank_stat.release is None:
-					if (release := release_map.get(tank_stat.last_battle_time)) is not None:
-						tank_stat.release = release.release
-				if i < IMPORT_BATCH:
-					ts_list.append(tank_stat)
-					i += 1
-				else:
-					await tank_statsQ.put(ts_list)
-					bar(IMPORT_BATCH)
-					i = 0
-					ts_list = list()
-					stats.log('read', IMPORT_BATCH)
-
-			if len(ts_list) > 0:
-				await tank_statsQ.put(ts_list)
-				stats.log('read', len(ts_list))
+				await rel_mapQ.put(tank_stat)
+				bar()
 
 		await tank_statsQ.join()
-		importer.cancel()
-		worker_res : tuple[EventCounter|BaseException] = await gather(importer, return_exceptions=True)
-		if isinstance(worker_res[0], EventCounter):
-			stats.merge_child(worker_res[0])
-		elif type(worker_res[0]) is BaseException:
-			error(f'tank stats insert worker threw an exception: {worker_res[0]}')
+		stats = await gather_stats(workers, stats)
 		stats.print()
 		return True
 	except Exception as err:
 		error(f'{err}')	
 	return False
+
+
+async def tank_stats_map_releases_worker(release_map: BucketMapper[BSBlitzRelease], inputQ: Queue[WGtankStat], 
+									outputQ: Queue[list[WGtankStat]], 
+									map_releases: bool = True) -> EventCounter:
+	"""Map tank stats to releases and pack those to list[WGtankStat] queue.
+		map_all is None means no release mapping is done"""
+	stats = EventCounter('Release mapper')
+	IMPORT_BATCH: int = 500
+	i 			: int = 0
+	release 	: BSBlitzRelease | None
+	ts_list 	: list[WGtankStat] = list()
+
+	try:
+		debug('starting')
+		while True:
+			tank_stat = await inputQ.get()
+			try:
+				if map_releases:
+					if tank_stat.release is None:
+						if (release := release_map.get(tank_stat.last_battle_time)) is not None:
+							tank_stat.release = release.release
+							stats.log('mapped')
+						else:
+							stats.log('errors')
+					else:
+						stats.log('not mapped')
+
+				if i < IMPORT_BATCH:
+					ts_list.append(tank_stat)
+					i += 1
+				else:
+					await outputQ.put(ts_list)
+					i = 0
+					ts_list = list()
+					stats.log('read', IMPORT_BATCH)
+			except Exception as err:
+				error(f'Processing input queue: {err}')
+			finally: 
+				inputQ.task_done()
+	except CancelledError:
+		debug('Cancelled')
+	except Exception as err:
+		error(f'{err}')	
+	return stats
+
 
 
 async def split_tank_statQ_by_region(Q_all, regionQs : dict[str, Queue[WGtankStat]], 
@@ -709,7 +745,7 @@ async def split_tank_statQ_by_region(Q_all, regionQs : dict[str, Queue[WGtankSta
 	debug('starting')
 	stats : EventCounter = EventCounter('By region')
 	try:
-		with alive_bar(Q_all.qsize(), title=bar_title, manual=True, 
+		with alive_bar(Q_all.qsize(), title=bar_title, manual=True, refresh_secs=1,
 						enrich_print=False, disable=not progress) as bar:
 			while True:
 				tank_stat : WGtankStat = await Q_all.get()
