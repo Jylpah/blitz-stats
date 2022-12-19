@@ -249,7 +249,7 @@ class MongoBackend(Backend):
 			try:
 				DBC = self.table_accounts
 				try:
-					self.db.create_collection('DBC')
+					await self.db.create_collection(DBC)
 					debug(f'Collection created: {DBC}')
 				except CollectionInvalid:
 					debug(f'Collection exists: {DBC}')
@@ -264,7 +264,7 @@ class MongoBackend(Backend):
 			try:
 				DBC = self.table_releases
 				try:
-					self.db.create_collection('DBC')
+					await self.db.create_collection(DBC)
 					debug(f'Collection created: {DBC}')
 				except CollectionInvalid:
 					debug(f'Collection exists: {DBC}')
@@ -278,7 +278,7 @@ class MongoBackend(Backend):
 			try:
 				DBC = self.table_replays
 				try:
-					self.db.create_collection('DBC')
+					await self.db.create_collection(DBC)
 					debug(f'Collection created: {DBC}')
 				except CollectionInvalid:
 					debug(f'Collection exists: {DBC}')
@@ -293,7 +293,7 @@ class MongoBackend(Backend):
 			try:
 				DBC = self.table_tank_stats
 				try:
-					self.db.create_collection('DBC')
+					await self.db.create_collection(DBC)
 					debug(f'Collection created: {DBC}')
 				except CollectionInvalid:
 					debug(f'Collection exists: {DBC}')
@@ -305,13 +305,16 @@ class MongoBackend(Backend):
 				verbose(f'Adding index: {DBC}: [ region, account_id, last_battle_time]')
 				await dbc.create_index([ ('r', DESCENDING), ('a', DESCENDING), 
 										 ('lb', DESCENDING) ], background=True)
+				verbose(f'Adding index: {DBC}: [ region, account_id,tank_id]')
+				await dbc.create_index([ ('r', DESCENDING), ('a', DESCENDING), 
+										 ('t', DESCENDING) ], background=True)
 			except Exception as err:
 				error(f'{self.backend}: Could not init collection {DBC} for tank_stats: {err}')
 
 			try:
 				DBC = self.table_player_achievements
 				try:
-					self.db.create_collection('DBC')
+					await self.db.create_collection(DBC)
 					debug(f'Collection created: {DBC}')
 				except CollectionInvalid:
 					debug(f'Collection exists: {DBC}')
@@ -353,9 +356,9 @@ class MongoBackend(Backend):
 	async def _data_insert(self, dbc : AsyncIOMotorCollection, data: D) -> bool:  		# type: ignore
 		"""Generic method to get one object of data_type"""
 		try:
-			debug('starting')
+			# debug('starting')
 			res : InsertOneResult = await dbc.insert_one(data.obj_db())
-			debug(f'Inserted {type(data)} (_id={res.inserted_id}) into {self.backend}.{dbc.name}: {data}')
+			# debug(f'Inserted {type(data)} (_id={res.inserted_id}) into {self.backend}.{dbc.name}: {data}')
 			return True			
 		except Exception as err:
 			debug(f'Failed to insert {type(data)}={data} into {self.backend}.{dbc.name}: {err}')	
@@ -367,7 +370,7 @@ class MongoBackend(Backend):
 						id: I) -> Optional[D]:
 		"""Generic method to get one object of data_type"""
 		try:
-			debug('starting')
+			# debug('starting')
 			res : Any = await dbc.find_one({ '_id': id})
 			if res is not None:
 				return data_type.parse_obj(res)
@@ -388,12 +391,12 @@ class MongoBackend(Backend):
 			model = self.get_model(dbc.name)			
 			alias_fields : dict[str, Any] = alias_mapper(model, update)
 			if (res := await dbc.find_one_and_update({ '_id': id}, { '$set': alias_fields})) is None:
-				debug(f'Failed to update _id={id} into {self.backend}.{dbc.name}')
+				# debug(f'Failed to update _id={id} into {self.backend}.{dbc.name}')
 				return False
-			debug(f'Updated (_id={id}) into {self.backend}.{dbc.name}')
+			#debug(f'Updated (_id={id}) into {self.backend}.{dbc.name}')
 			return True			
 		except Exception as err:
-			debug(f'Error while updating _id={id} in {self.backend}.{dbc.name}: {err}')	
+			error(f'Could not update _id={id} in {self.backend}.{dbc.name}: {err}')	
 		return False
 
 	
@@ -417,10 +420,11 @@ class MongoBackend(Backend):
 		try:
 			debug('starting')
 			if (res := await dbc.delete_one({ '_id': id})) == 1:
-				debug(f'Delete (_id={id}) from {self.backend}.{dbc.name}')
+				# debug(f'Delete (_id={id}) from {self.backend}.{dbc.name}')
 				return True
 			else:
-				debug(f'Failed to delete _id={id} from {self.backend}.{dbc.name}')
+				pass
+				# debug(f'Failed to delete _id={id} from {self.backend}.{dbc.name}')				
 		except Exception as err:
 			debug(f'Error while deleting _id={id} from {self.backend}.{dbc.name}: {err}')	
 		return False
@@ -509,7 +513,7 @@ class MongoBackend(Backend):
 			async for obj in dbc.aggregate(pipeline, allowDiskUse=True):
 				try:
 					obj_in = in_type.parse_obj(obj)
-					debug(f'Read {obj_in} from {self.backend}.{dbc.name}')   # comment out
+					# debug(f'Read {obj_in} from {self.backend}.{dbc.name}')   # comment out
 					yield out_type.parse_obj(obj_in.obj_db())
 				except Exception as err:
 					error(f'{err}')
@@ -1374,7 +1378,7 @@ class MongoBackend(Backend):
 		return await self._datas_insert(self.collection_tank_stats, tank_stats)
 
 
-	async def _mk_pipeline_tank_stats(self, release: BSBlitzRelease|None = None, 
+	async def _mk_pipeline_tank_stats(self, release: BSBlitzRelease | None = None, 
 										regions: set[Region] = Region.API_regions(), 
 										accounts: Iterable[Account] | None = None,
 										tanks: Iterable[Tank] | None = None, 
