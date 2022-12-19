@@ -117,6 +117,7 @@ def add_args_tank_stats_update(parser: ArgumentParser, config: Optional[ConfigPa
 		error(f'{err}')
 	return False
 
+
 def add_args_tank_stats_edit(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	debug('starting')
 	try:
@@ -134,6 +135,7 @@ def add_args_tank_stats_edit(parser: ArgumentParser, config: Optional[ConfigPars
 	except Exception as err:
 		error(f'{err}')
 	return False
+
 
 def add_args_tank_stats_edit_common(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	"""Adds common arguments to edit subparser. Required for meaningful helps and usability"""
@@ -218,19 +220,25 @@ def add_args_tank_stats_export(parser: ArgumentParser, config: Optional[ConfigPa
 		parser.add_argument('filename', metavar='FILE', type=str, nargs='?', default=EXPORT_FILE, 
 							help='File to export tank-stats to. Use \'-\' for STDIN')
 		parser.add_argument('--append', action='store_true', default=False, help='Append to file(s)')
-		parser.add_argument('--force', action='store_true', default=False, help='Overwrite existing file(s) when exporting')
+		parser.add_argument('--force', action='store_true', default=False, 
+								help='Overwrite existing file(s) when exporting')
 		# parser.add_argument('--disabled', action='store_true', default=False, help='Disabled accounts')
 		# parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
 								# default=OptAccountsInactive.no.value, help='Include inactive accounts')
 		parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
-								default=[ r.value for r in Region.API_regions() ], help='Filter by region (default is API = eu + com + asia)')
+								default=[ r.value for r in Region.API_regions() ], 
+								help='Filter by region (default is API = eu + com + asia)')
 		parser.add_argument('--by-region', action='store_true', default=False, help='Export tank-stats by region')
-		parser.add_argument('--sample', type=float, default=0, 
-								help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
 		parser.add_argument('--accounts', type=str, default=[], nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
-								help="Update tank stats for the listed ACCOUNT_ID(s). ACCOUNT_ID format 'account_id:region' or 'account_id'")
+								help="Update tank stats for the listed ACCOUNT_ID(s). \
+									ACCOUNT_ID format 'account_id:region' or 'account_id'")
 		parser.add_argument('--tanks', type=int, default=[], nargs='*', metavar='TANK_ID [TANK_ID1 ...]',
 								help="Update tank stats for the listed TANK_ID(s)")
+		parser.add_argument('--release', type=str, metavar='RELEASE', default=None, 
+							help='Export stats for a RELEASE')
+		parser.add_argument('--sample', type=float, default=0, 
+								help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
+		
 		return True	
 	except Exception as err:
 		error(f'{err}')
@@ -552,14 +560,19 @@ async def cmd_tank_stats_export(db: Backend, args : Namespace) -> bool:
 		force		: bool 					= args.force
 		export_stdout : bool 				= filename == '-'
 		sample 		: float = args.sample
-		accounts 	: list[BSAccount] | None= read_account_strs(args.accounts)
+		accounts 	: list[BSAccount] | None = read_account_strs(args.accounts)
 		tanks 		: list[Tank] | None 	= read_args_tanks(args.tanks)
+		release 	: BSBlitzRelease | None = None
+		if args.release is not None:
+			release = (await get_releases(db, [args.release]))[0]
 
 		tank_statQs 		: dict[str, CounterQueue[WGtankStat]] = dict()
 		tank_stat_workers 	: list[Task] = list()
 		export_workers 		: list[Task] = list()
 		
-		total : int = await db.tank_stats_count(regions=regions, sample=sample)
+		total : int = await db.tank_stats_count(regions=regions, sample=sample, 
+												accounts=accounts, tanks=tanks, 
+												release=release)
 
 		if args.by_region:
 			tank_statQs['all'] = CounterQueue(maxsize=ACCOUNTS_Q_MAX, count_items=False)
@@ -574,7 +587,8 @@ async def cmd_tank_stats_export(db: Backend, args : Namespace) -> bool:
 			# fetch tank_stats for all the regios
 			tank_stat_workers.append(create_task(db.tank_stats_get_worker(tank_statQs['all'], 
 													regions=regions, sample=sample, 
-													accounts=accounts, tanks=tanks)))
+													accounts=accounts, tanks=tanks, 
+													release=release)))
 			# split by region
 			export_workers.append(create_task(split_tank_statQ_by_region(Q_all=tank_statQs['all'], 
 									regionQs=cast(dict[str, Queue[WGtankStat]], tank_statQs))))
@@ -582,7 +596,8 @@ async def cmd_tank_stats_export(db: Backend, args : Namespace) -> bool:
 			tank_statQs['all'] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)
 			tank_stat_workers.append(create_task(db.tank_stats_get_worker(tank_statQs['all'], 
 													regions=regions, sample=sample, 
-													accounts=accounts, tanks=tanks)))
+													accounts=accounts, tanks=tanks, 
+													release=release)))
 
 			if filename != '-':
 				filename += '.all'
