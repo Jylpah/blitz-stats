@@ -2,7 +2,7 @@ from argparse import ArgumentParser, Namespace
 from configparser import ConfigParser
 from typing import Optional, cast, Type, Any, TypeVar
 import logging
-from asyncio import create_task, gather, wait, Queue, CancelledError, Task, sleep
+from asyncio import create_task, gather, wait, Queue, CancelledError, Task, Condition, sleep
 from aiofiles import open
 from asyncstdlib import enumerate
 from os.path import isfile
@@ -17,7 +17,7 @@ from backend import Backend, OptAccountsInactive, OptAccountsDistributed, BSTabl
 from models import BSAccount, StatsTypes
 from models_import import WG_Account
 from pyutils import CounterQueue, EventCounter,  TXTExportable, CSVExportable, JSONExportable,\
-					alive_queue_bar, get_url, get_url_JSON_model, epoch_now, export, \
+					IterableQueue, QueueDone, alive_queue_bar, get_url, get_url_JSON_model, epoch_now, export, \
 					alias_mapper, is_alphanum
 from blitzutils.models import WoTBlitzReplayJSON, Region, Account
 from blitzutils.wotinspector import WoTinspector
@@ -643,7 +643,7 @@ async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 		force		: bool 					= args.force
 		export_stdout : bool 				= filename == '-'
 		sample 		: float = args.sample
-		accountQs 	: dict[str, CounterQueue[BSAccount]] = dict()
+		accountQs 	: dict[str, IterableQueue[BSAccount]] = dict()
 		account_workers : list[Task] = list()
 		export_workers 	: list[Task] = list()
 
@@ -655,10 +655,12 @@ async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 			assert False, f"Incorrect value for argument 'inactive': {args.inactive}"
 		
 		total : int = await db.accounts_count(regions=regions, inactive=inactive, disabled=disabled, sample=sample)
+		accounts_left : Condition = Condition()
+		await accounts_left.acquire()
 
 		if args.distributed > 0:
 			for i in range(args.distributed):
-				accountQs[str(i)] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)
+				accountQs[str(i)] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
 				distributed = OptAccountsDistributed(i, args.distributed)
 				account_workers.append(create_task(db.accounts_get_worker(accountQs[str(i)], regions=regions, 
 														inactive=inactive, disabled=disabled, sample=sample,
@@ -682,7 +684,8 @@ async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 														inactive=inactive, disabled=disabled, sample=sample)))
 			# split by region
 			export_workers.append(create_task(split_accountQ_by_region(Q_all=accountQs['all'], 
-									regionQs=cast(dict[str, Queue[BSAccount]], accountQs))))
+																	regionQs=accountQs, 
+																	accounts_left=accounts_left)))
 		else:
 			accountQs['all'] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)
 			account_workers.append(create_task(db.accounts_get_worker(accountQs['all'], regions=regions, 
@@ -699,6 +702,7 @@ async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 			bar = create_task(alive_queue_bar(list(accountQs.values()), 'Exporting accounts', total=total, enrich_print=False))
 			
 		await wait(account_workers)
+		accounts_left.release()
 		for queue in accountQs.values():
 			await queue.join() 
 		if bar is not None:
@@ -733,35 +737,49 @@ async def cmd_accounts_remove(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def split_accountQ_by_region(Q_all, regionQs : dict[str, Queue[BSAccount]], 
-									progress: bool = False, 
-									bar_title: str = 'Splitting account queue') -> EventCounter:
+async def split_accountQ_by_region(Q_all: IterableQueue[BSAccount], 
+									regionQs : dict[str, IterableQueue[BSAccount]],
+									accounts_left : Condition,
+									bar_title: str | None = None,
+									total: int = 0) -> EventCounter:
 	debug('starting')
 	stats : EventCounter = EventCounter('By region')
-	try:
-		with alive_bar(Q_all.qsize(), title=bar_title, manual=True, 
-						enrich_print=False, disable=not progress) as bar:
-			while True:
-				account : BSAccount = await Q_all.get()
-				try:
-					if account.region is None:
-						raise ValueError(f'account ({account.id}) does not have region defined')
+	try:		
+		for Q in regionQs.values():
+			Q.register_producer()
+
+		while (account := await Q_all.get() ) is not None:	
+			try:
+				if account.region is None:
+					raise ValueError(f'account ({account.id}) does not have region defined')
+				if account.region.name in regionQs: 
 					if account.region.name in regionQs: 
-						await regionQs[account.region.name].put(account)
-						stats.log(account.region.name)
-					else:
-						stats.log(f'excluded region: {account.region.name}')
-				except CancelledError:
-					raise CancelledError from None
-				except Exception as err:
-					stats.log('errors')
-					error(f'{err}')
-				finally:
-					stats.log('total')
-					Q_all.task_done()
-					bar()
-					if progress and Q_all.qsize() == 0:
-						break
+				if account.region.name in regionQs: 
+					await regionQs[account.region.name].put(account)
+					stats.log(account.region.name)
+				else:
+					stats.log(f'excluded region: {account.region.name}')
+			except CancelledError:
+				raise CancelledError from None
+			except Exception as err:
+				stats.log('errors')
+				error(f'{err}')
+			finally:
+				stats.log('total')
+				Q_all.task_done()
+				# if progress:
+				# 	bar()
+	except QueueDone:
+		for Q in regionQs.values():
+			await Q.done()
+	except CancelledError as err:
+		debug(f'Cancelled')
+	except Exception as err:
+		error(f'{err}')
+	return stats
+
+
+async def count_accounts(db: Backend, args : Namespace, stats_type: StatsTypes | None) -> int:
 
 	except CancelledError as err:
 		debug(f'Cancelled')
