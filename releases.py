@@ -313,13 +313,13 @@ async def cmd_releases_import(db: Backend, args : Namespace) -> bool:
 
 
 async def get_releases(db: Backend, releases: list[str]) -> list[BSBlitzRelease]:
-	debug('starting')
+	debug(f'starting, releases={releases}')
 	res : list[BSBlitzRelease] = list()
 	try:		
 		for r in releases:
 			if (rel := await db.release_get(r)) is not None:
 				res.append(rel)			
-		res = [ *set(res)]
+		res = [ *set(res) ]
 	except Exception as err:
 		error(f'{err}')	
 	return res
