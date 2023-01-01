@@ -753,8 +753,6 @@ async def split_accountQ_by_region(Q_all: IterableQueue[BSAccount],
 				if account.region is None:
 					raise ValueError(f'account ({account.id}) does not have region defined')
 				if account.region.name in regionQs: 
-					if account.region.name in regionQs: 
-				if account.region.name in regionQs: 
 					await regionQs[account.region.name].put(account)
 					stats.log(account.region.name)
 				else:
@@ -780,27 +778,12 @@ async def split_accountQ_by_region(Q_all: IterableQueue[BSAccount],
 
 
 async def count_accounts(db: Backend, args : Namespace, stats_type: StatsTypes | None) -> int:
-
-	except CancelledError as err:
-		debug(f'Cancelled')
-	except Exception as err:
-		error(f'{err}')
-	return stats
-
-
-async def create_accountQ(db: Backend, args : Namespace, 
-							accountQ: Queue[BSAccount], 
-							stats_type: StatsTypes | None, 
-							bar_title = 'Processing accounts') -> None:
-	"""Helper to make accountQ from arguments"""	
+	"""Helper to count accounts based on CLI args"""
+	accounts_N : int = 0
 	try:
 		regions	 	: set[Region]	= { Region(r) for r in args.region }
-		accounts 	: list[BSAccount] | None= read_account_strs(args.accounts)
+		accounts 	: list[BSAccount] | None = read_account_strs(args.accounts)
 
-		accounts_N 		: int = 0
-		accounts_added 	: int = 0
-
-		# count number of accounts
 		if accounts is not None:
 			accounts_N = len(accounts)
 		elif args.file is not None:
@@ -822,16 +805,135 @@ async def create_accountQ(db: Backend, args : Namespace,
 				except ValueError as err:
 					assert False, f"Incorrect value for argument 'inactive': {args.inactive}"
 
-				accounts_N = await db.accounts_count(stats_type=stats_type, regions=regions, inactive=inactive,
-													sample=args.sample, cache_valid=args.cache_valid)
+				accounts_N = await db.accounts_count(stats_type=stats_type, regions=regions, 
+													inactive=inactive, sample=args.sample, 
+													cache_valid=args.cache_valid)
+	except Exception as err:
+		error(f'{err}')
+	return accounts_N
 
+
+async def create_accountQ(db: Backend, args : Namespace, 
+							accountQ: IterableQueue[BSAccount], 
+							stats_type: StatsTypes | None) -> EventCounter:
+	"""Helper to make accountQ from arguments"""	
+	stats : EventCounter = EventCounter('Read accounts')
+	try:
+		regions	 	: set[Region]	= { Region(r) for r in args.region }
+		accounts 	: list[BSAccount] | None = read_account_strs(args.accounts)
+		
+		accountQ.register_producer()
+		if accounts is not None:
+
+			for account in accounts:
+				try:
+					await accountQ.put(account)
+					stats.log('read')
+				except Exception as err:
+					error(f'Could not add account ({account.id}) to queue')
+					stats.log('errors')
+
+		elif args.file is not None:
+
+			if args.file.endswith('.txt'):
+				async for account in BSAccount.import_txt(args.file):
+					try:
+						await accountQ.put(account)
+						stats.log('read')
+					except Exception as err:
+						error(f'Could not add account to the queue: {err}')
+						stats.log('errors')
+
+			elif args.file.endswith('.csv'):
+				async for account in BSAccount.import_csv(args.file):
+					try:
+						await accountQ.put(account)
+						stats.log('read')
+					except Exception as err:
+						error(f'Could not add account to the queue: {err}')
+						stats.log('errors')
+
+			elif args.file.endswith('.json'):
+				async for account in BSAccount.import_json(args.file):
+					try:
+						await accountQ.put(account)
+						stats.log('read')
+					except Exception as err:
+						error(f'Could not add account to the queue: {err}')
+						stats.log('errors')
+		
+		else:
+			async for account in db.accounts_get(stats_type=stats_type, 
+												regions=regions, sample=args.sample, 
+												cache_valid=args.cache_valid):
+				try:
+					await accountQ.put(account)
+					stats.log('read')
+				except QueueDone:
+					error('accountQ is done, cannot add more')
+				except Exception as err:
+					error(f'Could not add account ({account.id}) to queue')
+					stats.log('errors')	
+
+	except CancelledError as err:
+		debug(f'Cancelled')
+	except Exception as err:
+		error(f'{err}')
+	await accountQ.done()
+
+	return stats
+
+
+async def create_accountQ_BAK(db: Backend, args : Namespace, 
+							accountQ: Queue[BSAccount], 
+							stats_type: StatsTypes | None, 
+							bar_title : str | None = None) -> None:
+	"""Helper to make accountQ from arguments"""	
+	raise DeprecationWarning('create_accountQ_BAK is depreciated')
+	try:
+		regions	 	: set[Region]	= { Region(r) for r in args.region }
+		accounts 	: list[BSAccount] | None = read_account_strs(args.accounts)
+
+		accounts_N 		: int = 0
+		accounts_added 	: int = 0
+		progress		: bool = False 
+
+		# count number of accounts
+		if bar_title is not None:
+			progress = True
+			if accounts is not None:
+				accounts_N = len(accounts)
+			elif args.file is not None:
+				message(f'Reading accounts from {args.file}')
+				async with open(args.file, mode='r') as f:
+					async for accounts_N, _ in enumerate(f):
+						pass
+				accounts_N += 1
+				if args.file.endswith('.csv'):
+					accounts_N -= 1
+			else:
+				if args.sample > 1:
+					accounts_N = int(args.sample)
+				else:				
+					message('Counting accounts to fetch stats...')
+					inactive : OptAccountsInactive = OptAccountsInactive.default()
+					try: 
+						inactive = OptAccountsInactive(args.inactive)
+					except ValueError as err:
+						assert False, f"Incorrect value for argument 'inactive': {args.inactive}"
+
+					accounts_N = await db.accounts_count(stats_type=stats_type, regions=regions, 
+														inactive=inactive, sample=args.sample, 
+														cache_valid=args.cache_valid)
+		
 		if accounts_N == 0:
 			raise ValueError('No accounts found')		
 
-		with alive_bar(accounts_N, title= bar_title, manual=True, enrich_print=False) as bar:
+		with alive_bar(accounts_N, title= bar_title, manual=True, 
+						enrich_print=False, disable=not progress) as bar:
 			
 			if accounts is not None:
-					
+
 				async for accounts_added, account in enumerate(accounts):
 					try:
 						await accountQ.put(account)
@@ -871,15 +973,17 @@ async def create_accountQ(db: Backend, args : Namespace,
 			
 			else:
 				async for accounts_added, account in enumerate(db.accounts_get(stats_type=StatsTypes.player_achievements, 
-													regions=regions, sample=args.sample, cache_valid=args.cache_valid)):
+																			regions=regions, sample=args.sample, 
+																			cache_valid=args.cache_valid)):
 					try:
 						await accountQ.put(account)
 					except Exception as err:
 						error(f'Could not add account ({account.id}) to queue')
 					finally:	
-						bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
+						if progress:
+							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
 
-			incomplete : bool = False				
+			incomplete : bool = False
 			while accountQ.qsize() > 0:
 				incomplete = True
 				await sleep(1)
