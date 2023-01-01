@@ -122,9 +122,9 @@ async def main(argv: list[str]):
 											metavar='accounts | tank-stats | player-achievements | replays | tankopedia | releases | setup')
 		cmd_parsers.required = True
 
-		accounts_parser 			= cmd_parsers.add_parser('accounts', aliases=['acc'], help='accounts help')
-		tank_stats_parser 			= cmd_parsers.add_parser('tank-stats', help='tank-stats help')
-		player_achievements_parser 	= cmd_parsers.add_parser('player-achievements', help='player-achievements help')
+		accounts_parser 			= cmd_parsers.add_parser('accounts', aliases=['ac'], help='accounts help')
+		tank_stats_parser 			= cmd_parsers.add_parser('tank-stats',aliases=['ts'],  help='tank-stats help')
+		player_achievements_parser 	= cmd_parsers.add_parser('player-achievements', aliases=['pa'], help='player-achievements help')
 		replays_parser 				= cmd_parsers.add_parser('replays', help='replays help')
 		tankopedia_parser 			= cmd_parsers.add_parser('tankopedia', help='tankopedia help')
 		releases_parser 			= cmd_parsers.add_parser('releases', help='releases help')
@@ -132,15 +132,18 @@ async def main(argv: list[str]):
 		
 		if not acc.add_args_accounts(accounts_parser, config):
 			raise Exception("Failed to define argument parser for: accounts")
-		if not ts.add_args_tank_stats(tank_stats_parser, config):
-			raise Exception("Failed to define argument parser for: tank-stats")
 		if not rep.add_args_replays(replays_parser, config):
 			raise Exception("Failed to define argument parser for: replays")
 		if not rel.add_args_releases(releases_parser, config):
 			raise Exception("Failed to define argument parser for: releases")
 		if not se.add_args_setup(setup_parser, config):
 			raise Exception("Failed to define argument parser for: setup")
-				
+		if not ts.add_args_tank_stats(tank_stats_parser, config):
+			raise Exception("Failed to define argument parser for: tank-stats")
+		if not pa.add_args_player_achievements(player_achievements_parser, config):
+			raise Exception("Failed to define argument parser for: player-achievements")
+
+
 		debug('parsing full args')
 		args = parser.parse_args(args=argv)
 		if args.help:
