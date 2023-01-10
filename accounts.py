@@ -670,24 +670,24 @@ async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 														format=args.format, filename=f'{filename}.{i}', 
 														force=force, append=args.append)))
 		elif args.by_region:
-			accountQs['all'] = CounterQueue(maxsize=ACCOUNTS_Q_MAX, count_items=False)
+			accountQs['all'] = IterableQueue(maxsize=ACCOUNTS_Q_MAX, count_items=False)
 			# by region
 			for region in regions:
-				accountQs[region.name] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)											
+				accountQs[region.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)											
 				export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], 
-																accountQs[region.name]), 
-											format=args.format, filename=f'{filename}.{region.name}', 
-											force=force, append=args.append)))
+														accountQs[region.name]), 
+														format=args.format, 
+														filename=f'{filename}.{region.name}', 
+														force=force, append=args.append)))
 			
 			# fetch accounts for all the regios
 			account_workers.append(create_task(db.accounts_get_worker(accountQs['all'], regions=regions, 
 														inactive=inactive, disabled=disabled, sample=sample)))
 			# split by region
 			export_workers.append(create_task(split_accountQ_by_region(Q_all=accountQs['all'], 
-																	regionQs=accountQs, 
-																	accounts_left=accounts_left)))
+																	regionQs=accountQs)))
 		else:
-			accountQs['all'] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)
+			accountQs['all'] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
 			account_workers.append(create_task(db.accounts_get_worker(accountQs['all'], regions=regions, 
 														inactive=inactive, disabled=disabled, sample=sample)))
 
@@ -737,22 +737,20 @@ async def cmd_accounts_remove(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def split_accountQ_by_region(Q_all: IterableQueue[BSAccount], 
-									regionQs : dict[str, IterableQueue[BSAccount]],
-									accounts_left : Condition,
-									bar_title: str | None = None,
-									total: int = 0) -> EventCounter:
+async def split_accountQ_by_region(Q_all : IterableQueue[BSAccount], 
+									regionQs : dict[str, IterableQueue[BSAccount]]) -> EventCounter:
 	debug('starting')
 	stats : EventCounter = EventCounter('By region')
 	try:		
 		for Q in regionQs.values():
-			Q.register_producer()
+			Q.add_producer()
 
-		while (account := await Q_all.get() ) is not None:	
+		while True:
+			account = await Q_all.get()
 			try:
 				if account.region is None:
 					raise ValueError(f'account ({account.id}) does not have region defined')
-				if account.region.name in regionQs: 
+				if account.region.name in regionQs.keys(): 
 					await regionQs[account.region.name].put(account)
 					stats.log(account.region.name)
 				else:
@@ -765,11 +763,9 @@ async def split_accountQ_by_region(Q_all: IterableQueue[BSAccount],
 			finally:
 				stats.log('total')
 				Q_all.task_done()
-				# if progress:
-				# 	bar()
 	except QueueDone:
 		for Q in regionQs.values():
-			await Q.done()
+			await Q.finish()
 	except CancelledError as err:
 		debug(f'Cancelled')
 	except Exception as err:
@@ -822,7 +818,7 @@ async def create_accountQ(db: Backend, args : Namespace,
 		regions	 	: set[Region]	= { Region(r) for r in args.region }
 		accounts 	: list[BSAccount] | None = read_account_strs(args.accounts)
 		
-		accountQ.register_producer()
+		accountQ.add_producer()
 		if accounts is not None:
 
 			for account in accounts:
@@ -869,18 +865,16 @@ async def create_accountQ(db: Backend, args : Namespace,
 				try:
 					await accountQ.put(account)
 					stats.log('read')
-				except QueueDone:
-					error('accountQ is done, cannot add more')
 				except Exception as err:
 					error(f'Could not add account ({account.id}) to queue')
 					stats.log('errors')	
 
+		await accountQ.finish()
 	except CancelledError as err:
 		debug(f'Cancelled')
 	except Exception as err:
-		error(f'{err}')
-	await accountQ.done()
-
+		error(f'{err}')		
+	
 	return stats
 
 
