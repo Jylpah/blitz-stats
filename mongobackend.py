@@ -473,6 +473,7 @@ class MongoBackend(Backend):
 						pipeline : list[dict[str, Any]]) -> AsyncGenerator[D, None]:
 		try:
 			debug('starting')
+			debug(f'pipeline={pipeline}')
 			async for obj in dbc.aggregate(pipeline, allowDiskUse=True):
 				try:
 					yield data_type.parse_obj(obj)
