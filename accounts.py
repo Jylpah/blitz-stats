@@ -17,7 +17,7 @@ from backend import Backend, OptAccountsInactive, OptAccountsDistributed, BSTabl
 from models import BSAccount, StatsTypes
 from models_import import WG_Account
 from pyutils import CounterQueue, EventCounter,  TXTExportable, CSVExportable, JSONExportable,\
-					IterableQueue, QueueDone, alive_queue_bar, get_url, get_url_JSON_model, epoch_now, export, \
+					IterableQueue, QueueDone, alive_bar_monitor, get_url, get_url_JSON_model, epoch_now, export, \
 					alias_mapper, is_alphanum
 from blitzutils.models import WoTBlitzReplayJSON, Region, Account
 from blitzutils.wotinspector import WoTinspector
@@ -699,7 +699,7 @@ async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 		
 		bar : Task | None = None
 		if not export_stdout:
-			bar = create_task(alive_queue_bar(list(accountQs.values()), 'Exporting accounts', total=total, enrich_print=False))
+			bar = create_task(alive_bar_monitor(list(accountQs.values()), 'Exporting accounts', total=total, enrich_print=False))
 			
 		await wait(account_workers)
 		accounts_left.release()
@@ -764,6 +764,7 @@ async def split_accountQ_by_region(Q_all : IterableQueue[BSAccount],
 				stats.log('total')
 				Q_all.task_done()
 	except QueueDone:
+		debug('Marking regionQs finished')
 		for Q in regionQs.values():
 			await Q.finish()
 	except CancelledError as err:
