@@ -320,7 +320,6 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 		debug(f'AccountQ created. count={accountQ.count}, size={accountQ.qsize()}')
 		await accountQ.join()
 		await statsQ.join()
-		debug('statsQ processed')
 		task_bar.cancel()
 
 		if retryQ is not None and not retryQ.empty():
@@ -331,18 +330,13 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 			for _ in range(min([args.threads, ceil(retry_accounts/4)])):
 				tasks.append(create_task(update_tank_stats_api_worker(db, wg_api=wg, regions=regions, 
 																		accountQ=retryQ, statsQ=statsQ)))
-			print('Waiting retryQ to finish')
 			await retryQ.join()
-			print('Waiting statsQ to finish')
 			await statsQ.join()
-			print('Canceling retry bar')
 			task_bar.cancel()
 
-		#debug('Cancelling tasks')
 		for task in tasks:
 			task.cancel()
 		
-		print('Reading task return values')
 		for ec in await gather(*tasks, return_exceptions=True):
 			if isinstance(ec, EventCounter):
 				stats.merge_child(ec)
