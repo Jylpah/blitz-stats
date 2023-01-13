@@ -743,7 +743,7 @@ async def split_accountQ_by_region(Q_all : IterableQueue[BSAccount],
 	stats : EventCounter = EventCounter('By region')
 	try:		
 		for Q in regionQs.values():
-			Q.add_producer()
+			await Q.add_producer()
 
 		while True:
 			account = await Q_all.get()
@@ -819,7 +819,8 @@ async def create_accountQ(db: Backend, args : Namespace,
 		regions	 	: set[Region]	= { Region(r) for r in args.region }
 		accounts 	: list[BSAccount] | None = read_account_strs(args.accounts)
 		
-		accountQ.add_producer()
+		await accountQ.add_producer()
+
 		if accounts is not None:
 
 			for account in accounts:
@@ -869,13 +870,14 @@ async def create_accountQ(db: Backend, args : Namespace,
 				except Exception as err:
 					error(f'Could not add account ({account.id}) to queue')
 					stats.log('errors')	
-
-		await accountQ.finish()
+		
 	except CancelledError as err:
 		debug(f'Cancelled')
 	except Exception as err:
 		error(f'{err}')		
-	
+	finally:
+		await accountQ.finish()	
+		
 	return stats
 
 
