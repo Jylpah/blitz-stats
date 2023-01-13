@@ -384,11 +384,20 @@ class MongoBackend(Backend):
 		return None
 
 
-	async def _data_update(self, dbc : AsyncIOMotorCollection, id: I, update: dict) -> bool:
+	async def _data_update(self, dbc : AsyncIOMotorCollection, id: I, 
+							obj : BaseModel | None = None,
+							update: dict | None = None, 							 
+							fields : list[str] | None = None) -> bool:
 		"""Generic method to update an object of data_type"""
 		try:
 			debug('starting')
-			model = self.get_model(dbc.name)			
+			model = self.get_model(dbc.name)
+			if update is not None:
+				pass
+			elif fields is not None and obj is not None:
+				update = obj.dict(include=set(fields))
+			else:
+				raise ValueError("'update', 'obj' and 'fields' cannot be all None")
 			alias_fields : dict[str, Any] = alias_mapper(model, update)
 			if (res := await dbc.find_one_and_update({ '_id': id}, { '$set': alias_fields})) is None:
 				# debug(f'Failed to update _id={id} into {self.backend}.{dbc.name}')
@@ -578,13 +587,9 @@ class MongoBackend(Backend):
 			if the account was not updated"""
 		try: 
 			debug('starting')
-			if update is not None:
-				pass
-			elif fields is not None:
-				update = account.obj_db(fields=fields)
-			else:
-				return False
-			return await self._data_update(self.collection_accounts, id=account.id, update=update)
+			return await self._data_update(self.collection_accounts, 
+											id=account.id, obj=account,
+											update=update, fields=fields)
 		except Exception as err:
 			debug(f'Error while updating account (id={account.id}) into {self.backend}.{self.table_accounts}: {err}')	
 		return False
@@ -603,8 +608,6 @@ class MongoBackend(Backend):
 		debug('starting')
 		return await self._data_delete(self.collection_accounts, id=account_id)
 
-
-	
 
 	# async def accounts_get(self, stats_type : StatsTypes | None = None, 
 	## 						regions: set[Region] = Region.API_regions(), 
@@ -1047,13 +1050,9 @@ class MongoBackend(Backend):
 			if the release was not updated"""
 		try: 
 			debug('starting')
-			if update is not None:
-				pass
-			elif fields is not None:
-				update = release.obj_db(fields=fields)
-			else:
-				return False
-			return await self._data_update(self.collection_releases, id=release.release, update=update)
+			return await self._data_update(self.collection_releases, 
+											id=release.release, obj=release,
+											update=update, fields=fields)
 		except Exception as err:
 			debug(f'Error while updating release {release.release} into {self.backend}.{self.table_accounts}: {err}')	
 		return False
@@ -1349,14 +1348,9 @@ class MongoBackend(Backend):
 			if the tank stat was not updated"""
 		try: 
 			debug('starting')
-			if update is not None:
-				pass
-			elif fields is not None:
-				# by_alias=False since _data_update remaps alias fields
-				update = tank_stat.obj_db(by_alias=False, fields=fields)
-			else:
-				return False
-			return await self._data_update(self.collection_tank_stats, id=tank_stat.id, update=update)
+			return await self._data_update(self.collection_tank_stats, 
+											id=tank_stat.id, obj=tank_stat,
+											update=update, fields=fields)
 		except Exception as err:
 			debug(f'Error while updating tank stat (id={tank_stat.id}) into {self.backend}.{self.table_tank_stats}: {err}')	
 		return False
