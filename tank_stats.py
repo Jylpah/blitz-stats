@@ -6,6 +6,7 @@ import logging
 from asyncio import create_task, gather, Queue, CancelledError, Task, sleep, wait
 from aiofiles import open
 from os.path import isfile
+from math import ceil
 from asyncstdlib import enumerate
 from alive_progress import alive_bar		# type: ignore
 from yappi import profile 					# type: ignore
@@ -15,9 +16,9 @@ from models import BSAccount, BSBlitzRelease, StatsTypes
 from accounts import create_accountQ, read_account_strs
 from releases import get_releases, release_mapper
 
-from pyutils import get_url, get_url_JSON_model, epoch_now, alive_queue_bar, \
+from pyutils import get_url, get_url_JSON_model, epoch_now, alive_bar_monitor, \
 					is_alphanum, JSONExportable, TXTExportable, CSVExportable, export, \
-					BucketMapper, CounterQueue, EventCounter, gather_stats
+					BucketMapper, IterableQueue, QueueDone, EventCounter, gather_stats
 from blitzutils.models import WoTBlitzReplayJSON, Region, WGApiWoTBlitzTankStats, \
 								WGtankStat, Tank
 from blitzutils.wg import WGApi 
@@ -49,7 +50,7 @@ def add_args_tank_stats(parser: ArgumentParser, config: Optional[ConfigParser] =
 												metavar='update | prune | edit | import | export')
 		tank_stats_parsers.required = True
 		
-		update_parser = tank_stats_parsers.add_parser('update', aliases=['get'], help="tank-stats update help")
+		update_parser = tank_stats_parsers.add_parser('update', aliases=['fetch'], help="tank-stats update help")
 		if not add_args_tank_stats_update(update_parser, config=config):
 			raise Exception("Failed to define argument parser for: tank-stats update")
 
@@ -102,8 +103,8 @@ def add_args_tank_stats_update(parser: ArgumentParser, config: Optional[ConfigPa
 							help='Update only accounts with stats older than DAYS')		
 		parser.add_argument('--distributed', '--dist',type=str, dest='distributed', metavar='I:N', 
 							default=None, help='Distributed update for accounts: id %% N == I')
-		parser.add_argument('--check-invalid', action='store_true', default=False, 
-							help='Re-check invalid accounts')
+		parser.add_argument('--check-disabled',  dest='disabled', action='store_true', default=False, 
+							help='Check disabled accounts')
 		parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
 								default=OptAccountsInactive.default().value, help='Include inactive accounts')
 		parser.add_argument('--accounts', type=int, default=[], nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
@@ -287,35 +288,61 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 	wg 	: WGApi = WGApi(WG_app_id=args.wg_app_id, rate_limit=args.rate_limit)
 
 	try:
-		stats 	 : EventCounter				= EventCounter('tank-stats update')
+		stats 	 : EventCounter				= EventCounter('tank-stats update')	
 		regions	 : set[Region]				= { Region(r) for r in args.region }
-		
-		accountQ : Queue[BSAccount]			= Queue(maxsize=ACCOUNTS_Q_MAX)
-		retryQ 	 : Queue[BSAccount] | None	= None
+		accountQ : IterableQueue[BSAccount]	= IterableQueue(maxsize=ACCOUNTS_Q_MAX)
+		retryQ 	 : IterableQueue[BSAccount] | None = None
 		statsQ	 : Queue[list[WGtankStat]]	= Queue(maxsize=TANK_STATS_Q_MAX)
-		
 
-		if not args.check_invalid:
-			retryQ = Queue()		# must not use maxsize
+		inactive : OptAccountsInactive      = OptAccountsInactive.default()
+		try: 
+			inactive = OptAccountsInactive(args.inactive)
+		except ValueError as err:
+			assert False, f"Incorrect value for argument 'inactive': {args.inactive}"
+
+		if not args.disabled:
+			retryQ = IterableQueue()		# must not use maxsize
 		
 		tasks : list[Task] = list()
-		tasks.append(create_task(update_tank_stats_worker(db, statsQ)))
-		for _ in range(args.threads):
+		tasks.append(create_task(update_tank_stats_backend_worker(db, statsQ)))
+
+		accounts : int = await db.accounts_count(StatsTypes.tank_stats, regions=regions, 
+												inactive=inactive, disabled=args.disabled, 
+												sample=args.sample, cache_valid=args.cache_valid)
+		
+		task_bar : Task = create_task(alive_bar_monitor([accountQ], total=accounts, title="Fetching tank stats"))
+		for _ in range(min([args.threads, ceil(accounts/4)])):
 			tasks.append(create_task(update_tank_stats_api_worker(db, wg_api=wg, regions=regions, 
 																	accountQ=accountQ, statsQ=statsQ, 
-																	retryQ=retryQ, check_invalid=args.check_invalid)))
+																	retryQ=retryQ, disabled=args.disabled)))
 
-		await create_accountQ(db, args, accountQ, StatsTypes.tank_stats, bar_title="Fetching tank stats")
-		
-		if retryQ is not None and not retryQ.empty():
-			tasks.append(create_task(update_tank_stats_api_worker(db, wg_api=wg, regions=regions, accountQ=retryQ, statsQ=statsQ)))
-			await retryQ.join()
-
+		stats.merge_child(await create_accountQ(db, args, accountQ, StatsTypes.tank_stats))
+		debug(f'AccountQ created. count={accountQ.count}, size={accountQ.qsize()}')
+		await accountQ.join()
 		await statsQ.join()
+		debug('statsQ processed')
+		task_bar.cancel()
 
+		if retryQ is not None and not retryQ.empty():
+			retry_accounts : int = retryQ.qsize()
+			debug(f'retryQ: size={retry_accounts}')
+			task_bar = create_task(alive_bar_monitor([retryQ], total=retry_accounts, 
+													  title="Retrying failed accounts"))
+			for _ in range(min([args.threads, ceil(retry_accounts/4)])):
+				tasks.append(create_task(update_tank_stats_api_worker(db, wg_api=wg, regions=regions, 
+																		accountQ=retryQ, statsQ=statsQ)))
+			print('Waiting retryQ to finish')
+			await retryQ.join()
+			print('Waiting statsQ to finish')
+			await statsQ.join()
+			print('Canceling retry bar')
+			task_bar.cancel()
+
+		#debug('Cancelling tasks')
 		for task in tasks:
 			task.cancel()
 		
+		print('Reading task return values')
 		for ec in await gather(*tasks, return_exceptions=True):
 			if isinstance(ec, EventCounter):
 				stats.merge_child(ec)
@@ -334,14 +361,22 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def update_tank_stats_api_worker(db: Backend, wg_api : WGApi, regions: set[Region], 
-										accountQ: Queue[BSAccount], 
-										statsQ: Queue[list[WGtankStat]], 
-										retryQ: Queue[BSAccount] | None = None, 
-										check_invalid : bool = False) -> EventCounter:
+
+async def update_tank_stats_api_worker(db: Backend, wg_api : WGApi,
+										regions	: set[Region],
+										accountQ: IterableQueue[BSAccount], 
+										statsQ	: Queue[list[WGtankStat]], 
+										retryQ 	: IterableQueue[BSAccount] | None = None, 
+										disabled : bool = False) -> EventCounter:
 	"""Async worker to fetch tank stats from WG API"""
 	debug('starting')
-	stats = EventCounter('WG API')
+	stats : EventCounter
+	if retryQ is None:
+		stats = EventCounter('re-try')
+	else:
+		stats = EventCounter('fetch')
+		await retryQ.add_producer()
+		
 	try:
 		while True:
 			account : BSAccount = await accountQ.get()
@@ -364,12 +399,11 @@ async def update_tank_stats_api_worker(db: Backend, wg_api : WGApi, regions: set
 						account.disabled = True
 						await db.account_update(account=account, fields=['disabled'])
 						stats.log('accounts disabled')
-				else:
-					
+				else:					
 					await statsQ.put(tank_stats)
 					stats.log('tank stats fetched', len(tank_stats))
 					stats.log('accounts /w stats')
-					if check_invalid:
+					if disabled:
 						account.disabled = False
 						await db.account_update(account=account, fields=['disabled'])
 						stats.log('accounts enabled')
@@ -379,16 +413,21 @@ async def update_tank_stats_api_worker(db: Backend, wg_api : WGApi, regions: set
 				error(f'{err}')
 			finally:
 				accountQ.task_done()
-		
+	except QueueDone:
+		debug('accountQ has been processed')
 	except CancelledError as err:
 		debug(f'Cancelled')	
 	except Exception as err:
 		error(f'{err}')
+	finally:
+		if retryQ is not None:
+			await retryQ.finish()
+
 	stats.log('accounts total', - stats.get_value('accounts to re-try'))  # remove re-tried accounts from total
 	return stats
 
 
-async def update_tank_stats_worker(db: Backend, statsQ: Queue[list[WGtankStat]]) -> EventCounter:
+async def update_tank_stats_backend_worker(db: Backend, statsQ: Queue[list[WGtankStat]]) -> EventCounter:
 	"""Async worker to add tank stats to backend. Assumes batch is for the same account"""
 	debug('starting')
 	stats 		: EventCounter = EventCounter(f'Backend ({db.driver})')
@@ -566,56 +605,52 @@ async def cmd_tank_stats_export(db: Backend, args : Namespace) -> bool:
 		if args.release is not None:
 			release = (await get_releases(db, [args.release]))[0]
 
-		tank_statQs 		: dict[str, CounterQueue[WGtankStat]] = dict()
-		tank_stat_workers 	: list[Task] = list()
+		tank_statQs 		: dict[str, IterableQueue[WGtankStat]] = dict()
+		backend_worker 		: Task 
 		export_workers 		: list[Task] = list()
 		
 		total : int = await db.tank_stats_count(regions=regions, sample=sample, 
 												accounts=accounts, tanks=tanks, 
 												release=release)
 
+		tank_statQs['all'] = IterableQueue(maxsize=ACCOUNTS_Q_MAX, count_items=not args.by_region)
+		# fetch tank_stats for all the regios
+		backend_worker = create_task(db.tank_stats_get_worker(tank_statQs['all'], 
+																		regions=regions, sample=sample, 
+																		accounts=accounts, tanks=tanks, 
+																		release=release))
 		if args.by_region:
-			tank_statQs['all'] = CounterQueue(maxsize=ACCOUNTS_Q_MAX, count_items=False)
-			# by region
 			for region in regions:
-				tank_statQs[region.name] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)											
+				tank_statQs[region.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)											
 				export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], 
 																tank_statQs[region.name]), 
-											format=args.format, filename=f'{filename}.{region.name}', 
-											force=force, append=args.append)))
-			
-			# fetch tank_stats for all the regios
-			tank_stat_workers.append(create_task(db.tank_stats_get_worker(tank_statQs['all'], 
-													regions=regions, sample=sample, 
-													accounts=accounts, tanks=tanks, 
-													release=release)))
+														format=args.format, 
+														filename=f'{filename}.{region.name}', 
+														force=force, 
+														append=args.append)))
 			# split by region
 			export_workers.append(create_task(split_tank_statQ_by_region(Q_all=tank_statQs['all'], 
 									regionQs=cast(dict[str, Queue[WGtankStat]], tank_statQs))))
 		else:
-			tank_statQs['all'] = CounterQueue(maxsize=ACCOUNTS_Q_MAX)
-			tank_stat_workers.append(create_task(db.tank_stats_get_worker(tank_statQs['all'], 
-													regions=regions, sample=sample, 
-													accounts=accounts, tanks=tanks, 
-													release=release)))
-
 			if filename != '-':
 				filename += '.all'
-			export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], tank_statQs['all']), 
-											format=args.format, filename=filename, 
-											force=force, append=args.append)))
-		
+			export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], 
+															tank_statQs['all']), 
+											format=args.format, 
+											filename=filename, 
+											force=force, 
+											append=args.append)))
 		bar : Task | None = None
 		if not export_stdout:
-			bar = create_task(alive_queue_bar(list(tank_statQs.values()), 'Exporting tank_stats', 
-												total=total, enrich_print=False, refresh_secs=1))
+			bar = create_task(alive_bar_monitor(list(tank_statQs.values()), 'Exporting tank_stats', 
+												total=total, enrich_print=False, refresh_secs=1))		
 			
-		await wait(tank_stat_workers)
+		await wait( [backend_worker] )
 		for queue in tank_statQs.values():
 			await queue.join() 
 		if bar is not None:
 			bar.cancel()
-		for res in await gather(*tank_stat_workers):
+		for res in await gather(backend_worker):
 			if isinstance(res, EventCounter):
 				stats.merge_child(res)
 			elif type(res) is BaseException:
