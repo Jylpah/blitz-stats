@@ -47,12 +47,12 @@ def add_args_tank_stats(parser: ArgumentParser, config: Optional[ConfigParser] =
 		tank_stats_parsers = parser.add_subparsers(dest='tank_stats_cmd', 	
 												title='tank-stats commands',
 												description='valid commands',
-												metavar='update | prune | edit | import | export')
+												metavar='get | prune | edit | import | export')
 		tank_stats_parsers.required = True
 		
-		update_parser = tank_stats_parsers.add_parser('update', aliases=['fetch'], help="tank-stats update help")
-		if not add_args_tank_stats_update(update_parser, config=config):
-			raise Exception("Failed to define argument parser for: tank-stats update")
+		fetch_parser = tank_stats_parsers.add_parser('fetch', aliases=['get'], help="tank-stats fetch help")
+		if not add_args_tank_stats_fetch(fetch_parser, config=config):
+			raise Exception("Failed to define argument parser for: tank-stats fetch")
 
 		edit_parser = tank_stats_parsers.add_parser('edit', help="tank-stats edit help")
 		if not add_args_tank_stats_edit(edit_parser, config=config):
@@ -76,7 +76,7 @@ def add_args_tank_stats(parser: ArgumentParser, config: Optional[ConfigParser] =
 	return False
 
 
-def add_args_tank_stats_update(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_tank_stats_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		WG_RATE_LIMIT 	: float = 10
@@ -94,21 +94,22 @@ def add_args_tank_stats_update(parser: ArgumentParser, config: Optional[ConfigPa
 		parser.add_argument('--rate-limit', type=float, default=WG_RATE_LIMIT, metavar='RATE_LIMIT',
 							help='Rate limit for WG API')
 		parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
-							default=[ r.value for r in Region.API_regions() ], help='Filter by region (default: eu + com + asia + ru)')
+							default=[ r.value for r in Region.API_regions() ], 
+							help='Filter by region (default: eu + com + asia + ru)')
 		parser.add_argument('--force', action='store_true', default=False, 
-							help='UPDATE HELP TEXT ')
+							help='Fetch stats for all accounts')
 		parser.add_argument('--sample', type=float, default=0, metavar='SAMPLE',
-							help='Update tank stats for SAMPLE of accounts. If 0 < SAMPLE < 1, SAMPLE defines a %% of users')
+							help='Fetch tank stats for SAMPLE of accounts. If 0 < SAMPLE < 1, SAMPLE defines a %% of users')
 		parser.add_argument('--cache_valid', type=int, default=None, metavar='DAYS',
-							help='Update only accounts with stats older than DAYS')		
+							help='Fetch stats only for accounts with stats older than DAYS')		
 		parser.add_argument('--distributed', '--dist',type=str, dest='distributed', metavar='I:N', 
-							default=None, help='Distributed update for accounts: id %% N == I')
+							default=None, help='Distributed fetching for accounts: id %% N == I')
 		parser.add_argument('--check-disabled',  dest='disabled', action='store_true', default=False, 
 							help='Check disabled accounts')
 		parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
 								default=OptAccountsInactive.default().value, help='Include inactive accounts')
 		parser.add_argument('--accounts', type=int, default=[], nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
-							help='Update tank stats for the listed ACCOUNT_ID(s)')
+							help='Fetch tank stats for the listed ACCOUNT_ID(s)')
 		parser.add_argument('--file',type=str, metavar='FILENAME', default=None, 
 							help='Read account_ids from FILENAME one account_id per line')
 		parser.add_argument('--last', action='store_true', default=False, help=SUPPRESS)
@@ -231,10 +232,10 @@ def add_args_tank_stats_export(parser: ArgumentParser, config: Optional[ConfigPa
 								help='Filter by region (default is API = eu + com + asia)')
 		parser.add_argument('--by-region', action='store_true', default=False, help='Export tank-stats by region')
 		parser.add_argument('--accounts', type=str, default=[], nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
-								help="Update tank stats for the listed ACCOUNT_ID(s). \
+								help="Exports tank stats for the listed ACCOUNT_ID(s). \
 									ACCOUNT_ID format 'account_id:region' or 'account_id'")
 		parser.add_argument('--tanks', type=int, default=[], nargs='*', metavar='TANK_ID [TANK_ID1 ...]',
-								help="Update tank stats for the listed TANK_ID(s)")
+								help="Export tank stats for the listed TANK_ID(s)")
 		parser.add_argument('--release', type=str, metavar='RELEASE', default=None, 
 							help='Export stats for a RELEASE')
 		parser.add_argument('--sample', type=float, default=0, 
@@ -255,8 +256,8 @@ def add_args_tank_stats_export(parser: ArgumentParser, config: Optional[ConfigPa
 async def cmd_tank_stats(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
-		if args.tank_stats_cmd == 'update':
-			return await cmd_tank_stats_update(db, args)
+		if args.tank_stats_cmd == 'fetch':
+			return await cmd_tank_stats_fetch(db, args)
 
 		elif args.tank_stats_cmd == 'edit':
 			return await cmd_tank_stats_edit(db, args)
@@ -273,12 +274,12 @@ async def cmd_tank_stats(db: Backend, args : Namespace) -> bool:
 
 ########################################################
 # 
-# cmd_tank_stats_update()
+# cmd_tank_stats_get()
 #
 ########################################################
 
-async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
-	"""Update tank stats"""
+async def cmd_tank_stats_fetch(db: Backend, args : Namespace) -> bool:
+	"""fetch tank stats"""
 	assert 'wg_app_id' in args and type(args.wg_app_id) is str, "'wg_app_id' must be set and string"
 	assert 'rate_limit' in args and (type(args.rate_limit) is float or \
 			type(args.rate_limit) is int), "'rate_limit' must set and a number"	
@@ -288,7 +289,7 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 	wg 	: WGApi = WGApi(WG_app_id=args.wg_app_id, rate_limit=args.rate_limit)
 
 	try:
-		stats 	 : EventCounter				= EventCounter('tank-stats update')	
+		stats 	 : EventCounter				= EventCounter('tank-stats fetch')	
 		regions	 : set[Region]				= { Region(r) for r in args.region }
 		accountQ : IterableQueue[BSAccount]	= IterableQueue(maxsize=ACCOUNTS_Q_MAX)
 		retryQ 	 : IterableQueue[BSAccount] | None = None
@@ -304,15 +305,17 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 			retryQ = IterableQueue()		# must not use maxsize
 		
 		tasks : list[Task] = list()
-		tasks.append(create_task(update_tank_stats_backend_worker(db, statsQ)))
+		tasks.append(create_task(fetch_tank_stats_backend_worker(db, statsQ)))
 
+		# Process accountQ
 		accounts : int = await db.accounts_count(StatsTypes.tank_stats, regions=regions, 
 												inactive=inactive, disabled=args.disabled, 
 												sample=args.sample, cache_valid=args.cache_valid)
 		
-		task_bar : Task = create_task(alive_bar_monitor([accountQ], total=accounts, title="Fetching tank stats"))
+		task_bar : Task = create_task(alive_bar_monitor([accountQ], total=accounts, 
+														title="Fetching tank stats"))
 		for _ in range(min([args.threads, ceil(accounts/4)])):
-			tasks.append(create_task(update_tank_stats_api_worker(db, wg_api=wg, accountQ=accountQ, 
+			tasks.append(create_task(fetch_tank_stats_api_worker(db, wg_api=wg, accountQ=accountQ, 
 																	statsQ=statsQ, retryQ=retryQ, 
 																	disabled=args.disabled)))
 
@@ -322,13 +325,14 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 		await statsQ.join()
 		task_bar.cancel()
 
+		# Process retryQ
 		if retryQ is not None and not retryQ.empty():
 			retry_accounts : int = retryQ.qsize()
-			debug(f'retryQ: size={retry_accounts}')
+			debug(f'retryQ: size={retry_accounts} is_finished={retryQ.is_finished}')
 			task_bar = create_task(alive_bar_monitor([retryQ], total=retry_accounts, 
 													  title="Retrying failed accounts"))
 			for _ in range(min([args.threads, ceil(retry_accounts/4)])):
-				tasks.append(create_task(update_tank_stats_api_worker(db, wg_api=wg,  
+				tasks.append(create_task(fetch_tank_stats_api_worker(db, wg_api=wg,  
 																		accountQ=retryQ, 
 																		statsQ=statsQ)))
 			await retryQ.join()
@@ -356,7 +360,7 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def update_tank_stats_api_worker(db: Backend, wg_api : WGApi,										
+async def fetch_tank_stats_api_worker(db: Backend, wg_api : WGApi,										
 										accountQ: IterableQueue[BSAccount], 
 										statsQ	: Queue[list[WGtankStat]], 
 										retryQ 	: IterableQueue[BSAccount] | None = None, 
@@ -373,6 +377,8 @@ async def update_tank_stats_api_worker(db: Backend, wg_api : WGApi,
 	try:
 		while True:
 			account : BSAccount = await accountQ.get()
+			# if retryQ is None:
+			# 	print(f'retryQ: account_id={account.id}')
 			try:
 				debug(f'account_id: {account.id}')
 				stats.log('accounts total')
@@ -420,10 +426,10 @@ async def update_tank_stats_api_worker(db: Backend, wg_api : WGApi,
 	return stats
 
 
-async def update_tank_stats_backend_worker(db: Backend, statsQ: Queue[list[WGtankStat]]) -> EventCounter:
+async def fetch_tank_stats_backend_worker(db: Backend, statsQ: Queue[list[WGtankStat]]) -> EventCounter:
 	"""Async worker to add tank stats to backend. Assumes batch is for the same account"""
 	debug('starting')
-	stats 		: EventCounter = EventCounter(f'Backend ({db.driver})')
+	stats 		: EventCounter = EventCounter(f'db: {db.driver}')
 	added 		: int
 	not_added 	: int
 	account 	: BSAccount | None
