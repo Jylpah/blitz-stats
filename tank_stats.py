@@ -312,9 +312,9 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 		
 		task_bar : Task = create_task(alive_bar_monitor([accountQ], total=accounts, title="Fetching tank stats"))
 		for _ in range(min([args.threads, ceil(accounts/4)])):
-			tasks.append(create_task(update_tank_stats_api_worker(db, wg_api=wg, regions=regions, 
-																	accountQ=accountQ, statsQ=statsQ, 
-																	retryQ=retryQ, disabled=args.disabled)))
+			tasks.append(create_task(update_tank_stats_api_worker(db, wg_api=wg, accountQ=accountQ, 
+																	statsQ=statsQ, retryQ=retryQ, 
+																	disabled=args.disabled)))
 
 		stats.merge_child(await create_accountQ(db, args, accountQ, StatsTypes.tank_stats))
 		debug(f'AccountQ created. count={accountQ.count}, size={accountQ.qsize()}')
@@ -328,8 +328,9 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 			task_bar = create_task(alive_bar_monitor([retryQ], total=retry_accounts, 
 													  title="Retrying failed accounts"))
 			for _ in range(min([args.threads, ceil(retry_accounts/4)])):
-				tasks.append(create_task(update_tank_stats_api_worker(db, wg_api=wg, regions=regions, 
-																		accountQ=retryQ, statsQ=statsQ)))
+				tasks.append(create_task(update_tank_stats_api_worker(db, wg_api=wg,  
+																		accountQ=retryQ, 
+																		statsQ=statsQ)))
 			await retryQ.join()
 			await statsQ.join()
 			task_bar.cancel()
@@ -356,8 +357,7 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 
 
 
-async def update_tank_stats_api_worker(db: Backend, wg_api : WGApi,
-										regions	: set[Region],
+async def update_tank_stats_api_worker(db: Backend, wg_api : WGApi,										
 										accountQ: IterableQueue[BSAccount], 
 										statsQ	: Queue[list[WGtankStat]], 
 										retryQ 	: IterableQueue[BSAccount] | None = None, 
@@ -377,9 +377,9 @@ async def update_tank_stats_api_worker(db: Backend, wg_api : WGApi,
 			try:
 				debug(f'account_id: {account.id}')
 				stats.log('accounts total')
-				
-				if account.region not in regions:
-					raise ValueError(f"account_id's ({account.id}) region ({account.region}) is not in defined regions ({', '.join(regions)})")
+
+				if account.region is None:
+					raise ValueError(f'account_id={account.id} does not have region set')
 				tank_stats : list[WGtankStat] | None = await wg_api.get_tank_stats(account.id, account.region)
 
 				if tank_stats is None:
