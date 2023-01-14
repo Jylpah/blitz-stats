@@ -814,7 +814,7 @@ async def create_accountQ(db: Backend, args : Namespace,
 							accountQ: IterableQueue[BSAccount], 
 							stats_type: StatsTypes | None) -> EventCounter:
 	"""Helper to make accountQ from arguments"""	
-	stats : EventCounter = EventCounter(f'{db.backend} accounts')
+	stats : EventCounter = EventCounter(f'{db.driver}: accounts')
 	try:
 		regions	 	: set[Region]	= { Region(r) for r in args.region }
 		accounts 	: list[BSAccount] | None = read_account_strs(args.accounts)
