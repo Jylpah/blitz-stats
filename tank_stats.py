@@ -345,7 +345,7 @@ async def cmd_tank_stats_fetch(db: Backend, args : Namespace) -> bool:
 		for ec in await gather(*tasks, return_exceptions=True):
 			if isinstance(ec, EventCounter):
 				stats.merge_child(ec)
-		message(stats.print(do_print=False))
+		message(stats.print(do_print=False, clean=True))
 		return True
 	except Exception as err:
 		error(f'{err}')
@@ -529,7 +529,7 @@ async def cmd_tank_stats_edit(db: Backend, args : Namespace) -> bool:
 				stats.merge_child(res)
 			elif type(res) is BaseException:
 				error(f'{db.backend}: tank-stats edit remap-release returned error: {res}')
-		stats.print()
+		message(stats.print(do_print=False, clean=True))
 
 	except Exception as err:
 		error(f'{err}')
@@ -662,7 +662,7 @@ async def cmd_tank_stats_export(db: Backend, args : Namespace) -> bool:
 			elif type(res) is BaseException:
 				error(f'export(format={args.format}) returned error: {res}')
 		if not export_stdout:
-			stats.print()
+			message(stats.print(do_print=False, clean=True))
 
 	except Exception as err:
 		error(f'{err}')
@@ -735,7 +735,7 @@ async def cmd_tank_stats_import(db: Backend, args : Namespace) -> bool:
 
 		await tank_statsQ.join()
 		stats = await gather_stats(workers, stats)
-		stats.print()
+		message(stats.print(do_print=False, clean=True))
 		return True
 	except Exception as err:
 		error(f'{err}')	
@@ -792,7 +792,7 @@ async def split_tank_statQ_by_region(Q_all, regionQs : dict[str, Queue[WGtankSta
 								progress: bool = False, 
 								bar_title: str = 'Splitting tank stats queue') -> EventCounter:
 	debug('starting')
-	stats : EventCounter = EventCounter('By region')
+	stats : EventCounter = EventCounter('tank stats')
 	try:
 		with alive_bar(Q_all.qsize(), title=bar_title, manual=True, refresh_secs=1,
 						enrich_print=False, disable=not progress) as bar:
