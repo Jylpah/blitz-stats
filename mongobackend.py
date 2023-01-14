@@ -726,7 +726,6 @@ class MongoBackend(Backend):
 			pipeline = await self._mk_pipeline_accounts(stats_type=stats_type, regions=regions, 
 														inactive=inactive, disabled=disabled, 
 														dist=dist, sample=sample, cache_valid=cache_valid)
-
 			update_field : str | None = None
 			if stats_type is not None:
 				update_field = stats_type.value
@@ -740,7 +739,8 @@ class MongoBackend(Backend):
 					if not disabled and inactive == OptAccountsInactive.auto and player.inactive:
 						assert update_field is not None, "automatic inactivity detection requires stat_type"
 						updated = getattr(player, update_field)
-						if (NOW - updated) < min(MAX_UPDATE_INTERVAL, (updated - player.last_battle_time)/2):
+						if (player.last_battle_time is not None) and \
+							(NOW - updated) < min(MAX_UPDATE_INTERVAL, (updated - player.last_battle_time)/2):
 							continue
 					yield player
 				except Exception as err:
