@@ -356,7 +356,6 @@ async def cmd_tank_stats_update(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-
 async def update_tank_stats_api_worker(db: Backend, wg_api : WGApi,										
 										accountQ: IterableQueue[BSAccount], 
 										statsQ	: Queue[list[WGtankStat]], 
