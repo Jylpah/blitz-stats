@@ -322,7 +322,6 @@ async def cmd_tank_stats_fetch(db: Backend, args : Namespace) -> bool:
 		stats.merge_child(await create_accountQ(db, args, accountQ, StatsTypes.tank_stats))
 		debug(f'AccountQ created. count={accountQ.count}, size={accountQ.qsize()}')
 		await accountQ.join()
-		await statsQ.join()
 		task_bar.cancel()
 
 		# Process retryQ
@@ -336,8 +335,9 @@ async def cmd_tank_stats_fetch(db: Backend, args : Namespace) -> bool:
 																		accountQ=retryQ, 
 																		statsQ=statsQ)))
 			await retryQ.join()
-			await statsQ.join()
 			task_bar.cancel()
+		
+		await statsQ.join()
 
 		for task in tasks:
 			task.cancel()
