@@ -764,13 +764,13 @@ async def split_accountQ_by_region(Q_all : IterableQueue[BSAccount],
 				stats.log('total')
 				Q_all.task_done()
 	except QueueDone:
-		debug('Marking regionQs finished')
-		for Q in regionQs.values():
-			await Q.finish()
+		debug('Marking regionQs finished')		
 	except CancelledError as err:
 		debug(f'Cancelled')
 	except Exception as err:
 		error(f'{err}')
+	for Q in regionQs.values():
+		await Q.finish()
 	return stats
 
 
