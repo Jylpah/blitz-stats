@@ -740,7 +740,7 @@ async def cmd_accounts_remove(db: Backend, args : Namespace) -> bool:
 async def split_accountQ_by_region(Q_all : IterableQueue[BSAccount], 
 									regionQs : dict[str, IterableQueue[BSAccount]]) -> EventCounter:
 	debug('starting')
-	stats : EventCounter = EventCounter('By region')
+	stats : EventCounter = EventCounter('accounts')
 	try:		
 		for Q in regionQs.values():
 			await Q.add_producer()
@@ -814,7 +814,7 @@ async def create_accountQ(db: Backend, args : Namespace,
 							accountQ: IterableQueue[BSAccount], 
 							stats_type: StatsTypes | None) -> EventCounter:
 	"""Helper to make accountQ from arguments"""	
-	stats : EventCounter = EventCounter('Read accounts')
+	stats : EventCounter = EventCounter(f'{db.backend} accounts')
 	try:
 		regions	 	: set[Region]	= { Region(r) for r in args.region }
 		accounts 	: list[BSAccount] | None = read_account_strs(args.accounts)
