@@ -715,7 +715,8 @@ class MongoBackend(Backend):
 							regions: set[Region] = Region.API_regions(), 
 							inactive : OptAccountsInactive = OptAccountsInactive.default(), 	
 							disabled : bool = False, 
-							dist : OptAccountsDistributed | None = None, sample : float = 0, 
+							dist : OptAccountsDistributed | None = None, 
+							sample : float = 0, 
 							cache_valid: int | None = None ) -> AsyncGenerator[BSAccount, None]:
 		"""Get accounts from Mongo DB
 			inactive: true = only inactive, false = not inactive, none = AUTO"""
@@ -741,6 +742,7 @@ class MongoBackend(Backend):
 						assert update_field is not None, "automatic inactivity detection requires stat_type"
 						updated = getattr(player, update_field)
 						if (player.last_battle_time is not None) and \
+							(updated is not None) and \
 							(NOW - updated) < min(MAX_UPDATE_INTERVAL, (updated - player.last_battle_time)/2):
 							continue
 					yield player
