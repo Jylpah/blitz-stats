@@ -144,19 +144,19 @@ def add_args_tank_stats_edit_common(parser: ArgumentParser, config: Optional[Con
 	debug('starting')
 	parser.add_argument('--commit', action='store_true', default=False, 
 							help='Do changes instead of just showing what would be changed')
-	parser.add_argument('--sample', type=float, default=0, 
+	parser.add_argument('--sample', type=float, default=0, metavar='SAMPLE',
 						help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
 	# filters
 	parser.add_argument('--region', type=str, nargs='*', 
 							choices=[ r.value for r in Region.has_stats() ], 
 							default=[ r.value for r in Region.has_stats() ], 
-							help='Filter by region (default is API = eu + com + asia)')
+							help=f"Filter by region (default is API = {' + '.join([r.value for r in Region.API_regions()])})")
 	parser.add_argument('--release', type=str, metavar='RELEASE', default=None, 
 							help='Apply edits to a RELEASE')
-	parser.add_argument('--since', type=str, metavar='LAUNCH_DATE', default=None, nargs='?',
-						help='Import release launched after LAUNCH_DATE. By default, imports all releases.')
+	parser.add_argument('--since', type=str, metavar='DATE', default=None, nargs='?',
+						help='Apply edits to releases launched after DATE (default is all releases)')
 	parser.add_argument('--accounts', type=str, default=[], nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
-							help="Edit tank stats for the listed ACCOUNT_ID(s). ACCOUNT_ID format 'account_id:region' or 'account_id'")
+							help="Edit tank stats for the listed ACCOUNT_ID(s) ('account_id:region' or 'account_id')")
 	parser.add_argument('--tank_ids', type=int, default=None, nargs='*', metavar='TANK_ID [TANK_ID1 ...]',
 							help="Edit tank stats for the listed TANK_ID(S).")
 	return True
