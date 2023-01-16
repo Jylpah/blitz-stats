@@ -18,7 +18,7 @@ from releases import get_releases, release_mapper
 
 from pyutils import get_url, get_url_JSON_model, epoch_now, alive_bar_monitor, \
 					is_alphanum, JSONExportable, TXTExportable, CSVExportable, export, \
-					BucketMapper, IterableQueue, QueueDone, EventCounter, gather_stats
+					BucketMapper, IterableQueue, QueueDone, EventCounter
 from blitzutils.models import WoTBlitzReplayJSON, Region, WGApiWoTBlitzTankStats, \
 								WGtankStat, Tank
 from blitzutils.wg import WGApi 
@@ -734,7 +734,7 @@ async def cmd_tank_stats_import(db: Backend, args : Namespace) -> bool:
 				bar()
 
 		await tank_statsQ.join()
-		stats = await gather_stats(workers, stats)
+		await stats.gather_stats(workers)
 		message(stats.print(do_print=False, clean=True))
 		return True
 	except Exception as err:
