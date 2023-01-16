@@ -220,40 +220,6 @@ def add_args_accounts_import(parser: ArgumentParser, config: Optional[ConfigPars
 	return False
 
 
-# def add_args_accounts_import_mongodb(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
-# 	"""Add argument parser for accounts import"""
-# 	try:
-# 		debug('starting')
-# 		parser.add_argument('--server-url', metavar='SERVER-URL', type=str, default=None, dest='import_host',
-# 										help='MongoDB server URL to connect the server. \
-# 											Required if the current backend is not the same MongoDB instance')
-# 		parser.add_argument('--database', metavar='DATABASE', type=str, default=None, dest='import_database',
-# 										help='Database to use. Uses current database as default')
-# 		parser.add_argument('--collection', '--table', metavar='COLLECTION', type=str, default=None, dest='import_table',
-# 										help='Collection to use. Uses current database as default')
-# 		parser.add_argument('--import-type', metavar='IMPORT-TYPE', type=str, default='BSAccount', 
-# 										choices=['WG_Account', 'BSAccount'], 
-# 										help='Collection to use. Uses current database as default')
-
-
-# 		return True
-# 	except Exception as err:
-# 		error(f'{err}')
-# 	return False
-
-
-# def add_args_accounts_import_files(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
-# 	"""Add argument parser for accounts import"""
-# 	try:
-# 		debug('starting')
-# 		parser.add_argument('files', type=str, nargs='+', metavar='FILE [FILE1 ...]', 
-# 							help='Files to import')
-# 		return True
-# 	except Exception as err:
-# 		error(f'{err}')
-# 	return False
-
-
 def add_args_accounts_remove(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
@@ -569,61 +535,6 @@ async def cmd_accounts_import(db: Backend, args : Namespace) -> bool:
 	except Exception as err:
 		error(f'{err}')	
 	return False
-
-
-# async def cmd_accounts_import_mongodb(db: Backend, args : Namespace, accountsQ: Queue[BSAccount],
-# 										config: ConfigParser | None = None) -> EventCounter:
-# 	stats : EventCounter = EventCounter('accounts import mongodb')
-# 	try:
-## 		regions : set[Region] ={ Region(r) for r in args.region }
-		
-# 		kwargs : dict[str, Any] = dict()
-# 		if args.server_url is not None:
-# 			kwargs['host'] = args.server_url
-# 		if args.database is not None:
-# 			kwargs['database'] = args.database
-
-# 		if ( import_db:= Backend.create('mongodb', config=config, **kwargs)) is None:
-# 			raise ValueError('Could not init mongodb to import accounts from')
-
-# 		if args.collection is not None:
-# 			import_db.set_table('ACCOUNTS', args.collection)
-# 		elif db == import_db and db.table_accounts == import_db.table_accounts:
-# 			raise ValueError('Cannot import from itself')
-
-# 		message('Counting accounts to import ...')
-# 		N : int = await db.accounts_count(regions=regions,
-# 										inactive=OptAccountsInactive.both,
-# 										sample=args.sample, force=True)
-
-# 		with alive_bar(N, title="Importing accounts ", enrich_print=False) as bar:
-			
-# 			account_type: type[WG_Account] | type[BSAccount]
-# 			if args.import_type == 'BSAccount':	
-# 				account_type=BSAccount
-# 			elif args.import_type == 'WG_Account':
-# 				account_type=WG_Account
-# 			else:
-# 				raise ValueError(f'Unsupported account --import-type: {args.import_type}')
-
-# 			async for account in import_db.accounts_export(account_type=account_type, regions=regions, 
-# 															sample=args.sample):
-# 				await accountsQ.put(account)
-# 				bar()
-# 				stats.log('read')
-
-# 	except Exception as err:
-# 		error(f'{err}')	
-# 	return stats
-
-# async def cmd_accounts_import_files(db: Backend, args : Namespace, accountsQ: Queue[BSAccount], 
-# 									config: ConfigParser | None = None) -> EventCounter:
-# 	stats : EventCounter 	= EventCounter('accounts import files')
-# 	try:
-# 		raise NotImplementedError
-# 	except Exception as err:
-# 		error(f'{err}')	
-# 	return stats
 
 
 async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
