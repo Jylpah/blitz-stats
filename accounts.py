@@ -18,7 +18,7 @@ from models import BSAccount, StatsTypes
 from models_import import WG_Account
 from pyutils import CounterQueue, EventCounter,  TXTExportable, CSVExportable, JSONExportable,\
 					IterableQueue, QueueDone, alive_bar_monitor, get_url, get_url_JSON_model, epoch_now, export, \
-					alias_mapper, is_alphanum
+					is_alphanum
 from blitzutils.models import WoTBlitzReplayJSON, Region, Account
 from blitzutils.wotinspector import WoTinspector
 
