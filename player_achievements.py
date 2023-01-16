@@ -1,6 +1,6 @@
-from argparse import ArgumentParser, Namespace
+from argparse import ArgumentParser, Namespace, SUPPRESS
 from configparser import ConfigParser
-from typing import Optional, Iterable, cast
+from typing import Optional, Any, Iterable, cast
 import logging
 from asyncio import create_task, gather, Queue, CancelledError, Task, sleep, Condition
 from aiofiles import open
@@ -9,14 +9,15 @@ from math import ceil
 from asyncstdlib import enumerate
 from alive_progress import alive_bar		# type: ignore
 
-from backend import Backend, OptAccountsInactive, ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL
+from backend import Backend, OptAccountsInactive, BSTableType, ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL
 from models import BSAccount, BSBlitzRelease, StatsTypes
 from accounts import split_accountQ_by_region, create_accountQ
 from releases import release_mapper
 
-from pyutils import BucketMapper, IterableQueue, QueueDone, EventCounter, \
-					get_url, get_url_JSON_model, epoch_now, alive_bar_monitor
-from blitzutils.models import Region, WGApiWoTBlitzPlayerAchievements, WGplayerAchievementsMaxSeries
+from pyutils import BucketMapper, IterableQueue, QueueDone, EventCounter, JSONExportable, \
+					get_url, get_url_JSON_model, epoch_now, alive_bar_monitor, \
+					is_alphanum
+from blitzutils.models import Region, WGplayerAchievementsMain, WGplayerAchievementsMaxSeries
 from blitzutils.wg import WGApi 
 
 logger = logging.getLogger()
@@ -28,6 +29,7 @@ debug	= logger.debug
 # Constants
 
 WORKERS_WGAPI 				: int = 40
+WORKERS_IMPORTERS			: int = 1
 PLAYER_ACHIEVEMENTS_Q_MAX 	: int = 5000
 
 ########################################################
@@ -112,8 +114,36 @@ def add_args_player_achievements_prune(parser: ArgumentParser, config: Optional[
 
 def add_args_player_achievements_import(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	debug('starting')
-	return True
+	try:
+		debug('starting')
+		
+		import_parsers = parser.add_subparsers(dest='import_backend', 	
+												title='player-achievements import backend',
+												description='valid backends', 
+												metavar=', '.join(Backend.list_available()))
+		import_parsers.required = True
 
+		for backend in Backend.get_registered():
+			import_parser =  import_parsers.add_parser(backend.driver, help=f'player-achievements import {backend.driver} help')
+			if not backend.add_args_import(import_parser, config=config):
+				raise Exception(f'Failed to define argument parser for: player-achievements import {backend.driver}')
+		parser.add_argument('--threads', type=int, default=WORKERS_IMPORTERS, help='Set number of asynchronous threads')
+		parser.add_argument('--import-type', metavar='IMPORT-TYPE', type=str, 
+							default='WGplayerAchievementsMaxSeries', 
+							choices=['WGplayerAchievementsMaxSeries', 'WGplayerAchievementsMain'], 
+							help='Data format to import. Default is blitz-stats native format.')
+		parser.add_argument('--sample', type=float, default=0, 
+							help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
+		parser.add_argument('--force', action='store_true', default=False, 
+							help='Overwrite existing stats when importing')
+		parser.add_argument('--no-release-map', action='store_true', default=False, 
+							help='Do not map releases when importing')
+		parser.add_argument('--last', action='store_true', default=False, help=SUPPRESS)
+
+		return True
+	except Exception as err:
+		error(f'{err}')
+	return False
 
 def add_args_player_achievements_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	debug('starting')
@@ -135,9 +165,9 @@ async def cmd_player_achievements(db: Backend, args : Namespace) -> bool:
 		# elif args.player_achievements_cmd == 'export':
 		# 	return await cmd_player_achievements_export(db, args)
 
-		# elif args.player_achievements_cmd == 'import':
-		# 	# return await cmd_player_achievements_import(db, args)
-		# 	pass
+		elif args.player_achievements_cmd == 'import':
+			return await cmd_player_achievements_import(db, args)
+
 		else:
 			raise ValueError(f'Unsupported command: player-achievements { args.player_achievements_cmd}')
 			
@@ -212,15 +242,8 @@ async def cmd_player_achievements_fetch(db: Backend, args : Namespace) -> bool:
 			debug('no accounts in retryQ')
 			
 		await statsQ.join()
+		await stats.gather_stats(tasks=tasks)
 
-		for task in tasks:
-			task.cancel()
-		
-		for ec in await gather(*tasks, return_exceptions=True):
-			if isinstance(ec, EventCounter):
-				stats.merge_child(ec)
-			elif isinstance(ec, Exception):
-				error(f'{type(ec).__name__}(): {ec}')
 		message(stats.print(do_print=False, clean=True))
 		return True
 	except Exception as err:
@@ -333,4 +356,128 @@ async def fetch_player_achievements_backend_worker(db: Backend,
 		debug(f'Cancelled')	
 	except Exception as err:
 		error(f'{err}')
+	return stats
+
+########################################################
+# 
+# cmd_player_achievements_import()
+#
+########################################################
+
+
+async def cmd_player_achievements_import(db: Backend, args : Namespace) -> bool:
+	"""Import player achievements from other backend"""	
+	try:
+		assert is_alphanum(args.import_type), f'invalid --import-type: {args.import_type}'
+		debug('starting')
+		player_achievementsQ	: Queue[list[WGplayerAchievementsMaxSeries]]= Queue(PLAYER_ACHIEVEMENTS_Q_MAX)
+		rel_mapQ				: Queue[WGplayerAchievementsMaxSeries]		= Queue()
+		stats 			: EventCounter 	= EventCounter('player-achievements import')
+		config 			: ConfigParser | None 	= None
+		import_type 	: str 					= args.import_type
+		import_backend 	: str 					= args.import_backend
+		import_table	: str | None			= args.import_table
+		map_releases	: bool 					= not args.no_release_map
+		player_achievements_type: type[JSONExportable] = globals()[import_type]
+		WORKERS 	 	: int 					= args.threads
+		release_map : BucketMapper[BSBlitzRelease] = await release_mapper(db)
+		workers : list[Task] = list()
+		debug('args parsed')
+		for _ in range(WORKERS):
+			workers.append(create_task(db.player_achievements_insert_worker(player_achievementsQ=player_achievementsQ, 
+																	force=args.force)))
+		rel_map_worker : Task = create_task(player_achievements_map_releases_worker(release_map, inputQ=rel_mapQ, 
+																outputQ=player_achievementsQ, 
+																map_releases=map_releases))		
+
+		if args.import_config is not None and isfile(args.import_config):
+			debug(f'Reading config from {args.config}')
+			config = ConfigParser()
+			config.read(args.config)
+
+		kwargs : dict[str, Any] = Backend.read_args(args=args, backend=import_backend)
+		if (import_db:= Backend.create(args.import_backend, 
+										config=config, copy_from=db, **kwargs)) is not None:
+			if import_table is not None:
+				import_db.set_table(BSTableType.PlayerAchievements, import_table)
+			elif db == import_db and db.table_player_achievements == import_db.table_player_achievements:
+				raise ValueError('Cannot import from itself')
+		else:
+			raise ValueError(f'Could not init {args.import_backend} to import player achievements from')
+		
+		# assert issubclass(player_achievements_type, WGplayerAchievementsMaxSeries), \
+		# 		"--import-type has to be subclass of blitzutils.models.WGplayerAchievementsMaxSeries" 
+		import_db.set_model(import_db.table_player_achievements, player_achievements_type)
+
+		# debug(f'import_db: {await import_db._client.server_info()}')
+		message(f'Import from: {import_db.backend}.{import_db.table_player_achievements}')
+				
+		message('Counting player achievements to import ...')
+		N : int = await import_db.player_achievements_count(sample=args.sample)
+		message(f'Importing {N} player achievements')
+		
+		with alive_bar(N, title="Importing player achievements ", enrich_print=False, refresh_secs=0.5) as bar:
+			async for pa in import_db.player_achievements_export(data_type=player_achievements_type, 
+																		sample=args.sample):
+				await rel_mapQ.put(pa)
+				bar()
+		
+		await rel_mapQ.join()
+		rel_map_worker.cancel()
+		await stats.gather_stats([rel_map_worker])
+		await player_achievementsQ.join()
+		await stats.gather_stats(workers)
+		message(stats.print(do_print=False, clean=True))
+		return True
+	except Exception as err:
+		error(f'{err}')	
+	return False
+
+
+async def player_achievements_map_releases_worker(release_map: BucketMapper[BSBlitzRelease], 
+													inputQ: Queue[WGplayerAchievementsMaxSeries], 
+													outputQ: Queue[list[WGplayerAchievementsMaxSeries]], 
+													map_releases: bool = True) -> EventCounter:
+	"""Map player achievements to releases and pack those to list[WGplayerAchievementsMaxSeries] queue.
+		map_all is None means no release mapping is done"""
+	
+	debug(f'starting: map_releases={map_releases}')
+	stats 			: EventCounter = EventCounter('Release mapper')
+	IMPORT_BATCH	: int = 500
+	release 		: BSBlitzRelease | None
+	pa_list 		: list[WGplayerAchievementsMaxSeries] = list()
+
+	try:		
+		# await outputQ.add_producer()
+		while True:
+			pa = await inputQ.get()
+			# debug(f'read: {pa}')
+			try:
+				if map_releases:
+					if (release := release_map.get(pa.added)) is not None:
+						pa.release = release.release
+						# debug(f'mapped: release={release.release}')
+						stats.log('mapped')
+					else:
+						error(f'Could not map release: added={pa.added}')
+						stats.log('errors')
+				pa_list.append(pa)
+				if len(pa_list) == IMPORT_BATCH:
+					await outputQ.put(pa_list)
+					# debug(f'put {len(pa_list)} items to outputQ')
+					stats.log('read', len(pa_list))
+					pa_list = list()				
+			except Exception as err:
+				error(f'Processing input queue: {err}')
+			finally: 
+				inputQ.task_done()
+	except CancelledError:
+		debug(f'Cancelled: pa_list has {len(pa_list)} items')
+		if len(pa_list) > 0:
+			await outputQ.put(pa_list)
+			# debug(f'{len(pa_list)} items added to outputQ')
+			stats.log('read', len(pa_list))			
+	except Exception as err:
+		error(f'{err}')	
+	# await outputQ.finish()
 	return stats
