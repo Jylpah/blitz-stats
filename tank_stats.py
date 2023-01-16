@@ -742,14 +742,16 @@ async def cmd_tank_stats_import(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def tank_stats_map_releases_worker(release_map: BucketMapper[BSBlitzRelease], inputQ: Queue[WGtankStat], 
+async def tank_stats_map_releases_worker(release_map: BucketMapper[BSBlitzRelease], 
+										inputQ: Queue[WGtankStat], 
+										outputQ: Queue[list[WGtankStat]], 
 									outputQ: Queue[list[WGtankStat]], 
-									map_releases: bool = True) -> EventCounter:
+										outputQ: Queue[list[WGtankStat]], 
+										map_releases: bool = True) -> EventCounter:
 	"""Map tank stats to releases and pack those to list[WGtankStat] queue.
 		map_all is None means no release mapping is done"""
-	stats = EventCounter('Release mapper')
+	stats 		: EventCounter = EventCounter('Release mapper')
 	IMPORT_BATCH: int = 500
-	i 			: int = 0
 	release 	: BSBlitzRelease | None
 	ts_list 	: list[WGtankStat] = list()
 
@@ -759,29 +761,27 @@ async def tank_stats_map_releases_worker(release_map: BucketMapper[BSBlitzReleas
 			tank_stat = await inputQ.get()
 			try:
 				if map_releases:
-					if tank_stat.release is None:
-						if (release := release_map.get(tank_stat.last_battle_time)) is not None:
-							tank_stat.release = release.release
-							stats.log('mapped')
-						else:
-							stats.log('errors')
+					if (release := release_map.get(tank_stat.last_battle_time)) is not None:
+						tank_stat.release = release.release
+						stats.log('mapped')
 					else:
-						stats.log('not mapped')
-
-				if i < IMPORT_BATCH:
-					ts_list.append(tank_stat)
-					i += 1
-				else:
+						stats.log('errors')					
+							stats.log('errors')
+						stats.log('errors')					
+				ts_list.append(tank_stat)
+				if len(ts_list) == IMPORT_BATCH:
 					await outputQ.put(ts_list)
-					i = 0
-					ts_list = list()
-					stats.log('read', IMPORT_BATCH)
+					stats.log('read', len(ts_list))
+					ts_list = list()						
 			except Exception as err:
 				error(f'Processing input queue: {err}')
-			finally: 
+			finally: 									
 				inputQ.task_done()
 	except CancelledError:
 		debug('Cancelled')
+		if len(ts_list) > 0:
+			await outputQ.put(ts_list)
+			stats.log('read', len(ts_list))
 	except Exception as err:
 		error(f'{err}')	
 	return stats
