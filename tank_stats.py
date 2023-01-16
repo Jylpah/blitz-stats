@@ -178,9 +178,9 @@ def add_args_tank_stats_import(parser: ArgumentParser, config: Optional[ConfigPa
 		debug('starting')
 		
 		import_parsers = parser.add_subparsers(dest='import_backend', 	
-														title='tank-stats import backend',
-														description='valid backends', 
-														metavar=', '.join(Backend.list_available()))
+												title='tank-stats import backend',
+												description='valid backends', 
+												metavar=', '.join(Backend.list_available()))
 		import_parsers.required = True
 
 		for backend in Backend.get_registered():
@@ -751,8 +751,6 @@ async def cmd_tank_stats_import(db: Backend, args : Namespace) -> bool:
 async def tank_stats_map_releases_worker(release_map: BucketMapper[BSBlitzRelease], 
 										inputQ: Queue[WGtankStat], 
 										outputQ: Queue[list[WGtankStat]], 
-									outputQ: Queue[list[WGtankStat]], 
-										outputQ: Queue[list[WGtankStat]], 
 										map_releases: bool = True) -> EventCounter:
 	"""Map tank stats to releases and pack those to list[WGtankStat] queue.
 		map_all is None means no release mapping is done"""
@@ -772,8 +770,6 @@ async def tank_stats_map_releases_worker(release_map: BucketMapper[BSBlitzReleas
 						stats.log('mapped')
 					else:
 						stats.log('errors')					
-							stats.log('errors')
-						stats.log('errors')					
 				ts_list.append(tank_stat)
 				if len(ts_list) == IMPORT_BATCH:
 					await outputQ.put(ts_list)
@@ -791,7 +787,6 @@ async def tank_stats_map_releases_worker(release_map: BucketMapper[BSBlitzReleas
 	except Exception as err:
 		error(f'{err}')	
 	return stats
-
 
 
 async def split_tank_statQ_by_region(Q_all, regionQs : dict[str, Queue[WGtankStat]], 
