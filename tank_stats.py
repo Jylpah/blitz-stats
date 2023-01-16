@@ -691,19 +691,20 @@ async def cmd_tank_stats_import(db: Backend, args : Namespace) -> bool:
 		import_backend 	: str 					= args.import_backend
 		import_table	: str | None			= args.import_table
 		map_releases	: bool 					= not args.no_release_map
-		tank_stats_type: type[WGtankStat] 		= globals()[import_type]
+		tank_stats_type: type[JSONExportable]	= globals()[import_type]
 		
 		WORKERS 	 : int 						= args.threads
 
 		release_map : BucketMapper[BSBlitzRelease] = await release_mapper(db)
 
 		workers : list[Task] = list()
+		
 		for _ in range(WORKERS):
 			workers.append(create_task(db.tank_stats_insert_worker(tank_statsQ=tank_statsQ, 
 																	force=args.force)))
-		workers.append(create_task(tank_stats_map_releases_worker(release_map, inputQ=rel_mapQ, 
+		rel_map_worker : Task = create_task(tank_stats_map_releases_worker(release_map, inputQ=rel_mapQ, 
 																outputQ=tank_statsQ, 
-																map_releases=map_releases)))
+																map_releases=map_releases))
 		
 
 		if args.import_config is not None and isfile(args.import_config):
@@ -722,19 +723,24 @@ async def cmd_tank_stats_import(db: Backend, args : Namespace) -> bool:
 			raise ValueError(f'Could not init {args.import_backend} to import tank stats from')
 
 		
-		assert issubclass(tank_stats_type, WGtankStat), "--import-type has to be subclass of blitzutils.models.WGtankStat" 
+		# assert issubclass(tank_stats_type, WGtankStat), "--import-type has to be subclass of blitzutils.models.WGtankStat" 
 		import_db.set_model(import_db.table_tank_stats, tank_stats_type)
 
 		message('Counting tank stats to import ...')
 		N : int = await db.tank_stats_count(sample=args.sample)
 		
 		with alive_bar(N, title="Importing tank stats ", enrich_print=False, refresh_secs=1) as bar:
-			async for tank_stat in import_db.tank_stats_export(data_type=tank_stats_type, sample=args.sample):
+			async for tank_stat in import_db.tank_stats_export(data_type=tank_stats_type, 
+																sample=args.sample):
 				await rel_mapQ.put(tank_stat)
 				bar()
 
-		await tank_statsQ.join()
+		await rel_mapQ.join()
+		rel_map_worker.cancel()
+		await stats.gather_stats([rel_map_worker])
+		await tank_statsQ.join()		
 		await stats.gather_stats(workers)
+		
 		message(stats.print(do_print=False, clean=True))
 		return True
 	except Exception as err:
