@@ -731,7 +731,7 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def tank_stats_export(self, data_type: type[WGtankStat] = WGtankStat, 
+	async def tank_stats_export(self, data_type: type[JSONExportable] = WGtankStat, 
 								sample: float = 0) -> AsyncGenerator[WGtankStat, None]:
 		"""Export tank stats from Mongo DB"""
 		raise NotImplementedError
@@ -841,15 +841,17 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def player_achievements_export(self, data_type: type[WGplayerAchievementsMaxSeries] = WGplayerAchievementsMaxSeries, 
+	async def player_achievements_export(self, data_type: type[JSONExportable] = WGplayerAchievementsMaxSeries, 
 								sample: float = 0) -> AsyncGenerator[WGplayerAchievementsMaxSeries, None]:
 		"""Export player achievements from Mongo DB"""
 		raise NotImplementedError
 		yield WGplayerAchievementsMaxSeries()
 
 
-	async def player_achievements_insert_worker(self, player_achievementsQ : Queue[list[WGplayerAchievementsMaxSeries]], 
-										force: bool = False) -> EventCounter:
+	async def player_achievements_insert_worker(self, 
+							player_achievementsQ : Queue[list[WGplayerAchievementsMaxSeries]], 
+							force: bool = False) -> EventCounter:
+
 		debug(f'starting, force={force}')
 		stats : EventCounter = EventCounter('player-achievements insert')
 		try:
@@ -872,7 +874,7 @@ class Backend(ABC):
 						stats.log('accounts added', added)
 					stats.log('accounts not added', not_added)
 				except Exception as err:
-					debug(f'Error: {err}')
+					error(f'Unknown error: {err}')
 					stats.log('errors', read)
 				finally:
 					player_achievementsQ.task_done()
