@@ -2,7 +2,8 @@ from configparser import ConfigParser
 from argparse import Namespace, ArgumentParser
 from datetime import date, datetime
 from os.path import isfile
-from typing import Optional, Any, Iterable, AsyncGenerator, TypeVar, ClassVar, cast, Generic, Callable
+from typing import Optional, Any, Iterable, Sequence, Union, Tuple, Literal, Final, \
+					AsyncGenerator, TypeVar, ClassVar, cast, Generic, Callable
 import logging
 
 from bson import ObjectId
@@ -49,6 +50,11 @@ class MongoErrorLog(ErrorLog):
 I = TypeVar('I', str, int, ObjectId)
 D = TypeVar('D', bound=JSONExportable)
 O = TypeVar('O', bound=JSONExportable)
+
+DESCENDING 	: Literal[-1] = -1
+ASCENDING	: Literal[1] = 1
+MongoIndexAscDesc 	= Literal[-1, 1]
+MongoIndex 			= Tuple[str, MongoIndexAscDesc ]
 
 class MongoBackend(Backend):
 
@@ -187,6 +193,33 @@ class MongoBackend(Backend):
 		return self.get_collection(BSTableType.AccountLog)
 
 
+	async def _create_index(self, dbc: AsyncIOMotorCollection, 
+							mapper 	: AliasMapper, 
+							index	: Sequence[MongoIndex], 
+							db_fields: list[str] | None = None ) -> bool:
+		"""Helper to create index to a collection """
+		try:
+			debug(f'starting: collection={dbc.name}')
+			index_str 	: list[str] = list()
+			field 		: Final = 0
+			direction 	: Final = 1
+			for ndx_elem in index:
+				index_str.append(f'{ndx_elem[field]}: {ndx_elem[direction]}')
+			message(f"Adding index: {' ,'.join(index_str)}")
+
+			db_index : list[MongoIndex]
+			if db_fields is None:
+				db_index = list(mapper.map(index).items())
+			else:
+				db_index = list()				
+				for i in range(len(index)):
+					db_index.append( (db_fields[i], index[i][direction]) )
+			await dbc.create_index(db_index, background=True)
+			return True
+		except Exception as err:
+			error(f'{err}')	
+		return False
+
 
 	@classmethod
 	def add_args_import(cls, parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
@@ -236,6 +269,28 @@ class MongoBackend(Backend):
 		return __o is not None and isinstance(__o, MongoBackend) and \
 					self._client.address == __o._client.address and \
 					self.database == __o.database
+
+
+	async def init_collection(self, DBC: str, indexes: list[list[MongoIndex]]) -> bool:
+		"""Helper to create index to a collection"""
+		debug('starting')
+		try:			
+			try:
+				await self.db.create_collection(DBC)
+				message(f'Collection created: {DBC}')
+			except CollectionInvalid:
+				message(f'Collection exists: {DBC}')
+			
+			dbc 		: AsyncIOMotorCollection		= self.db[DBC]
+			model 		: type[JSONExportable]			= self.get_model(dbc.name)
+			mapper 		: AliasMapper = AliasMapper(model)
+
+			for index in indexes:
+				await self._create_index(dbc, mapper, index)
+			return True
+		except Exception as err:
+			error(f'{err}')	
+		return False
 
 
 	async def init(self) -> bool:
