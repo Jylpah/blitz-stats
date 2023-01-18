@@ -5,7 +5,7 @@ import logging
 from asyncio import create_task, gather, Queue, CancelledError, Task
 from aiohttp import ClientResponse
 
-from backend import Backend
+from backend import Backend, BSTableType
 
 logger = logging.getLogger()
 error 	= logger.error
@@ -35,7 +35,7 @@ def add_args_setup(parser: ArgumentParser, config: Optional[ConfigParser] = None
 				
 		return True
 	except Exception as err:
-		error(f'add_args_setup(): {err}')
+		error(f'{err}')
 	return False
 
 
@@ -44,12 +44,15 @@ def add_args_setup(parser: ArgumentParser, config: Optional[ConfigParser] = None
 def add_args_setup_init(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
-		# parser.add_argument('backend', type=str, default=None, choices=Backend.list_available(), 
-		# 					dest='setup_init_backend', metavar='BACKEND',
-		# 					help='BACKEND to initialize')
+		collections : list[str] = ['all' ] + sorted([ tt.name for tt in BSTableType ])
+		parser.add_argument('setup_init_collections', nargs='*',
+							default='all', 
+							choices=collections, 
+		 					metavar='COLLECTION [COLLECTION1...]',
+		 					help='COLLECTION(S) to initialize: ' + ", ".join(collections))
 		return True	
 	except Exception as err:
-		error(f'add_args_replays_export() : {err}')
+		error(f'{err}')
 	return False
 
 ###########################################
@@ -76,7 +79,11 @@ async def cmd_setup(db: Backend, args : Namespace) -> bool:
 async def cmd_setup_init(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
-		await db.init()
+		collections: list[str] = args.setup_init_collections
+
+		if 'all' in collections:
+			collections = [ tt.name for tt in BSTableType ]
+		await db.init(collections=collections)
 		return True 
 	except Exception as err:
 		error(f'{err}')
