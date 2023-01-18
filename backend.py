@@ -367,6 +367,26 @@ class Backend(ABC):
 	def model_error_log(self) -> type[JSONExportable]:
 		return self.get_model(BSTableType.ErrorLog)
 
+	#----------------------------------------
+	# Objects
+	#----------------------------------------
+	
+
+	@abstractmethod
+	async def obj_export(self, data_type: BSTableType, 
+						 sample: float = 0) -> AsyncGenerator[Any, None]:
+		"""Export raw object from backend"""
+		raise NotImplementedError
+		yield Any
+
+
+	@abstractmethod
+	async def objs_export(self, table_type: BSTableType, 
+						 sample: float = 0, 
+						 batch: int = 0) -> AsyncGenerator[list[Any], None]:
+		"""Export raw objects from backend"""
+		raise NotImplementedError
+		yield [Any]			 
 
 	#----------------------------------------
 	# accounts
