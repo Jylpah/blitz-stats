@@ -236,7 +236,7 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def init(self) -> bool:
+	async def init(self, collections: list[str] = [ tt.value for tt in BSTableType]) -> bool:   # type: ignore
 		"""Init backend and indexes"""
 		raise NotImplementedError
 
