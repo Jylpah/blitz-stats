@@ -11,6 +11,7 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncI
 from pymongo.results import InsertManyResult, InsertOneResult, UpdateResult, DeleteResult
 from pymongo.errors import BulkWriteError, CollectionInvalid
 from pydantic import BaseModel, ValidationError, Field
+from asyncstdlib import enumerate
 
 from backend import Backend, OptAccountsDistributed, OptAccountsInactive, BSTableType, \
 					MAX_UPDATE_INTERVAL, WG_ACCOUNT_ID_MAX, MIN_UPDATE_INTERVAL, ErrorLog, ErrorLogType
@@ -28,6 +29,7 @@ debug	= logger.debug
 
 # Constants
 TANK_STATS_BATCH	: int = 1000
+MONGO_BATCH_SIZE	: int = 1000
 
 class MongoErrorLog(ErrorLog):
 	doc_id : ObjectId | int | str | None	= Field(default=None, alias='did')
@@ -50,9 +52,11 @@ I = TypeVar('I', str, int, ObjectId)
 D = TypeVar('D', bound=JSONExportable)
 O = TypeVar('O', bound=JSONExportable)
 
-DESCENDING 	: Literal[-1] = -1
-ASCENDING	: Literal[1] = 1
-MongoIndexAscDesc 	= Literal[-1, 1]
+DESCENDING 	: Literal[-1] 	  = -1
+ASCENDING	: Literal[1]	  = 1
+TEXT 		: Literal['text'] = 'text'
+
+MongoIndexAscDesc 	= Literal[-1, 1, 'text']
 MongoIndex 			= Tuple[str, MongoIndexAscDesc ]
 
 class MongoBackend(Backend):
@@ -318,15 +322,11 @@ class MongoBackend(Backend):
 					indexes.append([ 	('disabled', ASCENDING), 
 										('inactive', ASCENDING), 
 										('id', 		ASCENDING), 
-									('id', 		ASCENDING), 
-										('id', 		ASCENDING), 
 										('updated_tank_stats', ASCENDING)
 									])
 					await self.init_collection(DBC, indexes)
 					
 				except Exception as err:
-					error(f'{self.backend}: Could not init collection {DBC} for accounts: {err}')	
-				error(f'{self.backend}: Could not init collection {DBC} for accounts: {err}')	
 					error(f'{self.backend}: Could not init collection {DBC} for accounts: {err}')	
 			
 			# Releases			
@@ -607,12 +607,8 @@ class MongoBackend(Backend):
 						
 			async for obj in dbc.aggregate(pipeline, allowDiskUse=True):
 				try:
-					# debug(f'obj: {obj}')
-					obj_in = in_type.parse_obj(obj)
-					# debug(f'obj_in: {obj_in}')
-					# debug(f'Read {obj_in} from {self.backend}.{dbc.name}')   # comment out
-					if (res := out_type.transform(obj_in)) is not None:
-						# debug(f'res: {res}')
+					obj_in = in_type.parse_obj(obj)					
+					if (res := out_type.transform(obj_in)) is not None:						
 						yield res
 					else:
 						yield out_type.parse_obj(obj_in.obj_db())
@@ -1447,7 +1443,7 @@ class MongoBackend(Backend):
 
 
 
-	async def tank_stats_export(self, data_type: type[JSONExportable] = WGtankStat, 
+	async def tank_stat_export(self, data_type: type[JSONExportable] = WGtankStat, 
 								sample: float = 0) -> AsyncGenerator[WGtankStat, None]:
 		"""Export tank stats from Mongo DB"""
 		debug('starting')
@@ -1457,6 +1453,27 @@ class MongoBackend(Backend):
 												sample=sample):
 			yield tank_stat
 
+
+	async def tank_stats_export(self, data_type: type[JSONExportable] = WGtankStat, 
+								sample: float = 0, batch: int = 0) -> AsyncGenerator[list[WGtankStat], None]:
+		"""Export tank stats as list from Mongo DB"""
+		debug('starting')
+		if batch == 0: 
+			batch = MONGO_BATCH_SIZE
+
+		res : list[WGtankStat] = list()
+		async for i, tank_stat in enumerate(self._datas_export(self.collection_tank_stats, 
+												in_type=data_type, 
+												out_type=WGtankStat, 
+												sample=sample), start=1):
+
+			res.append(tank_stat)
+			if i % batch == 0:
+				yield res
+				res = list()
+		# send the last batch
+		if len(res) > 0:
+			yield res
 
 	########################################################
 	# 
