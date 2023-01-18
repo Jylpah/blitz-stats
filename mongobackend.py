@@ -292,7 +292,7 @@ class MongoBackend(Backend):
 		return False
 
 
-	async def init(self) -> bool:
+	async def init(self, collections: list[str] = [ tt.name for tt in BSTableType]) -> bool:   # type: ignore		
 		"""Init MongoDB backend: create collections and set indexes"""
 		try:
 			debug('starting')
@@ -306,91 +306,121 @@ class MongoBackend(Backend):
 			db_fields : list[str]
 
 			# Accounts
-			try:
-				DBC 	= self.table_accounts
-				indexes = list()
-				indexes.append([ 	('disabled', DESCENDING), 
-									('inactive', DESCENDING), 									 
-									('region', 	DESCENDING)
-								  ])
-				indexes.append([ 	('disabled', DESCENDING), 
-									('inactive', DESCENDING), 
+			if BSTableType.Accounts.name in collections:
+				try:
+					DBC 	= self.table_accounts
+					indexes = list()
+					indexes.append([ 	('disabled', ASCENDING), 
+										('inactive', ASCENDING), 									 
+										('region', 	ASCENDING), 
+										('id', 		ASCENDING)
+									])
+					indexes.append([ 	('disabled', ASCENDING), 
+										('inactive', ASCENDING), 
+										('id', 		ASCENDING), 
 									('id', 		ASCENDING), 
-									('updated_tank_stats', DESCENDING)
-								  ])
-				await self.init_collection(DBC, indexes)
-				
-			except Exception as err:
+										('id', 		ASCENDING), 
+										('updated_tank_stats', ASCENDING)
+									])
+					await self.init_collection(DBC, indexes)
+					
+				except Exception as err:
+					error(f'{self.backend}: Could not init collection {DBC} for accounts: {err}')	
 				error(f'{self.backend}: Could not init collection {DBC} for accounts: {err}')	
+					error(f'{self.backend}: Could not init collection {DBC} for accounts: {err}')	
 			
 			# Releases			
-			try:
-				DBC = self.table_releases
-				indexes = list()
-				indexes.append([ 	('release', DESCENDING), 
-									('launch_date', DESCENDING)
-								  ])
-				await self.init_collection(DBC, indexes)
-			
-			except Exception as err:
-				error(f'{self.backend}: Could not init collection {DBC} for releases: {err}')
+			if BSTableType.Releases.name in collections:
+				try:
+					DBC = self.table_releases
+					indexes = list()
+					indexes.append([ 	('name', ASCENDING), 
+										('launch_date', DESCENDING)
+									])
+					await self.init_collection(DBC, indexes)
+				
+				except Exception as err:
+					error(f'{self.backend}: Could not init collection {DBC} for releases: {err}')
+
+			# Tankopedia			
+			if BSTableType.Tankopedia.name in collections:
+				try:
+					DBC = self.table_tankopedia
+					indexes = list()
+					indexes.append([ 	('tier', ASCENDING), 
+										('type', ASCENDING)
+									])
+					indexes.append([ 	('tier', ASCENDING), 
+										('nation', ASCENDING)
+									])
+					indexes.append([ 	('name', TEXT) 							
+									])
+					await self.init_collection(DBC, indexes)
+
+				except Exception as err:
+					error(f'{self.backend}: Could not init collection {DBC} for releases: {err}')
 
 			# Replays
-			try:
-				DBC = self.table_replays
-				indexes = list()
-				indexes.append([('data.summary.protagonist', DESCENDING), 
-								('data.summary.room_type', DESCENDING), 
-								('data.summary.vehicle_tier', DESCENDING), 
-								('data.summary.battle_start_timestamp', DESCENDING)
-					  		])
-				indexes.append([('data.summary.room_type', DESCENDING), 
-								('data.summary.vehicle_tier', DESCENDING),
-								('data.summary.battle_start_timestamp', DESCENDING)
-					  		])
+			if BSTableType.Replays.name in collections:
+				try:
+					DBC = self.table_replays
+					indexes = list()
+					indexes.append([('data.summary.protagonist', ASCENDING), 
+									('data.summary.room_type', ASCENDING), 
+									('data.summary.vehicle_tier', ASCENDING), 
+									('data.summary.battle_start_timestamp', DESCENDING)
+								])
+					indexes.append([('data.summary.room_type', ASCENDING), 
+									('data.summary.vehicle_tier', ASCENDING),
+									('data.summary.battle_start_timestamp', DESCENDING)
+								])
 
-				await self.init_collection(DBC, indexes)
-				
-			except Exception as err:
-				error(f'{self.backend}: Could not init collection {DBC} for replays: {err}')
+					await self.init_collection(DBC, indexes)
+					
+				except Exception as err:
+					error(f'{self.backend}: Could not init collection {DBC} for replays: {err}')
 
-			try:
-				DBC = self.table_tank_stats
-				indexes = list()
-				indexes.append([ 	('account_id', DESCENDING), 
-									('tank_id', DESCENDING), 
-									('last_battle_time', DESCENDING)
-								  ])
-				indexes.append([ 	('region', DESCENDING), 
-									('account_id', DESCENDING), 
-									('last_battle_time', DESCENDING)
-								  ])
-				indexes.append([ 	('region', DESCENDING), 									
-									('last_battle_time', DESCENDING)
-								  ])
-				await self.init_collection(DBC, indexes)
+			# Tank stats
+			if BSTableType.TankStats.name in collections:
+				try:
+					DBC = self.table_tank_stats
+					indexes = list()
+					indexes.append([ 	('account_id', ASCENDING), 
+										('tank_id', ASCENDING), 
+										('last_battle_time', DESCENDING)
+									])
+					indexes.append([ 	('release', DESCENDING), 
+										('account_id', ASCENDING), 
+										('tank_id', ASCENDING)
+									])
+					indexes.append([ 	('release', DESCENDING), 
+										('region', ASCENDING),
+										('account_id', ASCENDING),  
+										('tank_id', ASCENDING)
+									])
 
-			except Exception as err:
-				error(f'{self.backend}: Could not init collection {DBC} for tank_stats: {err}')
+					await self.init_collection(DBC, indexes)
 
-			try:
-				DBC = self.table_player_achievements
-				indexes = list()
-				indexes.append([ 	('account_id', DESCENDING), 
-									('added', DESCENDING)
-								  ])
-				indexes.append([ 	('region', DESCENDING),	
-									('account_id', DESCENDING), 
-									('added', DESCENDING)
-								  ])
-				indexes.append([ 	('region', DESCENDING),									
-									('added', DESCENDING)
-								  ])
-				await self.init_collection(DBC, indexes)
+				except Exception as err:
+					error(f'{self.backend}: Could not init collection {DBC} for tank_stats: {err}')
 
-			except Exception as err:
-				error(f'{self.backend}: Could not init collection {DBC} for player_achievements: {err}')
+			# Player Achievements
+			if BSTableType.PlayerAchievements.name in collections:
+				try:
+					DBC = self.table_player_achievements
+					indexes = list()
+					indexes.append([ 	('account_id', ASCENDING), 
+										('added', DESCENDING)
+									])
+					indexes.append([ 	('release', DESCENDING),	
+										('account_id', ASCENDING), 
+										('added', DESCENDING)
+									])
 
+					await self.init_collection(DBC, indexes)
+
+				except Exception as err:
+					error(f'{self.backend}: Could not init collection {DBC} for player_achievements: {err}')
 
 		except Exception as err:
 			error(f'Error initializing {self.backend}: {err}')
