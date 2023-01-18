@@ -108,8 +108,9 @@ def add_args_tank_stats_fetch(parser: ArgumentParser, config: Optional[ConfigPar
 							help='Check disabled accounts')
 		parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
 								default=OptAccountsInactive.default().value, help='Include inactive accounts')
-		parser.add_argument('--accounts', type=int, default=[], nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
-							help='Fetch tank stats for the listed ACCOUNT_ID(s)')
+		parser.add_argument('--accounts', type=str, default=[], nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
+								help="Exports tank stats for the listed ACCOUNT_ID(s). \
+									ACCOUNT_ID format 'account_id:region' or 'account_id'")
 		parser.add_argument('--file',type=str, metavar='FILENAME', default=None, 
 							help='Read account_ids from FILENAME one account_id per line')
 		parser.add_argument('--last', action='store_true', default=False, help=SUPPRESS)
@@ -740,7 +741,7 @@ async def cmd_tank_stats_import(db: Backend, args : Namespace) -> bool:
 		await stats.gather_stats([rel_map_worker])
 		await tank_statsQ.join()		
 		await stats.gather_stats(workers)
-		
+
 		message(stats.print(do_print=False, clean=True))
 		return True
 	except Exception as err:
