@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from bson import ObjectId
 #from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCursor, AsyncIOMotorCollection # type: ignore
 from os.path import isfile
-from typing import Optional, Any, Iterable, AsyncGenerator, TypeVar, cast
+from typing import Optional, Any, Iterable, Sequence, AsyncGenerator, TypeVar, cast
 from time import time
 from re import compile
 from datetime import date, datetime
@@ -130,7 +130,7 @@ class Backend(ABC):
 		self._database : str 	= 'BlitzStats'
 		
 		# default tables/collections
-		self._T 	: dict[BSTableType,str] = dict()
+		self._T 	: dict[BSTableType, str] = dict()
 		self._Tr 	: dict[str, BSTableType] = dict()
 		self._M 	: dict[BSTableType | str, type[JSONExportable]] = dict()
 
@@ -751,11 +751,20 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def tank_stats_export(self, data_type: type[JSONExportable] = WGtankStat, 
+	async def tank_stat_export(self, data_type: type[JSONExportable] = WGtankStat, 
 								sample: float = 0) -> AsyncGenerator[WGtankStat, None]:
 		"""Export tank stats from Mongo DB"""
 		raise NotImplementedError
 		yield WGtankStat()
+
+	
+	@abstractmethod
+	async def tank_stats_export(self, data_type: type[JSONExportable] = WGtankStat, 
+								sample: float = 0, batch: int = 0) -> AsyncGenerator[list[WGtankStat], None]:
+		"""Export tank stats from Mongo DB"""
+		raise NotImplementedError
+		yield [WGtankStat()]
+
 
 
 	async def tank_stats_get_worker(self, tank_statsQ : Queue[WGtankStat], **getargs) -> EventCounter:
