@@ -623,6 +623,50 @@ class MongoBackend(Backend):
 			error(f'Error fetching data from {self.backend}.{dbc.name}: {err}')	
 
 
+	async def obj_export(self, table_type: BSTableType, 
+						 sample: float = 0) -> AsyncGenerator[Any, None]:
+		"""Export raw documents from Mongo DB"""
+		try:
+			debug(f'starting')
+			dbc : AsyncIOMotorCollection = self.db[self._T[table_type]]
+			debug(f'export from: {self.backend}.{dbc.name}')
+			pipeline : list[dict[str, Any]] = list()
+			if sample > 0 and sample < 1:
+				N : int = await dbc.estimated_document_count()
+				pipeline.append({ '$sample' : { 'size' : int(N * sample) }})
+			elif sample >= 1:
+				pipeline.append({ '$sample' : { 'size' : int(sample) }})
+						
+			async for obj in dbc.aggregate(pipeline, allowDiskUse=True):
+				yield obj					
+		except Exception as err:
+			error(f'Error fetching data from {self.backend}.{self._T[table_type]}: {err}')	
+
+
+	async def objs_export(self, table_type: BSTableType, 
+						 sample: float = 0, 
+						 batch: int = 0) -> AsyncGenerator[list[Any], None]:
+		"""Export raw documents as a list from Mongo DB"""
+		try:
+			debug(f'starting')
+			dbc : AsyncIOMotorCollection = self.db[self._T[table_type]]
+			debug(f'export from: {self.backend}.{dbc.name}')
+			if batch == 0: 
+				batch = MONGO_BATCH_SIZE
+			pipeline : list[dict[str, Any]] = list()
+			if sample > 0 and sample < 1:
+				N : int = await dbc.estimated_document_count()
+				pipeline.append({ '$sample' : { 'size' : int(N * sample) }})
+			elif sample >= 1:
+				pipeline.append({ '$sample' : { 'size' : int(sample) }})
+
+			cursor : AsyncIOMotorCursor = dbc.aggregate(pipeline, allowDiskUse=True)
+			while (objs := await cursor.to_list(batch)) is not None:
+				yield objs
+		except Exception as err:
+			error(f'Error fetching data from {self.backend}.{self._T[table_type]}: {err}')	
+
+
 ########################################################
 # 
 # MongoBackend(): account
