@@ -9,7 +9,7 @@ from datetime import date
 from os.path import isfile
 
 from pyutils import EventCounter, is_alphanum, export, JSONExportable, CSVExportable, \
-					TXTExportable, BucketMapper
+					TXTExportable, BucketMapper, get_sub_type
 from backend import Backend, BSTableType
 from blitzutils.models import WGBlitzRelease
 from models import BSBlitzRelease
@@ -113,7 +113,7 @@ def add_args_releases_import(parser: ArgumentParser, config: Optional[ConfigPars
 			if not backend.add_args_import(import_parser, config=config):
 				raise Exception(f'Failed to define argument parser for: releases import {backend.driver}')
 		
-		parser.add_argument('--import-type', metavar='IMPORT-TYPE', type=str, 
+		parser.add_argument('--import-model', metavar='IMPORT-TYPE', type=str, 
 							default='BSBlitzRelease', choices=['BSBlitzRelease', 'WG_Release'], 
 							help='Data format to import. Default is blitz-stats native format.')
 		parser.add_argument('--sample', type=float, default=0, help='Sample size')
@@ -259,48 +259,33 @@ async def cmd_releases_export(db: Backend, args : Namespace) -> bool:
 async def cmd_releases_import(db: Backend, args : Namespace) -> bool:
 	"""Import releases from other backend"""	
 	try:
-		assert is_alphanum(args.import_type), f'invalid --import-type: {args.import_type}'
+		assert is_alphanum(args.import_model), f'invalid --import-model: {args.import_model}'
 
-		stats 		: EventCounter 			= EventCounter('releases import')
-		releaseQ 	: Queue[BSBlitzRelease]	= Queue(100)
-		config 		: ConfigParser | None 	= None
-		import_type 	: str 				= args.import_type
-		import_backend 	: str 				= args.import_backend
-		import_table	: str | None		= args.import_table
+		stats 			: EventCounter 					= EventCounter('releases import')
+		releaseQ 		: Queue[BSBlitzRelease]			= Queue(100)
+		import_db   	: Backend | None 				= None
+		import_backend 	: str 							= args.import_backend
+		import_model 	: type[JSONExportable] | None 	= None
 
-		# since 		: date | None 			= None			# TBD
-		# releases 	: str  | None 			= args.releases		# TBD
-		# if args.since is not None:
-		# 	since = date.fromisoformat(args.since)		
+		if (import_model := get_sub_type(args.import_model, JSONExportable)) is None:
+			assert False, "--import-model has to be subclass of JSONExportable"
 
-		importer : Task = create_task(db.releases_insert_worker(releaseQ=releaseQ, force=args.force))
+		write_worker : Task = create_task(db.releases_insert_worker(releaseQ=releaseQ, force=args.force))
 
-		if args.import_config is not None and isfile(args.import_config):
-			debug(f'Reading config from {args.config}')
-			config = ConfigParser()
-			config.read(args.config)
-
-		kwargs : dict[str, Any] = Backend.read_args(args, import_backend)
-		if (import_db:= Backend.create(import_backend, 
-										config=config, copy_from=db, **kwargs)) is not None:
-			if import_table is not None:
-				import_db.set_table(BSTableType.Releases, import_table)
-			elif db == import_db and db.table_releases == import_db.table_releases:
-				raise ValueError('Cannot import from itself')
-		else:
+		if (import_db := Backend.create_import_backend(driver=import_backend, 
+														args=args, 
+														import_type=BSTableType.Releases, 
+														db=db,
+														config_file=args.import_config)) is None:
 			raise ValueError(f'Could not init {import_backend} to import releases from')
 
-		release_type: type[BSBlitzRelease] = globals()[import_type]
-		assert issubclass(release_type, BSBlitzRelease), "--import-type has to be subclass of blitzutils.models.WGBlitzRelease" 
-		import_db.set_model(import_db.table_releases, release_type)
-
-		async for release in import_db.releases_export(data_type=release_type, sample=args.sample):
+		async for release in import_db.releases_export(model=import_model, sample=args.sample):
 			await releaseQ.put(release)
 			stats.log('read')
 
 		await releaseQ.join()
-		importer.cancel()
-		worker_res : tuple[EventCounter|BaseException] = await gather(importer,return_exceptions=True)
+		write_worker.cancel()
+		worker_res : tuple[EventCounter|BaseException] = await gather(write_worker,return_exceptions=True)
 		if type(worker_res[0]) is EventCounter:
 			stats.merge_child(worker_res[0])
 		elif type(worker_res[0]) is BaseException:
