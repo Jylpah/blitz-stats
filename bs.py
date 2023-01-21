@@ -16,12 +16,12 @@ from os.path import isfile, dirname
 from asyncio import run
 from yappi import start, stop, get_func_stats, set_clock_type, COLUMNS_FUNCSTATS 	# type: ignore
 
-import accounts as acc
-import replays as rep
-import releases as rel
-import tank_stats as ts
-import player_achievements as pa
-import setup as se
+import accounts 
+import replays 
+import releases 
+import tank_stats 
+import player_achievements 
+import setup 
 
 # import blitzutils as bu
 # import utils as su
@@ -130,17 +130,17 @@ async def main(argv: list[str]):
 		releases_parser 			= cmd_parsers.add_parser('releases', help='releases help')
 		setup_parser 				= cmd_parsers.add_parser('setup', help='setup help')
 		
-		if not acc.add_args_accounts(accounts_parser, config):
+		if not accounts.add_args(accounts_parser, config):
 			raise Exception("Failed to define argument parser for: accounts")
-		if not rep.add_args_replays(replays_parser, config):
+		if not replays.add_args(replays_parser, config):
 			raise Exception("Failed to define argument parser for: replays")
-		if not rel.add_args_releases(releases_parser, config):
+		if not releases.add_args(releases_parser, config):
 			raise Exception("Failed to define argument parser for: releases")
-		if not se.add_args_setup(setup_parser, config):
+		if not setup.add_args_setup(setup_parser, config):
 			raise Exception("Failed to define argument parser for: setup")
-		if not ts.add_args_tank_stats(tank_stats_parser, config):
+		if not tank_stats.add_args(tank_stats_parser, config):
 			raise Exception("Failed to define argument parser for: tank-stats")
-		if not pa.add_args_player_achievements(player_achievements_parser, config):
+		if not player_achievements.add_args(player_achievements_parser, config):
 			raise Exception("Failed to define argument parser for: player-achievements")
 
 
@@ -160,19 +160,19 @@ async def main(argv: list[str]):
 			start(builtins=True)
 
 		if args.main_cmd == 'accounts':			
-			await acc.cmd_accounts(backend, args)
+			await accounts.cmd(backend, args)
 		elif args.main_cmd == 'tank-stats':
-			await ts.cmd_tank_stats(backend, args)
+			await tank_stats.cmd(backend, args)
 		elif args.main_cmd == 'player-achievements':
-			await pa.cmd_player_achievements(backend, args)
+			await player_achievements.cmd(backend, args)
 		elif args.main_cmd == 'replays':
-			await rep.cmd_replays(backend, args)
+			await replays.cmd(backend, args)
 		elif args.main_cmd == 'releases':
-			await rel.cmd_releases(backend, args)
+			await releases.cmd(backend, args)
 		elif args.main_cmd == 'tankopedia':
 			raise NotImplementedError
 		elif args.main_cmd == 'setup':
-			await se.cmd_setup(backend, args)
+			await setup.cmd_setup(backend, args)
 		else:
 			parser.print_help()
 

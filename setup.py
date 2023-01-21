@@ -20,7 +20,7 @@ debug	= logger.debug
 ###########################################
 
 
-def add_args_setup(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		setup_parsers = parser.add_subparsers(dest='setup_cmd', 	
@@ -30,7 +30,7 @@ def add_args_setup(parser: ArgumentParser, config: Optional[ConfigParser] = None
 												metavar='init')
 		setup_parsers.required = True
 		init_parser = setup_parsers.add_parser('init', help="setup init help")
-		if not add_args_setup_init(init_parser, config=config):
+		if not add_args_init(init_parser, config=config):
 			raise Exception("Failed to define argument parser for: setup init")		
 				
 		return True
@@ -41,7 +41,7 @@ def add_args_setup(parser: ArgumentParser, config: Optional[ConfigParser] = None
 
 ## -
 
-def add_args_setup_init(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_init(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		collections : list[str] = ['all' ] + sorted([ tt.name for tt in BSTableType ])
@@ -61,13 +61,13 @@ def add_args_setup_init(parser: ArgumentParser, config: Optional[ConfigParser] =
 #
 ###########################################
 
-async def cmd_setup(db: Backend, args : Namespace) -> bool:
+async def cmd(db: Backend, args : Namespace) -> bool:
 	
 	try:
 		debug('starting')		
 		if args.setup_cmd == 'init':
 			debug('setup init')
-			return await cmd_setup_init(db, args)		
+			return await cmd_init(db, args)		
 		else:
 			error('setup: unknown or missing subcommand')
 
@@ -76,7 +76,7 @@ async def cmd_setup(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def cmd_setup_init(db: Backend, args : Namespace) -> bool:
+async def cmd_init(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		collections: list[str] = args.setup_init_collections
