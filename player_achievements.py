@@ -388,7 +388,7 @@ async def cmd_player_achievements_import(db: Backend, args : Namespace) -> bool:
 		
 		if (import_db := Backend.create_import_backend(driver=import_backend, 
 														args=args, 
-														import_type=BSTableType.Releases, 
+														import_type=BSTableType.PlayerAchievements, 
 														db=db,
 														config_file=args.import_config)) is None:
 			raise ValueError(f'Could not init {import_backend} to import releases from')
