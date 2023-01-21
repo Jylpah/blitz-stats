@@ -123,10 +123,63 @@ class Backend(ABC):
 
 
 	def __init__(self, config: ConfigParser | None = None, 
+					database : str | None = None, 
+					table_config : dict[BSTableType, str] | None = None, 
+					model_config : dict[BSTableType, type[JSONExportable]] | None = None, 
 					**kwargs):					
 		"""Init MongoDB backend from config file and CLI args
 			CLI arguments overide settings in the config file"""
 		
+		self._database	: str 	= 'BlitzStats'
+		self._config 	: dict[str, Any]
+		self._T 		: dict[BSTableType, str] = dict()
+		self._Tr 		: dict[str, BSTableType] = dict()
+		self._M 		: dict[BSTableType, type[JSONExportable]] = dict()
+
+		# default tables 
+		self.set_table(BSTableType.Accounts, 	'Accounts')
+		self.set_table(BSTableType.Tankopedia,  'Tankopedia')
+		self.set_table(BSTableType.Releases,  	'Releases')
+		self.set_table(BSTableType.Replays,  	'Replays')
+		self.set_table(BSTableType.AccountLog,  'AccountLog') 	
+		self.set_table(BSTableType.ErrorLog,  	'ErrorLog')
+		self.set_table(BSTableType.TankStats,  	'TankStats')
+		self.set_table(BSTableType.PlayerAchievements,  'PlayerAchievements')
+		
+		# set default models
+		self.set_model(BSTableType.Accounts, 	BSAccount)
+		self.set_model(BSTableType.Tankopedia, 	Tank)
+		self.set_model(BSTableType.Releases, 	BSBlitzRelease)
+		self.set_model(BSTableType.Replays, 	WoTBlitzReplayJSON)
+		self.set_model(BSTableType.AccountLog, 	ErrorLog)
+		self.set_model(BSTableType.ErrorLog, 	ErrorLog)
+		self.set_model(BSTableType.TankStats, 	WGtankStat)
+		self.set_model(BSTableType.PlayerAchievements, WGplayerAchievementsMaxSeries)
+
+		if config is not None and 'BACKEND' in config.sections():
+			configBackend = config['BACKEND']
+			self._cache_valid 	= configBackend.getint('cache_valid', MIN_UPDATE_INTERVAL)
+			self.set_table(BSTableType.Accounts, 	configBackend.get('t_accounts'))
+			self.set_table(BSTableType.Tankopedia, 	configBackend.get('t_tankopedia'))
+			self.set_table(BSTableType.Releases, 	configBackend.get('t_releases'))
+			self.set_table(BSTableType.Replays, 	configBackend.get('t_replays'))
+			self.set_table(BSTableType.TankStats, 	configBackend.get('t_tank_stats'))
+			self.set_table(BSTableType.PlayerAchievements, configBackend.get('t_player_achievements'))
+			self.set_table(BSTableType.AccountLog, 	configBackend.get('t_account_log'))
+			self.set_table(BSTableType.ErrorLog,	configBackend.get('t_error_log'))
+
+			self.set_model(BSTableType.Accounts, 	configBackend.get('m_accounts'))
+			self.set_model(BSTableType.Tankopedia, 	configBackend.get('m_tankopedia'))
+			self.set_model(BSTableType.Releases, 	configBackend.get('m_releases'))
+			self.set_model(BSTableType.Replays, 	configBackend.get('m_replays'))
+			self.set_model(BSTableType.TankStats, 	configBackend.get('m_tank_stats'))
+			self.set_model(BSTableType.PlayerAchievements, configBackend.get('m_player_achievements'))
+			self.set_model(BSTableType.AccountLog, 	configBackend.get('m_account_log'))
+			self.set_model(BSTableType.ErrorLog,	configBackend.get('m_error_log'))
+			
+		if database is not None: 
+			self._database = database
+
 			
 
 	def config_tables(self, table_config: dict[BSTableType, str] | None = None ): 
