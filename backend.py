@@ -127,34 +127,23 @@ class Backend(ABC):
 		"""Init MongoDB backend from config file and CLI args
 			CLI arguments overide settings in the config file"""
 		
-		self._database : str 	= 'BlitzStats'
-		
-		# default tables/collections
-		self._T 	: dict[BSTableType, str] = dict()
-		self._Tr 	: dict[str, BSTableType] = dict()
-		self._M 	: dict[BSTableType | str, type[JSONExportable]] = dict()
+			
 
-		self._T[BSTableType.Accounts] 			= 'Accounts'
-		self._T[BSTableType.Tankopedia] 		= 'Tankopedia'
-		self._T[BSTableType.Releases] 			= 'Releases'
-		self._T[BSTableType.Replays] 			= 'Replays'
-		self._T[BSTableType.AccountLog] 		= 'BSAccountLog' 	# Rename after transition
-		self._T[BSTableType.ErrorLog] 			= 'BSErrorLog'		# Rename after transition
-		message('Reminder: Rename Backend ErrorLog & AccountLog')
-		self._T[BSTableType.TankStats] 			= 'TankStats'
-		self._T[BSTableType.PlayerAchievements] = 'PlayerAchievements'
-		
-		for k, v in self._T.items():
-			self._Tr[v] = k
-		
-		self._M[BSTableType.Accounts] 			= BSAccount
-		self._M[BSTableType.Tankopedia] 		= Tank
-		self._M[BSTableType.Releases] 			= BSBlitzRelease
-		self._M[BSTableType.Replays] 			= WoTBlitzReplayJSON
-		self._M[BSTableType.AccountLog] 		= ErrorLog	
-		self._M[BSTableType.ErrorLog] 			= ErrorLog		
-		self._M[BSTableType.TankStats] 			= WGtankStat
-		self._M[BSTableType.PlayerAchievements] = WGplayerAchievementsMaxSeries
+	def config_tables(self, table_config: dict[BSTableType, str] | None = None ): 
+		try:
+			if table_config is not None:
+				for table_type, table in table_config.items():
+					self.set_table(table_type, table)
+				
+		except Exception as err:
+			error(f'{err}')
+		return None
+
+
+	def config_models(self, model_config : dict[BSTableType, type[JSONExportable]] | None = None):
+		if model_config is not None:
+			for table_type, model in model_config.items():
+				self.set_model(table_type, model)
 
 
 	@classmethod
