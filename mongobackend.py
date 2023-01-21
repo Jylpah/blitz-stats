@@ -845,7 +845,7 @@ class MongoBackend(Backend):
 		return -1
 
 
-	async def accounts_export(self, model: type[Account] = BSAccount, 
+	async def accounts_export(self, model: type[JSONExportable] = BSAccount, 
 								sample : float = 0) -> AsyncGenerator[BSAccount, None]:
 		"""Import accounts from Mongo DB"""
 		debug('starting')
@@ -1250,12 +1250,12 @@ class MongoBackend(Backend):
 		return -1
 
 
-	async def replays_export(self, data_type: type[WoTBlitzReplayJSON] = WoTBlitzReplayJSON,
+	async def replays_export(self, model: type[JSONExportable] = WoTBlitzReplayJSON,
 								sample: float = 0) -> AsyncGenerator[WoTBlitzReplayJSON, None]:
 		"""Export replays from Mongo DB"""
 		debug('starting')
 		async for replay in self._datas_export(self.collection_replays, 
-												in_type=data_type, 
+												in_type=model, 
 												out_type=WoTBlitzReplayJSON, 
 												sample=sample):
 			yield replay

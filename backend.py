@@ -589,7 +589,7 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def accounts_export(self, model: type[Account] = BSAccount, 
+	async def accounts_export(self, model: type[JSONExportable] = BSAccount, 
 								sample : float = 0) -> AsyncGenerator[BSAccount, None]:
 		"""import accounts"""
 		raise NotImplementedError
@@ -599,6 +599,7 @@ class Backend(ABC):
 	#----------------------------------------
 	# Releases
 	#----------------------------------------
+
 
 	@abstractmethod
 	async def release_insert(self, release: BSBlitzRelease) -> bool:
@@ -762,7 +763,7 @@ class Backend(ABC):
 		return stats
 	
 
-	async def replays_export(self, model: type[WoTBlitzReplayJSON] = WoTBlitzReplayJSON,
+	async def replays_export(self, model: type[JSONExportable] = WoTBlitzReplayJSON,
 							 sample: float = 0) -> AsyncGenerator[WoTBlitzReplayJSON, None]:			
 		"""Export replays from Mongo DB"""
 		raise NotImplementedError
