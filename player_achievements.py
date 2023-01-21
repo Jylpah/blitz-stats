@@ -16,7 +16,7 @@ from releases import release_mapper
 
 from pyutils import BucketMapper, IterableQueue, QueueDone, EventCounter, JSONExportable, \
 					get_url, get_url_JSON_model, epoch_now, alive_bar_monitor, \
-					is_alphanum
+					is_alphanum, get_sub_type
 from blitzutils.models import Region, WGplayerAchievementsMain, WGplayerAchievementsMaxSeries
 from blitzutils.wg import WGApi 
 
@@ -128,7 +128,7 @@ def add_args_player_achievements_import(parser: ArgumentParser, config: Optional
 			if not backend.add_args_import(import_parser, config=config):
 				raise Exception(f'Failed to define argument parser for: player-achievements import {backend.driver}')
 		parser.add_argument('--threads', type=int, default=WORKERS_IMPORTERS, help='Set number of asynchronous threads')
-		parser.add_argument('--import-type', metavar='IMPORT-TYPE', type=str, 
+		parser.add_argument('--import-model', metavar='IMPORT-TYPE', type=str, 
 							default='WGplayerAchievementsMaxSeries', 
 							choices=['WGplayerAchievementsMaxSeries', 'WGplayerAchievementsMain'], 
 							help='Data format to import. Default is blitz-stats native format.')
@@ -368,21 +368,37 @@ async def fetch_player_achievements_backend_worker(db: Backend,
 async def cmd_player_achievements_import(db: Backend, args : Namespace) -> bool:
 	"""Import player achievements from other backend"""	
 	try:
-		assert is_alphanum(args.import_type), f'invalid --import-type: {args.import_type}'
+		assert is_alphanum(args.import_model), f'invalid --import-model: {args.import_model}'
 		debug('starting')
 		player_achievementsQ	: Queue[list[WGplayerAchievementsMaxSeries]]= Queue(PLAYER_ACHIEVEMENTS_Q_MAX)
 		rel_mapQ				: Queue[WGplayerAchievementsMaxSeries]		= Queue()
 		stats 			: EventCounter 	= EventCounter('player-achievements import')
-		config 			: ConfigParser | None 	= None
-		import_type 	: str 					= args.import_type
-		import_backend 	: str 					= args.import_backend
-		import_table	: str | None			= args.import_table
-		map_releases	: bool 					= not args.no_release_map
-		player_achievements_type: type[JSONExportable] = globals()[import_type]
-		WORKERS 	 	: int 					= args.threads
+		WORKERS 	 	: int 							= args.threads
+		import_db   	: Backend | None 				= None
+		import_backend 	: str 							= args.import_backend
+		import_model 	: type[JSONExportable] | None 	= None
+		map_releases	: bool 							= not args.no_release_map
+
+		if (import_model := get_sub_type(args.import_model, JSONExportable)) is None:
+			assert False, "--import-model has to be subclass of JSONExportable" 
+
 		release_map : BucketMapper[BSBlitzRelease] = await release_mapper(db)
 		workers : list[Task] = list()
 		debug('args parsed')
+		
+		if (import_db := Backend.create_import_backend(driver=import_backend, 
+														args=args, 
+														import_type=BSTableType.Releases, 
+														db=db,
+														config_file=args.import_config)) is None:
+			raise ValueError(f'Could not init {import_backend} to import releases from')
+		# debug(f'import_db: {await import_db._client.server_info()}')
+		message(f'Import from: {import_db.backend}.{import_db.table_player_achievements}')
+				
+		message('Counting player achievements to import ...')
+		N : int = await import_db.player_achievements_count(sample=args.sample)
+		message(f'Importing {N} player achievements')
+
 		for _ in range(WORKERS):
 			workers.append(create_task(db.player_achievements_insert_worker(player_achievementsQ=player_achievementsQ, 
 																	force=args.force)))
@@ -390,35 +406,9 @@ async def cmd_player_achievements_import(db: Backend, args : Namespace) -> bool:
 																outputQ=player_achievementsQ, 
 																map_releases=map_releases))		
 
-		if args.import_config is not None and isfile(args.import_config):
-			debug(f'Reading config from {args.config}')
-			config = ConfigParser()
-			config.read(args.config)
-
-		kwargs : dict[str, Any] = Backend.read_args(args=args, backend=import_backend)
-		if (import_db:= Backend.create(args.import_backend, 
-										config=config, copy_from=db, **kwargs)) is not None:
-			if import_table is not None:
-				import_db.set_table(BSTableType.PlayerAchievements, import_table)
-			elif db == import_db and db.table_player_achievements == import_db.table_player_achievements:
-				raise ValueError('Cannot import from itself')
-		else:
-			raise ValueError(f'Could not init {args.import_backend} to import player achievements from')
-		
-		# assert issubclass(player_achievements_type, WGplayerAchievementsMaxSeries), \
-		# 		"--import-type has to be subclass of blitzutils.models.WGplayerAchievementsMaxSeries" 
-		import_db.set_model(import_db.table_player_achievements, player_achievements_type)
-
-		# debug(f'import_db: {await import_db._client.server_info()}')
-		message(f'Import from: {import_db.backend}.{import_db.table_player_achievements}')
-				
-		message('Counting player achievements to import ...')
-		N : int = await import_db.player_achievements_count(sample=args.sample)
-		message(f'Importing {N} player achievements')
-		
 		with alive_bar(N, title="Importing player achievements ", enrich_print=False, refresh_secs=0.5) as bar:
-			async for pa in import_db.player_achievements_export(data_type=player_achievements_type, 
-																		sample=args.sample):
+			async for pa in import_db.player_achievements_export(model=import_model, 
+																sample=args.sample):
 				await rel_mapQ.put(pa)
 				bar()
 		
