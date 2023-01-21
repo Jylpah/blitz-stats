@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from models import BSAccount, BSBlitzRelease, StatsTypes
 from blitzutils.models import Region, WoTBlitzReplayJSON, WGtankStat, Account, Tank, WGplayerAchievementsMaxSeries
-from pyutils import EventCounter, JSONExportable, epoch_now, is_alphanum
+from pyutils import EventCounter, JSONExportable, epoch_now, is_alphanum, get_sub_type
 # from mongobackend import MongoBackend
 
 # Setup logging
@@ -281,11 +281,22 @@ class Backend(ABC):
 		return self._M[table]
 		
 
-	def set_model(self, table: BSTableType | str, model: type[JSONExportable]) -> None:
-		"""Set collection model"""	
-		if type(table) is BSTableType:
-			self._M[self.get_table(table)] = model	
-		self._M[table] = model
+	def set_model(self, table: BSTableType | str, model: type[JSONExportable] |str) -> None:
+		"""Set collection model"""
+		table_type : BSTableType
+		model_class : type[JSONExportable]
+		if isinstance(table, str):
+			table_type = self._Tr[table]
+		else:
+			table_type = table
+		if isinstance(model, str):			
+			if (model_type := get_sub_type(model, JSONExportable)) is None:
+				assert False, f'Could not set model {model}() for {table_type.value}'
+			else:
+				model_class = model_type			
+		else:
+			model_class = model
+		self._M[table_type] = model_class
 		
 
 	@property
