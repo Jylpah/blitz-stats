@@ -38,7 +38,7 @@ PLAYER_ACHIEVEMENTS_Q_MAX 	: int = 5000
 #
 ########################################################
 
-def add_args_player_achievements(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')		
 		parsers = parser.add_subparsers(dest='player_achievements_cmd', 	
@@ -48,19 +48,19 @@ def add_args_player_achievements(parser: ArgumentParser, config: Optional[Config
 		parsers.required = True
 		
 		fetch_parser = parsers.add_parser('fetch', aliases=['get'], help="player-achievements fetch help")
-		if not add_args_player_achievements_fetch(fetch_parser, config=config):
+		if not add_args_fetch(fetch_parser, config=config):
 			raise Exception("Failed to define argument parser for: player-achievements fetch")
 		
 		prune_parser = parsers.add_parser('prune', help="player-achievements prune help")
-		if not add_args_player_achievements_prune(prune_parser, config=config):
+		if not add_args_prune(prune_parser, config=config):
 			raise Exception("Failed to define argument parser for: player-achievements prune")
 
 		import_parser = parsers.add_parser('import', help="player-achievements import help")
-		if not add_args_player_achievements_import(import_parser, config=config):
+		if not add_args_import(import_parser, config=config):
 			raise Exception("Failed to define argument parser for: player-achievements import")
 
 		export_parser = parsers.add_parser('export', help="player-achievements export help")
-		if not add_args_player_achievements_export(export_parser, config=config):
+		if not add_args_export(export_parser, config=config):
 			raise Exception("Failed to define argument parser for: player-achievements export")
 		debug('Finished')	
 		return True
@@ -69,7 +69,7 @@ def add_args_player_achievements(parser: ArgumentParser, config: Optional[Config
 	return False
 
 
-def add_args_player_achievements_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		WG_RATE_LIMIT 	: float = 10
@@ -107,12 +107,12 @@ def add_args_player_achievements_fetch(parser: ArgumentParser, config: Optional[
 	return False
 
 
-def add_args_player_achievements_prune(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_prune(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	debug('starting')
 	return True
 
 
-def add_args_player_achievements_import(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	debug('starting')
 	try:
 		debug('starting')
@@ -145,7 +145,7 @@ def add_args_player_achievements_import(parser: ArgumentParser, config: Optional
 		error(f'{err}')
 	return False
 
-def add_args_player_achievements_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	debug('starting')
 	return True
 
@@ -156,17 +156,17 @@ def add_args_player_achievements_export(parser: ArgumentParser, config: Optional
 #
 ###########################################
 
-async def cmd_player_achievements(db: Backend, args : Namespace) -> bool:
+async def cmd(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		if args.player_achievements_cmd == 'fetch':
-			return await cmd_player_achievements_fetch(db, args)
+			return await cmd_fetch(db, args)
 
 		# elif args.player_achievements_cmd == 'export':
-		# 	return await cmd_player_achievements_export(db, args)
+		# 	return await cmd_export(db, args)
 
 		elif args.player_achievements_cmd == 'import':
-			return await cmd_player_achievements_import(db, args)
+			return await cmd_import(db, args)
 
 		else:
 			raise ValueError(f'Unsupported command: player-achievements { args.player_achievements_cmd}')
@@ -175,7 +175,7 @@ async def cmd_player_achievements(db: Backend, args : Namespace) -> bool:
 		error(f'{err}')
 	return False
 
-async def cmd_player_achievements_fetch(db: Backend, args : Namespace) -> bool:
+async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 	"""Fetch player achievements"""
 	assert 'wg_app_id' in args and type(args.wg_app_id) is str, "'wg_app_id' must be set and string"
 	assert 'rate_limit' in args and (type(args.rate_limit) is float or \
@@ -360,12 +360,12 @@ async def fetch_player_achievements_backend_worker(db: Backend,
 
 ########################################################
 # 
-# cmd_player_achievements_import()
+# cmd_import()
 #
 ########################################################
 
 
-async def cmd_player_achievements_import(db: Backend, args : Namespace) -> bool:
+async def cmd_import(db: Backend, args : Namespace) -> bool:
 	"""Import player achievements from other backend"""	
 	try:
 		assert is_alphanum(args.import_model), f'invalid --import-model: {args.import_model}'
