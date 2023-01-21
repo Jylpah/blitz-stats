@@ -23,12 +23,12 @@ debug	= logger.debug
 
 ###########################################
 # 
-# add_args_releases functions  
+# add_args functions  
 #
 ###########################################
 
 
-def add_args_releases(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		releases_parsers = parser.add_subparsers(dest='releases_cmd', 	
@@ -38,32 +38,32 @@ def add_args_releases(parser: ArgumentParser, config: Optional[ConfigParser] = N
 												metavar='add | edit | remove | list')
 		releases_parsers.required = True
 		add_parser = releases_parsers.add_parser('add', help="releases add help")
-		if not add_args_releases_add(add_parser, config=config):
+		if not add_args_add(add_parser, config=config):
 			raise Exception("Failed to define argument parser for: releases add")
 		
 		edit_parser = releases_parsers.add_parser('edit', help="releases edit help")
-		if not add_args_releases_edit(edit_parser, config=config):
+		if not add_args_edit(edit_parser, config=config):
 			raise Exception("Failed to define argument parser for: releases edit")
 		
 		remove_parser = releases_parsers.add_parser('remove', help="releases remove help")
-		if not add_args_releases_remove(remove_parser, config=config):
+		if not add_args_remove(remove_parser, config=config):
 			raise Exception("Failed to define argument parser for: releases remove")
 
 		import_parser = releases_parsers.add_parser('import', help="releases import help")
-		if not add_args_releases_import(import_parser, config=config):
+		if not add_args_import(import_parser, config=config):
 			raise Exception("Failed to define argument parser for: releases import")
 
 		export_parser = releases_parsers.add_parser('export', help="releases export help")
-		if not add_args_releases_export(export_parser, config=config):
+		if not add_args_export(export_parser, config=config):
 			raise Exception("Failed to define argument parser for: releases export")
 				
 		return True
 	except Exception as err:
-		error(f'add_args_releases(): {err}')
+		error(f'add_args(): {err}')
 	return False
 
 
-def add_args_releases_add(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_add(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		parser.add_argument('release', type=str, default=None, metavar='RELEASE',
@@ -73,11 +73,11 @@ def add_args_releases_add(parser: ArgumentParser, config: Optional[ConfigParser]
 
 		return True	
 	except Exception as err:
-		error(f'add_args_releases_add() : {err}')
+		error(f'add_args_add() : {err}')
 	return False
 
 
-def add_args_releases_edit(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_edit(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		parser.add_argument('release', type=str,metavar='RELEASE', help='RELEASE to edit')
@@ -85,21 +85,21 @@ def add_args_releases_edit(parser: ArgumentParser, config: Optional[ConfigParser
 		parser.add_argument('--launch', type=str, default=None, help='new release launch date')
 		return True	
 	except Exception as err:
-		error(f'add_args_releases_edit() : {err}')
+		error(f'add_args_edit() : {err}')
 	return False
 
 
-def add_args_releases_remove(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_remove(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		parser.add_argument('release', type=str, metavar='RELEASE', help='RELEASE to remove')
 		return True	
 	except Exception as err:
-		error(f'add_args_releases_remove() : {err}')
+		error(f'add_args_remove() : {err}')
 	return False
 
 
-def add_args_releases_import(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		import_parsers = parser.add_subparsers(dest='import_backend', 	
@@ -125,12 +125,12 @@ def add_args_releases_import(parser: ArgumentParser, config: Optional[ConfigPars
 							help='Import release launched after LAUNCH_DATE. By default, imports all releases.')
 		return True	
 	except Exception as err:
-		error(f'add_args_releases_import() : {err}')
+		error(f'add_args_import() : {err}')
 	return False
 
 
 
-def add_args_releases_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		parser.add_argument('release_match', type=str, metavar='RELEASE_MATCH', default=None, nargs='?',
@@ -145,36 +145,36 @@ def add_args_releases_export(parser: ArgumentParser, config: Optional[ConfigPars
 							help='Overwrite existing file(s) when exporting')
 		return True	
 	except Exception as err:
-		error(f'add_args_releases_remove() : {err}')
+		error(f'add_args_remove() : {err}')
 	return False
 
 
 
 ###########################################
 # 
-# cmd_releases functions  
+# cmd functions  
 #
 ###########################################
 
-async def cmd_releases(db: Backend, args : Namespace) -> bool:
+async def cmd(db: Backend, args : Namespace) -> bool:
 	
 	try:
 		debug('starting')		
 		if args.releases_cmd == 'add':
 			debug('releases add')
-			return await cmd_releases_add(db, args)		
+			return await cmd_add(db, args)		
 		elif args.releases_cmd == 'edit':
 			debug('releases edit')
-			return await cmd_releases_edit(db, args)
+			return await cmd_edit(db, args)
 		elif args.releases_cmd == 'remove':
 			debug('releases remove')
-			return await cmd_releases_remove(db, args)
+			return await cmd_remove(db, args)
 		elif args.releases_cmd == 'import':
 			debug('releases import')
-			return await cmd_releases_import(db, args)	
+			return await cmd_import(db, args)	
 		elif args.releases_cmd == 'export':
 			debug('releases export')
-			return await cmd_releases_export(db, args)		
+			return await cmd_export(db, args)		
 		else:
 			error(f'Unknown or missing subcommand: {args.releases_cmd}')
 
@@ -183,7 +183,7 @@ async def cmd_releases(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def cmd_releases_add(db: Backend, args : Namespace) -> bool:
+async def cmd_add(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		release : BSBlitzRelease | None = None
@@ -204,7 +204,7 @@ async def cmd_releases_add(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def cmd_releases_edit(db: Backend, args : Namespace) -> bool:
+async def cmd_edit(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		release = BSBlitzRelease(release=args.release, launch_date=args.launch, cut_off=args.cut_off)
@@ -216,7 +216,7 @@ async def cmd_releases_edit(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def cmd_releases_remove(db: Backend, args : Namespace) -> bool:
+async def cmd_remove(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		message(f'Removing release={args.release} in 3 seconds. Press CTRL+C to cancel')
@@ -232,7 +232,7 @@ async def cmd_releases_remove(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def cmd_releases_export(db: Backend, args : Namespace) -> bool:
+async def cmd_export(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		releaseQ : Queue[BSBlitzRelease] = Queue(100)
@@ -256,7 +256,7 @@ async def cmd_releases_export(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def cmd_releases_import(db: Backend, args : Namespace) -> bool:
+async def cmd_import(db: Backend, args : Namespace) -> bool:
 	"""Import releases from other backend"""	
 	try:
 		assert is_alphanum(args.import_model), f'invalid --import-model: {args.import_model}'
@@ -268,7 +268,7 @@ async def cmd_releases_import(db: Backend, args : Namespace) -> bool:
 		import_model 	: type[JSONExportable] | None 	= None
 
 		if (import_model := get_sub_type(args.import_model, JSONExportable)) is None:
-			assert False, "--import-model has to be subclass of JSONExportable"
+			raise ValueError("--import-model has to be subclass of JSONExportable")
 
 		write_worker : Task = create_task(db.releases_insert_worker(releaseQ=releaseQ, force=args.force))
 
