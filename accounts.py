@@ -482,12 +482,12 @@ async def accounts_update_wi_fetch_replays(db: Backend, wi: WoTinspector, replay
 async def cmd_accounts_import(db: Backend, args : Namespace) -> bool:
 	"""Import accounts from other backend"""	
 	try:
-		stats 		: EventCounter 			= EventCounter('accounts import')
-		accountQ 	: Queue[BSAccount]		= Queue(ACCOUNTS_Q_MAX)
-		regions 	: set[Region]			= { Region(r) for r in args.region }
-		import_db   	: Backend | None 				= None
+		stats 			: EventCounter 			= EventCounter('accounts import')
+		accountQ 		: Queue[BSAccount]		= Queue(ACCOUNTS_Q_MAX)
+		regions 		: set[Region]			= { Region(r) for r in args.region }
+		import_db   	: Backend | None 		= None
 		import_model 	: type[JSONExportable] | None 	= None
-		import_backend 	: str 				= args.import_backend
+		import_backend 	: str 					= args.import_backend
 
 		if (import_model := get_sub_type(args.import_model, JSONExportable)) is None:
 			raise ValueError("--import-model has to be subclass of JSONExportable")
