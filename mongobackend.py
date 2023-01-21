@@ -64,81 +64,98 @@ class MongoBackend(Backend):
 	driver : str = 'mongodb'
 	# default_db : str = 'BlitzStats'	
 
-	def __init__(self, config: ConfigParser | None = None, **kwargs):
+	def __init__(self, config: ConfigParser | None = None, 
+				database : str | None = None, 
+				table_config : dict[BSTableType, str] | None = None, 
+				model_config : dict[BSTableType, type[JSONExportable]] | None = None, 
+				**kwargs):
 		"""Init MongoDB backend from config file and CLI args
 			CLI arguments overide settings in the config file"""
 
 		debug('starting')
-		super().__init__(config=config, **kwargs)
+		try:
+			super().__init__(config=config, 
+		super().__init__(config=config, 
+			super().__init__(config=config, 
+							database=database, 
+						database=database, 
+							database=database, 
+							table_config=table_config, 
+						table_config=table_config, 
+							table_config=table_config, 
+							model_config=model_config, 
+						model_config=model_config, 
+							model_config=model_config, 
+							**kwargs)
 
-		mongodb_rc 		: dict[str, Any] = dict()
-		self._config 	: dict[str, Any]
-		self._client 	: AsyncIOMotorClient
+			mongodb_rc 		: dict[str, Any] = dict()
+			self._client 	: AsyncIOMotorClient
+			self.db 		: AsyncIOMotorDatabase
 
-		# server defaults
-		mongodb_rc['host'] 						= 'localhost'
-		mongodb_rc['port'] 						= 27017
-		mongodb_rc['tls']						= False
-		mongodb_rc['tlsAllowInvalidCertificates']= False
-		mongodb_rc['tlsAllowInvalidHostnames']	= False
-		mongodb_rc['tlsCertificateKeyFile']		= None
-		mongodb_rc['tlsCAFile']					= None
-		mongodb_rc['authSource']				= None
-		mongodb_rc['username']					= None
-		mongodb_rc['password']					= None
+			# server defaults
+			mongodb_rc['host'] 						= 'localhost'
+			mongodb_rc['port'] 						= 27017
+			mongodb_rc['tls']						= False
+			mongodb_rc['tlsAllowInvalidCertificates']= False
+			mongodb_rc['tlsAllowInvalidHostnames']	= False
+			mongodb_rc['tlsCertificateKeyFile']		= None
+			mongodb_rc['tlsCAFile']					= None
+			mongodb_rc['authSource']				= None
+			mongodb_rc['username']					= None
+			mongodb_rc['password']					= None
+			
+			if config is not None and 'MONGODB' in config.sections():
+				configMongo = config['MONGODB']
+				self._database		= configMongo.get('database', self.database)
+				mongodb_rc['host'] 	= configMongo.get('server', mongodb_rc['host'])
+				mongodb_rc['port'] 	= configMongo.getint('port', mongodb_rc['port'])
+				mongodb_rc['tls'] 	= configMongo.getboolean('tls', mongodb_rc['tls'])
+				mongodb_rc['tlsAllowInvalidCertificates']	= configMongo.getboolean('tls_invalid_certs', 
+																	mongodb_rc['tlsAllowInvalidCertificates'])
+				mongodb_rc['tlsAllowInvalidHostnames']	= configMongo.getboolean('tls_invalid_hosts', 
+																		mongodb_rc['tlsAllowInvalidHostnames'])
+				mongodb_rc['tlsCertificateKeyFile']	= configMongo.get('cert', mongodb_rc['tlsCertificateKeyFile'])
+				mongodb_rc['tlsCAFile']				= configMongo.get('ca', mongodb_rc['tlsCAFile'])
+				mongodb_rc['authSource']			= configMongo.get('auth_db', mongodb_rc['authSource'])
+				mongodb_rc['username']				= configMongo.get('user', mongodb_rc['username'])
+				mongodb_rc['password']				= configMongo.get('password', mongodb_rc['password'])
 
-		if 'database' in kwargs:
-			self._database = kwargs['database']
-			del kwargs['database']
+				self.set_table(BSTableType.Accounts, 	configMongo.get('t_accounts'))
+				self.set_table(BSTableType.Tankopedia, 	configMongo.get('t_tankopedia'))
+				self.set_table(BSTableType.Releases, 	configMongo.get('t_releases'))
+				self.set_table(BSTableType.Replays, 	configMongo.get('t_replays'))
+				self.set_table(BSTableType.TankStats, 	configMongo.get('t_tank_stats'))
+				self.set_table(BSTableType.PlayerAchievements, configMongo.get('t_player_achievements'))
+				self.set_table(BSTableType.AccountLog, 	configMongo.get('t_account_log'))
+				self.set_table(BSTableType.ErrorLog,	configMongo.get('t_error_log'))
 
-		try:			
-			self.db 	: AsyncIOMotorDatabase
-
-			if config is not None:
-				if 'GENERAL' in config.sections():
-					configGeneral = config['GENERAL']
-					self._cache_valid 	= configGeneral.getint('cache_valid', MIN_UPDATE_INTERVAL) 
-				if 'MONGODB' in config.sections():
-					configMongo = config['MONGODB']
-					self._database		= configMongo.get('database', self._database)
-					mongodb_rc['host'] 	= configMongo.get('server', mongodb_rc['host'])
-					mongodb_rc['port'] 	= configMongo.getint('port', mongodb_rc['port'])
-					mongodb_rc['tls'] 	= configMongo.getboolean('tls', mongodb_rc['tls'])
-					mongodb_rc['tlsAllowInvalidCertificates']	= configMongo.getboolean('tls_invalid_certs', 
-																		mongodb_rc['tlsAllowInvalidCertificates'])
-					mongodb_rc['tlsAllowInvalidHostnames']	= configMongo.getboolean('tls_invalid_hosts', 
-																			mongodb_rc['tlsAllowInvalidHostnames'])
-					mongodb_rc['tlsCertificateKeyFile']	= configMongo.get('cert', mongodb_rc['tlsCertificateKeyFile'])
-					mongodb_rc['tlsCAFile']				= configMongo.get('ca', mongodb_rc['tlsCAFile'])
-					mongodb_rc['authSource']			= configMongo.get('auth_db', mongodb_rc['authSource'])
-					mongodb_rc['username']				= configMongo.get('user', mongodb_rc['username'])
-					mongodb_rc['password']				= configMongo.get('password', mongodb_rc['password'])
-
-					self.set_table(BSTableType.Accounts, 	configMongo.get('c_accounts', 	self.table_accounts))
-					self.set_table(BSTableType.Tankopedia, 	configMongo.get('c_tankopedia', self.table_tankopedia))
-					self.set_table(BSTableType.Releases, 	configMongo.get('c_releases', 	self.table_releases))
-					self.set_table(BSTableType.Replays, 	configMongo.get('c_replays', 	self.table_replays))
-					self.set_table(BSTableType.TankStats, 	configMongo.get('c_tank_stats', self.table_tank_stats))
-					self.set_table(BSTableType.PlayerAchievements, configMongo.get('c_player_achievements', 
-																				self.table_player_achievements))
-					self.set_table(BSTableType.AccountLog, 	configMongo.get('c_account_log',self.table_account_log))
-					self.set_table(BSTableType.ErrorLog,	configMongo.get('c_error_log', 	self.table_error_log))
-
-				else:					
-					debug(f'"MONGODB" section not found from config file')
+				self.set_model(BSTableType.Accounts, 	configMongo.get('m_accounts'))
+				self.set_model(BSTableType.Tankopedia, 	configMongo.get('m_tankopedia'))
+				self.set_model(BSTableType.Releases, 	configMongo.get('m_releases'))
+				self.set_model(BSTableType.Replays, 	configMongo.get('m_replays'))
+				self.set_model(BSTableType.TankStats, 	configMongo.get('m_tank_stats'))
+				self.set_model(BSTableType.PlayerAchievements, configMongo.get('m_player_achievements'))
+				self.set_model(BSTableType.AccountLog, 	configMongo.get('m_account_log'))
+				self.set_model(BSTableType.ErrorLog,	configMongo.get('m_error_log'))
 
 			for param, value in kwargs.items():
 				mongodb_rc[param] = value
 
 			mongodb_rc = {k: v for k, v in mongodb_rc.items() if v is not None} 	# remove unset kwargs
 		
-			self._client  =  AsyncIOMotorClient(**mongodb_rc)
-		
-			# assert self._client is not None, "Failed to initialize Mongo DB connection"
+			self.set_database(database)
+			self._client =  AsyncIOMotorClient(**mongodb_rc)			
+			self.db 	 = self._client[self.database]
 			self._config = mongodb_rc
-			self.db = self._client[self._database]
-	
+						
+			self.config_tables(table_config=table_config)
+			self.config_models(model_config=model_config)
+			
+			## UPDATE after transition
+			message('Reminder: Rename Backend ErrorLog & AccountLog')
+		
 			debug('Mongo DB connection succeeded')
+			debug(f'config: ' + ', '.join([ "{0}={1}".format(k, str(v)) for k, v in mongodb_rc.items()]))
 		except FileNotFoundError as err:
 			error(f'{err}')
 			raise err

@@ -177,10 +177,6 @@ class Backend(ABC):
 			self.set_model(BSTableType.AccountLog, 	configBackend.get('m_account_log'))
 			self.set_model(BSTableType.ErrorLog,	configBackend.get('m_error_log'))
 			
-		if database is not None: 
-			self._database = database
-
-			
 
 	def config_tables(self, table_config: dict[BSTableType, str] | None = None ) -> None: 
 		try:
