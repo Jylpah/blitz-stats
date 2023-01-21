@@ -41,7 +41,7 @@ TANK_STATS_Q_MAX 	: int = 1000
 #
 ########################################################
 
-def add_args_tank_stats(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')		
 		tank_stats_parsers = parser.add_subparsers(dest='tank_stats_cmd', 	
@@ -51,23 +51,23 @@ def add_args_tank_stats(parser: ArgumentParser, config: Optional[ConfigParser] =
 		tank_stats_parsers.required = True
 		
 		fetch_parser = tank_stats_parsers.add_parser('fetch', aliases=['get'], help="tank-stats fetch help")
-		if not add_args_tank_stats_fetch(fetch_parser, config=config):
+		if not add_args_fetch(fetch_parser, config=config):
 			raise Exception("Failed to define argument parser for: tank-stats fetch")
 
 		edit_parser = tank_stats_parsers.add_parser('edit', help="tank-stats edit help")
-		if not add_args_tank_stats_edit(edit_parser, config=config):
+		if not add_args_edit(edit_parser, config=config):
 			raise Exception("Failed to define argument parser for: tank-stats edit")
 		
 		prune_parser = tank_stats_parsers.add_parser('prune', help="tank-stats prune help")
-		if not add_args_tank_stats_prune(prune_parser, config=config):
+		if not add_args_prune(prune_parser, config=config):
 			raise Exception("Failed to define argument parser for: tank-stats prune")
 
 		import_parser = tank_stats_parsers.add_parser('import', help="tank-stats import help")
-		if not add_args_tank_stats_import(import_parser, config=config):
+		if not add_args_import(import_parser, config=config):
 			raise Exception("Failed to define argument parser for: tank-stats import")
 
 		export_parser = tank_stats_parsers.add_parser('export', help="tank-stats export help")
-		if not add_args_tank_stats_export(export_parser, config=config):
+		if not add_args_tank_stat_export(export_parser, config=config):
 			raise Exception("Failed to define argument parser for: tank-stats export")
 		debug('Finished')	
 		return True
@@ -76,7 +76,7 @@ def add_args_tank_stats(parser: ArgumentParser, config: Optional[ConfigParser] =
 	return False
 
 
-def add_args_tank_stats_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		WG_RATE_LIMIT 	: float = 10
@@ -121,7 +121,7 @@ def add_args_tank_stats_fetch(parser: ArgumentParser, config: Optional[ConfigPar
 	return False
 
 
-def add_args_tank_stats_edit(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_edit(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	debug('starting')
 	try:
 		edit_parsers = parser.add_subparsers(dest='tank_stats_edit_cmd', 	
@@ -131,7 +131,7 @@ def add_args_tank_stats_edit(parser: ArgumentParser, config: Optional[ConfigPars
 		edit_parsers.required = True
 		
 		remap_parser = edit_parsers.add_parser('remap-release', help="tank-stats edit remap-release help")
-		if not add_args_tank_stats_edit_remap_release(remap_parser, config=config):
+		if not add_args_edit_remap_release(remap_parser, config=config):
 			raise Exception("Failed to define argument parser for: tank-stats edit remap-release")		
 
 		return True
@@ -140,7 +140,7 @@ def add_args_tank_stats_edit(parser: ArgumentParser, config: Optional[ConfigPars
 	return False
 
 
-def add_args_tank_stats_edit_common(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_edit_common(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	"""Adds common arguments to edit subparser. Required for meaningful helps and usability"""
 	debug('starting')
 	parser.add_argument('--commit', action='store_true', default=False, 
@@ -163,17 +163,17 @@ def add_args_tank_stats_edit_common(parser: ArgumentParser, config: Optional[Con
 	return True
 
 
-def add_args_tank_stats_edit_remap_release(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_edit_remap_release(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	debug('starting')
-	return add_args_tank_stats_edit_common(parser, config)
+	return add_args_edit_common(parser, config)
 
 
-def add_args_tank_stats_prune(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_prune(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	debug('starting')
 	return True
 
 
-def add_args_tank_stats_import(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	"""Add argument parser for tank-stats import"""
 	try:
 		debug('starting')
@@ -206,7 +206,7 @@ def add_args_tank_stats_import(parser: ArgumentParser, config: Optional[ConfigPa
 	return False
 
 
-def add_args_tank_stats_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_tank_stat_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		EXPORT_FORMAT 	= 'json'
@@ -254,20 +254,20 @@ def add_args_tank_stats_export(parser: ArgumentParser, config: Optional[ConfigPa
 #
 ###########################################
 
-async def cmd_tank_stats(db: Backend, args : Namespace) -> bool:
+async def cmd(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		if args.tank_stats_cmd == 'fetch':
-			return await cmd_tank_stats_fetch(db, args)
+			return await cmd_fetch(db, args)
 
 		elif args.tank_stats_cmd == 'edit':
-			return await cmd_tank_stats_edit(db, args)
+			return await cmd_edit(db, args)
 
 		elif args.tank_stats_cmd == 'export':
-			return await cmd_tank_stats_export(db, args)
+			return await cmd_export(db, args)
 
 		elif args.tank_stats_cmd == 'import':
-			return await cmd_tank_stats_import(db, args)
+			return await cmd_importMP(db, args)
 			
 	except Exception as err:
 		error(f'{err}')
@@ -275,11 +275,11 @@ async def cmd_tank_stats(db: Backend, args : Namespace) -> bool:
 
 ########################################################
 # 
-# cmd_tank_stats_get()
+# cmd_get()
 #
 ########################################################
 
-async def cmd_tank_stats_fetch(db: Backend, args : Namespace) -> bool:
+async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 	"""fetch tank stats"""
 	assert 'wg_app_id' in args and type(args.wg_app_id) is str, "'wg_app_id' must be set and string"
 	assert 'rate_limit' in args and (type(args.rate_limit) is float or \
@@ -306,7 +306,7 @@ async def cmd_tank_stats_fetch(db: Backend, args : Namespace) -> bool:
 			retryQ = IterableQueue()		# must not use maxsize
 		
 		tasks : list[Task] = list()
-		tasks.append(create_task(fetch_tank_stats_backend_worker(db, statsQ)))
+		tasks.append(create_task(fetch_backend_worker(db, statsQ)))
 
 		# Process accountQ
 		accounts : int = await db.accounts_count(StatsTypes.tank_stats, regions=regions, 
@@ -316,7 +316,7 @@ async def cmd_tank_stats_fetch(db: Backend, args : Namespace) -> bool:
 		task_bar : Task = create_task(alive_bar_monitor([accountQ], total=accounts, 
 														title="Fetching tank stats"))
 		for _ in range(min([args.threads, ceil(accounts/4)])):
-			tasks.append(create_task(fetch_tank_stats_api_worker(db, wg_api=wg, accountQ=accountQ, 
+			tasks.append(create_task(fetch_api_worker(db, wg_api=wg, accountQ=accountQ, 
 																	statsQ=statsQ, retryQ=retryQ, 
 																	disabled=args.disabled)))
 
@@ -332,7 +332,7 @@ async def cmd_tank_stats_fetch(db: Backend, args : Namespace) -> bool:
 			task_bar = create_task(alive_bar_monitor([retryQ], total=retry_accounts, 
 													  title="Retrying failed accounts"))
 			for _ in range(min([args.threads, ceil(retry_accounts/4)])):
-				tasks.append(create_task(fetch_tank_stats_api_worker(db, wg_api=wg,  
+				tasks.append(create_task(fetch_api_worker(db, wg_api=wg,  
 																		accountQ=retryQ, 
 																		statsQ=statsQ)))
 			await retryQ.join()
@@ -361,7 +361,7 @@ async def cmd_tank_stats_fetch(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def fetch_tank_stats_api_worker(db: Backend, wg_api : WGApi,										
+async def fetch_api_worker(db: Backend, wg_api : WGApi,										
 										accountQ: IterableQueue[BSAccount], 
 										statsQ	: Queue[list[WGtankStat]], 
 										retryQ 	: IterableQueue[BSAccount] | None = None, 
@@ -427,7 +427,7 @@ async def fetch_tank_stats_api_worker(db: Backend, wg_api : WGApi,
 	return stats
 
 
-async def fetch_tank_stats_backend_worker(db: Backend, statsQ: Queue[list[WGtankStat]]) -> EventCounter:
+async def fetch_backend_worker(db: Backend, statsQ: Queue[list[WGtankStat]]) -> EventCounter:
 	"""Async worker to add tank stats to backend. Assumes batch is for the same account"""
 	debug('starting')
 	stats 		: EventCounter = EventCounter(f'db: {db.driver}')
@@ -489,11 +489,11 @@ async def fetch_tank_stats_backend_worker(db: Backend, statsQ: Queue[list[WGtank
 
 ########################################################
 # 
-# cmd_tank_stats_edit()
+# cmd_edit()
 #
 ########################################################
 
-async def cmd_tank_stats_edit(db: Backend, args : Namespace) -> bool:
+async def cmd_edit(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		release 	: BSBlitzRelease | None = None
@@ -514,7 +514,7 @@ async def cmd_tank_stats_edit(db: Backend, args : Namespace) -> bool:
 		N : int = await db.tank_stats_count(release=release, regions=regions, 
 											accounts=accounts,since=since, sample=sample)
 		if args.tank_stats_edit_cmd == 'remap-release':
-			edit_task = create_task(cmd_tank_stats_edit_rel_remap(db, tank_statQ, commit, N))
+			edit_task = create_task(cmd_edit_rel_remap(db, tank_statQ, commit, N))
 		else:
 			raise NotImplementedError		
 		
@@ -537,7 +537,7 @@ async def cmd_tank_stats_edit(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def cmd_tank_stats_edit_rel_remap(db: Backend, tank_statQ : Queue[WGtankStat], 
+async def cmd_edit_rel_remap(db: Backend, tank_statQ : Queue[WGtankStat], 
 										commit: bool = False, total: int | None = None) -> EventCounter:
 	"""Remap tank stat's releases"""
 	debug('starting')
@@ -584,11 +584,11 @@ async def cmd_tank_stats_edit_rel_remap(db: Backend, tank_statQ : Queue[WGtankSt
 
 ########################################################
 # 
-# cmd_tank_stats_export()
+# cmd_tank_stat_export()
 #
 ########################################################
 
-async def cmd_tank_stats_export(db: Backend, args : Namespace) -> bool:
+async def cmd_export(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')		
 		assert type(args.sample) in [int, float], 'param "sample" has to be a number'
@@ -674,12 +674,12 @@ async def cmd_tank_stats_export(db: Backend, args : Namespace) -> bool:
 
 ########################################################
 # 
-# cmd_tank_stats_import()
+# cmd_import()
 #
 ########################################################
 
 
-async def cmd_tank_stats_import(db: Backend, args : Namespace) -> bool:
+async def cmd_import(db: Backend, args : Namespace) -> bool:
 	"""Import tank stats from other backend"""	
 	try:
 		debug('starting')
