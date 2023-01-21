@@ -281,6 +281,21 @@ class Backend(ABC):
 		return self._database
 
 	
+	@property
+	def config(self) -> dict[str, Any]:
+		return self._config
+
+	
+	@property
+	def table_config(self) -> dict[BSTableType, str]:
+		return self._T
+
+
+	@property
+	def model_config(self) -> dict[BSTableType, type[JSONExportable]]:
+		return self._M
+
+
 	def set_database(self, database : str) -> None:
 		"""Set database"""
 		assert is_alphanum(database), f'Illegal characters in the table name: {database}'
