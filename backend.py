@@ -158,16 +158,16 @@ class Backend(ABC):
 
 
 	@classmethod
-	def register(cls, name : str, backend: type['Backend']) -> bool:
+	def register(cls, driver : str, backend: type['Backend']) -> bool:
 		try:
-			debug(f'Registering backend: {name}')
-			if name not in cls._backends:
-				cls._backends[name] = backend
+			debug(f'Registering backend: {driver}')
+			if driver not in cls._backends:
+				cls._backends[driver] = backend
 				return True
 			else:
-				error(f'Backend {name} has already been registered')
+				error(f'Backend {driver} has already been registered')
 		except Exception as err:
-			error(f'Error registering backend {name}: {err}')
+			error(f'Error registering backend {driver}: {err}')
 		return False
 
 	

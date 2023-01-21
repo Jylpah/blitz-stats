@@ -1548,4 +1548,4 @@ class MongoBackend(Backend):
 # Register backend
 
 debug('Registering mongodb')
-Backend.register(name=MongoBackend.driver, backend=MongoBackend)
+Backend.register(driver=MongoBackend.driver, backend=MongoBackend)
