@@ -460,7 +460,7 @@ class Backend(ABC):
 	
 
 	@abstractmethod
-	async def obj_export(self, data_type: BSTableType, 
+	async def obj_export(self, model: BSTableType, 
 						 sample: float = 0) -> AsyncGenerator[Any, None]:
 		"""Export raw object from backend"""
 		raise NotImplementedError
@@ -589,7 +589,7 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def accounts_export(self, data_type: type[Account] = BSAccount, 
+	async def accounts_export(self, model: type[Account] = BSAccount, 
 								sample : float = 0) -> AsyncGenerator[BSAccount, None]:
 		"""import accounts"""
 		raise NotImplementedError
@@ -655,7 +655,7 @@ class Backend(ABC):
 
 
 	@abstractmethod	
-	async def releases_export(self, data_type: type[BSBlitzRelease] = BSBlitzRelease, 
+	async def releases_export(self, model: type[JSONExportable] = BSBlitzRelease, 
 								sample: float = 0) -> AsyncGenerator[BSBlitzRelease, None]:
 		"""Import releases"""
 		raise NotImplementedError
@@ -762,7 +762,7 @@ class Backend(ABC):
 		return stats
 	
 
-	async def replays_export(self, data_type: type[WoTBlitzReplayJSON] = WoTBlitzReplayJSON,
+	async def replays_export(self, model: type[WoTBlitzReplayJSON] = WoTBlitzReplayJSON,
 							 sample: float = 0) -> AsyncGenerator[WoTBlitzReplayJSON, None]:			
 		"""Export replays from Mongo DB"""
 		raise NotImplementedError
@@ -838,7 +838,7 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def tank_stat_export(self, data_type: type[JSONExportable] = WGtankStat, 
+	async def tank_stat_export(self, model: type[JSONExportable] = WGtankStat, 
 								sample: float = 0) -> AsyncGenerator[WGtankStat, None]:
 		"""Export tank stats from Mongo DB"""
 		raise NotImplementedError
@@ -846,7 +846,7 @@ class Backend(ABC):
 
 	
 	@abstractmethod
-	async def tank_stats_export(self, data_type: type[JSONExportable] = WGtankStat, 
+	async def tank_stats_export(self, model: type[JSONExportable] = WGtankStat, 
 								sample: float = 0, batch: int = 0) -> AsyncGenerator[list[WGtankStat], None]:
 		"""Export tank stats from Mongo DB"""
 		raise NotImplementedError
@@ -957,7 +957,7 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def player_achievements_export(self, data_type: type[JSONExportable] = WGplayerAchievementsMaxSeries, 
+	async def player_achievements_export(self, model: type[JSONExportable] = WGplayerAchievementsMaxSeries, 
 								sample: float = 0) -> AsyncGenerator[WGplayerAchievementsMaxSeries, None]:
 		"""Export player achievements from Mongo DB"""
 		raise NotImplementedError
