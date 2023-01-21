@@ -41,7 +41,7 @@ EXPORT_SUPPORTED_FORMATS : list[str] = ['json', 'txt', 'csv']
 #
 ###########################################
 
-def add_args_accounts(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		accounts_parsers = parser.add_subparsers(dest='accounts_cmd', 	
@@ -51,19 +51,19 @@ def add_args_accounts(parser: ArgumentParser, config: Optional[ConfigParser] = N
 		accounts_parsers.required = True
 		
 		update_parser = accounts_parsers.add_parser('update', aliases=['get'], help="accounts update help")
-		if not add_args_accounts_update(update_parser, config=config):
+		if not add_args_update(update_parser, config=config):
 			raise Exception("Failed to define argument parser for: accounts update")
 		
 		export_parser = accounts_parsers.add_parser('export', help="accounts export help")
-		if not add_args_accounts_export(export_parser, config=config):
+		if not add_args_export(export_parser, config=config):
 			raise Exception("Failed to define argument parser for: accounts export")
 		
 		remove_parser = accounts_parsers.add_parser('remove', aliases=['rm'], help="accounts remove help")
-		if not add_args_accounts_remove(remove_parser, config=config):
+		if not add_args_remove(remove_parser, config=config):
 			raise Exception("Failed to define argument parser for: accounts remove")
 
 		import_parser = accounts_parsers.add_parser('import', help="accounts import help")
-		if not add_args_accounts_import(import_parser, config=config):
+		if not add_args_import(import_parser, config=config):
 			raise Exception("Failed to define argument parser for: accounts import")	
 		
 		return True
@@ -72,7 +72,7 @@ def add_args_accounts(parser: ArgumentParser, config: Optional[ConfigParser] = N
 	return False
 
 
-def add_args_accounts_update(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_update(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		accounts_update_parsers = parser.add_subparsers(dest='accounts_update_source', 	
@@ -81,11 +81,11 @@ def add_args_accounts_update(parser: ArgumentParser, config: Optional[ConfigPars
 														metavar='wi | files')
 		accounts_update_parsers.required = True
 		accounts_update_wi_parser = accounts_update_parsers.add_parser('wi', help='accounts update wi help')
-		if not add_args_accounts_update_wi(accounts_update_wi_parser, config=config):
+		if not add_args_update_wi(accounts_update_wi_parser, config=config):
 			raise Exception("Failed to define argument parser for: accounts update wi")
 		
 		accounts_update_files_parser = accounts_update_parsers.add_parser('files', help='accounts update files help')
-		if not add_args_accounts_update_files(accounts_update_files_parser, config=config):
+		if not add_args_update_files(accounts_update_files_parser, config=config):
 			raise Exception("Failed to define argument parser for: accounts update files")		
 		
 		parser.add_argument('--force', action='store_true', default=False, 
@@ -97,7 +97,7 @@ def add_args_accounts_update(parser: ArgumentParser, config: Optional[ConfigPars
 	return False
 
 
-def add_args_accounts_update_wi(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_update_wi(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		global WI_MAX_OLD_REPLAYS
@@ -137,7 +137,7 @@ def add_args_accounts_update_wi(parser: ArgumentParser, config: Optional[ConfigP
 	return False
 
 
-def add_args_accounts_update_files(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_update_files(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		IMPORT_FORMAT 	= 'txt'
@@ -155,7 +155,7 @@ def add_args_accounts_update_files(parser: ArgumentParser, config: Optional[Conf
 	return False
 
 
-def add_args_accounts_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		EXPORT_FORMAT 	= 'txt'
@@ -188,7 +188,7 @@ def add_args_accounts_export(parser: ArgumentParser, config: Optional[ConfigPars
 	return False
 
 
-def add_args_accounts_import(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	"""Add argument parser for accounts import"""
 	try:
 		debug('starting')
@@ -220,7 +220,7 @@ def add_args_accounts_import(parser: ArgumentParser, config: Optional[ConfigPars
 	return False
 
 
-def add_args_accounts_remove(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_remove(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		IMPORT_FORMAT 	= 'txt'
@@ -249,28 +249,28 @@ def add_args_accounts_remove(parser: ArgumentParser, config: Optional[ConfigPars
 #
 ###########################################
 
-async def cmd_accounts(db: Backend, args : Namespace) -> bool:
+async def cmd(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 
 		if args.accounts_cmd == 'update':
-			return await cmd_accounts_update(db, args)
+			return await cmd_update(db, args)
 
 		elif args.accounts_cmd == 'export':
-			return await cmd_accounts_export(db, args)
+			return await cmd_export(db, args)
 		
 		elif args.accounts_cmd == 'import':
-			return await cmd_accounts_import(db, args)
+			return await cmd_import(db, args)
 
 		elif args.accounts_cmd == 'remove':
-			return await cmd_accounts_remove(db, args)
+			return await cmd_remove(db, args)
 
 	except Exception as err:
 		error(f'{err}')
 	return False
 
 
-async def cmd_accounts_update(db: Backend, args : Namespace) -> bool:
+async def cmd_update(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		
@@ -281,10 +281,10 @@ async def cmd_accounts_update(db: Backend, args : Namespace) -> bool:
 		try:
 			if args.accounts_update_source == 'wi':
 				debug('wi')
-				stats.merge_child(await cmd_accounts_update_wi(db, args, accountQ))
+				stats.merge_child(await cmd_update_wi(db, args, accountQ))
 			elif args.accounts_update_source == 'files':
 				debug('files')
-				stats.merge_child(await cmd_accounts_update_files(db, args, accountQ))
+				stats.merge_child(await cmd_update_files(db, args, accountQ))
 		except Exception as err:
 			error(f'{err}')
 
@@ -340,14 +340,14 @@ async def accounts_add_worker(db: Backend, accountQ: Queue[list[int]]) -> EventC
 	return stats
 
 
-async def cmd_accounts_update_files(db: Backend, args : Namespace, 
+async def cmd_update_files(db: Backend, args : Namespace, 
 									accountQ : Queue[list[int]]) -> EventCounter:
 	
 	debug('starting')
 	raise NotImplementedError
 
 
-async def cmd_accounts_update_wi(db: Backend, args : Namespace, accountQ : Queue[list[int]]) -> EventCounter:
+async def cmd_update_wi(db: Backend, args : Namespace, accountQ : Queue[list[int]]) -> EventCounter:
 	"""Fetch account_ids from replays.wotinspector.com replays"""
 	debug('starting')
 	stats		: EventCounter = EventCounter('WoTinspector')
@@ -479,7 +479,7 @@ async def accounts_update_wi_fetch_replays(db: Backend, wi: WoTinspector, replay
 	return stats
 
 
-async def cmd_accounts_import(db: Backend, args : Namespace) -> bool:
+async def cmd_import(db: Backend, args : Namespace) -> bool:
 	"""Import accounts from other backend"""	
 	try:
 		stats 			: EventCounter 			= EventCounter('accounts import')
@@ -529,7 +529,7 @@ async def cmd_accounts_import(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
+async def cmd_export(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		assert type(args.distributed) is int, 'param "distributed" has to be integer'
@@ -630,7 +630,7 @@ async def cmd_accounts_export(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def cmd_accounts_remove(db: Backend, args : Namespace) -> bool:
+async def cmd_remove(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		raise NotImplementedError
