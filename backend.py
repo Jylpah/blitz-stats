@@ -317,7 +317,10 @@ class Backend(ABC):
 
 	def get_model(self, table: BSTableType | str) -> type[JSONExportable]:
 		"""Get collection model"""
-		return self._M[table]
+		if isinstance(table, str):
+			return self._M[self._Tr[table]] 
+		else:
+			return self._M[table]
 		
 
 	def set_model(self, table: BSTableType | str, model: type[JSONExportable] |str) -> None:
