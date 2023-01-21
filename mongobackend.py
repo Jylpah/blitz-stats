@@ -845,12 +845,12 @@ class MongoBackend(Backend):
 		return -1
 
 
-	async def accounts_export(self, data_type: type[Account] = BSAccount, 
+	async def accounts_export(self, model: type[Account] = BSAccount, 
 								sample : float = 0) -> AsyncGenerator[BSAccount, None]:
 		"""Import accounts from Mongo DB"""
 		debug('starting')
 		async for account in self._datas_export(self.collection_accounts, 
-												in_type=data_type, 
+												in_type=model, 
 												out_type=BSAccount, 
 												sample=sample):
 			yield account
@@ -1007,11 +1007,11 @@ class MongoBackend(Backend):
 										datas=player_achievements, upsert=upsert)
 
 
-	async def player_achievements_export(self, data_type: type[JSONExportable] = WGplayerAchievementsMaxSeries, 
+	async def player_achievements_export(self, model: type[JSONExportable] = WGplayerAchievementsMaxSeries, 
 								sample: float = 0) -> AsyncGenerator[WGplayerAchievementsMaxSeries, None]:
 		"""Export player achievements from Mongo DB"""
 		async for pa in self._datas_export(self.collection_player_achievements, 
-												in_type=data_type, 
+												in_type=model, 
 												out_type=WGplayerAchievementsMaxSeries, 
 												sample=sample):
 			yield pa
@@ -1147,12 +1147,12 @@ class MongoBackend(Backend):
 			error(f'Error getting releases: {err}')
 
 
-	async def releases_export(self, data_type: type[WGBlitzRelease] = BSBlitzRelease, 
+	async def releases_export(self, model: type[JSONExportable] = BSBlitzRelease, 
 							sample : float = 0) -> AsyncGenerator[BSBlitzRelease, None]:
 		"""Import relaseses from Mongo DB"""
 		debug('starting')
 		async for release in self._datas_export(self.collection_releases, 
-												in_type=data_type, 
+												in_type=model, 
 												out_type=BSBlitzRelease, 
 												sample=sample):
 			# debug(f'Exporting release {release}: {release.json_src()}')
@@ -1266,6 +1266,7 @@ class MongoBackend(Backend):
 # MongoBackend(): tank_stats
 #
 ########################################################
+
 
 	async def tank_stat_insert(self, tank_stat: WGtankStat) -> bool:
 		"""Insert a single tank stat"""
@@ -1442,18 +1443,18 @@ class MongoBackend(Backend):
 
 
 
-	async def tank_stat_export(self, data_type: type[JSONExportable] = WGtankStat, 
+	async def tank_stat_export(self, model: type[JSONExportable] = WGtankStat, 
 								sample: float = 0) -> AsyncGenerator[WGtankStat, None]:
 		"""Export tank stats from Mongo DB"""
 		debug('starting')
 		async for tank_stat in self._datas_export(self.collection_tank_stats, 
-												in_type=data_type, 
+												in_type=model, 
 												out_type=WGtankStat, 
 												sample=sample):
 			yield tank_stat
 
 
-	async def tank_stats_export(self, data_type: type[JSONExportable] = WGtankStat, 
+	async def tank_stats_export(self, model: type[JSONExportable] = WGtankStat, 
 								sample: float = 0, batch: int = 0) -> AsyncGenerator[list[WGtankStat], None]:
 		"""Export tank stats as list from Mongo DB"""
 		debug('starting')
@@ -1462,7 +1463,7 @@ class MongoBackend(Backend):
 
 		res : list[WGtankStat] = list()
 		async for i, tank_stat in enumerate(self._datas_export(self.collection_tank_stats, 
-												in_type=data_type, 
+												in_type=model, 
 												out_type=WGtankStat, 
 												sample=sample), start=1):
 
