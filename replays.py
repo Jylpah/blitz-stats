@@ -8,7 +8,8 @@ from os.path import isfile
 
 from backend import Backend, BSTableType
 
-from pyutils import get_url, get_url_JSON_model, epoch_now, EventCounter, is_alphanum
+from pyutils import get_url, get_url_JSON_model, epoch_now, EventCounter, \
+					JSONExportable, is_alphanum, get_sub_type
 from blitzutils.models import WoTBlitzReplayJSON, Region
 from blitzutils.wotinspector import WoTinspector
 
@@ -33,7 +34,7 @@ REPLAY_Q_MAX : int 					= 500
 ###########################################
 
 
-def add_args_replays(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:		
 		replays_parsers = parser.add_subparsers(dest='replays_cmd', 	
 												title='replays commands',
@@ -42,22 +43,22 @@ def add_args_replays(parser: ArgumentParser, config: Optional[ConfigParser] = No
 												metavar='export')
 		replays_parsers.required = True
 		export_parser = replays_parsers.add_parser('export', help="replays export help")
-		if not add_args_replays_export(export_parser, config=config):
+		if not add_args_export(export_parser, config=config):
 			raise Exception("Failed to define argument parser for: replays export")
 
 		import_parser = replays_parsers.add_parser('import', help="replays import help")
-		if not add_args_replays_import(import_parser, config=config):
+		if not add_args_import(import_parser, config=config):
 			raise Exception("Failed to define argument parser for: replays import")		
 				
 		return True
 	except Exception as err:
-		error(f'add_args_replays(): {err}')
+		error(f'add_args(): {err}')
 	return False
 
 
 ## -
 
-def add_args_replays_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		parser.add_argument('--file', action='store_true', default=False, 
 							dest='replay_export_file', 
@@ -70,41 +71,41 @@ def add_args_replays_export(parser: ArgumentParser, config: Optional[ConfigParse
 		
 
 		replays_export_id_parser = replays_export_parsers.add_parser('id', help='replays export id help')
-		if not add_args_replays_export_id(replays_export_id_parser, config=config):
+		if not add_args_export_id(replays_export_id_parser, config=config):
 			raise Exception("Failed to define argument parser for: replays export id")
 		
 		## Not implemented yet
 		# replays_export_find_parser = replays_export_parsers.add_parser('find', help='replays export find help')
-		# if not add_args_replays_export_find(replays_export_find_parser, config=config):
+		# if not add_args_export_find(replays_export_find_parser, config=config):
 		# 	raise Exception("Failed to define argument parser for: replays export find")		
 		
 		return True	
 	except Exception as err:
-		error(f'add_args_replays_export() : {err}')
+		error(f'add_args_export() : {err}')
 	return False
 
 
-def add_args_replays_export_id(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_export_id(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	"""Add argparse arguments for replays export id -subcommand"""
 	try:
 		parser.add_argument('replay_export_id',type=str, metavar='REPLAY-ID', help='Replay ID to export')		
 		return True
 	except Exception as err:
-		error(f'add_args_replays_export_id() : {err}')
+		error(f'add_args_export_id() : {err}')
 	return False
 
 
-def add_args_replays_export_find(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_export_find(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	"""Add argparse arguments for replays export find -subcommand"""
 	## NOT IMPLEMENTED
 	try:
 		return True
 	except Exception as err:
-		error(f'add_args_replays_export_find() : {err}')
+		error(f'add_args_export_find() : {err}')
 	return False
 
 
-def add_args_replays_import(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		import_parsers = parser.add_subparsers(dest='import_backend', 	
 														title='replays import backend',
@@ -123,7 +124,7 @@ def add_args_replays_import(parser: ArgumentParser, config: Optional[ConfigParse
 				
 		return True	
 	except Exception as err:
-		error(f'add_args_replays_import() : {err}')
+		error(f'add_args_import() : {err}')
 	return False
 
 
@@ -133,7 +134,7 @@ def add_args_replays_import(parser: ArgumentParser, config: Optional[ConfigParse
 #
 ###########################################
 
-async def cmd_replays(db: Backend, args : Namespace) -> bool:
+async def cmd(db: Backend, args : Namespace) -> bool:
 	
 	try:
 		debug('replays')
@@ -141,21 +142,21 @@ async def cmd_replays(db: Backend, args : Namespace) -> bool:
 		if args.replays_cmd == 'export':
 			if args.replays_export_query_type == 'id':
 				debug('export id')
-				return await cmd_replays_export_id(db, args)
+				return await cmd_export_id(db, args)
 			elif args.replays_export_query_type == 'find':
 				debug('find')
-				return await cmd_replays_export_find(db, args)
+				return await cmd_export_find(db, args)
 			else:
 				error('replays: unknown or missing subcommand')
 		elif args.replays_cmd == 'import':
-			return await cmd_replays_import(db, args)
+			return await cmd_import(db, args)
 
 	except Exception as err:
 		error(f'{err}')
 	return False
 
 
-async def cmd_replays_export_id(db: Backend, args : Namespace) -> bool:
+async def cmd_export_id(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		id : str = args.replay_export_id
@@ -164,7 +165,7 @@ async def cmd_replays_export_id(db: Backend, args : Namespace) -> bool:
 			error('Could not find replay id: {id}')
 			return False
 		if args.replay_export_file:
-			return await replays_export_files(args, [replay])
+			return await cmd_export_files(args, [replay])
 		else:
 			print(replay.json_src(indent=4))			
 		return True 
@@ -173,16 +174,17 @@ async def cmd_replays_export_id(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def replays_export_files(args: Namespace, replays: Iterable[WoTBlitzReplayJSON]) -> bool:
-	raise NotImplementedError
-	return False
-
-async def cmd_replays_export_find(db: Backend, args : Namespace) -> bool:
+async def cmd_export_files(args: Namespace, replays: Iterable[WoTBlitzReplayJSON]) -> bool:
 	raise NotImplementedError
 	return False
 
 
-async def  cmd_replays_import(db: Backend, args : Namespace) -> bool:
+async def cmd_export_find(db: Backend, args : Namespace) -> bool:
+	raise NotImplementedError
+	return False
+
+
+async def  cmd_import(db: Backend, args : Namespace) -> bool:
 	"""Import replays from other backend"""	
 	try:
 		assert is_alphanum(args.import_model), f'invalid --import-model: {args.import_model}'
