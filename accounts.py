@@ -18,7 +18,7 @@ from models import BSAccount, StatsTypes
 from models_import import WG_Account
 from pyutils import CounterQueue, EventCounter,  TXTExportable, CSVExportable, JSONExportable,\
 					IterableQueue, QueueDone, alive_bar_monitor, get_url, get_url_JSON_model, epoch_now, export, \
-					is_alphanum
+					is_alphanum, get_sub_type
 from blitzutils.models import WoTBlitzReplayJSON, Region, Account
 from blitzutils.wotinspector import WoTinspector
 
@@ -204,7 +204,7 @@ def add_args_accounts_import(parser: ArgumentParser, config: Optional[ConfigPars
 			if not backend.add_args_import(import_parser, config=config):
 				raise Exception(f'Failed to define argument parser for: accounts import {backend.driver}')
 				
-		parser.add_argument('--import-type', metavar='IMPORT-TYPE', type=str, 
+		parser.add_argument('--import-model', metavar='IMPORT-TYPE', type=str, 
 							default='BSAccount', choices=['BSAccount', 'WG_Account'], 
 							help='Data format to import. Default is blitz-stats native format.')
 		parser.add_argument('--region', type=str, nargs='*', 
@@ -482,35 +482,25 @@ async def accounts_update_wi_fetch_replays(db: Backend, wi: WoTinspector, replay
 async def cmd_accounts_import(db: Backend, args : Namespace) -> bool:
 	"""Import accounts from other backend"""	
 	try:
-		assert is_alphanum(args.import_type), f'invalid --import-type: {args.import_type}'
-
 		stats 		: EventCounter 			= EventCounter('accounts import')
 		accountQ 	: Queue[BSAccount]		= Queue(ACCOUNTS_Q_MAX)
-		config 		: ConfigParser | None 	= None
 		regions 	: set[Region]			= { Region(r) for r in args.region }
-		import_type : str 					= args.import_type
+		import_db   	: Backend | None 				= None
+		import_model 	: type[JSONExportable] | None 	= None
 		import_backend 	: str 				= args.import_backend
-		import_table	: str | None		= args.import_table
 
-		importer : Task = create_task(db.accounts_insert_worker(accountQ=accountQ, force=args.force))
+		if (import_model := get_sub_type(args.import_model, JSONExportable)) is None:
+			raise ValueError("--import-model has to be subclass of JSONExportable")
 
-		if args.import_config is not None and isfile(args.import_config):
-			debug(f'Reading config from {args.config}')
-			config = ConfigParser()
-			config.read(args.config)
+		write_worker : Task = create_task(db.accounts_insert_worker(accountQ=accountQ, 
+																	force=args.force))
 
-		kwargs : dict[str, Any] = Backend.read_args(args=args, backend=import_backend)
-		if (import_db:= Backend.create(import_backend, config=config, copy_from=db, **kwargs)) is not None:
-			if import_table is not None:
-				import_db.set_table(BSTableType.Accounts, import_table)
-			elif db == import_db and db.table_accounts == import_db.table_accounts:
-				raise ValueError('Cannot import from itself')
-		else:
+		if (import_db := Backend.create_import_backend(driver=import_backend, 
+														args=args, 
+														import_type=BSTableType.Accounts, 
+														db=db,
+														config_file=args.import_config)) is None:
 			raise ValueError(f'Could not init {import_backend} to import accounts from')
-
-		account_type: type[Account] = globals()[import_type]
-		assert issubclass(account_type, Account), "--import-type has to be subclass of blitzutils.models.Account" 
-		import_db.set_model(import_db.table_accounts, account_type)
 
 		message('Counting accounts to import ...')
 		N : int = await db.accounts_count(regions=regions,
@@ -518,14 +508,16 @@ async def cmd_accounts_import(db: Backend, args : Namespace) -> bool:
 										sample=args.sample)
 
 		with alive_bar(N, title="Importing accounts ", enrich_print=False) as bar:
-			async for account in import_db.accounts_export(data_type=account_type, sample=args.sample):
+			async for account in import_db.accounts_export(model=import_model, 
+															sample=args.sample):
 				await accountQ.put(account)
 				bar()
 				stats.log('read')
 
 		await accountQ.join()
-		importer.cancel()
-		worker_res : tuple[EventCounter|BaseException] = await gather(importer,return_exceptions=True)
+		write_worker.cancel()
+		worker_res : tuple[EventCounter|BaseException] = await gather(write_worker,
+																	return_exceptions=True)
 		if type(worker_res[0]) is EventCounter:
 			stats.merge_child(worker_res[0])
 		elif type(worker_res[0]) is BaseException:
