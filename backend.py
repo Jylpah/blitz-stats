@@ -182,21 +182,24 @@ class Backend(ABC):
 
 			
 
-	def config_tables(self, table_config: dict[BSTableType, str] | None = None ): 
+	def config_tables(self, table_config: dict[BSTableType, str] | None = None ) -> None: 
 		try:
 			if table_config is not None:
 				for table_type, table in table_config.items():
-					self.set_table(table_type, table)
-				
+					self.set_table(table_type, table)				
 		except Exception as err:
 			error(f'{err}')
 		return None
 
 
-	def config_models(self, model_config : dict[BSTableType, type[JSONExportable]] | None = None):
-		if model_config is not None:
-			for table_type, model in model_config.items():
-				self.set_model(table_type, model)
+	def config_models(self, model_config : dict[BSTableType, type[JSONExportable]] | None = None) ->  None:
+		try:
+			if model_config is not None:
+				for table_type, model in model_config.items():
+					self.set_model(table_type, model)
+		except Exception as err:
+			error(f'{err}')
+		return None
 
 
 	@classmethod
