@@ -185,39 +185,28 @@ async def cmd_replays_export_find(db: Backend, args : Namespace) -> bool:
 async def  cmd_replays_import(db: Backend, args : Namespace) -> bool:
 	"""Import replays from other backend"""	
 	try:
-		assert is_alphanum(args.import_type), f'invalid --import-type: {args.import_type}'
+		assert is_alphanum(args.import_model), f'invalid --import-model: {args.import_model}'
 
 		stats 		: EventCounter 			= EventCounter('replays import')
 		replayQ 	: Queue[WoTBlitzReplayJSON]	= Queue(REPLAY_Q_MAX)
-		config 		: ConfigParser | None 	= None
 		sample  	: float 				= args.sample
-		import_type 	: str 				= args.import_type
-		import_backend 	: str 				= args.import_backend
-		import_table	: str | None		= args.import_table
+		import_db   	: Backend | None 				= None
+		import_backend 	: str 							= args.import_backend
+		import_model 	: type[JSONExportable] | None 	= None
+
+		if (import_model := get_sub_type(args.import_model, JSONExportable)) is None:
+			raise ValueError("--import-model has to be subclass of JSONExportable")
 
 		importer : Task = create_task(db.replays_insert_worker(replayQ=replayQ, force=args.force))
 
-		if args.import_config is not None and isfile(args.import_config):
-			debug(f'Reading config from {args.config}')
-			config = ConfigParser()
-			config.read(args.config)
-		else:
-			debug('Not using config')
+		if (import_db := Backend.create_import_backend(driver=import_backend, 
+														args=args, 
+														import_type=BSTableType.Releases, 
+														db=db,
+														config_file=args.import_config)) is None:
+			raise ValueError(f'Could not init {import_backend} to import releases from')
 
-		kwargs : dict[str, Any] = Backend.read_args(args, import_backend)
-		if (import_db:= Backend.create(import_backend, 
-										config=config, copy_from=db, **kwargs)) is not None:
-			if import_table is not None:
-				import_db.set_table(BSTableType.Replays, import_table)
-			elif db == import_db and db.table_replays == import_db.table_replays:
-				raise ValueError('Cannot import from itself')
-		else:
-			raise ValueError(f'Could not init {import_backend} to import replays from')
-
-		replay_type: type[WoTBlitzReplayJSON] = globals()[import_type]
-		assert issubclass(replay_type, WoTBlitzReplayJSON), "--import-type has to be subclass of blitzutils.models.WoTBlitzReplayJSON" 
-
-		async for replay in import_db.replays_export(data_type=replay_type, sample=sample):
+		async for replay in import_db.replays_export(model=import_model, sample=sample):
 			await replayQ.put(replay)
 			stats.log('read')
 
