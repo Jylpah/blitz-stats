@@ -214,10 +214,34 @@ class Backend(ABC):
 	def read_args(cls, args : Namespace, backend: str) -> dict[str, Any]:
 		"""Read Argparse args for creating a Backend()"""
 		debug('starting')
-		if backend in cls._backends:
-			return cls._backends[backend].read_args(args, backend=backend)
-		else:
-			raise ValueError(f'Backend not implemented: {backend}')
+
+
+	@classmethod
+	def read_args_helper(cls, args : Namespace, 
+						params: Sequence[str | tuple[str, str]], 
+						importdb: bool = False) -> dict[str, Any]:
+		kwargs : dict[str, Any] = dict()
+		arg_dict : dict[str, Any]  = vars(args)
+		prefix : str = ''
+		if importdb:
+			prefix = 'import_'		
+		for param in params:
+			t : str
+			s : str
+			try:
+				if isinstance(param, tuple):
+					s = param[0]
+					t = param[1]
+				elif isinstance(param, str):
+					t = param
+					s = param
+				else:
+					raise TypeError(f"wrong param given: {type(param)}")		
+				s = prefix + s
+				kwargs[t] = arg_dict[s]
+			except KeyError as err:
+				error(f'{err}')
+		return kwargs
 
 
 	@classmethod
