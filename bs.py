@@ -136,7 +136,7 @@ async def main(argv: list[str]):
 			raise Exception("Failed to define argument parser for: replays")
 		if not releases.add_args(releases_parser, config):
 			raise Exception("Failed to define argument parser for: releases")
-		if not setup.add_args_setup(setup_parser, config):
+		if not setup.add_args(setup_parser, config):
 			raise Exception("Failed to define argument parser for: setup")
 		if not tank_stats.add_args(tank_stats_parser, config):
 			raise Exception("Failed to define argument parser for: tank-stats")
@@ -172,7 +172,7 @@ async def main(argv: list[str]):
 		elif args.main_cmd == 'tankopedia':
 			raise NotImplementedError
 		elif args.main_cmd == 'setup':
-			await setup.cmd_setup(backend, args)
+			await setup.cmd(backend, args)
 		else:
 			parser.print_help()
 
