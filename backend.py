@@ -1136,3 +1136,27 @@ class Backend(ABC):
 		"""Clear errors from backend ErrorLog"""
 		raise NotImplementedError
 		
+
+ 
+class ForkedBackend():
+	
+	def __init__(self, 
+				db			: Backend, 
+				readQ 		: queue.Queue, 
+				import_model: type[JSONExportable], 
+				options		: dict[str, Any] = dict()):
+		"""Import Backend for forked processes"""		
+		self.db				: Backend = db
+		self.readQ			: queue.Queue = readQ
+		self.import_model	: type[JSONExportable] = import_model
+		self._options		: dict[str, Any] = options
+
+
+	def add_option(self, option: str, value: Any):
+		self._options[option] = value
+
+
+	def option(self, option: str) -> Any | None:
+		if option in self._options:
+			return self._options[option]
+		return None
