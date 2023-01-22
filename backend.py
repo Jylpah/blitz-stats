@@ -131,7 +131,7 @@ class Backend(ABC):
 			CLI arguments overide settings in the config file"""
 		
 		self._database	: str 	= 'BlitzStats'
-		self._config 	: dict[str, Any]
+		self._db_config 	: dict[str, Any]
 		self._T 		: dict[BSTableType, str] = dict()
 		self._Tr 		: dict[str, BSTableType] = dict()
 		self._M 		: dict[BSTableType, type[JSONExportable]] = dict()
@@ -228,8 +228,6 @@ class Backend(ABC):
 	@classmethod
 	def create(cls, driver : str, 
 				config : ConfigParser | None = None, 
-				copy_from: Optional['Backend'] = None, 
-					copy_from: Optional['Backend'] = None, 
 				copy_from: Optional['Backend'] = None, 
 				**kwargs) -> Optional['Backend']:
 		try:
@@ -630,7 +628,8 @@ class Backend(ABC):
 		raise NotImplementedError
 
 
-	async def accounts_insert_worker(self, accountQ : Queue[BSAccount], force: bool = False) -> EventCounter:
+	async def accounts_insert_worker(self, accountQ : Queue[BSAccount], 
+									force: bool = False) -> EventCounter:
 		debug(f'starting, force={force}')
 		stats : EventCounter = EventCounter('accounts insert')
 		try:
@@ -685,8 +684,10 @@ class Backend(ABC):
 
 	@abstractmethod
 	async def release_update(self, release: BSBlitzRelease, 
+							update: dict[str, Any] | None = None, 
 								update: dict[str, Any] | None = None, 
-								fields: list[str] | None= None) -> bool:
+							update: dict[str, Any] | None = None, 
+							fields: list[str] | None= None) -> bool:
 		"""Update an release in the backend. Returns False 
 			if the release was not updated"""
 		raise NotImplementedError
