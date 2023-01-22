@@ -156,13 +156,21 @@ class MongoBackend(Backend):
 			raise err
 
 
-	def copy(self, config : ConfigParser | None = None,**kwargs) -> Optional['Backend']:
+	def copy(self, config : ConfigParser | None = None, **kwargs) -> Optional['Backend']:
 		"""Create a copy of the backend"""
 		try:
 			debug('starting')
 			for param, value in kwargs.items():
 				self._config[param] = value
-			return MongoBackend(config=config, **self._config)
+			database : str = self.database
+			if 'database' in self._config.keys():
+				database = self._config['database']
+				del self._config['database']
+			return MongoBackend(config=config, 
+								database=database,
+								table_config=self.table_config, 
+								model_config=self.model_config, 
+								**self._config)
 		except Exception as err:
 			error(f'Error creating copy: {err}')
 		return None
