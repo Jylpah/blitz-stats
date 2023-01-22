@@ -160,17 +160,18 @@ class MongoBackend(Backend):
 		"""Create a copy of the backend"""
 		try:
 			debug('starting')
+			db_config : dict[str, Any] = self.config
 			for param, value in kwargs.items():
-				self._config[param] = value
+				db_config[param] = value
 			database : str = self.database
-			if 'database' in self._config.keys():
-				database = self._config['database']
-				del self._config['database']
+			if 'database' in db_config.keys():
+				database = db_config['database']
+				del db_config['database']
 			return MongoBackend(config=config, 
 								database=database,
 								table_config=self.table_config, 
 								model_config=self.model_config, 
-								**self._config)
+								**db_config)
 		except Exception as err:
 			error(f'Error creating copy: {err}')
 		return None
