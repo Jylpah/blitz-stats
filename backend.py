@@ -375,7 +375,12 @@ class Backend(ABC):
 
 	@property
 	def config(self) -> dict[str, Any]:
-		return self._config
+		return { 
+				'config'		: None, 
+				'database' 		: self.database, 
+				'table_config'	: self.table_config, 
+				'model_config'	: self.model_config
+				}
 
 	
 	@property
