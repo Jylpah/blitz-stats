@@ -292,9 +292,15 @@ class Backend(ABC):
 
 
 	@classmethod
-	def read_args(cls, args : Namespace, backend: str) -> dict[str, Any]:
+	def read_args(cls, args : Namespace, 
+					driver: str, 
+					importdb: bool = False) -> dict[str, Any]:
 		"""Read Argparse args for creating a Backend()"""
 		debug('starting')
+		if driver in cls._backends:
+			return cls._backends[driver].read_args(args, driver=driver, importdb=importdb)
+		else:
+			raise ValueError(f'Backend not implemented: {driver}')
 
 
 	@classmethod
