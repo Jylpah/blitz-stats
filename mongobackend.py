@@ -254,11 +254,11 @@ class MongoBackend(Backend):
 
 	@classmethod
 	def read_args(cls, args : Namespace, 
-					backend: str, 
+					driver: str, 
 					importdb: bool = False) -> dict[str, Any]:
 		debug('starting')
-		if backend != cls.driver:
-			raise ValueError(f'calling {cls}.read_args() for {backend} backend')
+		if driver != cls.driver:
+			raise ValueError(f'calling {cls}.read_args() for {driver} backend')
 		kwargs : dict[str, Any] = Backend.read_args_helper(args, ['host', 'database'], importdb=importdb)
 		kwargs = { k:v for k, v in kwargs.items() if v is not None }		
 		debug(f'args={kwargs}')
