@@ -383,10 +383,14 @@ class Backend(ABC):
 		return self._M
 
 
-	def set_database(self, database : str) -> None:
+	def set_database(self, database : str | None) -> None:
 		"""Set database"""
-		assert is_alphanum(database), f'Illegal characters in the table name: {database}'
-		self._database = database
+		if database is None:
+			pass
+		else:
+			assert is_alphanum(database), f'Illegal characters in the table name: {database}'
+			self._database = database
+		return None
 
 
 	def get_table(self, table_type: BSTableType) -> str:
