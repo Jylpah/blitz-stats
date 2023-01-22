@@ -75,16 +75,8 @@ class MongoBackend(Backend):
 		debug('starting')
 		try:
 			super().__init__(config=config, 
-		super().__init__(config=config, 
-			super().__init__(config=config, 
-							database=database, 
-						database=database, 
 							database=database, 
 							table_config=table_config, 
-						table_config=table_config, 
-							table_config=table_config, 
-							model_config=model_config, 
-						model_config=model_config, 
 							model_config=model_config, 
 							**kwargs)
 
@@ -582,10 +574,11 @@ class MongoBackend(Backend):
 						pipeline : list[dict[str, Any]]) -> AsyncGenerator[D, None]:
 		try:
 			debug('starting')
-			debug(f'pipeline={pipeline}')
+			debug(f'collection={dbc.name}, pipeline={pipeline}')
 			async for obj in dbc.aggregate(pipeline, allowDiskUse=True):
 				try:
-					yield data_type.parse_obj(obj)
+					debug(f'{obj}')
+					yield data_type.parse_obj(obj)					
 				except ValidationError as err:
 					error(f'Could not validate {data_type} ob={obj} from {self.backend}.{dbc.name}: {err}')
 				except Exception as err:
