@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from models import BSAccount, BSBlitzRelease, StatsTypes
 from blitzutils.models import Region, WoTBlitzReplayJSON, WGtankStat, Account, Tank, WGplayerAchievementsMaxSeries
-from pyutils import EventCounter, JSONExportable, epoch_now, is_alphanum, get_sub_type
+from pyutils import EventCounter, JSONExportable, epoch_now, is_alphanum
 # from mongobackend import MongoBackend
 
 # Setup logging
@@ -35,6 +35,44 @@ MIN_UPDATE_INTERVAL 		: int = 3   # days
 ACCOUNTS_Q_MAX 		: int = 10000
 TANK_STATS_BATCH	: int = 1000
 
+
+##############################################
+#
+## Utils 
+#
+##############################################
+
+
+def get_type(name: str) -> type[object] | None:
+	type_class : type[object]
+	try:
+		if is_alphanum(name):
+			type_class = globals()[name]
+		else:
+			raise ValueError(f'model {name}() contains illegal characters')
+		return type_class
+	except Exception as err:
+		error(f'Could not find class {name}(): {err}')
+	return None
+
+
+T = TypeVar('T', bound=object)
+
+
+def get_sub_type(name: str, parent: type[T]) -> Optional[type[T]]:
+	if (model := get_type(name)) is not None:
+		if issubclass(model, parent):
+			return model
+	return None
+
+
+##############################################
+#
+## OptAccountsInactive() 
+#
+##############################################
+
+	
 class OptAccountsInactive(StrEnum):
 	auto	= 'auto'
 	no		= 'no'
