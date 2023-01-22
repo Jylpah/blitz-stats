@@ -369,6 +369,11 @@ class Backend(ABC):
 
 	
 	@property
+	def db_config(self) -> dict[str, Any]:
+		return self._db_config
+
+
+	@property
 	def config(self) -> dict[str, Any]:
 		return self._config
 
