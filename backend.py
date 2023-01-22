@@ -226,16 +226,23 @@ class Backend(ABC):
 
 
 	@classmethod
-	def create(cls, backend : str, config : ConfigParser | None = None, 
+	def create(cls, driver : str, 
+				config : ConfigParser | None = None, 
+				copy_from: Optional['Backend'] = None, 
 					copy_from: Optional['Backend'] = None, 
-					**kwargs) -> Optional['Backend']:
+				copy_from: Optional['Backend'] = None, 
+				**kwargs) -> Optional['Backend']:
 		try:
 			debug('starting')
-			if copy_from is not None and copy_from.driver == backend:
+			if copy_from is not None and copy_from.driver == driver:
 				return copy_from.copy(config, **kwargs)
-			elif backend in cls._backends:
-				return cls._backends[backend](config=config, **kwargs)
+			elif driver in cls._backends:
+				return cls._backends[driver](config=config, **kwargs)
 			else:
+				assert False, f'Backend not implemented: {driver}'
+		except Exception as err:
+			error(f'Error creating backend {driver}: {err}')
+		return None
 
 
 	@classmethod
