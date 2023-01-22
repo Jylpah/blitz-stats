@@ -246,13 +246,12 @@ class Backend(ABC):
 
 
 	@classmethod
-	def create_import_backend(cls, args: Namespace, 
+	def create_import_backend(cls, driver: str, 
+								args: Namespace, 
 								import_type: BSTableType,
-								db: 'Backend' | None = None, 
+								copy_from: 'Backend' | None = None, 
 								config_file: str | None = None) -> Optional['Backend']:
-		driver 		 : str = 'NOT_DEFINED'
-		try:
-			driver 		= args.import_backend
+		try:		
 			import_model: type[JSONExportable] | None 
 
 			config : ConfigParser | None = None
@@ -263,14 +262,14 @@ class Backend(ABC):
 
 			kwargs : dict[str, Any] = Backend.read_args(args, driver, importdb=True)
 			if (import_db:= Backend.create(driver, config=config, 
-											copy_from=db, **kwargs)) is None:
+											copy_from=copy_from, **kwargs)) is None:
 				raise ValueError(f'Could not init {driver} to import releases from')
 			
 			if args.import_table is not None:
 				import_db.set_table(import_type, args.import_table)
-			elif db is not None:
-				if db == import_db and \
-					db.get_table(import_type) == import_db.get_table(import_type):
+			elif copy_from is not None:
+				if copy_from == import_db and \
+					copy_from.get_table(import_type) == import_db.get_table(import_type):
 					raise ValueError('Cannot import from itself')
 						
 			if (import_model := get_sub_type(args.import_model, JSONExportable)) is None:
