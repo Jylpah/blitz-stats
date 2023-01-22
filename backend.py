@@ -408,8 +408,10 @@ class Backend(ABC):
 		return self._T[table_type] 
 
 
-	def set_table(self, table_type: BSTableType, name: str) -> None:
+	def set_table(self, table_type: BSTableType, name: str | None) -> None:
 		"""Set database table/collection"""
+		if name is None:
+			return None
 		assert len(name) > 0, 'table name cannot be zero-sized'
 		assert is_alphanum(name), f'Illegal characters in the table name: {name}'
 		self._T[table_type] = name
@@ -424,10 +426,12 @@ class Backend(ABC):
 			return self._M[table]
 		
 
-	def set_model(self, table: BSTableType | str, model: type[JSONExportable] |str) -> None:
+	def set_model(self, table: BSTableType | str, model: type[JSONExportable] | str | None) -> None:
 		"""Set collection model"""
 		table_type : BSTableType
 		model_class : type[JSONExportable]
+		if model is None:
+			return None
 		if isinstance(table, str):
 			table_type = self._Tr[table]
 		else:
