@@ -12,7 +12,7 @@ opt_get_account_ids_max_pages = 10
 #wg_id		    = 0
 wg_rate_limit   = 10
 
-[DATABASE]
+[MONGODB]
 # You are unlikey to have MongoDB support...
 #db_server       = localhost
 #db_port         = 27017
