@@ -1,9 +1,7 @@
 from argparse import ArgumentParser, Namespace
 from configparser import ConfigParser
-from typing import Optional, cast, Iterable
+from typing import Optional
 import logging
-from asyncio import create_task, gather, Queue, CancelledError, Task
-from aiohttp import ClientResponse
 
 from backend import Backend, BSTableType
 
