@@ -845,7 +845,7 @@ def import_mp_init( backend_config: dict[str, Any],
 	readQ 		= AsyncQueue(inputQ)
 	in_model 	= import_model	
 	rel_mapper 	= release_map
-	opt_force	 = force
+	opt_force	= force
 	debug('finished')
 	
 
