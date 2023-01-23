@@ -498,7 +498,7 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 		if (import_db := Backend.create_import_backend(driver=import_backend, 
 														args=args, 
 														import_type=BSTableType.Accounts, 
-														db=db,
+														copy_from=db,
 														config_file=args.import_config)) is None:
 			raise ValueError(f'Could not init {import_backend} to import accounts from')
 
