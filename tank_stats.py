@@ -3,27 +3,37 @@ from configparser import ConfigParser
 from datetime import datetime
 from typing import Optional, Iterable, Any, cast
 import logging
-from asyncio import create_task, gather, Queue, CancelledError, Task, sleep, wait
+from asyncio import run, create_task, gather, Queue, CancelledError, Task, Runner, \
+					sleep, wait, get_event_loop, get_running_loop
+
+from os import getpid
 from aiofiles import open
 from os.path import isfile
 from math import ceil
-from asyncstdlib import enumerate
+# from asyncstdlib import enumerate
 from alive_progress import alive_bar		# type: ignore
-from yappi import profile 					# type: ignore
+#from yappi import profile 					# type: ignore
 
-from backend import Backend, OptAccountsInactive, BSTableType, ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL
+from multiprocessing import Manager
+from multiprocessing.pool import Pool, AsyncResult 
+# from concurrent.futures import ProcessPoolExecutor, as_completed
+import queue
+
+from backend import Backend, ForkedBackend, OptAccountsInactive, BSTableType, \
+					ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL, get_sub_type
 from models import BSAccount, BSBlitzRelease, StatsTypes
 from accounts import create_accountQ, read_account_strs
 from releases import get_releases, release_mapper
 
-from pyutils import get_url, get_url_JSON_model, epoch_now, alive_bar_monitor, \
+from pyutils import alive_bar_monitor, \
 					is_alphanum, JSONExportable, TXTExportable, CSVExportable, export, \
-					BucketMapper, IterableQueue, QueueDone, EventCounter
+					BucketMapper, IterableQueue, QueueDone, EventCounter, \
+					AsyncQueue
 from blitzutils.models import WoTBlitzReplayJSON, Region, WGApiWoTBlitzTankStats, \
 								WGtankStat, Tank
 from blitzutils.wg import WGApi 
 
-logger = logging.getLogger()
+logger 	= logging.getLogger()
 error 	= logger.error
 message	= logger.warning
 verbose	= logger.info
@@ -32,8 +42,18 @@ debug	= logger.debug
 # Constants
 
 WORKERS_WGAPI 		: int = 75
-WORKERS_IMPORTERS	: int = 1
-TANK_STATS_Q_MAX 	: int = 1000
+WORKERS_IMPORTERS	: int = 2
+TANK_STATS_Q_MAX 	: int = 10
+TANK_STATS_BATCH 	: int = 5
+
+# Globals
+
+# FB 	: ForkedBackend
+db 			: Backend
+readQ 		: AsyncQueue[list[Any]|None]
+in_model	: type[JSONExportable]
+rel_mapper 	: BucketMapper[BSBlitzRelease] | None
+opt_force 	: bool 
 
 ########################################################
 # 
@@ -189,13 +209,15 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 			if not backend.add_args_import(import_parser, config=config):
 				raise Exception(f'Failed to define argument parser for: tank-stats import {backend.driver}')
 		parser.add_argument('--threads', type=int, default=WORKERS_IMPORTERS, help='Set number of asynchronous threads')
-		parser.add_argument('--import-type', metavar='IMPORT-TYPE', type=str, 
+		parser.add_argument('--import-model', metavar='IMPORT-TYPE', type=str, 
 							default='WGtankStat', choices=['WGtankStat'], 
 							help='Data format to import. Default is blitz-stats native format.')
 		parser.add_argument('--sample', type=float, default=0, 
 							help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
 		parser.add_argument('--force', action='store_true', default=False, 
 							help='Overwrite existing stats when importing')
+		parser.add_argument('--mp', action='store_true', default=False, 
+							help='Use multi-processing')
 		parser.add_argument('--no-release-map', action='store_true', default=False, 
 							help='Do not map releases when importing')
 		parser.add_argument('--last', action='store_true', default=False, help=SUPPRESS)
@@ -267,7 +289,10 @@ async def cmd(db: Backend, args : Namespace) -> bool:
 			return await cmd_export(db, args)
 
 		elif args.tank_stats_cmd == 'import':
-			return await cmd_importMP(db, args)
+			if args.mp:
+				return await cmd_importMP(db, args)
+			else:
+				return await cmd_import(db, args)
 			
 	except Exception as err:
 		error(f'{err}')
@@ -690,11 +715,9 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 		import_db   	: Backend | None 				= None
 		import_backend 	: str 							= args.import_backend
 		import_model 	: type[JSONExportable] | None 	= None
-		map_releases	: bool 					= not args.no_release_map
+		release_map : BucketMapper[BSBlitzRelease] | None = None
 		WORKERS 	 : int 						= args.threads
 		workers : list[Task] = list()
-
-		release_map : BucketMapper[BSBlitzRelease] = await release_mapper(db)
 
 		if (import_model := get_sub_type(args.import_model, JSONExportable)) is None:
 			raise ValueError("--import-model has to be subclass of JSONExportable")
@@ -706,13 +729,14 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 														config_file=args.import_config)) is None:
 			raise ValueError(f'Could not init {import_backend} to import releases from')
 
+		if not args.no_release_map: 
+			release_map = await release_mapper(db)
+		
 		for _ in range(WORKERS):
 			workers.append(create_task(db.tank_stats_insert_worker(tank_statsQ=tank_statsQ, 
 																	force=args.force)))
 		rel_map_worker : Task = create_task(map_releases_worker(release_map, inputQ=rel_mapQ, 
-																outputQ=tank_statsQ, 
-																map_releases=map_releases))
-
+																outputQ=tank_statsQ))
 		message('Counting tank stats to import ...')
 		N : int = await import_db.tank_stats_count(sample=args.sample)
 		
@@ -733,40 +757,72 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 	except Exception as err:
 		error(f'{err}')	
 	return False
-		if args.import_config is not None and isfile(args.import_config):
-			debug(f'Reading config from {args.config}')
-			config = ConfigParser()
-			config.read(args.config)
 
-		kwargs : dict[str, Any] = Backend.read_args(args=args, backend=import_backend)
-		if (import_db:= Backend.create(args.import_backend, 
-										config=config, copy_from=db, **kwargs)) is not None:
-			if import_table is not None:
-				import_db.set_table(BSTableType.TankStats, import_table)
-			elif db == import_db and db.table_tank_stats == import_db.table_tank_stats:
-				raise ValueError('Cannot import from itself')
-		else:
-			raise ValueError(f'Could not init {args.import_backend} to import tank stats from')
+
+async def cmd_importMP(db: Backend, args : Namespace) -> bool:
+	"""Import tank stats from other backend"""	
+	try:
+		debug('starting')
+		assert is_alphanum(args.import_model), f'invalid --import-model: {args.import_model}'
+		stats 	: EventCounter 				= EventCounter('tank-stats import')
+	
+		import_db   	: Backend | None 				= None
+		import_backend 	: str 							= args.import_backend
+		import_model 	: type[JSONExportable] | None 	= None
+		WORKERS 	 	: int 							= args.threads
+		map_releases	: bool 							= not args.no_release_map
+		release_map		: BucketMapper[BSBlitzRelease] | None  = None
 
 		
-		# assert issubclass(tank_stats_type, WGtankStat), "--import-type has to be subclass of blitzutils.models.WGtankStat" 
-		import_db.set_model(import_db.table_tank_stats, tank_stats_type)
+
+		if (import_model := get_sub_type(args.import_model, JSONExportable)) is None:
+			raise ValueError("--import-model has to be subclass of JSONExportable")
+
+		
+		if (import_db := Backend.create_import_backend(driver=import_backend, 
+														args=args, 
+														import_type=BSTableType.TankStats, 
+														copy_from=db,
+														config_file=args.import_config)) is None:
+			raise ValueError(f'Could not init {import_backend} to import releases from')
 
 		message('Counting tank stats to import ...')
-		N : int = await db.tank_stats_count(sample=args.sample)
+		N : int = await import_db.tank_stats_count(sample=args.sample)
+		if map_releases:
+			release_map = await release_mapper(db)
 		
-		with alive_bar(N, title="Importing tank stats ", enrich_print=False, refresh_secs=1) as bar:
-			async for tank_stat in import_db.tank_stats_export(data_type=tank_stats_type, 
-																sample=args.sample):
-				await rel_mapQ.put(tank_stat)
-				bar()
+		debug('#############################################################################')
+		db.debug()
+		await db.test()
 
-		await rel_mapQ.join()
-		rel_map_worker.cancel()
-		await stats.gather_stats([rel_map_worker])
-		await tank_statsQ.join()		
-		await stats.gather_stats(workers)
+		with Manager() as manager:
+			readQ	: queue.Queue[list[Any] | None] = manager.Queue(TANK_STATS_Q_MAX)
+			
+			with Pool(processes=WORKERS, initializer=import_mp_init, 
+					  initargs=[ db.config, readQ, import_model, release_map, args.force ]) as pool:
+				
+				results : AsyncResult = pool.map_async(import_mp_worker_start, range(WORKERS))
 
+				
+				with alive_bar(N, title="Importing tank stats ", enrich_print=False, refresh_secs=1) as bar:
+					
+					async for objs in import_db.objs_export(table_type=BSTableType.TankStats, 
+															sample=args.sample, 
+															batch=TANK_STATS_BATCH):
+						debug(f'read {len(objs)} tank_stat objects')
+						readQ.put(objs)
+						stats.log('imported', len(objs))
+						bar(len(objs))	
+				
+				debug(f'Finished exporting {import_model} from {import_db.table_uri(BSTableType.TankStats)}')
+				
+				for _ in range(WORKERS):
+					readQ.put(None) # add sentinel
+				pool.close()
+				for res in results.get():
+					stats.merge_child(res)
+				pool.join()
+		
 		message(stats.print(do_print=False, clean=True))
 		return True
 	except Exception as err:
@@ -774,42 +830,187 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def tank_stats_map_releases_worker(release_map: BucketMapper[BSBlitzRelease], 
-										inputQ: Queue[WGtankStat], 
-										outputQ: Queue[list[WGtankStat]], 
-										map_releases: bool = True) -> EventCounter:
+def import_mp_init( backend_config: dict[str, Any],					
+					inputQ 	: queue.Queue[list[Any] | None], 
+					import_model: type[JSONExportable], 
+					release_map : BucketMapper[BSBlitzRelease] | None, 
+					force : bool = False):
+	"""Initialize static/global backend into a forked process"""
+	global db, readQ, in_model, rel_mapper, opt_force
+	debug(f'starting (PID={getpid()})')
+
+	if (tmp_db := Backend.create(**backend_config)) is None:
+		raise ValueError('could not create backend')	
+	db = tmp_db
+	readQ = AsyncQueue(inputQ)
+	in_model = import_model	
+	rel_mapper = release_map
+	opt_force = force
+	debug('finished')
+	
+
+def import_mp_worker_start(id: int = 0) -> EventCounter:
+	"""Forkable tank stats import worker"""
+	debug(f'starting import worker #{id}')
+	return run(import_mp_worker(id), debug=True)
+
+
+async def  import_mp_worker(id: int = 0) -> EventCounter:
+	"""Forkable tank stats import worker"""
+	debug(f'#{id}: starting')
+	stats : EventCounter = EventCounter('import (MP)')
+	workers 	: list[Task] 				= list()
+	try: 
+		global db, readQ, in_model, rel_mapper, opt_force
+		THREADS 	: int = 1		
+		import_model: type[JSONExportable] 					= in_model
+		release_map : BucketMapper[BSBlitzRelease] | None 	= rel_mapper
+		force 		: bool 									= opt_force
+		tank_statsQ	: Queue[list[WGtankStat]] 				= Queue(100)
+		
+		db.debug()
+		await db.test()
+
+		for _ in range(THREADS):
+			workers.append(create_task(db.tank_stats_insert_worker(tank_statsQ=tank_statsQ, 
+																	force=force)))		
+		while objs := await readQ.get():
+			debug(f'#{id}: read {len(objs)} objects')
+			try:
+				read : int = len(objs)
+				debug(f'read {read} documents')
+				stats.log('read', read)	
+				tank_stats, mapped, errors = transform_objs(in_type=import_model, 
+															objs=objs, 
+															release_map=release_map)		
+				stats.log('release mapped', mapped)
+				stats.log('errors', errors)				
+				await tank_statsQ.put(tank_stats)
+			except Exception as err:
+				error(f'{err}')
+			finally:
+				readQ.task_done()		
+		debug(f'#{id}: finished reading objects')
+		readQ.task_done()	
+		await tank_statsQ.join() 		# add sentinel for other workers
+		await stats.gather_stats(workers)
+	
+	except CancelledError:
+		pass
+	except Exception as err:
+		error(f'{err}')	
+	return stats
+
+
+# async def import_read_worker(import_db: Backend, 										
+# 										importQ: queue.Queue, 
+# 										total: int = 0, 
+# 										sample: float = 0):
+# 	debug(f'starting import from {import_db.driver}')
+# 	stats : EventCounter = EventCounter(f'{import_db.driver} import')
+# 	with alive_bar(total, title="Importing tank stats ", enrich_print=False, refresh_secs=1) as bar:
+# 		async for objs in import_db.objs_export(table_type=BSTableType.TankStats, 
+# 												sample=sample):
+# 			debug(f'read {len(objs)} tank_stat objects')
+# 			importQ.put(objs)
+# 			stats.log('imported', len(objs))
+# 			bar(len(objs))
+	
+# 	importQ.put(None) # add sentinel
+# 	return stats
+
+
+# def import_worker(in_type: type[JSONExportable], 
+# 					importQ: queue.Queue, 
+# 					tank_statQ: queue.Queue[list[WGtankStat]],
+# 					release_map: BucketMapper[BSBlitzRelease] | None) -> EventCounter:
+# 	"""Forkable tank stats import worker"""
+# 	debug('starting')
+# 	stats 		: EventCounter = EventCounter('import')
+# 	try:		
+# 		tank_stats 	: list[WGtankStat]
+# 		objs : list[Any] | None
+# 		mapped : int = 0
+# 		errors : int = 0
+# 		while (objs := importQ.get()) is not None:			 
+# 			try:
+# 				read : int = len(objs)
+# 				debug(f'read {read} documents')
+# 				stats.log('read', read)	
+# 				tank_stats, mapped, errors = transform_objs(in_type=in_type, 
+# 															objs=objs, 
+# 															release_map=release_map)		
+# 				stats.log('release mapped', mapped)
+# 				stats.log('errors', errors)				
+# 				tank_statQ.put(tank_stats)
+# 			except Exception as err:
+# 				error(f'{err}')
+		
+# 		# close other insert workers
+# 		importQ.put(None)			
+# 	except Exception as err:
+# 		error(f'{err}')	
+# 	return stats	
+
+
+def transform_objs(in_type: type[JSONExportable], 
+				objs: list[Any], 
+				release_map: BucketMapper[BSBlitzRelease] | None
+				) -> tuple[list[WGtankStat], int, int]:
+	"""Transform list of objects to list[WGTankStat]"""
+
+	debug('starting')
+	mapped: int = 0 
+	errors: int = 0 
+	tank_stats : list[WGtankStat] = list()
+	for obj in objs:
+		try:
+			obj_in = in_type.parse_obj(obj)					
+			if (tank_stat := WGtankStat.transform(obj_in)) is None:						
+				tank_stat = WGtankStat.parse_obj(obj_in.obj_db())
+			
+			if release_map is not None and \
+				(release := release_map.get(tank_stat.last_battle_time)) is not None:
+				tank_stat.release = release.release
+				mapped += 1			
+			tank_stats.append(tank_stat)						
+		except Exception as err:
+			error(f'{err}')
+			errors += 1
+	return tank_stats, mapped, errors		
+	
+
+async def map_releases_worker(release_map: BucketMapper[BSBlitzRelease] | None, 
+							inputQ: 	Queue[list[WGtankStat]], 
+							outputQ:	Queue[list[WGtankStat]]) -> EventCounter:
+
 	"""Map tank stats to releases and pack those to list[WGtankStat] queue.
 		map_all is None means no release mapping is done"""
 	stats 		: EventCounter = EventCounter('Release mapper')
-	IMPORT_BATCH: int = 500
 	release 	: BSBlitzRelease | None
-	ts_list 	: list[WGtankStat] = list()
-
 	try:
 		debug('starting')
 		while True:
-			tank_stat = await inputQ.get()
+			tank_stats = await inputQ.get()
+			stats.log('read', len(tank_stats))
 			try:
-				if map_releases:
-					if (release := release_map.get(tank_stat.last_battle_time)) is not None:
-						tank_stat.release = release.release
-						stats.log('mapped')
-					else:
-						stats.log('errors')					
-				ts_list.append(tank_stat)
-				if len(ts_list) == IMPORT_BATCH:
-					await outputQ.put(ts_list)
-					stats.log('read', len(ts_list))
-					ts_list = list()						
+				if release_map is not None:
+					for tank_stat in tank_stats:
+						if (release := release_map.get(tank_stat.last_battle_time)) is not None:
+							tank_stat.release = release.release
+							stats.log('mapped')
+						else:
+							stats.log('errors')
+				else:
+					stats.log('not mapped', len(tank_stats))
+			
+				await outputQ.put(tank_stats)						
 			except Exception as err:
 				error(f'Processing input queue: {err}')
 			finally: 									
 				inputQ.task_done()
 	except CancelledError:
-		debug('Cancelled')
-		if len(ts_list) > 0:
-			await outputQ.put(ts_list)
-			stats.log('read', len(ts_list))
+		debug('Cancelled')		
 	except Exception as err:
 		error(f'{err}')	
 	return stats
