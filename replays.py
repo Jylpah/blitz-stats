@@ -6,10 +6,10 @@ from asyncio import create_task, gather, Queue, CancelledError, Task
 #from aiohttp import ClientResponse
 from os.path import isfile
 
-from backend import Backend, BSTableType
+from backend import Backend, BSTableType, get_sub_type
 
 from pyutils import get_url, get_url_JSON_model, epoch_now, EventCounter, \
-					JSONExportable, is_alphanum, get_sub_type
+					JSONExportable, is_alphanum
 from blitzutils.models import WoTBlitzReplayJSON, Region
 from blitzutils.wotinspector import WoTinspector
 

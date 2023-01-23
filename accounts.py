@@ -13,12 +13,14 @@ from bson import ObjectId
 
 from csv import DictWriter, DictReader, Dialect, Sniffer, excel
 
-from backend import Backend, OptAccountsInactive, OptAccountsDistributed, BSTableType, ACCOUNTS_Q_MAX
+from backend import Backend, OptAccountsInactive, OptAccountsDistributed, \
+	BSTableType, ACCOUNTS_Q_MAX, get_sub_type
 from models import BSAccount, StatsTypes
 from models_import import WG_Account
-from pyutils import CounterQueue, EventCounter,  TXTExportable, CSVExportable, JSONExportable,\
-					IterableQueue, QueueDone, alive_bar_monitor, get_url, get_url_JSON_model, epoch_now, export, \
-					is_alphanum, get_sub_type
+from pyutils import CounterQueue, EventCounter,  TXTExportable, \
+	CSVExportable, JSONExportable, IterableQueue, QueueDone, \
+		alive_bar_monitor, get_url, get_url_JSON_model, epoch_now, \
+		export, is_alphanum
 from blitzutils.models import WoTBlitzReplayJSON, Region, Account
 from blitzutils.wotinspector import WoTinspector
 

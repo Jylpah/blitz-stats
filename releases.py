@@ -9,8 +9,8 @@ from datetime import date
 from os.path import isfile
 
 from pyutils import EventCounter, is_alphanum, export, JSONExportable, CSVExportable, \
-					TXTExportable, BucketMapper, get_sub_type
-from backend import Backend, BSTableType
+					TXTExportable, BucketMapper
+from backend import Backend, BSTableType, get_sub_type
 from blitzutils.models import WGBlitzRelease
 from models import BSBlitzRelease
 from models_import import WG_Release
