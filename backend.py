@@ -11,8 +11,9 @@ from re import compile
 from datetime import date, datetime
 from enum import Enum, StrEnum, IntEnum
 from asyncio import Queue, CancelledError
-from pydantic import BaseModel, Field
+import queue
 
+from pydantic import BaseModel, Field
 
 from models import BSAccount, BSBlitzRelease, StatsTypes
 from blitzutils.models import Region, WoTBlitzReplayJSON, WGtankStat, Account, Tank, WGplayerAchievementsMaxSeries
@@ -160,16 +161,18 @@ class Backend(ABC):
 	_backends 	: dict[str, type['Backend']] = dict()	
 
 
-	def __init__(self, config: ConfigParser | None = None, 
-					database : str | None = None, 
-					table_config : dict[BSTableType, str] | None = None, 
-					model_config : dict[BSTableType, type[JSONExportable]] | None = None, 
+	def __init__(self, 
+					config		: ConfigParser | None = None,
+					db_config 	: dict[str, Any] | None = None,  
+					database 	: str | None = None, 
+					table_config: dict[BSTableType, str] | None = None, 
+					model_config: dict[BSTableType, type[JSONExportable]] | None = None, 
 					**kwargs):					
 		"""Init MongoDB backend from config file and CLI args
 			CLI arguments overide settings in the config file"""
 		
 		self._database	: str 	= 'BlitzStats'
-		self._db_config 	: dict[str, Any]
+		self._db_config : dict[str, Any]
 		self._T 		: dict[BSTableType, str] = dict()
 		self._Tr 		: dict[str, BSTableType] = dict()
 		self._M 		: dict[BSTableType, type[JSONExportable]] = dict()
@@ -214,7 +217,12 @@ class Backend(ABC):
 			self.set_model(BSTableType.PlayerAchievements, configBackend.get('m_player_achievements'))
 			self.set_model(BSTableType.AccountLog, 	configBackend.get('m_account_log'))
 			self.set_model(BSTableType.ErrorLog,	configBackend.get('m_error_log'))
-			
+
+
+	@abstractmethod
+	def debug(self) -> None:
+		"""Print out debug info"""		
+		raise NotImplementedError
 
 	def config_tables(self, table_config: dict[BSTableType, str] | None = None ) -> None: 
 		try:
@@ -264,14 +272,15 @@ class Backend(ABC):
 
 
 	@classmethod
-	def create(cls, driver : str, 
-				config : ConfigParser | None = None, 
-				copy_from: Optional['Backend'] = None, 
+	def create(cls, 
+				driver 		: str, 
+				config		: ConfigParser | None = None, 
+				copy_from	: Optional['Backend'] = None, 
 				**kwargs) -> Optional['Backend']:
 		try:
 			debug('starting')
 			if copy_from is not None and copy_from.driver == driver:
-				return copy_from.copy(config, **kwargs)
+				return copy_from.copy(**kwargs)
 			elif driver in cls._backends:
 				return cls._backends[driver](config=config, **kwargs)
 			else:
@@ -285,7 +294,7 @@ class Backend(ABC):
 	def create_import_backend(cls, driver: str, 
 								args: Namespace, 
 								import_type: BSTableType,
-								copy_from: 'Backend' | None = None, 
+								copy_from: Optional['Backend'] = None, 
 								config_file: str | None = None) -> Optional['Backend']:
 		try:		
 			import_model: type[JSONExportable] | None 
@@ -309,7 +318,7 @@ class Backend(ABC):
 					raise ValueError('Cannot import from itself')
 						
 			if (import_model := get_sub_type(args.import_model, JSONExportable)) is None:
-				assert False, "--import-model has to be subclass of JSONExportable" 
+				assert False, "--import-model not found or is not a subclass of JSONExportable" 
 			import_db.set_model(import_type, import_model)
 
 			return import_db
@@ -343,8 +352,8 @@ class Backend(ABC):
 	def read_args_helper(cls, args : Namespace, 
 						params: Sequence[str | tuple[str, str]], 
 						importdb: bool = False) -> dict[str, Any]:
-		kwargs : dict[str, Any] = dict()
-		arg_dict : dict[str, Any]  = vars(args)
+		kwargs : dict[str, Any] 	= dict()
+		arg_dict : dict[str, Any]   = vars(args)
 		prefix : str = ''
 		if importdb:
 			prefix = 'import_'		
@@ -356,8 +365,8 @@ class Backend(ABC):
 					s = param[0]
 					t = param[1]
 				elif isinstance(param, str):
-					t = param
 					s = param
+					t = param
 				else:
 					raise TypeError(f"wrong param given: {type(param)}")		
 				s = prefix + s
@@ -389,14 +398,35 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	def copy(self, config : ConfigParser | None = None, **kwargs) -> Optional['Backend']:
+	def copy(self, **kwargs) -> Optional['Backend']:
 		"""Create a copy of backend"""
 		raise NotImplementedError
+
+
+	@abstractmethod
+	def reconnect(self) -> bool:
+		"""Reconnect backend"""
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def test(self) -> bool:
+		"""Test connection to backend"""
+		raise NotImplementedError
+
 
 	@property
 	@abstractmethod
 	def backend(self) -> str:
 		raise NotImplementedError
+
+	
+	def table_uri(self, table_type: BSTableType, full: bool = False) -> str:
+		"""Return full table URI. Override in subclass if needed"""
+		if full:
+			return f'{self.backend}.{self.get_table(table_type)}'
+		else:
+			return f'{self.driver}://{self.database}.{self.get_table(table_type)}'
 
 
 	@property
@@ -412,7 +442,9 @@ class Backend(ABC):
 	@property
 	def config(self) -> dict[str, Any]:
 		return { 
+				'driver'		: self.driver,
 				'config'		: None, 
+				'db_config'		: self.db_config,
 				'database' 		: self.database, 
 				'table_config'	: self.table_config, 
 				'model_config'	: self.model_config
@@ -661,7 +693,7 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def accounts_insert(self, accounts: Iterable[BSAccount]) -> tuple[int, int]:
+	async def accounts_insert(self, accounts: Sequence[BSAccount]) -> tuple[int, int]:
 		"""Store accounts to the backend. Returns number of accounts inserted and not inserted"""
 		raise NotImplementedError
 
@@ -722,8 +754,6 @@ class Backend(ABC):
 
 	@abstractmethod
 	async def release_update(self, release: BSBlitzRelease, 
-							update: dict[str, Any] | None = None, 
-								update: dict[str, Any] | None = None, 
 							update: dict[str, Any] | None = None, 
 							fields: list[str] | None= None) -> bool:
 		"""Update an release in the backend. Returns False 
@@ -844,7 +874,7 @@ class Backend(ABC):
 	
 
 	@abstractmethod
-	async def replays_insert(self, replays: Iterable[WoTBlitzReplayJSON]) -> tuple[int, int]:
+	async def replays_insert(self, replays: Sequence[WoTBlitzReplayJSON]) -> tuple[int, int]:
 		"""Store replays to the backend. Returns number of replays inserted and not inserted"""
 		raise NotImplementedError	
 
@@ -914,7 +944,7 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def tank_stats_insert(self, tank_stats: Iterable[WGtankStat]) -> tuple[int, int]:
+	async def tank_stats_insert(self, tank_stats: Sequence[WGtankStat]) -> tuple[int, int]:
 		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
 		raise NotImplementedError
 
@@ -1037,7 +1067,7 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def player_achievements_insert(self, player_achievements: Iterable[WGplayerAchievementsMaxSeries]) -> tuple[int, int]:
+	async def player_achievements_insert(self, player_achievements: Sequence[WGplayerAchievementsMaxSeries]) -> tuple[int, int]:
 		"""Store player achievements to the backend. Returns number of stats inserted and not inserted"""
 		raise NotImplementedError
 
@@ -1136,6 +1166,20 @@ class Backend(ABC):
 		"""Clear errors from backend ErrorLog"""
 		raise NotImplementedError
 		
+
+# def init_backend(driver: str, 
+# 				config: ConfigParser | None, 
+# 				database : str | None = None, 
+# 				table_config : dict[BSTableType, str] | None = None, 
+# 				model_config : dict[BSTableType, type[JSONExportable]] | None = None, 
+# 				**kwargs ) -> bool:
+# 	try:
+# 		global db 
+# 		# db : Backend = Backend.create(driver=driver, config=config, **kwargs)
+# 		return True
+# 	except Exception as err:
+# 		error(f'{err}')
+# 	return False
 
  
 class ForkedBackend():
