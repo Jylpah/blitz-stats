@@ -7,9 +7,9 @@ from typing import Optional, Any, Iterable, Sequence, Union, Tuple, Literal, Fin
 import logging
 
 from bson import ObjectId
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCursor, AsyncIOMotorCollection # type: ignore
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCursor, AsyncIOMotorCollection  # type: ignore
 from pymongo.results import InsertManyResult, InsertOneResult, UpdateResult, DeleteResult
-from pymongo.errors import BulkWriteError, CollectionInvalid
+from pymongo.errors import BulkWriteError, CollectionInvalid, ConnectionFailure
 from pydantic import BaseModel, ValidationError, Field
 from asyncstdlib import enumerate
 
@@ -64,20 +64,21 @@ class MongoBackend(Backend):
 	driver : str = 'mongodb'
 	# default_db : str = 'BlitzStats'	
 
-	def __init__(self, config: ConfigParser | None = None, 
-				database : str | None = None, 
-				table_config : dict[BSTableType, str] | None = None, 
-				model_config : dict[BSTableType, type[JSONExportable]] | None = None, 
+	def __init__(self, 
+				config		: ConfigParser | None = None, 
+				db_config 	: dict[str, Any] | None = None,  
+				database 	: str | None = None, 
+				table_config: dict[BSTableType, str] | None = None, 
+				model_config: dict[BSTableType, type[JSONExportable]] | None = None, 
 				**kwargs):
 		"""Init MongoDB backend from config file and CLI args
 			CLI arguments overide settings in the config file"""
 
 		debug('starting')
 		try:
-			super().__init__(config=config, 
-							database=database, 
-							table_config=table_config, 
-							model_config=model_config, 
+			super().__init__(config=config,
+							db_config=db_config,							 
+							database=database,												
 							**kwargs)
 
 			mongodb_rc 		: dict[str, Any] = dict()
@@ -130,24 +131,24 @@ class MongoBackend(Backend):
 				self.set_model(BSTableType.AccountLog, 	configMongo.get('m_account_log'))
 				self.set_model(BSTableType.ErrorLog,	configMongo.get('m_error_log'))
 
-			for param, value in kwargs.items():
-				mongodb_rc[param] = value
-
-			mongodb_rc = {k: v for k, v in mongodb_rc.items() if v is not None} 	# remove unset kwargs
+			if db_config is not None:
+				kwargs = db_config | kwargs
+			kwargs = mongodb_rc | kwargs
+			kwargs = {k: v for k, v in kwargs.items() if v is not None} 	# remove unset kwargs
 		
 			self.set_database(database)
-			self._client =  AsyncIOMotorClient(**mongodb_rc)			
-			self.db 	 = self._client[self.database]
-			self._config = mongodb_rc
-						
+			self._client 	= AsyncIOMotorClient(**kwargs)
+			debug(f'{self._client}')		
+			self.db 	 	= self._client[self.database]
+			self._db_config = kwargs						
 			self.config_tables(table_config=table_config)
 			self.config_models(model_config=model_config)
 			
 			## UPDATE after transition
 			message('Reminder: Rename Backend ErrorLog & AccountLog')
 		
-			debug('Mongo DB connection succeeded')
-			debug(f'config: ' + ', '.join([ "{0}={1}".format(k, str(v)) for k, v in mongodb_rc.items()]))
+			# debug(f'Mongo DB: {self.backend}')
+			debug(f'config: ' + ', '.join([ "{0}={1}".format(k, str(v)) for k, v in kwargs.items()]))
 		except FileNotFoundError as err:
 			error(f'{err}')
 			raise err
@@ -156,25 +157,57 @@ class MongoBackend(Backend):
 			raise err
 
 
-	def copy(self, config : ConfigParser | None = None, **kwargs) -> Optional['Backend']:
+	def debug(self) -> None:
+		"""Print out debug info"""
+		print(f'###### DEBUG {self.driver} ######')
+		print(f'DB Client: {self._client}')
+
+
+	def copy(self, **kwargs) -> Optional['Backend']:
 		"""Create a copy of the backend"""
 		try:
 			debug('starting')
-			db_config : dict[str, Any] = self.config
-			for param, value in kwargs.items():
-				db_config[param] = value
+
 			database : str = self.database
-			if 'database' in db_config.keys():
-				database = db_config['database']
-				del db_config['database']
-			return MongoBackend(config=config, 
+			if 'database' in kwargs.keys():
+				database = kwargs['database']
+				del kwargs['database']
+			
+			return MongoBackend(config=None, 
+								db_config=self.db_config,
 								database=database,
 								table_config=self.table_config, 
 								model_config=self.model_config, 
-								**db_config)
+								**kwargs)
 		except Exception as err:
 			error(f'Error creating copy: {err}')
 		return None
+
+
+	def reconnect(self) -> bool:
+		"""Reconnect backend"""
+		try:
+			self._client = AsyncIOMotorClient(**self._db_config)
+			self.db 	 = self._client[self.database]
+			return True		
+		except Exception as err:
+			error(f'Error connection: {self.backend}')
+		return False
+
+
+	async def test(self) -> bool:
+		try:			
+			debug(f'trying to connect: {self.backend}')
+			# The ping command is cheap and does not require auth.
+			await self.db.command('ping')
+			# await self._client.server_info()
+			debug(f'connection succeeded: {self.backend}')
+			return True
+		except ConnectionFailure:
+			error(f'Server not available: {self.backend}')
+		except Exception as err:
+			error(f'Error connection: {self.backend}')
+		return False
 
 
 	def get_collection(self, table_type: BSTableType) -> AsyncIOMotorCollection:
@@ -276,7 +309,7 @@ class MongoBackend(Backend):
 
 	@property
 	def backend(self) -> str:
-		host : str = 'NOT_CONNECTED'
+		host : str = 'UNKNOWN'
 		try:
 			host, port = self._client.address
 			return f'{self.driver}://{host}:{port}/{self.database}'
@@ -537,14 +570,15 @@ class MongoBackend(Backend):
 		return False
 
 
-	async def _datas_insert(self, dbc : AsyncIOMotorCollection, datas: Iterable[D]) -> tuple[int, int]:
+	async def _datas_insert(self, dbc : AsyncIOMotorCollection, datas: Sequence[D]) -> tuple[int, int]:
 		"""Store data to the backend. Returns the number of added and not added"""
 		debug('starting')
 		added		: int = 0
 		not_added 	: int = 0
 		try:
 			debug(f'inserting to {self.backend}.{dbc.name}')
-
+			if len(datas) == 0:
+				raise ValueError('No data to insert')
 			res : InsertManyResult = await dbc.insert_many( (data.obj_db() for data in datas), 
 															ordered=False)
 			added = len(res.inserted_ids)
@@ -556,7 +590,7 @@ class MongoBackend(Backend):
 			else:
 				error('BulkWriteError.details is None')
 		except Exception as err:
-			error(f'Unknown error when adding  entries to {self.backend}.{dbc.name}: {err}')
+			error(f'Unknown error when adding entries to {self.backend}.{dbc.name}: {err}')
 		debug(f'added={added}, not_added={not_added}')
 		return added, not_added
 
@@ -663,7 +697,7 @@ class MongoBackend(Backend):
 		"""Export raw documents as a list from Mongo DB"""
 		try:
 			debug(f'starting')
-			dbc : AsyncIOMotorCollection = self.db[self._T[table_type]]
+			dbc : AsyncIOMotorCollection = self.db[self.get_table(table_type)]
 			debug(f'export from: {self.backend}.{dbc.name}')
 			if batch == 0: 
 				batch = MONGO_BATCH_SIZE
@@ -675,8 +709,9 @@ class MongoBackend(Backend):
 				pipeline.append({ '$sample' : { 'size' : int(sample) }})
 
 			cursor : AsyncIOMotorCursor = dbc.aggregate(pipeline, allowDiskUse=True)
-			while (objs := await cursor.to_list(batch)) is not None:
+			while objs := await cursor.to_list(batch):
 				yield objs
+			debug(f'finished exporting {table_type}')
 		except Exception as err:
 			error(f'Error fetching data from {self.backend}.{self._T[table_type]}: {err}')	
 
@@ -875,7 +910,7 @@ class MongoBackend(Backend):
 			yield account
 
 
-	async def accounts_insert(self, accounts: Iterable[BSAccount]) -> tuple[int, int]:
+	async def accounts_insert(self, accounts: Sequence[BSAccount]) -> tuple[int, int]:
 		"""Store account to the backend. Returns the number of added and not added"""
 		debug('starting')
 		return await self._datas_insert(self.collection_accounts, accounts)
@@ -915,7 +950,7 @@ class MongoBackend(Backend):
 		return False
 
 
-	async def player_achievements_insert(self, player_achievements: Iterable[WGplayerAchievementsMaxSeries]) -> tuple[int, int]:
+	async def player_achievements_insert(self, player_achievements: Sequence[WGplayerAchievementsMaxSeries]) -> tuple[int, int]:
 		"""Store player achievements to the backend. Returns number of stats inserted and not inserted"""
 		debug('starting')
 		return await self._datas_insert(self.collection_player_achievements, player_achievements)
@@ -1202,7 +1237,7 @@ class MongoBackend(Backend):
 		return await self._data_delete(self.collection_replays, id=replay_id)	
 
 
-	async def replays_insert(self, replays: Iterable[WoTBlitzReplayJSON]) ->  tuple[int, int]:
+	async def replays_insert(self, replays: Sequence[WoTBlitzReplayJSON]) ->  tuple[int, int]:
 		"""Insert replays to MongoDB backend"""
 		debug('starting')
 		return await self._datas_insert(self.collection_replays, replays)
@@ -1331,7 +1366,7 @@ class MongoBackend(Backend):
 		return False
 
 
-	async def tank_stats_insert(self, tank_stats: Iterable[WGtankStat]) -> tuple[int, int]:
+	async def tank_stats_insert(self, tank_stats: Sequence[WGtankStat]) -> tuple[int, int]:
 		"""Store tank stats to the backend. Returns the number of added and not added"""
 		debug('starting')
 		return await self._datas_insert(self.collection_tank_stats, tank_stats)
