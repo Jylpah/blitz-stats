@@ -841,11 +841,11 @@ def import_mp_init( backend_config: dict[str, Any],
 
 	if (tmp_db := Backend.create(**backend_config)) is None:
 		raise ValueError('could not create backend')	
-	db = tmp_db
-	readQ = AsyncQueue(inputQ)
-	in_model = import_model	
-	rel_mapper = release_map
-	opt_force = force
+	db 			= tmp_db
+	readQ 		= AsyncQueue(inputQ)
+	in_model 	= import_model	
+	rel_mapper 	= release_map
+	opt_force	 = force
 	debug('finished')
 	
 
