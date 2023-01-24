@@ -88,23 +88,14 @@ def get_fork(id : int, dbconfig: dict[str, Any], Qin: Queue):
 
 async def main(N: int):
 	I : int = 20
-	bm : BucketMapper
-	
-	Qin : Queue[int|None] = Queue(5)
-	config : ConfigParser = ConfigParser()
+	Qin 	: Queue[int|None] = Queue(5)
+	config 	: ConfigParser = ConfigParser()
 	config.read('blitzstats.ini')
 	if (db := Backend.create('mongodb', config=config)):
 		dbconfig = db.config
 	else: 
 		return -1
-	# If you uncomment the line below, DB access will stall forked processes
-	# bm = await release_mapper(db)
-
 	# if await db.test():
-	# 	print(f'main(): connection test succeeded')
-	# else:
-	# 	print(f'main(): connection test FAILED')
-	print(f'{dbconfig}')
 	processes : list[Process] = list()
 	for i in range(N):
 		p : Process = Process(target=get_fork, args=[ i, dbconfig, Qin ])
