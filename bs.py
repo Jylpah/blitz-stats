@@ -28,7 +28,7 @@ import setup
 
 # from blitzutils import BlitzStars, WG, WoTinspector, RecordLogger
 
-logging.getLogger("asyncio").setLevel(logging.DEBUG)
+# logging.getLogger("asyncio").setLevel(logging.DEBUG)
 logger = logging.getLogger()
 error 	= logger.error
 message	= logger.warning
