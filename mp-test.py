@@ -5,7 +5,6 @@ from typing import Any
 from multiprocessing import Manager
 from multiprocessing.pool import Pool, AsyncResult 
 from queue import Queue
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCursor, AsyncIOMotorCollection # type: ignore
 from backend import Backend, BSTableType
 from configparser import ConfigParser
 from mongobackend import MongoBackend
@@ -16,15 +15,13 @@ from alive_progress import alive_bar  # type: ignore
 
 logging.getLogger().setLevel(logging.DEBUG)
 
-db : Backend
-dbconfig : dict[str, Any]
-Q : AsyncQueue
+db 		: Backend
+dbconfig: dict[str, Any]
+Q  		: AsyncQueue
 
 async def get_async(id: int) -> Any:
 	global db, Q	
 	i = 0
-	# if (db := Backend.create(**dbconfig)) is None:
-	# 	return -1
 	if await db.test():
 		print(f'#{id}: connection test succeeded')
 	else:
@@ -41,7 +38,7 @@ async def get_async(id: int) -> Any:
 
 def init(dbconfig: dict[str, Any], Qin: Queue) -> None:
 	global db, Q
-	Q = AsyncQueue(Qin)
+	Q = AsyncQueue.from_queue(Qin)
 	
 	if (tmp := Backend.create(**dbconfig)):
 		db = tmp
