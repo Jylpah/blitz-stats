@@ -1022,6 +1022,7 @@ class Backend(ABC):
 				not_added = 0
 				tank_stats = await tank_statsQ.get()
 				read = len(tank_stats)
+				stats.log('read', read)
 				try:
 					if force:
 						debug(f'Trying to upsert {read} tank stats into {self.backend}.{self.table_tank_stats}')
@@ -1030,8 +1031,8 @@ class Backend(ABC):
 					else:
 						debug(f'Trying to insert {read} tank stats into {self.backend}.{self.table_tank_stats}')
 						added, not_added = await self.tank_stats_insert(tank_stats)
-						stats.log('accounts added', added)
-					stats.log('accounts not added', not_added)
+						stats.log('tank stats added', added)
+					stats.log('tank stats not added', not_added)
 				except Exception as err:
 					debug(f'Error: {err}')
 					stats.log('errors', read)
