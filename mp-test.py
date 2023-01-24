@@ -66,6 +66,7 @@ async def main(N: int):
 			dbconfig = db.config
 		else: 
 			return -1
+		# If you uncomment the line below, DB access will stall forked processes
 		# bm = await release_mapper(db)
 		with Pool(processes=N, initializer=init, initargs=[ dbconfig, Q ]) as pool:
 			results : AsyncResult = pool.map_async(get, range(N))
