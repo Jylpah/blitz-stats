@@ -22,6 +22,7 @@ import releases
 import tank_stats 
 import player_achievements 
 import setup 
+import tankopedia
 
 # import blitzutils as bu
 # import utils as su
@@ -136,6 +137,8 @@ async def main(argv: list[str]):
 			raise Exception("Failed to define argument parser for: replays")
 		if not releases.add_args(releases_parser, config):
 			raise Exception("Failed to define argument parser for: releases")
+		if not tankopedia.add_args(tankopedia_parser, config):
+			raise Exception("Failed to define argument parser for: tankopedia")
 		if not setup.add_args(setup_parser, config):
 			raise Exception("Failed to define argument parser for: setup")
 		if not tank_stats.add_args(tank_stats_parser, config):
@@ -170,7 +173,7 @@ async def main(argv: list[str]):
 		elif args.main_cmd == 'releases':
 			await releases.cmd(backend, args)
 		elif args.main_cmd == 'tankopedia':
-			raise NotImplementedError
+			await tankopedia.cmd(backend, args)
 		elif args.main_cmd == 'setup':
 			await setup.cmd(backend, args)
 		else:
