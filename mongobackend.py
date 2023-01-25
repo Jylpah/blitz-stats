@@ -1605,6 +1605,18 @@ class MongoBackend(Backend):
 			debug(f'Could get Tankopedia from {self.table_uri(BSTableType.Tankopedia)}: {err}')
 
 
+	async def tankopedia_export(self, model: type[JSONExportable] = Tank, 
+								sample: float = 0) -> AsyncGenerator[Tank, None]:
+		"""Export tankopedia"""
+		debug('starting')
+		async for tank in self._datas_export(self.collection_replays, 
+												in_type=model, 
+												out_type=Tank, 
+												sample=sample):
+			yield tank
+
+
+
 	########################################################
 	# 
 	# MongoBackend(): error_

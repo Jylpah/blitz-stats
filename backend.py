@@ -1196,6 +1196,13 @@ class Backend(ABC):
 
 
 	@abstractmethod	
+	async def tankopedia_export(self, model: type[JSONExportable] = Tank, 
+								sample: float = 0) -> AsyncGenerator[Tank, None]:
+		"""Export tankopedia"""
+		raise NotImplementedError
+		yield Tank()
+
+
 # def init_backend(driver: str, 
 # 				config: ConfigParser | None, 
 # 				database : str | None = None, 
