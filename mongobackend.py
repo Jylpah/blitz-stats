@@ -1416,20 +1416,18 @@ class MongoBackend(Backend):
 			
 			# Pipeline build based on ESR rule
 			# https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
-
-			if regions != Region.has_stats():
-				match.append({ alias('region') : { '$in' : [ r.value for r in regions ]} })
+			
+			match.append({ alias('region') : { '$in' : [ r.value for r in regions ]} })
+			if release is not None:
+				match.append({ alias('release'): release.release })
 			if accounts is not None:
 				match.append({ alias('account_id'): { '$in': [ a.id for a in accounts ]}})
 			if tanks is not None:
 				match.append({ alias('tank_id'): { '$in': [ t.tank_id for t in tanks ]}})
-			if release is not None:
-				match.append({ alias('release'): release.release })
 			if since is not None:
 				match.append({ alias('last_battle_time'): { '$gte': since.timestamp() } })
 
-			if len(match) > 0:
-				pipeline.append( { '$match' : { '$and' : match } })
+			pipeline.append( { '$match' : { '$and' : match } })
 
 			if sample >= 1:				
 				pipeline.append({ '$sample' : {'size' : int(sample) } })
