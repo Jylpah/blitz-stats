@@ -130,7 +130,7 @@ async def main(argv: list[str]):
 		tankopedia_parser 			= cmd_parsers.add_parser('tankopedia', help='tankopedia help')
 		releases_parser 			= cmd_parsers.add_parser('releases', help='releases help')
 		setup_parser 				= cmd_parsers.add_parser('setup', help='setup help')
-		
+	
 		if not accounts.add_args(accounts_parser, config):
 			raise Exception("Failed to define argument parser for: accounts")
 		if not replays.add_args(replays_parser, config):
