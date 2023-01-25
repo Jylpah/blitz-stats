@@ -1204,6 +1204,18 @@ class Backend(ABC):
 		yield Tank()
 
 
+	@abstractmethod
+	async def tankopedia_replace(self, tank: Tank, upsert : bool = True) -> bool:
+		""""Replace tank in Tankopedia"""
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def tankopedia_insert(self, tank: Tank) -> bool:
+		""""insert tank into Tankopedia"""
+		raise NotImplementedError
+
+
 	async def tankopedia_get_worker(self, 
 									tankQ 		: Queue[Tank], 
 									tanks 		: list[Tank] | None 		= None, 

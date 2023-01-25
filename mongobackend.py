@@ -1129,13 +1129,6 @@ class MongoBackend(Backend):
 		return await self._data_insert(self.collection_releases, data=release)
 
 
-	async def release_delete(self, release: str) -> bool:
-		"""Delete a release from backend"""
-		debug('starting')
-		release = WGBlitzRelease.validate_release(release)
-		return await self._data_delete(self.collection_releases, id=release)
-
-
 	async def release_update(self, release: BSBlitzRelease, 
 								update: dict[str, Any] | None = None, 
 								fields: list[str] | None= None) -> bool:
@@ -1158,6 +1151,13 @@ class MongoBackend(Backend):
 		debug('starting')
 		return await self._data_replace(self.collection_releases, data=release, 
 										id=release.release, upsert=upsert)	
+
+
+	async def release_delete(self, release: str) -> bool:
+		"""Delete a release from backend"""
+		debug('starting')
+		release = WGBlitzRelease.validate_release(release)
+		return await self._data_delete(self.collection_releases, id=release)
 
 
 	async def _mk_pipeline_releases(self, release_match: str | None = None, 
@@ -1603,6 +1603,20 @@ class MongoBackend(Backend):
 					error(f'{obj}')
 		except Exception as err:
 			debug(f'Could get Tankopedia from {self.table_uri(BSTableType.Tankopedia)}: {err}')
+
+
+
+	async def tankopedia_insert(self, tank: Tank) -> bool:
+		""""insert tank into Tankopedia"""
+		debug('starting')
+		return await self._data_insert(self.collection_tankopedia, data=tank)
+
+
+	async def tankopedia_replace(self, tank: Tank, upsert : bool = True) -> bool:
+		""""Replace tank in Tankopedia"""
+		debug('starting')
+		return await self._data_replace(self.collection_tankopedia, data=tank, 
+										id=tank.tank_id, upsert=upsert)	
 
 
 	async def tankopedia_export(self, model: type[JSONExportable] = Tank, 
