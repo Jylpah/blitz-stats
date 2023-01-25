@@ -1216,6 +1216,36 @@ class Backend(ABC):
 		raise NotImplementedError
 
 
+	async def tankopedia_insert_worker(self, tankQ: Queue[Tank] , force: bool = False) -> EventCounter:
+		debug(f'starting, force={force}')
+		stats : EventCounter = EventCounter('tankopedia insert')
+		try:
+			while True:
+				tank : Tank = await tankQ.get()
+				try:					
+					if force:
+						debug(f'Trying to upsert tank "{tank.name}" into {self.table_uri(BSTableType.Tankopedia)}')
+						if await self.tankopedia_replace(tank, upsert=True):
+							stats.log('tanks added/updated')
+						else:
+							stats.log('tanks not added')
+					else:
+						debug(f'Trying to insert tank "{tank}" into {self.table_uri(BSTableType.Tankopedia)}')
+						if await self.tankopedia_insert(tank):
+							stats.log('tanks added')
+						else:
+							stats.log('tanks not added')
+				except Exception as err:
+					debug(f'Error: {err}')
+					stats.log('errors')
+				finally:
+					tankQ.task_done()
+		except CancelledError as err:
+			debug(f'Cancelled')
+		except Exception as err:
+			error(f'{err}')
+		return stats
+
 	async def tankopedia_get_worker(self, 
 									tankQ 		: Queue[Tank], 
 									tanks 		: list[Tank] | None 		= None, 
