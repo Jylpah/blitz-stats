@@ -671,7 +671,7 @@ class MongoBackend(Backend):
 					else:
 						yield out_type.parse_obj(obj_in.obj_db())
 				except Exception as err:
-					error(f'{err}')
+					error(f'{err}: {obj}')
 					continue
 		except Exception as err:
 			error(f'Error fetching data from {self.backend}.{dbc.name}: {err}')	
@@ -1570,6 +1570,12 @@ class MongoBackend(Backend):
 		except Exception as err:
 			debug(f'Could not find duplicates from {self.table_uri(BSTableType.TankStats)}: {err}')	
 
+	########################################################
+	# 
+	# MongoBackend(): tankopedia
+	#
+	########################################################
+
 
 	async def tankopedia_get(self, 
 							tanks 		: list[Tank] | None 		= None, 
@@ -1622,8 +1628,8 @@ class MongoBackend(Backend):
 	async def tankopedia_export(self, model: type[JSONExportable] = Tank, 
 								sample: float = 0) -> AsyncGenerator[Tank, None]:
 		"""Export tankopedia"""
-		debug('starting')
-		async for tank in self._datas_export(self.collection_replays, 
+		debug(f'starting: model={model} ')
+		async for tank in self._datas_export(self.collection_tankopedia, 
 												in_type=model, 
 												out_type=Tank, 
 												sample=sample):
