@@ -994,6 +994,16 @@ class Backend(ABC):
 		yield [WGtankStat()]
 
 
+	@abstractmethod
+	async def tank_stats_duplicates(self, 
+									tank: 	 Tank,
+									release: BSBlitzRelease,
+									regions: set[Region] = Region.API_regions(), 									
+									sample : int = 0) -> AsyncGenerator[WGtankStat, None]:
+		"""Find duplicate tank stats from the backend"""
+		raise NotImplementedError
+		yield WGtankStat()
+
 
 	async def tank_stats_get_worker(self, tank_statsQ : Queue[WGtankStat], **getargs) -> EventCounter:
 		debug('starting')

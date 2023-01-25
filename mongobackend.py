@@ -18,7 +18,8 @@ from backend import Backend, OptAccountsDistributed, OptAccountsInactive, BSTabl
 from models import BSAccount, BSBlitzRelease, StatsTypes
 from pyutils import epoch_now, JSONExportable, AliasMapper
 from blitzutils.models import Region, Account, Tank, WoTBlitzReplayJSON, WoTBlitzReplaySummary, \
-								WGtankStat, WGBlitzRelease, WGplayerAchievementsMaxSeries
+								WGtankStat, WGBlitzRelease, WGplayerAchievementsMaxSeries, \
+								EnumNation, EnumVehicleTier, EnumVehicleTypeStr
 
 # Setup logging
 logger	= logging.getLogger()
@@ -350,14 +351,8 @@ class MongoBackend(Backend):
 		"""Init MongoDB backend: create collections and set indexes"""
 		try:
 			debug('starting')
-
-			DBC 	: str = 'NOT SET'
-			dbc 	: AsyncIOMotorCollection
-			mapper 	: AliasMapper
-			model 	: type[JSONExportable]	
-			index : list[MongoIndex] 	
-			indexes : list[list[MongoIndex]]
-			db_fields : list[str]
+			DBC 	: str = 'NOT SET'			
+			indexes : list[list[MongoIndex]]			
 
 			# Accounts
 			if BSTableType.Accounts.name in collections:
@@ -454,8 +449,8 @@ class MongoBackend(Backend):
 										('tank_id', ASCENDING),
 										('last_battle_time', DESCENDING)
 									])					
-					indexes.append([ 	('release', DESCENDING),
-										('region', ASCENDING),
+					indexes.append([ 	('region', ASCENDING),
+										('release', DESCENDING),										
 										('tank_id', ASCENDING),
 										('account_id', ASCENDING),										
 									])
@@ -1537,6 +1532,75 @@ class MongoBackend(Backend):
 		# send the last batch
 		if len(res) > 0:
 			yield res
+
+
+	async def tank_stats_duplicates(self, 
+									tank: Tank,
+									release: BSBlitzRelease,
+									regions: set[Region] = Region.API_regions(), 									
+									sample : int = 0) -> AsyncGenerator[WGtankStat, None]:
+		"""Find duplicate tank stats from the backend"""
+		debug('starting')
+		try:
+			a = AliasMapper(WGtankStat)
+			alias : Callable = a.alias
+			pipeline : list[dict[str, Any]]	
+			match_stage : list[dict[str, Any]] | None
+			if (match_stage := await self._mk_pipeline_tank_stats(release = release, 
+																regions = regions)) is None:
+				raise ValueError('Could not create $match pipeline')
+			match_stage.append({ alias('tank_id') : tank.tank_id })			
+			
+			pipeline = [{ '$match': 	{ '$and': match_stage } }, 
+						{ '$sort': 		{ alias('last_battle_time'): DESCENDING } }, 
+						{ '$group': 	{ '_id': '$' + alias('account_id'), 
+										'all_ids': {'$push': '$_id' },
+										'len': { "$sum": 1 } } },                           
+						{ '$match': 	{ 'len': { '$gt': 1 } } }, 
+						{ '$project':	{ 'ids': {  '$slice': [  '$all_ids', 1, '$len' ] } } }
+						]
+			if sample > 0:
+				pipeline.append({ '$sample' : { 'size': sample } })
+			
+			async for _id in self.collection_tank_stats.aggregate(pipeline, allowDiskUse=True):
+				if (tank_stat := await self._data_get(self.collection_tank_stats, WGtankStat, _id)) is not None:
+					print(f'tank stat duplicate: {tank_stat}')
+					yield tank_stat
+
+		except Exception as err:
+			debug(f'Could not find duplicates from {self.table_uri(BSTableType.TankStats)}: {err}')	
+
+
+	async def tankopedia_get(self, 
+							tier: 	EnumVehicleTier | None = None,
+							type: 	EnumVehicleTypeStr | None = None,
+							nation: EnumNation | None = None,
+							premium: bool | None = None) -> AsyncGenerator[Tank, None]:
+		debug('starting')
+		try:
+			a 		: AliasMapper 	= AliasMapper(Tank)
+			alias 	: Callable 		= a.alias
+			query 	: dict[str, str | int | bool] = dict()
+
+			if premium is not None:
+				query[alias('is_premium')] = premium
+			if tier is not None:
+				query[alias('tier')] = tier.value
+			if type is not None:
+				query[alias('type')] = type.value
+			if nation is not None:
+				query[alias('nation')] = nation.value
+			
+			async for obj in self.collection_tankopedia.find(query):
+				try:
+					tank : Tank = Tank.parse_obj(obj)
+					yield tank
+				except Exception as err:
+					error(f'Could not parse object: {err}')
+					error(f'{obj}')
+		except Exception as err:
+			debug(f'Could get Tankopedia from {self.table_uri(BSTableType.Tankopedia)}: {err}')
+
 
 	########################################################
 	# 
