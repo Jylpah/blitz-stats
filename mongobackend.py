@@ -1572,24 +1572,27 @@ class MongoBackend(Backend):
 
 
 	async def tankopedia_get(self, 
-							tier: 	EnumVehicleTier | None = None,
-							type: 	EnumVehicleTypeStr | None = None,
-							nation: EnumNation | None = None,
-							premium: bool | None = None) -> AsyncGenerator[Tank, None]:
+							tanks 		: list[Tank] | None 		= None, 
+							tier		: EnumVehicleTier | None 	= None,
+							tank_type	: EnumVehicleTypeStr | None = None,
+							nation		: EnumNation | None 		= None,							
+							is_premium	: bool | None 				= None) -> AsyncGenerator[Tank, None]:
 		debug('starting')
 		try:
 			a 		: AliasMapper 	= AliasMapper(Tank)
 			alias 	: Callable 		= a.alias
-			query 	: dict[str, str | int | bool] = dict()
+			query 	: dict[str, str | int | bool | dict[str, Any]] = dict()
 
-			if premium is not None:
-				query[alias('is_premium')] = premium
+			if is_premium is not None:
+				query[alias('is_premium')] = is_premium
 			if tier is not None:
 				query[alias('tier')] = tier.value
-			if type is not None:
-				query[alias('type')] = type.value
+			if tank_type is not None:
+				query[alias('type')] = tank_type.value
 			if nation is not None:
-				query[alias('nation')] = nation.value
+				query[alias('nation')] = nation.name
+			if tanks is not None and len(tanks) > 0:
+				query[alias('tank_id')] = { '$in': [ t.tank_id for t in tanks ] }
 			
 			async for obj in self.collection_tankopedia.find(query):
 				try:

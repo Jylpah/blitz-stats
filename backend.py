@@ -1178,6 +1178,24 @@ class Backend(ABC):
 		raise NotImplementedError
 		
 
+	#----------------------------------------
+	# Tankopedia
+	#----------------------------------------
+
+
+	@abstractmethod
+	async def tankopedia_get(self, 
+							tanks 		: list[Tank] | None 		= None, 
+							tier		: EnumVehicleTier | None 	= None,
+							tank_type	: EnumVehicleTypeStr | None = None,
+							nation		: EnumNation | None 		= None,							
+							is_premium	: bool | None 				= None,
+							) -> AsyncGenerator[Tank, None]:
+		raise NotImplementedError
+		yield Tank()
+
+
+	@abstractmethod	
 # def init_backend(driver: str, 
 # 				config: ConfigParser | None, 
 # 				database : str | None = None, 
