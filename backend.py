@@ -16,7 +16,7 @@ import queue
 from pydantic import BaseModel, Field
 
 from models import BSAccount, BSBlitzRelease, StatsTypes
-from blitzutils.models import Region, WoTBlitzReplayJSON, WGtankStat, Account, Tank, \
+from blitzutils.models import Region, WoTBlitzReplayJSON, WGtankStat, Account, WGTank, Tank, \
 			WGplayerAchievementsMaxSeries, EnumVehicleTier, EnumNation, EnumVehicleTypeStr
 from pyutils import EventCounter, JSONExportable, epoch_now, is_alphanum
 # from mongobackend import MongoBackend
