@@ -11,7 +11,7 @@ from alive_progress import alive_bar		# type: ignore
 from backend import Backend, OptAccountsInactive, BSTableType, \
 					ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL, get_sub_type
 from models import BSAccount, BSBlitzRelease, StatsTypes
-from blitzutils.models import Tank, EnumNation, EnumVehicleTier, EnumVehicleTypeStr
+from blitzutils.models import EnumNation, EnumVehicleTier, EnumVehicleTypeStr, Tank, WGTank
 from pyutils import export, CSVExportable, JSONExportable, TXTExportable, EventCounter
 
 logger 	= logging.getLogger()
@@ -80,7 +80,23 @@ def add_args_edit(parser: ArgumentParser, config: Optional[ConfigParser] = None)
 def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
-	
+		import_parsers = parser.add_subparsers(dest='import_backend', 	
+												title='tankopedia import backend',
+												description='valid import backends', 
+												metavar=', '.join(Backend.list_available()))
+		import_parsers.required = True
+
+		for backend in Backend.get_registered():
+			import_parser =  import_parsers.add_parser(backend.driver, help=f'tankopedia import {backend.driver} help')
+			if not backend.add_args_import(import_parser, config=config):
+				raise Exception(f'Failed to define argument parser for: tankopedia import {backend.driver}')
+		
+		parser.add_argument('--import-model', metavar='IMPORT-TYPE', type=str, 
+							default='Tank', choices=['Tank', 'WGTank'], 
+							help='Data format to import. Default is blitz-stats native format.')
+		parser.add_argument('--sample', type=float, default=0, help='Sample size')
+		parser.add_argument('--force', action='store_true', default=False, 
+							help='Overwrite existing file(s) when exporting')
 		return True
 	except Exception as err:
 		error(f'{err}')
@@ -116,6 +132,8 @@ def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 		parser.add_argument('--is-premium', type=bool, default=None, metavar='PREMIUM',
 								choices=[ True, False ], 
 								help="Export premium/non-premium tanks")
+		parser.add_argument('--force', action='store_true', default=False, 
+							help='Overwrite existing expoirt file')
 
 		return True
 	except Exception as err:
@@ -132,17 +150,17 @@ def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 async def cmd(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
-		# if args.tank_stats_cmd == 'update':
+		# if args.tankopedia_cmd == 'update':
 		# 	return await cmd_update(db, args)
 
-		# elif args.tank_stats_cmd == 'edit':
+		# elif args.tankopedia_cmd == 'edit':
 		# 	return await cmd_edit(db, args)
 
-		if args.tank_stats_cmd == 'export':
+		if args.tankopedia_cmd == 'export':
 			return await cmd_export(db, args)
 
-		# elif args.tank_stats_cmd == 'import':
-		# 	return await cmd_import(db, args)
+		elif args.tankopedia_cmd == 'import':
+			return await cmd_import(db, args)
 			
 	except Exception as err:
 		error(f'{err}')
@@ -159,9 +177,8 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		stats 		: EventCounter 				= EventCounter('tankopedia export')
-		tankQ 			: Queue[Tank] 			= Queue(100)
+		tankQ 		: Queue[Tank] 			= Queue(100)
 		filename	: str						= args.filename
-		export_stdout : bool 					= filename == '-'
 		nation 		: EnumNation | None 		= None
 		tier 		: EnumVehicleTier | None 	= None
 		tank_type 	: EnumVehicleTypeStr | None = None
@@ -196,4 +213,48 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 
 	except Exception as err:
 		error(f'{err}')
+	return False
+
+########################################################
+# 
+# cmd_export()
+#
+########################################################
+
+
+async def cmd_import(db: Backend, args : Namespace) -> bool:
+	"""Import tankopedio from other backend"""	
+	try:		
+		debug('starting')
+		debug(f'{args}')
+		stats 			: EventCounter 					= EventCounter('tankopedia import')
+		tankQ 			: Queue[Tank]					= Queue(100)
+		import_db   	: Backend | None 				= None
+		import_backend 	: str 							= args.import_backend
+		import_model 	: type[JSONExportable] | None 	= None
+
+		if (import_model := get_sub_type(args.import_model, JSONExportable)) is None:
+			raise ValueError("--import-model has to be subclass of JSONExportable")
+
+		insert_worker : Task = create_task(db.tankopedia_insert_worker(tankQ=tankQ, force=args.force))
+
+		if (import_db := Backend.create_import_backend(driver=import_backend, 
+														args=args, 
+														import_type=BSTableType.Tankopedia, 
+														copy_from=db,
+														config_file=args.import_config)) is None:
+			raise ValueError(f'Could not init {import_backend} to import tankopedia from')
+
+		debug(f'import_db: {import_db.table_uri(BSTableType.Tankopedia)}')
+
+		async for tank in import_db.tankopedia_export(model=import_model, sample=args.sample):
+			await tankQ.put(tank)
+			stats.log('tanks read')
+
+		await tankQ.join()
+		await stats.gather_stats([insert_worker])
+		stats.print()
+		return True
+	except Exception as err:
+		error(f'{err}')	
 	return False
