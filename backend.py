@@ -16,7 +16,8 @@ import queue
 from pydantic import BaseModel, Field
 
 from models import BSAccount, BSBlitzRelease, StatsTypes
-from blitzutils.models import Region, WoTBlitzReplayJSON, WGtankStat, Account, Tank, WGplayerAchievementsMaxSeries
+from blitzutils.models import Region, WoTBlitzReplayJSON, WGtankStat, Account, Tank, \
+			WGplayerAchievementsMaxSeries, EnumVehicleTier, EnumNation, EnumVehicleTypeStr
 from pyutils import EventCounter, JSONExportable, epoch_now, is_alphanum
 # from mongobackend import MongoBackend
 
@@ -798,7 +799,7 @@ class Backend(ABC):
 	@abstractmethod	
 	async def releases_export(self, model: type[JSONExportable] = BSBlitzRelease, 
 								sample: float = 0) -> AsyncGenerator[BSBlitzRelease, None]:
-		"""Import releases"""
+		"""Export releases"""
 		raise NotImplementedError
 		yield BSBlitzRelease()
 
@@ -1176,7 +1177,7 @@ class Backend(ABC):
 							after: datetime | None = None) -> int:
 		"""Clear errors from backend ErrorLog"""
 		raise NotImplementedError
-		
+
 
 	#----------------------------------------
 	# Tankopedia
@@ -1203,6 +1204,28 @@ class Backend(ABC):
 		yield Tank()
 
 
+	async def tankopedia_get_worker(self, 
+									tankQ 		: Queue[Tank], 
+									tanks 		: list[Tank] | None 		= None, 
+									tier		: EnumVehicleTier | None 	= None,
+									tank_type	: EnumVehicleTypeStr | None = None,
+									nation		: EnumNation | None 		= None,							
+									is_premium	: bool | None 				= None,
+									) -> EventCounter:
+		stats 		: EventCounter 			= EventCounter('get tankopedia')
+		try:
+			async for tank in self.tankopedia_get(tanks=tanks, 
+													tier=tier, 
+													tank_type=tank_type, 
+													nation=nation,
+													is_premium=is_premium):
+				await tankQ.put(tank)
+				stats.log('tanks')
+		except Exception as err:
+			error(f'{err}')
+		return stats
+		
+
 # def init_backend(driver: str, 
 # 				config: ConfigParser | None, 
 # 				database : str | None = None, 
@@ -1218,25 +1241,25 @@ class Backend(ABC):
 # 	return False
 
  
-class ForkedBackend():
+# class ForkedBackend():
 	
-	def __init__(self, 
-				db			: Backend, 
-				readQ 		: queue.Queue, 
-				import_model: type[JSONExportable], 
-				options		: dict[str, Any] = dict()):
-		"""Import Backend for forked processes"""		
-		self.db				: Backend = db
-		self.readQ			: queue.Queue = readQ
-		self.import_model	: type[JSONExportable] = import_model
-		self._options		: dict[str, Any] = options
+# 	def __init__(self, 
+# 				db			: Backend, 
+# 				readQ 		: queue.Queue, 
+# 				import_model: type[JSONExportable], 
+# 				options		: dict[str, Any] = dict()):
+# 		"""Import Backend for forked processes"""		
+# 		self.db				: Backend = db
+# 		self.readQ			: queue.Queue = readQ
+# 		self.import_model	: type[JSONExportable] = import_model
+# 		self._options		: dict[str, Any] = options
 
 
-	def add_option(self, option: str, value: Any):
-		self._options[option] = value
+# 	def add_option(self, option: str, value: Any):
+# 		self._options[option] = value
 
 
-	def option(self, option: str) -> Any | None:
-		if option in self._options:
-			return self._options[option]
-		return None
+# 	def option(self, option: str) -> Any | None:
+# 		if option in self._options:
+# 			return self._options[option]
+# 		return None
