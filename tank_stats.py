@@ -14,7 +14,7 @@ from math import ceil
 from alive_progress import alive_bar		# type: ignore
 #from yappi import profile 					# type: ignore
 
-from multiprocessing import Manager
+from multiprocessing import Manager, cpu_count
 from multiprocessing.pool import Pool, AsyncResult 
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -215,7 +215,7 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 			import_parser =  import_parsers.add_parser(backend.driver, help=f'tank-stats import {backend.driver} help')
 			if not backend.add_args_import(import_parser, config=config):
 				raise Exception(f'Failed to define argument parser for: tank-stats import {backend.driver}')
-		parser.add_argument('--threads', type=int, default=WORKERS_IMPORTERS, help='Set number of asynchronous threads')
+		parser.add_argument('--threads', type=int, default=0, help='Set number of asynchronous threads')
 		parser.add_argument('--import-model', metavar='IMPORT-TYPE', type=str, 
 							default='WGtankStat', choices=['WGtankStat'], 
 							help='Data format to import. Default is blitz-stats native format.')
@@ -906,6 +906,9 @@ async def cmd_importMP(db: Backend, args : Namespace) -> bool:
 		import_backend 	: str 							= args.import_backend
 		import_model 	: type[JSONExportable] | None 	= None
 		WORKERS 	 	: int 							= args.threads
+
+		if WORKERS == 0:
+			WORKERS = max( [cpu_count() - 1, 1 ])
 		
 		if (import_model := get_sub_type(args.import_model, JSONExportable)) is None:
 			raise ValueError("--import-model has to be subclass of JSONExportable")
