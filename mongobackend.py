@@ -282,7 +282,7 @@ class MongoBackend(Backend):
 			debug('starting')
 			super().add_args_import(parser=parser, config=config)
 
-			parser.add_argument('--server-url', metavar='SERVER-URL', type=str, default=None, dest='import_host',
+			parser.add_argument('--server-url', metavar='URL', type=str, default=None, dest='import_host',
 										help='Server URL to connect to. Required if the imported other than the current backend')
 			parser.add_argument('--database', metavar='DATABASE', type=str, default=None, dest='import_database',
 										help='Database to use. Uses current database as default')
@@ -435,18 +435,29 @@ class MongoBackend(Backend):
 				try:
 					DBC = self.table_tank_stats
 					indexes = list()
-					indexes.append([ 	('account_id', ASCENDING), 
-										('tank_id', ASCENDING), 
+					# indexes.append([ 	('account_id', ASCENDING), 
+					# 					('tank_id', ASCENDING), 
+					# 					('last_battle_time', DESCENDING)
+					# 				])
+					# indexes.append([ 	('release', DESCENDING), 
+					# 					('account_id', ASCENDING), 
+					# 					('tank_id', ASCENDING)
+					# 				])
+					# indexes.append([ 	('release', DESCENDING), 
+					# 					('region', ASCENDING),
+					# 					('account_id', ASCENDING),  
+					# 					('tank_id', ASCENDING)
+					# 				])
+
+					indexes.append([ 	('region', ASCENDING),
+										('account_id', ASCENDING),
+										('tank_id', ASCENDING),
 										('last_battle_time', DESCENDING)
-									])
-					indexes.append([ 	('release', DESCENDING), 
-										('account_id', ASCENDING), 
-										('tank_id', ASCENDING)
-									])
-					indexes.append([ 	('release', DESCENDING), 
+									])					
+					indexes.append([ 	('release', DESCENDING),
 										('region', ASCENDING),
-										('account_id', ASCENDING),  
-										('tank_id', ASCENDING)
+										('tank_id', ASCENDING),
+										('account_id', ASCENDING),										
 									])
 
 					await self.init_collection(DBC, indexes)
