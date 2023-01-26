@@ -11,7 +11,8 @@ from alive_progress import alive_bar		# type: ignore
 from backend import Backend, OptAccountsInactive, BSTableType, \
 					ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL, get_sub_type
 from models import BSAccount, BSBlitzRelease, StatsTypes
-from blitzutils.models import EnumNation, EnumVehicleTier, EnumVehicleTypeStr, Tank, WGTank
+from blitzutils.models import EnumNation, EnumVehicleTier, EnumVehicleTypeStr, EnumVehicleTypeInt, \
+			Tank, WGTank
 from pyutils import export, CSVExportable, JSONExportable, TXTExportable, EventCounter
 
 logger 	= logging.getLogger()
@@ -32,8 +33,12 @@ def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> b
 		tankopedia_parsers = parser.add_subparsers(dest='tankopedia_cmd', 	
 												title='tankopedia commands',
 												description='valid commands',
-												metavar='update | edit | import | export')
+												metavar='add | update | edit | import | export')
 		tankopedia_parsers.required = True
+		
+		add_parser = tankopedia_parsers.add_parser('add', help="tankopedia add help")
+		if not add_args_add(add_parser, config=config):
+			raise Exception("Failed to define argument parser for: tankopedia add")
 		
 		update_parser = tankopedia_parsers.add_parser('update', help="tankopedia update help")
 		if not add_args_update(update_parser, config=config):
@@ -51,6 +56,27 @@ def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> b
 		if not add_args_export(export_parser, config=config):
 			raise Exception("Failed to define argument parser for: tankopedia export")
 		debug('Finished')	
+		return True
+	except Exception as err:
+		error(f'{err}')
+	return False
+
+
+def add_args_add(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+	try:
+		debug('starting')	
+		parser.add_argument('tank_id', type=int, help='tank_id > 0')
+		parser.add_argument('--name', type=str, dest='tank_name', metavar='NAME',
+								default=None, help='tank name')
+		parser.add_argument('--nation', type=str, dest='tank_nation', metavar='NATION', default=None, 
+							help='tank nation: ' + ', '.join([ n.name for n in EnumNation ]))	
+		parser.add_argument('--tier', type=str, dest='tank_tier', metavar='TIER',
+								default=None, help='tank tier I-X or 1-10')	
+		parser.add_argument('--type', type=str, dest='tank_type', metavar='TYPE', default=None, 
+							help='tank type: ' + ', '.join([ n.name for n in EnumVehicleTypeInt ]))
+		parser.add_argument('--premium', action='store_true', default=False, dest='is_premium', 
+							help='Premium tank')
+
 		return True
 	except Exception as err:
 		error(f'{err}')
@@ -106,9 +132,9 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
-		EXPORT_FORMAT 	= 'json'
-		EXPORT_FILE 	= 'tanks'
-		EXPORT_SUPPORTED_FORMATS : list[str] = ['json']    # , 'csv'
+		EXPORT_FORMAT 	= 'txt'
+		EXPORT_FILE 	= '-'
+		EXPORT_SUPPORTED_FORMATS : list[str] = ['json', 'txt', 'csv']    # , 'csv'
 
 		if config is not None and 'TANKOPEDIA' in config.sections():
 			configTP 	= config['TANKOPEDIA']
@@ -161,9 +187,60 @@ async def cmd(db: Backend, args : Namespace) -> bool:
 
 		elif args.tankopedia_cmd == 'import':
 			return await cmd_import(db, args)
+		
+		elif args.tankopedia_cmd == 'add':
+			return await cmd_add(db, args)
 			
 	except Exception as err:
 		error(f'{err}')
+	return False
+
+
+########################################################
+# 
+# cmd_add()
+#
+########################################################
+
+
+async def cmd_add(db: Backend, args : Namespace) -> bool:
+	"""Add a tank to tankopedia """	
+	try:		
+		debug('starting')
+		# debug(f'{args}')
+		tank_id   	: int 						= args.tank_id
+		assert tank_id > 0, f"tank_id must be positive, was {tank_id}"
+		tank_name 	: str | None 				= args.tank_name
+		tank_nation	: EnumNation | None			= None
+		tank_tier	: EnumVehicleTier | None	= None
+		tank_type 	: EnumVehicleTypeInt | None	= None
+		is_premium 	: bool	 					= args.is_premium
+
+		if args.tank_nation is not None:
+			try:
+				tank_nation = EnumNation[args.tank_nation]
+			except Exception as err:
+				raise ValueError(f"could not set nation from '{args.tank_nation}': {err}")
+		if args.tank_tier is not None:
+			try:
+				tank_tier = EnumVehicleTier.read_tier(args.tank_tier)				
+			except Exception as err:
+				raise ValueError(f"could not set tier from '{args.tank_tier}': {err}")
+		if args.tank_type is not None:
+			try:
+				tank_type = EnumVehicleTypeInt[args.tank_type]
+			except Exception as err:
+				raise ValueError(f"could not set nation from '{args.tank_type}': {err}")	
+		tank : Tank = Tank(tank_id=tank_id, name=tank_name, nation=tank_nation, 
+							tier=tank_tier, type=tank_type, is_premium=is_premium)
+		
+		if await db.tankopedia_insert(tank):
+			message(f'Added tank to {db.driver}: {tank} ({tank.tank_id})')
+			return True
+		else:
+			error(f'Could not add tank to {db.driver}: {tank} ({tank.tank_id})')
+	except Exception as err:
+		error(f'{err}')	
 	return False
 
 ########################################################
@@ -184,6 +261,7 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 		tank_type 	: EnumVehicleTypeStr | None = None
 		is_premium 	: bool | None 				= None
 		tanks 		: list[Tank] 				= list()
+		std_out     : bool 						= filename == '-'
 		
 		if args.nation is not None:
 			nation = EnumNation[args.nation]
@@ -209,7 +287,8 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 										is_premium=is_premium))
 		await tankQ.join()
 		await stats.gather_stats([export_worker])
-		stats.print()
+		if not std_out:
+			stats.print()
 
 	except Exception as err:
 		error(f'{err}')
