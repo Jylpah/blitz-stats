@@ -560,39 +560,43 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 			assert False, f"Incorrect value for argument 'inactive': {args.inactive}"
 		
 		total : int = await db.accounts_count(regions=regions, inactive=inactive, disabled=disabled, sample=sample)
-		accounts_left : Condition = Condition()
-		await accounts_left.acquire()
 
 		if args.distributed > 0:
 			for i in range(args.distributed):
-				accountQs[str(i)] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
+				Qid : str = str(i)
+				accountQs[Qid] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
+				await accountQs[Qid].add_producer()
 				distributed = OptAccountsDistributed(i, args.distributed)
-				account_workers.append(create_task(db.accounts_get_worker(accountQs[str(i)], regions=regions, 
+				account_workers.append(create_task(db.accounts_get_worker(accountQs[Qid], regions=regions, 
 														inactive=inactive, disabled=disabled, sample=sample,
 														distributed=distributed)))
 				export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], 
-															accountQs[str(i)]), 
+															accountQs[Qid]), 
 														format=args.format, filename=f'{filename}.{i}', 
 														force=force, append=args.append)))
 		elif args.by_region:
 			accountQs['all'] = IterableQueue(maxsize=ACCOUNTS_Q_MAX, count_items=False)
+			
+			# fetch accounts for all the regios
+			await accountQs['all'].add_producer()
+			account_workers.append(create_task(db.accounts_get_worker(accountQs['all'], regions=regions, 
+														inactive=inactive, disabled=disabled, sample=sample)))
 			# by region
 			for region in regions:
-				accountQs[region.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)											
+				accountQs[region.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
+				
+				await accountQs[region.name].add_producer()										
 				export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], 
 														accountQs[region.name]), 
 														format=args.format, 
 														filename=f'{filename}.{region.name}', 
-														force=force, append=args.append)))
-			
-			# fetch accounts for all the regios
-			account_workers.append(create_task(db.accounts_get_worker(accountQs['all'], regions=regions, 
-														inactive=inactive, disabled=disabled, sample=sample)))
+														force=force, append=args.append)))			
 			# split by region
 			export_workers.append(create_task(split_accountQ_by_region(Q_all=accountQs['all'], 
 																	regionQs=accountQs)))
 		else:
 			accountQs['all'] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
+			await accountQs['all'].add_producer()
 			account_workers.append(create_task(db.accounts_get_worker(accountQs['all'], regions=regions, 
 														inactive=inactive, disabled=disabled, sample=sample)))
 
@@ -607,23 +611,16 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 			bar = create_task(alive_bar_monitor(list(accountQs.values()), 'Exporting accounts', total=total, enrich_print=False))
 			
 		await wait(account_workers)
-		accounts_left.release()
+
 		for queue in accountQs.values():
+			await queue.finish()
 			await queue.join() 
 		if bar is not None:
 			bar.cancel()
-		for res in await gather(*account_workers):
-			if isinstance(res, EventCounter):
-				stats.merge_child(res)
-			elif type(res) is BaseException:
-				error(f'{db.driver}: accounts_get_worker() returned error: {res}')
-		for worker in export_workers:
-			worker.cancel()
-		for res in await gather(*export_workers):
-			if isinstance(res, EventCounter):
-				stats.merge_child(res)
-			elif type(res) is BaseException:
-				error(f'export(format={args.format}) returned error: {res}')
+		
+		await stats.gather_stats(account_workers)
+		await stats.gather_stats(export_workers)
+		
 		if not export_stdout:
 			stats.print()
 
