@@ -1,23 +1,15 @@
 from enum import StrEnum
-# from os.path import basename
 from sys import maxsize
-# from datetime import datetime
 from time import time
 from typing import Optional, ClassVar
-# from bson.objectid import ObjectId
-# from bson.int64 import Int64
-# from isort import place_module
 from math import ceil
 from pydantic import validator, Field, HttpUrl
-# from pydantic.utils import ValueItems
-# import json
+
 
 import logging
-# import aiofiles
-# from collections import defaultdict
+
 
 from blitzutils.models import Region, Account, WGBlitzRelease
-	# type: ignore
 from pyutils.utils import epoch_now, TypeExcludeDict
 
 TYPE_CHECKING = True
@@ -147,6 +139,7 @@ class BSBlitzRelease(WGBlitzRelease):
 
 	def cut_off_now(self) -> None:		
 		self.cut_off = epoch_now()
+
 
 	def txt_row(self, format: str = '') -> str:
 		extra : str = ''
