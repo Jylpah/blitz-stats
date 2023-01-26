@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from models import BSAccount, BSBlitzRelease, StatsTypes
 from blitzutils.models import Region, WoTBlitzReplayJSON, WGtankStat, Account, WGTank, Tank, \
 			WGplayerAchievementsMaxSeries, EnumVehicleTier, EnumNation, EnumVehicleTypeStr
-from pyutils import EventCounter, JSONExportable, epoch_now, is_alphanum
+from pyutils import EventCounter, JSONExportable, epoch_now, is_alphanum, Idx
 # from mongobackend import MongoBackend
 
 # Setup logging
@@ -598,6 +598,34 @@ class Backend(ABC):
 	# Objects
 	#----------------------------------------
 	
+
+	@abstractmethod
+	async def obj_insert(self, table_type: BSTableType, obj: JSONExportable) -> bool: 
+		"""Generic method to get one object of data_type"""
+		raise NotImplementedError	
+
+
+	@abstractmethod
+	async def obj_get(self, table_type: BSTableType, idx: Idx) -> Any:
+		"""Get raw document from MongoDB"""
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def obj_replace(self, table_type: BSTableType, obj: JSONExportable, 
+							upsert : bool = False) -> bool:
+		"""Generic method to update an object of data_type"""	
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def obj_update(self, table_type: BSTableType, 
+							ndx: Idx | None = None, 
+							obj : BaseModel | None = None,
+							update: dict | None = None, 							 
+							fields : list[str] | None = None) -> bool:
+		raise NotImplementedError
+
 
 	@abstractmethod
 	async def obj_export(self, model: BSTableType, 
