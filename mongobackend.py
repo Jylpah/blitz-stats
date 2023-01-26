@@ -565,7 +565,8 @@ class MongoBackend(Backend):
 		"""Generic method to delete an object of data_type"""
 		try:
 			debug('starting')
-			if (res := await dbc.delete_one({ '_id': id})) == 1:
+			res : DeleteResult = await dbc.delete_one({ '_id': id})
+			if res.deleted_count == 1:
 				# debug(f'Delete (_id={id}) from {self.backend}.{dbc.name}')
 				return True
 			else:
