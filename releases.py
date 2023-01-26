@@ -93,6 +93,8 @@ def add_args_remove(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 	try:
 		debug('starting')
 		parser.add_argument('release', type=str, metavar='RELEASE', help='RELEASE to remove')
+		parser.add_argument('--force', action='store_true', default=False, 
+							help='do not wait before removing releases ')
 		return True	
 	except Exception as err:
 		error(f'add_args_remove() : {err}')
@@ -115,14 +117,14 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 		
 		parser.add_argument('--import-model', metavar='IMPORT-TYPE', type=str, 
 							default='BSBlitzRelease', choices=['BSBlitzRelease', 'WG_Release'], 
-							help='Data format to import. Default is blitz-stats native format.')
-		parser.add_argument('--sample', type=float, default=0, help='Sample size')
+							help='data format to import. Default is blitz-stats native format.')
+		parser.add_argument('--sample', type=int, default=0, metavar='SAMPLE', help='sample size')
 		parser.add_argument('--force', action='store_true', default=False, 
-							help='Overwrite existing file(s) when exporting')
+							help='overwrite existing file(s) when exporting')
 		parser.add_argument('--releases', type=str, metavar='RELEASE_MATCH', default=None, nargs='?',
-							help='Search by RELEASE_MATCH. By default list all.')
+							help='search by RELEASE_MATCH. By default list all.')
 		parser.add_argument('--since', type=str, metavar='LAUNCH_DATE', default=None, nargs='?',
-							help='Import release launched after LAUNCH_DATE. By default, imports all releases.')
+							help='import release launched after LAUNCH_DATE. By default, imports all releases.')
 		return True	
 	except Exception as err:
 		error(f'add_args_import() : {err}')
@@ -219,7 +221,7 @@ async def cmd_edit(db: Backend, args : Namespace) -> bool:
 async def cmd_remove(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
-		message(f'Removing release={args.release} in 3 seconds. Press CTRL+C to cancel')
+		message(f'Removing release {args.release} in 3 seconds. Press CTRL+C to cancel')
 		await sleep(3)
 		release = BSBlitzRelease(release=args.release)
 		if await db.release_delete(release=release.release):
