@@ -24,7 +24,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import queue
 
-from backend import Backend, ForkedBackend, OptAccountsInactive, BSTableType, \
+from backend import Backend, OptAccountsInactive, BSTableType, \
 					ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL, get_sub_type
 from models import BSAccount, BSBlitzRelease, StatsTypes
 from accounts import create_accountQ, read_account_strs
@@ -74,7 +74,7 @@ def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> b
 		tank_stats_parsers = parser.add_subparsers(dest='tank_stats_cmd', 	
 												title='tank-stats commands',
 												description='valid commands',
-												metavar='get | prune | edit | import | export')
+												metavar='fetch | prune | edit | import | export')
 		tank_stats_parsers.required = True
 		
 		fetch_parser = tank_stats_parsers.add_parser('fetch', aliases=['get'], help="tank-stats fetch help")
@@ -94,7 +94,7 @@ def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> b
 			raise Exception("Failed to define argument parser for: tank-stats import")
 
 		export_parser = tank_stats_parsers.add_parser('export', help="tank-stats export help")
-		if not add_args_tank_stat_export(export_parser, config=config):
+		if not add_args_export(export_parser, config=config):
 			raise Exception("Failed to define argument parser for: tank-stats export")
 		debug('Finished')	
 		return True
@@ -197,6 +197,11 @@ def add_args_edit_remap_release(parser: ArgumentParser, config: Optional[ConfigP
 
 def add_args_prune(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	debug('starting')
+	parser.add_argument('--commit', action='store_true', default=False, 
+							help='Prune stats instead of just listing duplicates')
+	parser.add_argument('--sample', type=int, default=0, metavar='SAMPLE',
+						help='Sample size')
+
 	return True
 
 
@@ -215,7 +220,7 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 			import_parser =  import_parsers.add_parser(backend.driver, help=f'tank-stats import {backend.driver} help')
 			if not backend.add_args_import(import_parser, config=config):
 				raise Exception(f'Failed to define argument parser for: tank-stats import {backend.driver}')
-		parser.add_argument('--threads', type=int, default=0, help='Set number of asynchronous threads')
+		parser.add_argument('--workers', type=int, default=0, help='Set number of worker processes (default=0 i.e. auto)')
 		parser.add_argument('--import-model', metavar='IMPORT-TYPE', type=str, 
 							default='WGtankStat', choices=['WGtankStat'], 
 							help='Data format to import. Default is blitz-stats native format.')
@@ -227,7 +232,7 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 		# 					help='Use multi-processing')
 		parser.add_argument('--no-release-map', action='store_true', default=False, 
 							help='Do not map releases when importing')
-		parser.add_argument('--last', action='store_true', default=False, help=SUPPRESS)
+		# parser.add_argument('--last', action='store_true', default=False, help=SUPPRESS)
 
 		return True
 	except Exception as err:
@@ -235,7 +240,7 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 	return False
 
 
-def add_args_tank_stat_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		EXPORT_FORMAT 	= 'json'
@@ -304,7 +309,7 @@ async def cmd(db: Backend, args : Namespace) -> bool:
 
 ########################################################
 # 
-# cmd_get()
+# cmd_fetch()
 #
 ########################################################
 
@@ -613,6 +618,25 @@ async def cmd_edit_rel_remap(db: Backend, tank_statQ : Queue[WGtankStat],
 
 ########################################################
 # 
+# cmd_prune()
+#
+########################################################
+
+
+async def cmd_prune(db: Backend, args : Namespace) -> bool:
+	"""prune tank stats"""	
+	debug('starting')
+	try:
+
+		return True
+	except Exception as err:
+		error(f'{err}')
+	return False
+
+
+
+########################################################
+# 
 # cmd_tank_stat_export()
 #
 ########################################################
@@ -645,9 +669,9 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 		tank_statQs['all'] = IterableQueue(maxsize=ACCOUNTS_Q_MAX, count_items=not args.by_region)
 		# fetch tank_stats for all the regios
 		backend_worker = create_task(db.tank_stats_get_worker(tank_statQs['all'], 
-																		regions=regions, sample=sample, 
-																		accounts=accounts, tanks=tanks, 
-																		release=release))
+															regions=regions, sample=sample, 
+															accounts=accounts, tanks=tanks, 
+															release=release))
 		if args.by_region:
 			for region in regions:
 				tank_statQs[region.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)											
@@ -905,7 +929,7 @@ async def cmd_importMP(db: Backend, args : Namespace) -> bool:
 		import_db   	: Backend | None 				= None
 		import_backend 	: str 							= args.import_backend
 		import_model 	: type[JSONExportable] | None 	= None
-		WORKERS 	 	: int 							= args.threads
+		WORKERS 	 	: int 							= args.workers
 
 		if WORKERS == 0:
 			WORKERS = max( [cpu_count() - 1, 1 ])
