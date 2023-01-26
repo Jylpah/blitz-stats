@@ -16,7 +16,7 @@ from asyncstdlib import enumerate
 from backend import Backend, OptAccountsDistributed, OptAccountsInactive, BSTableType, \
 					MAX_UPDATE_INTERVAL, WG_ACCOUNT_ID_MAX, MIN_UPDATE_INTERVAL, ErrorLog, ErrorLogType
 from models import BSAccount, BSBlitzRelease, StatsTypes
-from pyutils import epoch_now, JSONExportable, AliasMapper
+from pyutils import epoch_now, JSONExportable, AliasMapper, I, D, O, Idx
 from blitzutils.models import Region, Account, Tank, WoTBlitzReplayJSON, WoTBlitzReplaySummary, \
 								WGtankStat, WGBlitzRelease, WGplayerAchievementsMaxSeries, \
 								EnumNation, EnumVehicleTier, EnumVehicleTypeStr
@@ -49,9 +49,9 @@ class MongoErrorLog(ErrorLog):
 #
 ##############################################
 
-I = TypeVar('I', str, int, ObjectId)
-D = TypeVar('D', bound=JSONExportable)
-O = TypeVar('O', bound=JSONExportable)
+# I = TypeVar('I', str, int, ObjectId)
+# D = TypeVar('D', bound=JSONExportable)
+# O = TypeVar('O', bound=JSONExportable)
 
 DESCENDING 	: Literal[-1] 	  = -1
 ASCENDING	: Literal[1]	  = 1
@@ -504,7 +504,7 @@ class MongoBackend(Backend):
 	
 	async def _data_get(self, dbc : AsyncIOMotorCollection, 
 						data_type: type[D], 
-						id: I) -> Optional[D]:
+						id: Idx) -> Optional[D]:
 		"""Generic method to get one object of data_type"""
 		try:
 			# debug('starting')
@@ -521,7 +521,7 @@ class MongoBackend(Backend):
 		return None
 
 
-	async def _data_update(self, dbc : AsyncIOMotorCollection, id: I, 
+	async def _data_update(self, dbc : AsyncIOMotorCollection, id: Idx, 
 							obj : BaseModel | None = None,
 							update: dict | None = None, 							 
 							fields : list[str] | None = None) -> bool:
@@ -547,7 +547,7 @@ class MongoBackend(Backend):
 
 	
 	async def _data_replace(self, dbc : AsyncIOMotorCollection, data: D, 	# type: ignore
-							id: I, upsert : bool = False) -> bool: 
+							id: Idx, upsert : bool = False) -> bool: 
 		"""Generic method to update an object of data_type"""		
 		try:
 			debug('starting')			
@@ -561,7 +561,7 @@ class MongoBackend(Backend):
 		return False
 
 
-	async def _data_delete(self, dbc : AsyncIOMotorCollection, id: I) -> bool:
+	async def _data_delete(self, dbc : AsyncIOMotorCollection, id: Idx) -> bool:
 		"""Generic method to delete an object of data_type"""
 		try:
 			debug('starting')
@@ -666,14 +666,12 @@ class MongoBackend(Backend):
 						
 			async for obj in dbc.aggregate(pipeline, allowDiskUse=True):
 				try:
-					obj_in = in_type.parse_obj(obj)					
-					if (res := out_type.transform(obj_in)) is not None:						
-						yield res
-					else:
-						yield out_type.parse_obj(obj_in.obj_db())
+					if (res:= out_type.transform_obj(obj, in_type)) is not None:
+						yield res 					
 				except Exception as err:
+					error(f'Could not export object={obj} type={in_type} to type={out_type}')
 					error(f'{err}: {obj}')
-					continue
+		
 		except Exception as err:
 			error(f'Error fetching data from {self.backend}.{dbc.name}: {err}')	
 
@@ -685,14 +683,14 @@ class MongoBackend(Backend):
 ########################################################
 	
 	
-	async def obj_insert(self, table_type: BSTableType, obj: D) -> bool:  		# type: ignore
+	async def obj_insert(self, table_type: BSTableType, obj: JSONExportable) -> bool: 
 		"""Generic method to get one object of data_type"""
 		try:
 			# debug('starting')
 			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
 			model : type[JSONExportable] = self.get_model(table_type)
 			if (data := model.transform_obj(obj, type(obj))) is not None:
-				res : InsertOneResult = await dbc.insert_one(obj.obj_db())
+				res : InsertOneResult = await dbc.insert_one(data.obj_db())
 				# debug(f'Inserted {type(data)} (_id={res.inserted_id}) into {self.backend}.{dbc.name}: {data}')
 				return True			
 		except Exception as err:
@@ -700,14 +698,14 @@ class MongoBackend(Backend):
 		return False
 
 
-	async def obj_get(self, table_type: BSTableType, id: I) -> Any:
+	async def obj_get(self, table_type: BSTableType, idx: Idx) -> Any:
 		"""Get raw document from MongoDB"""
 		try:
 			# debug('starting')
 			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
-			return await dbc.find_one({ '_id': id})
+			return await dbc.find_one({ '_id': idx})
 		except Exception as err:
-			error(f'Error getting _id={id} from {self.table_uri(table_type)}: {err}')
+			error(f'Error getting _id={idx} from {self.table_uri(table_type)}: {err}')
 		return None
 
 
@@ -731,14 +729,54 @@ class MongoBackend(Backend):
 
 
 	async def obj_update(self, table_type: BSTableType, 
+							ndx: Idx | None = None, 
+							obj : BaseModel | None = None,
+							update: dict | None = None, 							 
+							fields : list[str] | None = None) -> bool:
+		"""Generic method to update an object of data_type"""
+		try:
+			debug('starting')
+			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
+			model : type[JSONExportable] = self.get_model(table_type)			
+
+			if obj is not None:
+				if ( data:= model.transform_obj(obj)) is None:
+					raise ValueError(f'Could not transform {type(obj)} to {model}: {obj}')
+				
+				if ndx is None:
+					ndx = data.index			
+				
+				if update is not None:
+					pass
+				elif fields is not None:
+					update = data.dict(include=set(fields))
+				else:
+					raise ValueError("'update', 'obj' and 'fields' cannot be all None")
+			
+			elif ndx is None or update is None:
+				raise ValueError("'update' is required with 'ndx'")
+
+			alias_fields : dict[str, Any] = AliasMapper(model).map(update.items())			
+
+			if (res := await dbc.find_one_and_update({ '_id': ndx }, { '$set': alias_fields})) is None:
+				# debug(f'Failed to update _id={ndx} into {self.backend}.{dbc.name}')
+				return False
+			#debug(f'Updated (_id={ndx}) into {self.backend}.{dbc.name}')
+			return True			
+		except Exception as err:
+			error(f'Could not update _id={ndx} in {self.table_uri(table_type)}: {err}')	
+		return False
+
+
 	async def obj_export(self, table_type: BSTableType, 
 						 sample: float = 0) -> AsyncGenerator[Any, None]:
 		"""Export raw documents from Mongo DB"""
 		try:
 			debug(f'starting')
-			dbc : AsyncIOMotorCollection = self.db[self._T[table_type]]
+			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
 			debug(f'export from: {self.backend}.{dbc.name}')
 			pipeline : list[dict[str, Any]] = list()
+			
 			if sample > 0 and sample < 1:
 				N : int = await dbc.estimated_document_count()
 				pipeline.append({ '$sample' : { 'size' : int(N * sample) }})
@@ -746,7 +784,8 @@ class MongoBackend(Backend):
 				pipeline.append({ '$sample' : { 'size' : int(sample) }})
 						
 			async for obj in dbc.aggregate(pipeline, allowDiskUse=True):
-				yield obj					
+				yield obj
+
 		except Exception as err:
 			error(f'Error fetching data from {self.backend}.{self._T[table_type]}: {err}')	
 
@@ -762,6 +801,7 @@ class MongoBackend(Backend):
 			if batch == 0: 
 				batch = MONGO_BATCH_SIZE
 			pipeline : list[dict[str, Any]] = list()
+			
 			if sample > 0 and sample < 1:
 				N : int = await dbc.estimated_document_count()
 				pipeline.append({ '$sample' : { 'size' : int(N * sample) }})
@@ -790,11 +830,27 @@ class MongoBackend(Backend):
 		return await self._data_insert(self.collection_accounts, account)
 		
 
-	async def account_get(self, account_id: int) -> BSAccount | None:
+	async def account_get_OLD(self, account_id: int) -> BSAccount | None:
 		"""Get account from backend"""
 		debug('starting')
 		return await self._data_get(self.collection_accounts, BSAccount, id=account_id)
 
+
+	async def account_get(self, account_id: int) -> BSAccount | None:
+		"""Get account from backend"""
+		debug('starting')
+		data_type 	: type[JSONExportable] 	= self.model_accounts
+		idx			: int 					= account_id
+		table 		: str 					= self.table_accounts
+		# return await self._data_get(self.collection_accounts, BSAccount, id=id)
+		try:			
+			if (res := await self.obj_get(BSTableType.Accounts, idx=idx)) is not None: 
+				return BSAccount.transform_obj(res, data_type)
+		except ValidationError as err:
+			error(f'Could not validate {data_type} _id={idx} from {self.table_uri(BSTableType.Accounts)}: {err}')
+			await self.error_log(MongoErrorLog(table=table, doc_id=idx, type=ErrorLogType.ValidationError))
+		return None
+		
 
 	async def account_update(self, account: BSAccount, 
 							 update: dict[str, Any] | None = None, 
@@ -1180,7 +1236,7 @@ class MongoBackend(Backend):
 	async def release_insert(self, release: BSBlitzRelease) -> bool:
 		"""Insert new release to the backend"""
 		debug('starting')
-		return await self._data_insert(self.collection_releases, data=release)
+		return await self.obj_insert(BSTableType.Releases, obj=release)
 
 
 	async def release_update(self, release: BSBlitzRelease, 
@@ -1196,7 +1252,6 @@ class MongoBackend(Backend):
 		except Exception as err:
 			debug(f'Error while updating release {release.release} into {self.backend}.{self.table_accounts}: {err}')	
 		return False
-
 
 
 	async def release_replace(self, release: BSBlitzRelease, upsert=False) -> bool:
