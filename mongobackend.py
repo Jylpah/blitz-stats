@@ -678,6 +678,40 @@ class MongoBackend(Backend):
 			error(f'Error fetching data from {self.backend}.{dbc.name}: {err}')	
 
 
+########################################################
+# 
+# MongoBackend(): obj_
+#
+########################################################
+	
+	
+	async def obj_insert(self, table_type: BSTableType, obj: D) -> bool:  		# type: ignore
+		"""Generic method to get one object of data_type"""
+		try:
+			# debug('starting')
+			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
+			model : type[JSONExportable] = self.get_model(table_type)
+			if (data := model.transform_obj(obj, type(obj))) is not None:
+				res : InsertOneResult = await dbc.insert_one(obj.obj_db())
+				# debug(f'Inserted {type(data)} (_id={res.inserted_id}) into {self.backend}.{dbc.name}: {data}')
+				return True			
+		except Exception as err:
+			debug(f'Failed to insert obj={obj} into {self.table_uri(table_type)}: {err}')	
+		return False
+
+
+	async def obj_get(self, table_type: BSTableType, id: I) -> Any:
+		"""Get raw document from MongoDB"""
+		try:
+			# debug('starting')
+			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
+			return await dbc.find_one({ '_id': id})
+		except Exception as err:
+			error(f'Error getting _id={id} from {self.table_uri(table_type)}: {err}')
+		return None
+
+	
+	async def obj_replace(self, table_type: BSTableType, data: D, 	# type: ignore
 	async def obj_export(self, table_type: BSTableType, 
 						 sample: float = 0) -> AsyncGenerator[Any, None]:
 		"""Export raw documents from Mongo DB"""
