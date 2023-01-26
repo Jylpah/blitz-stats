@@ -710,8 +710,27 @@ class MongoBackend(Backend):
 			error(f'Error getting _id={id} from {self.table_uri(table_type)}: {err}')
 		return None
 
-	
-	async def obj_replace(self, table_type: BSTableType, data: D, 	# type: ignore
+
+	async def obj_replace(self, table_type: BSTableType, obj: JSONExportable, 
+							upsert : bool = False) -> bool:
+		"""Generic method to update an object of data_type"""		
+		try:
+			debug('starting')
+			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
+			model : type[JSONExportable] = self.get_model(table_type)
+			if (data := model.transform_obj(obj, type(obj))) is not None:
+				if (res := await dbc.find_one_and_replace({ '_id': data.index}, data.obj_db(), upsert=upsert)) is None:
+					debug(f'Failed to replace _id={data.index} into {self.backend}.{dbc.name}')
+					return False
+				debug(f'Replaced (_id={data.index}) into {self.table_uri(table_type)}')
+				return True			
+		except Exception as err:
+			error(f'Could not replace obj in {self.table_uri(table_type)}: {err}')
+			error(f'obj: {obj}')	
+		return False
+
+
+	async def obj_update(self, table_type: BSTableType, 
 	async def obj_export(self, table_type: BSTableType, 
 						 sample: float = 0) -> AsyncGenerator[Any, None]:
 		"""Export raw documents from Mongo DB"""
