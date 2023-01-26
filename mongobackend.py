@@ -1246,9 +1246,12 @@ class MongoBackend(Backend):
 			if the release was not updated"""
 		try: 
 			debug('starting')
-			return await self._data_update(self.collection_releases, 
-											id=release.release, obj=release,
+			# return await self._data_update(self.collection_releases, 
+			# 								id=release.release, obj=release,
+			# 								update=update, fields=fields)
+			return await self.obj_update(BSTableType.Releases, obj=release, 
 											update=update, fields=fields)
+
 		except Exception as err:
 			debug(f'Error while updating release {release.release} into {self.backend}.{self.table_accounts}: {err}')	
 		return False
