@@ -1261,8 +1261,13 @@ class MongoBackend(Backend):
 	async def release_get(self, release : str) -> BSBlitzRelease | None:
 		"""Get release from backend"""
 		debug('starting')
-		release = WGBlitzRelease.validate_release(release)
-		return await self._data_get(self.collection_releases, BSBlitzRelease, id=release)
+		try:
+			release = WGBlitzRelease.validate_release(release)
+			if (obj := await self.data_get(BSTableType.Releases, idx = release)) is not None:
+				return BSBlitzRelease.transform_obj(obj, self.get_model(BSTableType.Releases))
+		except Exception as err:
+			error(f'{err}')
+		return None		
 
 
 	async def release_get_latest(self) -> BSBlitzRelease | None:
