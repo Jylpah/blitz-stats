@@ -1434,10 +1434,12 @@ class MongoBackend(Backend):
 		# return await self._data_insert(self.collection_replays, replay)
 		return await self.data_insert(BSTableType.Replays, obj=replay)
 
-	async def replay_get(self, replay_id: str) -> WoTBlitzReplayJSON | None:
+	async def replay_get(self, replay_id: str) -> WoTBlitzReplayData | None:
 		"""Get replay from backend"""
 		debug('starting')			
-		return await self._data_get(self.collection_replays, WoTBlitzReplayJSON, id=replay_id)
+		if (rep := await self.data_get(BSTableType.Replays, idx=replay_id)) is not None:
+			return WoTBlitzReplayData.transform_obj(rep, self.model_replays)
+		return None
 				
 
 	async def replay_delete(self, replay_id: str) -> bool:
@@ -1488,14 +1490,14 @@ class MongoBackend(Backend):
 
 
 	async def replays_get(self, since: date | None = None, sample : float = 0,
-							**summary_fields) ->  AsyncGenerator[WoTBlitzReplayJSON, None]:
+							**summary_fields) ->  AsyncGenerator[WoTBlitzReplayData, None]:
 		"""Get replays from mongodb backend"""
 		debug('starting')
 		try:
 			debug('starting')
 			pipeline : list[dict[str, Any]] 
 			pipeline = await self._mk_pipeline_replays(since=since, sample=sample, **summary_fields)
-			async for replay in self._datas_get(self.collection_replays, WoTBlitzReplayJSON, pipeline):
+			async for replay in self._datas_get(self.collection_replays, WoTBlitzReplayData, pipeline):
 				yield replay
 		except Exception as err:
 			error(f'Error exporting replays from {self.backend}.{self.table_replays}: {err}')	
@@ -1514,13 +1516,13 @@ class MongoBackend(Backend):
 		return -1
 
 
-	async def replays_export(self, model: type[JSONExportable] = WoTBlitzReplayJSON,
-								sample: float = 0) -> AsyncGenerator[WoTBlitzReplayJSON, None]:
+	async def replays_export(self, model: type[JSONExportable] = WoTBlitzReplayData,
+								sample: float = 0) -> AsyncGenerator[WoTBlitzReplayData, None]:
 		"""Export replays from Mongo DB"""
 		debug('starting')
 		async for replay in self._datas_export(self.collection_replays, 
 												in_type=model, 
-												out_type=WoTBlitzReplayJSON, 
+												out_type=WoTBlitzReplayData, 
 												sample=sample):
 			yield replay
 

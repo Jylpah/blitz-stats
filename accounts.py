@@ -21,7 +21,7 @@ from pyutils import CounterQueue, EventCounter,  TXTExportable, \
 	CSVExportable, JSONExportable, IterableQueue, QueueDone, \
 		alive_bar_monitor, get_url, get_url_JSON_model, epoch_now, \
 		export, is_alphanum
-from blitzutils.models import WoTBlitzReplayJSON, Region, Account
+from blitzutils.models import WoTBlitzReplayJSON, WoTBlitzReplayData, Region, Account
 from blitzutils.wotinspector import WoTinspector
 
 logger 	= logging.getLogger()
@@ -432,7 +432,7 @@ async def accounts_update_wi_spider_replays(db: Backend, wi: WoTinspector, args:
 					if len(replay_ids) == 0:
 						break
 					for replay_id in replay_ids:
-						res: WoTBlitzReplayJSON | None = await db.replay_get(replay_id=replay_id)
+						res: WoTBlitzReplayData | None = await db.replay_get(replay_id=replay_id)
 						if res is not None:
 							debug(f'Replay already in the {db.backend}: {replay_id}')
 							stats.log('old replays found')

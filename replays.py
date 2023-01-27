@@ -177,7 +177,7 @@ async def cmd_export_id(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		id : str = args.replay_export_id
-		replay : WoTBlitzReplayJSON | None = await db.replay_get(id)
+		replay : WoTBlitzReplayData | None = await db.replay_get(id)
 		if replay is None:
 			error('Could not find replay id: {id}')
 			return False
@@ -191,7 +191,7 @@ async def cmd_export_id(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def cmd_export_files(args: Namespace, replays: Iterable[WoTBlitzReplayJSON]) -> bool:
+async def cmd_export_files(args: Namespace, replays: Iterable[WoTBlitzReplayData]) -> bool:
 	raise NotImplementedError
 	return False
 

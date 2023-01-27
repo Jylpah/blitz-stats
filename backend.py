@@ -923,7 +923,7 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def replay_get(self, replay_id: str) -> WoTBlitzReplayJSON | None:
+	async def replay_get(self, replay_id: str) -> WoTBlitzReplayData | None:
 		"""Get a replay from backend based on replayID"""
 		raise NotImplementedError
 
@@ -937,10 +937,10 @@ class Backend(ABC):
 	# replay fields that can be searched: protagonist, battle_start_timestamp, account_id, vehicle_tier
 	@abstractmethod
 	async def replays_get(self, since: date | None = None,
-							**summary_fields) -> AsyncGenerator[WoTBlitzReplayJSON, None]:
+							**summary_fields) -> AsyncGenerator[WoTBlitzReplayData, None]:
 		"""Get replays from backed"""
 		raise NotImplementedError
-		yield WoTBlitzReplayJSON()
+		yield WoTBlitzReplayData()
 
 
 	@abstractmethod
@@ -981,11 +981,11 @@ class Backend(ABC):
 		return stats
 	
 
-	async def replays_export(self, model: type[JSONExportable] = WoTBlitzReplayJSON,
-							 sample: float = 0) -> AsyncGenerator[WoTBlitzReplayJSON, None]:			
+	async def replays_export(self, model: type[JSONExportable] = WoTBlitzReplayData,
+							 sample: float = 0) -> AsyncGenerator[WoTBlitzReplayData, None]:			
 		"""Export replays from Mongo DB"""
 		raise NotImplementedError
-		yield WoTBlitzReplayJSON()
+		yield WoTBlitzReplayData()
 
 
 	#----------------------------------------
