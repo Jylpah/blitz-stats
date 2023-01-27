@@ -19,8 +19,8 @@ from pyutils import BucketMapper, IterableQueue, QueueDone, \
 	EventCounter, JSONExportable, \
 	get_url, get_url_JSON_model, epoch_now, alive_bar_monitor, \
 	is_alphanum
-from blitzutils.models import Region, WGplayerAchievementsMain, \
-	WGplayerAchievementsMaxSeries
+from blitzutils.models import Region, WGPlayerAchievementsMain, \
+	WGPlayerAchievementsMaxSeries
 from blitzutils.wg import WGApi 
 
 logger = logging.getLogger()
@@ -132,7 +132,7 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 				raise Exception(f'Failed to define argument parser for: player-achievements import {backend.driver}')
 		parser.add_argument('--threads', type=int, default=WORKERS_IMPORTERS, help='Set number of asynchronous threads')
 		parser.add_argument('--import-model', metavar='IMPORT-TYPE', type=str, required=True,
-							choices=['WGplayerAchievementsMaxSeries', 'WGplayerAchievementsMain'], 
+							choices=['WGPlayerAchievementsMaxSeries', 'WGPlayerAchievementsMain'], 
 							help='Data format to import. Default is blitz-stats native format.')
 		parser.add_argument('--sample', type=float, default=0, 
 							help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
@@ -194,7 +194,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 		regionQs 	: dict[str, IterableQueue[BSAccount]]		= dict()
 		accountQ	: IterableQueue[BSAccount] 					= IterableQueue(maxsize=ACCOUNTS_Q_MAX)
 		retryQ  	: IterableQueue[BSAccount] 					= IterableQueue() 
-		statsQ	 	: Queue[list[WGplayerAchievementsMaxSeries]]= Queue(maxsize=PLAYER_ACHIEVEMENTS_Q_MAX)
+		statsQ	 	: Queue[list[WGPlayerAchievementsMaxSeries]]= Queue(maxsize=PLAYER_ACHIEVEMENTS_Q_MAX)
 
 		tasks : list[Task] = list()
 		tasks.append(create_task(fetch_player_achievements_backend_worker(db, statsQ)))
@@ -263,7 +263,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 
 async def fetch_player_achievements_api_region_worker(wg_api: WGApi, region: Region,  
 														accountQ: IterableQueue[BSAccount], 
-														statsQ:   Queue[list[WGplayerAchievementsMaxSeries]],
+														statsQ:   Queue[list[WGPlayerAchievementsMaxSeries]],
 														retryQ:   IterableQueue[BSAccount] | None = None) -> EventCounter:
 	"""Fetch stats from a single region"""
 	debug('starting')
@@ -326,7 +326,7 @@ async def fetch_player_achievements_api_region_worker(wg_api: WGApi, region: Reg
 
 
 async def fetch_player_achievements_backend_worker(db: Backend, 
-													statsQ: Queue[list[WGplayerAchievementsMaxSeries]]) -> EventCounter:
+													statsQ: Queue[list[WGPlayerAchievementsMaxSeries]]) -> EventCounter:
 	"""Async worker to add player achievements to backend. Assumes batch is for the same account"""
 	debug('starting')
 	stats 		: EventCounter = EventCounter(f'{db.driver}')
@@ -338,7 +338,7 @@ async def fetch_player_achievements_backend_worker(db: Backend,
 		while True:
 			added 			= 0
 			not_added 		= 0
-			player_achievements : list[WGplayerAchievementsMaxSeries] = await statsQ.get()
+			player_achievements : list[WGPlayerAchievementsMaxSeries] = await statsQ.get()
 			try:
 				if len(player_achievements) > 0:
 					debug(f'Read {len(player_achievements)} from queue')
@@ -372,8 +372,8 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 	try:
 		assert is_alphanum(args.import_model), f'invalid --import-model: {args.import_model}'
 		debug('starting')
-		player_achievementsQ	: Queue[list[WGplayerAchievementsMaxSeries]]= Queue(PLAYER_ACHIEVEMENTS_Q_MAX)
-		rel_mapQ				: Queue[WGplayerAchievementsMaxSeries]		= Queue()
+		player_achievementsQ	: Queue[list[WGPlayerAchievementsMaxSeries]]= Queue(PLAYER_ACHIEVEMENTS_Q_MAX)
+		rel_mapQ				: Queue[WGPlayerAchievementsMaxSeries]		= Queue()
 		stats 			: EventCounter 	= EventCounter('player-achievements import')
 		WORKERS 	 	: int 							= args.threads
 		import_db   	: Backend | None 				= None
@@ -427,17 +427,17 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 
 
 async def player_achievements_map_releases_worker(release_map: BucketMapper[BSBlitzRelease], 
-													inputQ: Queue[WGplayerAchievementsMaxSeries], 
-													outputQ: Queue[list[WGplayerAchievementsMaxSeries]], 
+													inputQ: Queue[WGPlayerAchievementsMaxSeries], 
+													outputQ: Queue[list[WGPlayerAchievementsMaxSeries]], 
 													map_releases: bool = True) -> EventCounter:
-	"""Map player achievements to releases and pack those to list[WGplayerAchievementsMaxSeries] queue.
+	"""Map player achievements to releases and pack those to list[WGPlayerAchievementsMaxSeries] queue.
 		map_all is None means no release mapping is done"""
 	
 	debug(f'starting: map_releases={map_releases}')
 	stats 			: EventCounter = EventCounter('Release mapper')
 	IMPORT_BATCH	: int = 500
 	release 		: BSBlitzRelease | None
-	pa_list 		: list[WGplayerAchievementsMaxSeries] = list()
+	pa_list 		: list[WGPlayerAchievementsMaxSeries] = list()
 
 	try:		
 		# await outputQ.add_producer()

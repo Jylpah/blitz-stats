@@ -15,8 +15,8 @@ import queue
 from pydantic import BaseModel, Field
 
 from models import BSAccount, BSBlitzRelease, StatsTypes
-from blitzutils.models import Region, WoTBlitzReplayJSON, WoTBlitzReplayData, WGtankStat, \
-		Account, WGTank, Tank, WGplayerAchievementsMaxSeries, \
+from blitzutils.models import Region, WoTBlitzReplayJSON, WoTBlitzReplayData, WGTankStat, \
+		Account, WGTank, Tank, WGPlayerAchievementsMaxSeries, \
 		EnumVehicleTier, EnumNation, EnumVehicleTypeStr
 from pyutils import EventCounter, JSONExportable, epoch_now, is_alphanum, Idx, D, O
 # from mongobackend import MongoBackend
@@ -198,8 +198,8 @@ class Backend(ABC):
 		self.set_model(BSTableType.Replays, 	WoTBlitzReplayJSON)
 		self.set_model(BSTableType.AccountLog, 	ErrorLog)
 		self.set_model(BSTableType.ErrorLog, 	ErrorLog)
-		self.set_model(BSTableType.TankStats, 	WGtankStat)
-		self.set_model(BSTableType.PlayerAchievements, WGplayerAchievementsMaxSeries)
+		self.set_model(BSTableType.TankStats, 	WGTankStat)
+		self.set_model(BSTableType.PlayerAchievements, WGPlayerAchievementsMaxSeries)
 
 		if config is not None and 'BACKEND' in config.sections():
 			configBackend = config['BACKEND']
@@ -987,20 +987,20 @@ class Backend(ABC):
 	#----------------------------------------
 
 	@abstractmethod
-	async def tank_stat_insert(self, tank_stat: WGtankStat) -> bool:
+	async def tank_stat_insert(self, tank_stat: WGTankStat) -> bool:
 		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
 		raise NotImplementedError
 
 
 	@abstractmethod
 	async def tank_stat_get(self, account: BSAccount, tank_id: int, 
-							last_battle_time: int) -> WGtankStat | None:
+							last_battle_time: int) -> WGTankStat | None:
 		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
 		raise NotImplementedError
 
 
 	@abstractmethod
-	async def tank_stat_update(self, tank_stat: WGtankStat, 
+	async def tank_stat_update(self, tank_stat: WGTankStat, 
 							 update: dict[str, Any] | None = None, 
 							 fields: list[str] | None = None) -> bool:
 		"""Update an tank stat in the backend. Returns False 
@@ -1016,7 +1016,7 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def tank_stats_insert(self, tank_stats: Sequence[WGtankStat]) -> tuple[int, int]:
+	async def tank_stats_insert(self, tank_stats: Sequence[WGTankStat]) -> tuple[int, int]:
 		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
 		raise NotImplementedError
 
@@ -1027,10 +1027,10 @@ class Backend(ABC):
 							accounts: Iterable[Account] | None = None,
 							tanks: Iterable[Tank] | None = None, 
 							since:  datetime | None = None,
-							sample : float = 0) -> AsyncGenerator[WGtankStat, None]:
+							sample : float = 0) -> AsyncGenerator[WGTankStat, None]:
 		"""Return tank stats from the backend"""
 		raise NotImplementedError
-		yield WGtankStat()
+		yield WGTankStat()
 
 
 	@abstractmethod
@@ -1045,25 +1045,25 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def tank_stats_update(self, tank_stats: list[WGtankStat], upsert: bool = False) -> tuple[int, int]:
+	async def tank_stats_update(self, tank_stats: list[WGTankStat], upsert: bool = False) -> tuple[int, int]:
 		"""Update or upsert tank stats to the backend. Returns number of stats updated and not updated"""
 		raise NotImplementedError
 
 
 	@abstractmethod
-	async def tank_stat_export(self, model: type[JSONExportable] = WGtankStat, 
-								sample: float = 0) -> AsyncGenerator[WGtankStat, None]:
+	async def tank_stat_export(self, model: type[JSONExportable] = WGTankStat, 
+								sample: float = 0) -> AsyncGenerator[WGTankStat, None]:
 		"""Export tank stats from Mongo DB"""
 		raise NotImplementedError
-		yield WGtankStat()
+		yield WGTankStat()
 
 	
 	@abstractmethod
-	async def tank_stats_export(self, model: type[JSONExportable] = WGtankStat, 
-								sample: float = 0, batch: int = 0) -> AsyncGenerator[list[WGtankStat], None]:
+	async def tank_stats_export(self, model: type[JSONExportable] = WGTankStat, 
+								sample: float = 0, batch: int = 0) -> AsyncGenerator[list[WGTankStat], None]:
 		"""Export tank stats from Mongo DB"""
 		raise NotImplementedError
-		yield [WGtankStat()]
+		yield [WGTankStat()]
 
 
 	@abstractmethod
@@ -1071,13 +1071,13 @@ class Backend(ABC):
 									tank: 	 Tank,
 									release: BSBlitzRelease,
 									regions: set[Region] = Region.API_regions(), 									
-									sample : int = 0) -> AsyncGenerator[WGtankStat, None]:
+									sample : int = 0) -> AsyncGenerator[WGTankStat, None]:
 		"""Find duplicate tank stats from the backend"""
 		raise NotImplementedError
-		yield WGtankStat()
+		yield WGTankStat()
 
 
-	async def tank_stats_get_worker(self, tank_statsQ : Queue[WGtankStat], **getargs) -> EventCounter:
+	async def tank_stats_get_worker(self, tank_statsQ : Queue[WGTankStat], **getargs) -> EventCounter:
 		debug('starting')
 		stats : EventCounter = EventCounter('tank_stats')
 		try:
@@ -1091,7 +1091,7 @@ class Backend(ABC):
 		return stats
 
 
-	async def tank_stats_insert_worker(self, tank_statsQ : Queue[list[WGtankStat]], 
+	async def tank_stats_insert_worker(self, tank_statsQ : Queue[list[WGTankStat]], 
 										force: bool = False) -> EventCounter:
 		debug(f'starting, force={force}')
 		stats : EventCounter = EventCounter('tank-stats insert')
@@ -1132,13 +1132,13 @@ class Backend(ABC):
 	#----------------------------------------
 
 	@abstractmethod
-	async def player_achievement_insert(self, player_achievement: WGplayerAchievementsMaxSeries) -> bool:
+	async def player_achievement_insert(self, player_achievement: WGPlayerAchievementsMaxSeries) -> bool:
 		"""Store player achievements to the backend. Returns number of stats inserted and not inserted"""
 		raise NotImplementedError
 
 
 	@abstractmethod
-	async def player_achievement_get(self, account: BSAccount, added: int) -> WGplayerAchievementsMaxSeries | None:
+	async def player_achievement_get(self, account: BSAccount, added: int) -> WGPlayerAchievementsMaxSeries | None:
 		"""Store player achievements to the backend. Returns number of stats inserted and not inserted"""
 		raise NotImplementedError
 
@@ -1150,7 +1150,7 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def player_achievements_insert(self, player_achievements: Sequence[WGplayerAchievementsMaxSeries]) -> tuple[int, int]:
+	async def player_achievements_insert(self, player_achievements: Sequence[WGPlayerAchievementsMaxSeries]) -> tuple[int, int]:
 		"""Store player achievements to the backend. Returns number of stats inserted and not inserted"""
 		raise NotImplementedError
 
@@ -1159,10 +1159,10 @@ class Backend(ABC):
 	async def player_achievements_get(self, release: BSBlitzRelease | None = None,
 							regions: set[Region] = Region.API_regions(), 
 							accounts: Iterable[Account] | None = None,
-							sample : float = 0) -> AsyncGenerator[WGplayerAchievementsMaxSeries, None]:
+							sample : float = 0) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
 		"""Return player achievements from the backend"""
 		raise NotImplementedError
-		yield WGplayerAchievementsMaxSeries()
+		yield WGPlayerAchievementsMaxSeries()
 
 
 	@abstractmethod
@@ -1175,21 +1175,21 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def player_achievements_update(self, player_achievements: list[WGplayerAchievementsMaxSeries], upsert: bool = False) -> tuple[int, int]:
+	async def player_achievements_update(self, player_achievements: list[WGPlayerAchievementsMaxSeries], upsert: bool = False) -> tuple[int, int]:
 		"""Update or upsert player achievements to the backend. Returns number of stats updated and not updated"""
 		raise NotImplementedError
 
 
 	@abstractmethod
-	async def player_achievements_export(self, model: type[JSONExportable] = WGplayerAchievementsMaxSeries, 
-								sample: float = 0) -> AsyncGenerator[WGplayerAchievementsMaxSeries, None]:
+	async def player_achievements_export(self, model: type[JSONExportable] = WGPlayerAchievementsMaxSeries, 
+								sample: float = 0) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
 		"""Export player achievements from Mongo DB"""
 		raise NotImplementedError
-		yield WGplayerAchievementsMaxSeries()
+		yield WGPlayerAchievementsMaxSeries()
 
 
 	async def player_achievements_insert_worker(self, 
-							player_achievementsQ : Queue[list[WGplayerAchievementsMaxSeries]], 
+							player_achievementsQ : Queue[list[WGPlayerAchievementsMaxSeries]], 
 							force: bool = False) -> EventCounter:
 
 		debug(f'starting, force={force}')

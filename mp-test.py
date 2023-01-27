@@ -12,7 +12,7 @@ from backend import Backend, BSTableType
 from configparser import ConfigParser
 from mongobackend import MongoBackend
 import logging
-from blitzutils.models import WGtankStat
+from blitzutils.models import WGTankStat
 from random import random
 from pyutils import AsyncQueue, BucketMapper
 from alive_progress import alive_bar  # type: ignore
