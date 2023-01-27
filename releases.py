@@ -115,8 +115,8 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 			if not backend.add_args_import(import_parser, config=config):
 				raise Exception(f'Failed to define argument parser for: releases import {backend.driver}')
 		
-		parser.add_argument('--import-model', metavar='IMPORT-TYPE', type=str, 
-							default='BSBlitzRelease', choices=['BSBlitzRelease', 'WG_Release'], 
+		parser.add_argument('--import-model', metavar='IMPORT-TYPE', type=str, required=True,
+							choices=['BSBlitzRelease', 'WG_Release'], 
 							help='data format to import. Default is blitz-stats native format.')
 		parser.add_argument('--sample', type=int, default=0, metavar='SAMPLE', help='sample size')
 		parser.add_argument('--force', action='store_true', default=False, 

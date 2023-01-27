@@ -220,9 +220,10 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 			import_parser =  import_parsers.add_parser(backend.driver, help=f'tank-stats import {backend.driver} help')
 			if not backend.add_args_import(import_parser, config=config):
 				raise Exception(f'Failed to define argument parser for: tank-stats import {backend.driver}')
-		parser.add_argument('--workers', type=int, default=0, help='Set number of worker processes (default=0 i.e. auto)')
-		parser.add_argument('--import-model', metavar='IMPORT-TYPE', type=str, 
-							default='WGtankStat', choices=['WGtankStat'], 
+		parser.add_argument('--workers', type=int, default=0, 
+							help='Set number of worker processes (default=0 i.e. auto)')
+		parser.add_argument('--import-model', metavar='IMPORT-TYPE', type=str, required=True,
+							choices=['WGtankStat'], 
 							help='Data format to import. Default is blitz-stats native format.')
 		parser.add_argument('--sample', type=float, default=0, 
 							help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')

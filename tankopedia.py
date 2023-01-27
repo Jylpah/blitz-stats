@@ -118,7 +118,7 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 				raise Exception(f'Failed to define argument parser for: tankopedia import {backend.driver}')
 		
 		parser.add_argument('--import-model', metavar='IMPORT-TYPE', type=str, 
-							default='Tank', choices=['Tank', 'WGTank'], 
+							required=True, choices=['Tank', 'WGTank'], 
 							help='Data format to import. Default is blitz-stats native format.')
 		parser.add_argument('--sample', type=float, default=0, help='Sample size')
 		parser.add_argument('--force', action='store_true', default=False, 

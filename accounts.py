@@ -206,8 +206,8 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 			if not backend.add_args_import(import_parser, config=config):
 				raise Exception(f'Failed to define argument parser for: accounts import {backend.driver}')
 				
-		parser.add_argument('--import-model', metavar='IMPORT-TYPE', type=str, 
-							default='BSAccount', choices=['BSAccount', 'WG_Account'], 
+		parser.add_argument('--import-model', metavar='IMPORT-TYPE', type=str, required=True,
+							choices=['BSAccount', 'WG_Account'], 
 							help='Data format to import. Default is blitz-stats native format.')
 		parser.add_argument('--region', type=str, nargs='*', 
 								choices=[ r.value for r in Region.has_stats() ], 
