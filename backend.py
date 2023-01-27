@@ -603,30 +603,47 @@ class Backend(ABC):
 	
 
 	@abstractmethod
-	async def obj_insert(self, table_type: BSTableType, obj: JSONExportable) -> bool: 
-		"""Generic method to get one object of data_type"""
+	async def data_insert(self, table_type: BSTableType, obj: JSONExportable) -> bool: 
+		"""Generic method to get one object into backend table in its data format"""
 		raise NotImplementedError	
 
 
 	@abstractmethod
-	async def obj_get(self, table_type: BSTableType, idx: Idx) -> Any:
+	async def data_get(self, table_type: BSTableType, idx: Idx) -> Any:
 		"""Get raw document from MongoDB"""
 		raise NotImplementedError
 
 
 	@abstractmethod
-	async def obj_replace(self, table_type: BSTableType, obj: JSONExportable, 
+	async def datas_get(self, table_type	: BSTableType, 
+						out_type		: type[D], 
+						pipeline 		: list[dict[str, Any]]) -> AsyncGenerator[D, None]:
+		"""Get documents """
+		raise NotImplementedError
+		yield Any
+
+	
+	@abstractmethod
+	async def datas_count(self, table_type: BSTableType, 
+							pipeline : list[dict[str, Any]]) -> int:
+		"""Count documents"""
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def data_replace(self, table_type: BSTableType, obj: JSONExportable, 
 							upsert : bool = False) -> bool:
 		"""Generic method to update an object of data_type"""	
 		raise NotImplementedError
 
 
 	@abstractmethod
-	async def obj_update(self, table_type: BSTableType, 
+	async def data_update(self, table_type: BSTableType, 
 							ndx: Idx | None = None, 
 							obj : BaseModel | None = None,
 							update: dict | None = None, 							 
 							fields : list[str] | None = None) -> bool:
+		"""Updates a document into backend in the chosen backend data format"""
 		raise NotImplementedError
 
 
