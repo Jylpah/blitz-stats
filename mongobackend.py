@@ -924,7 +924,7 @@ class MongoBackend(Backend):
 		"""Store account to the backend. Returns False 
 			if the account was not added"""
 		debug('starting')
-		return await self._data_insert(self.collection_accounts, account)
+		return await self.data_insert(BSTableType.Accounts, account)
 
 
 	async def account_get(self, account_id: int) -> BSAccount | None:
@@ -932,14 +932,10 @@ class MongoBackend(Backend):
 		debug('starting')
 		data_type 	: type[JSONExportable] 	= self.model_accounts
 		idx			: int 					= account_id
-		table 		: str 					= self.table_accounts
-		# return await self._data_get(self.collection_accounts, BSAccount, id=id)
-		try:			
+		if (res := await self.data_get(BSTableType.Accounts, idx=idx)) is not None: 
 			if (res := await self.data_get(BSTableType.Accounts, idx=idx)) is not None: 
-				return BSAccount.transform_obj(res, data_type)
-		except ValidationError as err:
-			error(f'Could not validate {data_type} _id={idx} from {self.table_accounts}: {err}')
-			await self.error_log(MongoErrorLog(table=table, doc_id=idx, type=ErrorLogType.ValidationError))
+		if (res := await self.data_get(BSTableType.Accounts, idx=idx)) is not None: 
+			return BSAccount.transform_obj(res, data_type)
 		return None
 		
 
@@ -1105,13 +1101,12 @@ class MongoBackend(Backend):
 		return -1
 
 
-	async def accounts_export(self, model: type[JSONExportable] = BSAccount, 
-								sample : float = 0) -> AsyncGenerator[BSAccount, None]:
+	async def accounts_export(self, sample : float = 0) -> AsyncGenerator[BSAccount, None]:
 		"""Import accounts from Mongo DB"""
 		debug('starting')
 		async for obj in self.obj_export(BSTableType.Accounts, sample=sample):
-			if (rel := BSAccount.transform_obj(obj, self.model_releases)) is not None: 
-				yield rel
+			if (acc := BSAccount.transform_obj(obj, self.model_accounts)) is not None: 
+				yield acc
 		
 
 	async def accounts_insert(self, accounts: Sequence[BSAccount]) -> tuple[int, int]:
