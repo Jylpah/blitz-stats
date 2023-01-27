@@ -720,10 +720,10 @@ class MongoBackend(Backend):
 
 
 	async def data_update(self, table_type: BSTableType, 
-							idx: Idx | None = None, 
-							obj : BaseModel | None = None,
-							update: dict | None = None, 							 
-							fields : list[str] | None = None) -> bool:
+							idx		: Idx | None = None, 
+							obj 	: JSONExportable | None = None,
+							update	: dict | None = None, 							 
+							fields 	: list[str] | None = None) -> bool:
 		"""Generic method to update an object of data_type"""
 		try:
 			debug('starting')
@@ -778,7 +778,7 @@ class MongoBackend(Backend):
 
 	async def datas_insert(self, 
 						  table_type: BSTableType, 
-						  objs		: Sequence[JSONExportable]) -> tuple[int, int]:
+						  objs		: Sequence[D]) -> tuple[int, int]:
 		"""Store data to the backend. Returns the number of added and not added"""
 		debug('starting')
 		added		: int = 0
@@ -932,8 +932,6 @@ class MongoBackend(Backend):
 		debug('starting')
 		data_type 	: type[JSONExportable] 	= self.model_accounts
 		idx			: int 					= account_id
-		if (res := await self.data_get(BSTableType.Accounts, idx=idx)) is not None: 
-			if (res := await self.data_get(BSTableType.Accounts, idx=idx)) is not None: 
 		if (res := await self.data_get(BSTableType.Accounts, idx=idx)) is not None: 
 			return BSAccount.transform_obj(res, data_type)
 		return None
@@ -1219,10 +1217,6 @@ class MongoBackend(Backend):
 			pipeline = await self._mk_pipeline_player_achievements(release=release, 
 																	regions=regions, 
 																	accounts=accounts, 
-														accounts=accounts, 
-																	accounts=accounts, 
-																	sample=sample)			
-														sample=sample)			
 																	sample=sample)			
 			if pipeline is None:
 				raise ValueError(f'could not create pipeline for get player achievements {self.backend}')
@@ -1666,7 +1660,7 @@ class MongoBackend(Backend):
 													WGTankStat, pipeline):
 				yield tank_stat
 		except Exception as err:
-			error(f'Error fetching tank stats from {self.backend}.{self.table_tank_stats}: {err}')	
+			error(f'Error fetching tank stats from {self.table_uri(BSTableType.TankStats)}: {err}')	
 
 
 	async def tank_stats_count(self, release: BSBlitzRelease | None = None,
@@ -1696,7 +1690,7 @@ class MongoBackend(Backend):
 
 				if pipeline is None:
 					raise ValueError(f'could not create pipeline for tank stats {self.backend}.{dbc.name}')
-				return await self._datas_count(dbc, pipeline)
+				return await self.datas_count(BSTableType.TankStats, pipeline)
 		except Exception as err:
 			error(f'counting tank stats failed: {err}')
 		return -1
