@@ -3,7 +3,6 @@ from argparse import Namespace, ArgumentParser
 import logging
 from abc import ABC, abstractmethod
 from bson import ObjectId
-#from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCursor, AsyncIOMotorCollection # type: ignore
 from os.path import isfile
 from typing import Optional, Any, Iterable, Sequence, AsyncGenerator, TypeVar, cast
 from time import time
@@ -16,9 +15,10 @@ import queue
 from pydantic import BaseModel, Field
 
 from models import BSAccount, BSBlitzRelease, StatsTypes
-from blitzutils.models import Region, WoTBlitzReplayJSON, WGtankStat, Account, WGTank, Tank, \
-			WGplayerAchievementsMaxSeries, EnumVehicleTier, EnumNation, EnumVehicleTypeStr
-from pyutils import EventCounter, JSONExportable, epoch_now, is_alphanum, Idx
+from blitzutils.models import Region, WoTBlitzReplayJSON, WoTBlitzReplayData, WGtankStat, \
+		Account, WGTank, Tank, WGplayerAchievementsMaxSeries, \
+		EnumVehicleTier, EnumNation, EnumVehicleTypeStr
+from pyutils import EventCounter, JSONExportable, epoch_now, is_alphanum, Idx, D, O
 # from mongobackend import MongoBackend
 
 # Setup logging
@@ -888,7 +888,8 @@ class Backend(ABC):
 	#----------------------------------------
 
 	@abstractmethod
-	async def replay_insert(self, replay: WoTBlitzReplayJSON) -> bool:
+	async def replay_insert(self, replay: JSONExportable) -> bool:
+	# async def replay_insert(self, replay: WoTBlitzReplayJSON) -> bool:
 		"""Store replay into backend"""
 		raise NotImplementedError
 
@@ -923,19 +924,19 @@ class Backend(ABC):
 	
 
 	@abstractmethod
-	async def replays_insert(self, replays: Sequence[WoTBlitzReplayJSON]) -> tuple[int, int]:
+	async def replays_insert(self, replays: Sequence[JSONExportable]) -> tuple[int, int]:
 		"""Store replays to the backend. Returns number of replays inserted and not inserted"""
 		raise NotImplementedError	
 
 
-	async def replays_insert_worker(self, replayQ : Queue[WoTBlitzReplayJSON], force: bool = False) -> EventCounter:
+	async def replays_insert_worker(self, replayQ : Queue[JSONExportable], force: bool = False) -> EventCounter:
 		debug(f'starting, force={force}')
 		stats : EventCounter = EventCounter('replays insert')
 		try:
 			while True:
 				replay = await replayQ.get()
 				try:
-					debug(f'Insertting replay={replay.id} into {self.backend}.{self.table_replays}')
+					debug(f'Insertting replay={replay.index} into {self.table_uri(BSTableType.Releases)}')
 					if await self.replay_insert(replay):
 						stats.log('added')
 					else:
