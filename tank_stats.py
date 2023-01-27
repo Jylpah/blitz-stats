@@ -390,11 +390,12 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def fetch_api_worker(db: Backend, wg_api : WGApi,										
-										accountQ: IterableQueue[BSAccount], 
-										statsQ	: Queue[list[WGTankStat]], 
-										retryQ 	: IterableQueue[BSAccount] | None = None, 
-										disabled : bool = False) -> EventCounter:
+async def fetch_api_worker(db: Backend, 
+							wg_api : WGApi,										
+							accountQ: IterableQueue[BSAccount], 
+							statsQ	: Queue[list[WGTankStat]], 
+							retryQ 	: IterableQueue[BSAccount] | None = None, 
+							disabled : bool = False) -> EventCounter:
 	"""Async worker to fetch tank stats from WG API"""
 	debug('starting')
 	stats : EventCounter
