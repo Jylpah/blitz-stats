@@ -46,6 +46,9 @@ TANK_STATS_BATCH	: int = 1000
 
 
 def get_type(name: str) -> type[object] | None:
+	if name is None:
+		raise ValueError('No type defined')
+	
 	type_class : type[object]
 	try:
 		if is_alphanum(name):
