@@ -10,7 +10,8 @@ import logging
 
 
 from blitzutils.models import Region, Account, WGBlitzRelease
-from pyutils.utils import epoch_now, TypeExcludeDict
+from pyutils.utils import epoch_now, TypeExcludeDict, I, D, Idx, \
+						BackendIndexType, BackendIndex, DESCENDING, ASCENDING, TEXT
 
 TYPE_CHECKING = True
 logger 	= logging.getLogger()
@@ -46,6 +47,23 @@ class BSAccount(Account):
 		allow_mutation 			= True
 		validate_assignment 	= True
 
+
+	@classmethod
+	def backend_indexes(cls) -> list[list[tuple[str, BackendIndexType]]]:
+		"""return backend search indexes"""
+		indexes : list[list[tuple[str, BackendIndexType]]] = list()
+		indexes = list()
+		indexes.append([ 	('disabled', ASCENDING), 
+							('inactive', ASCENDING), 									 
+							('region', 	ASCENDING), 
+							('id', 		ASCENDING)
+						])
+		# indexes.append([ 	('disabled', ASCENDING), 
+		# 					('inactive', ASCENDING), 
+		# 					('id', 		ASCENDING), 
+		# 					('updated_tank_stats', ASCENDING)
+		# 				])
+		return indexes
 	
 	@classmethod	
 	def inactivity_limit(cls) -> int:
