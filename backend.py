@@ -801,8 +801,7 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def accounts_export(self, model: type[JSONExportable] = BSAccount, 
-								sample : float = 0) -> AsyncGenerator[BSAccount, None]:
+	async def accounts_export(self, sample : float = 0) -> AsyncGenerator[BSAccount, None]:
 		"""import accounts"""
 		raise NotImplementedError
 		yield BSAccount()
