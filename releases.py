@@ -267,11 +267,7 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 		releaseQ 		: Queue[BSBlitzRelease]			= Queue(100)
 		import_db   	: Backend | None 				= None
 		import_backend 	: str 							= args.import_backend
-		import_model 	: type[JSONExportable] | None 	= None
-
-		if (import_model := get_sub_type(args.import_model, JSONExportable)) is None:
-			raise ValueError("--import-model has to be subclass of JSONExportable")
-
+		
 		write_worker : Task = create_task(db.releases_insert_worker(releaseQ=releaseQ, force=args.force))
 
 		if (import_db := Backend.create_import_backend(driver=import_backend, 
@@ -281,7 +277,7 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 														config_file=args.import_config)) is None:
 			raise ValueError(f'Could not init {import_backend} to import releases from')
 
-		async for release in import_db.releases_export(model=import_model, sample=args.sample):
+		async for release in import_db.releases_export(sample=args.sample):
 			await releaseQ.put(release)
 			stats.log('read')
 
