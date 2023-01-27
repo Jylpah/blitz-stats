@@ -632,6 +632,13 @@ class Backend(ABC):
 		raise NotImplementedError
 
 
+	@abstractmethod
+	async def datas_update(self, table_type: BSTableType, 
+							objs	: Sequence[D], 
+							upsert	: bool = False) -> tuple[int, int]:
+		"""Update data in the backend. Returns number of documents updated and not updated"""
+		raise NotImplementedError
+
 
 	@abstractmethod
 	async def datas_count(self, 
@@ -652,11 +659,11 @@ class Backend(ABC):
 
 	@abstractmethod
 	async def data_update(self, 
-							table_type: BSTableType, 
-							ndx: Idx | None = None, 
-							obj : BaseModel | None = None,
-							update: dict | None = None, 							 
-							fields : list[str] | None = None) -> bool:
+							table_type	: BSTableType, 
+							ndx			: Idx | None = None, 
+							obj 		: JSONExportable | None = None,
+							update		: dict | None = None, 							 
+							fields 		: list[str] | None = None) -> bool:
 		"""Updates a document into backend in the chosen backend data format"""
 		raise NotImplementedError
 
