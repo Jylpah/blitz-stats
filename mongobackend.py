@@ -1107,15 +1107,18 @@ class MongoBackend(Backend):
 	async def player_achievement_insert(self, player_achievement: WGPlayerAchievementsMaxSeries) -> bool:		
 		"""Insert a single player achievement"""
 		debug('starting')
-		return await self._data_insert(self.collection_player_achievements, player_achievement)
+		return await self.data_insert(BSTableType.PlayerAchievements, player_achievement)
 
 
 	async def player_achievement_get(self, account: BSAccount, added: int) -> WGPlayerAchievementsMaxSeries | None:
 		"""Return a player_achievement from the backend"""
+		debug('starting')
 		try:
-			debug('starting')
-			_id : ObjectId = WGPlayerAchievementsMaxSeries.mk_id(account.id, region=account.region, added=added)
-			return await self._data_get(self.collection_player_achievements, WGPlayerAchievementsMaxSeries, id=_id)
+			idx	: ObjectId = WGPlayerAchievementsMaxSeries.mk_index(account_id=account.id, 
+																	region=account.region, 
+																	added=added)
+			if (res := await self.data_get(BSTableType.PlayerAchievements, idx=idx)) is not None: 
+				return WGPlayerAchievementsMaxSeries.transform_obj(res, self.model_accounts)
 		except Exception as err:
 			error(f'Unknown error: {err}')
 		return None
@@ -1125,8 +1128,10 @@ class MongoBackend(Backend):
 		"""Delete a player achievements from the backend"""
 		try:
 			debug('starting')
-			_id : ObjectId = WGPlayerAchievementsMaxSeries.mk_id(account.id, region=account.region, added=added)
-			return await self._data_delete(self.collection_player_achievements, id=_id)
+			idx : ObjectId = WGPlayerAchievementsMaxSeries.mk_index(account.id, 
+																	region=account.region, 
+																	added=added)
+			return await self.data_delete(BSTableType.PlayerAchievements, idx=idx)
 		except Exception as err:
 			error(f'Unknown error: {err}')
 		return False
@@ -1135,7 +1140,7 @@ class MongoBackend(Backend):
 	async def player_achievements_insert(self, player_achievements: Sequence[WGPlayerAchievementsMaxSeries]) -> tuple[int, int]:
 		"""Store player achievements to the backend. Returns number of stats inserted and not inserted"""
 		debug('starting')
-		return await self._datas_insert(self.collection_player_achievements, player_achievements)
+		return await self.datas_insert(BSTableType.PlayerAchievements, player_achievements)
 
 
 	async def _mk_pipeline_player_achievements(self, release: BSBlitzRelease|None = None, 
@@ -1193,16 +1198,23 @@ class MongoBackend(Backend):
 		try:
 			debug('starting')
 			pipeline : list[dict[str, Any]] | None 
-			pipeline = await self._mk_pipeline_player_achievements(release=release, regions=regions, 
+			pipeline = await self._mk_pipeline_player_achievements(release=release, 
+																	regions=regions, 
+																	accounts=accounts, 
 														accounts=accounts, 
+																	accounts=accounts, 
+																	sample=sample)			
 														sample=sample)			
+																	sample=sample)			
 			if pipeline is None:
 				raise ValueError(f'could not create pipeline for get player achievements {self.backend}')
 
-			async for pa in self._datas_get(self.collection_player_achievements, WGPlayerAchievementsMaxSeries, pipeline):
+			async for pa in self.datas_get(BSTableType.PlayerAchievements, 
+											out_type=WGPlayerAchievementsMaxSeries, 
+											pipeline=pipeline):
 				yield pa
 		except Exception as err:
-			error(f'Error fetching player achievements from {self.backend}.{self.table_player_achievements}: {err}')	
+			error(f'Error fetching player achievements from {self.table_uri(BSTableType.PlayerAchievements)}: {err}')	
 
 
 	async def player_achievements_count(self, release: BSBlitzRelease | None = None,
@@ -1229,8 +1241,8 @@ class MongoBackend(Backend):
 				pipeline = await self._mk_pipeline_player_achievements(release=release, regions=regions, 
 																accounts=accounts, sample=sample)
 				if pipeline is None:
-					raise ValueError(f'could not create pipeline for player achievements {self.backend}.{dbc.name}')
-				return await self._datas_count(dbc, pipeline)
+					raise ValueError(f'could not create pipeline for player achievements {self.table_uri(BSTableType.PlayerAchievements)}')
+				return await self.datas_count(BSTableType.PlayerAchievements, pipeline)
 		except Exception as err:
 			error(f'counting player achievements failed: {err}')
 		return -1
@@ -1239,18 +1251,17 @@ class MongoBackend(Backend):
 	async def player_achievements_update(self, player_achievements: list[WGPlayerAchievementsMaxSeries], upsert: bool = False) -> tuple[int, int]:
 		"""Update or upsert player achievements to the backend. Returns number of stats updated and not updated"""
 		debug('starting')
-		return await self._datas_update(self.collection_player_achievements, 
-										datas=player_achievements, upsert=upsert)
+		return await self.datas_update(BSTableType.PlayerAchievements, 
+										objs=player_achievements, 
+										upsert=upsert)
+										
 
-
-	async def player_achievements_export(self, model: type[JSONExportable] = WGPlayerAchievementsMaxSeries, 
-								sample: float = 0) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
+	async def player_achievements_export(self, sample: float = 0
+											) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
 		"""Export player achievements from Mongo DB"""
-		async for pa in self._datas_export(self.collection_player_achievements, 
-												in_type=model, 
-												out_type=WGPlayerAchievementsMaxSeries, 
-												sample=sample):
-			yield pa
+		async for obj in self.obj_export(BSTableType.PlayerAchievements, sample=sample):
+			if (pa := WGPlayerAchievementsMaxSeries.transform_obj(obj, self.model_player_achievements)) is not None: 
+				yield pa
 
 
 ########################################################
