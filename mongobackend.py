@@ -248,19 +248,20 @@ class MongoBackend(Backend):
 		return self.get_collection(BSTableType.AccountLog)
 
 
-	async def _create_index(self, dbc: AsyncIOMotorCollection, 
+	async def _create_index(self, table_type: BSTableType, 
 							mapper 	: AliasMapper, 
 							index	: Sequence[MongoIndex], 
 							db_fields: list[str] | None = None ) -> bool:
 		"""Helper to create index to a collection """
 		try:
-			debug(f'starting: collection={dbc.name}')
+			debug(f'starting: collection={self.get_table(table_type)}')
+			dbc 		: AsyncIOMotorCollection = self.get_collection(table_type)
 			index_str 	: list[str] = list()
 			field 		: Final = 0
 			direction 	: Final = 1
 			for ndx_elem in index:
 				index_str.append(f'{ndx_elem[field]}: {ndx_elem[direction]}')
-			message(f"Adding index: {' ,'.join(index_str)}")
+			message(f"Adding index: {', '.join(index_str)}")
 
 			db_index : list[MongoIndex]
 			if db_fields is None:
