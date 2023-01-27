@@ -256,8 +256,8 @@ class MongoBackend(Backend):
 			index_str 	: list[str] = list()
 			field 		: Final = 0
 			direction 	: Final = 1
-			for ndx_elem in index:
-				index_str.append(f'{ndx_elem[field]}: {ndx_elem[direction]}')
+			for idx_elem in index:
+				index_str.append(f'{idx_elem[field]}: {idx_elem[direction]}')
 			message(f"Adding index: {', '.join(index_str)}")
 
 			db_index : list[MongoIndex]
@@ -717,7 +717,7 @@ class MongoBackend(Backend):
 
 
 	async def data_update(self, table_type: BSTableType, 
-							ndx: Idx | None = None, 
+							idx: Idx | None = None, 
 							obj : BaseModel | None = None,
 							update: dict | None = None, 							 
 							fields : list[str] | None = None) -> bool:
@@ -731,8 +731,8 @@ class MongoBackend(Backend):
 				if ( data:= model.transform_obj(obj)) is None:
 					raise ValueError(f'Could not transform {type(obj)} to {model}: {obj}')
 				
-				if ndx is None:
-					ndx = data.index			
+				if idx is None:
+					idx = data.index			
 				
 				if update is not None:
 					pass
@@ -741,18 +741,18 @@ class MongoBackend(Backend):
 				else:
 					raise ValueError("'update', 'obj' and 'fields' cannot be all None")
 			
-			elif ndx is None or update is None:
-				raise ValueError("'update' is required with 'ndx'")
+			elif idx is None or update is None:
+				raise ValueError("'update' is required with 'idx'")
 
 			alias_fields : dict[str, Any] = AliasMapper(model).map(update.items())			
 
-			if (res := await dbc.find_one_and_update({ '_id': ndx }, { '$set': alias_fields})) is None:
-				# debug(f'Failed to update _id={ndx} into {self.backend}.{dbc.name}')
+			if (res := await dbc.find_one_and_update({ '_id': idx }, { '$set': alias_fields})) is None:
+				# debug(f'Failed to update _id={idx} into {self.backend}.{dbc.name}')
 				return False
-			#debug(f'Updated (_id={ndx}) into {self.backend}.{dbc.name}')
+			#debug(f'Updated (_id={idx}) into {self.backend}.{dbc.name}')
 			return True			
 		except Exception as err:
-			error(f'Could not update _id={ndx} in {self.table_uri(table_type)}: {err}')	
+			error(f'Could not update _id={idx} in {self.table_uri(table_type)}: {err}')	
 		return False
 
 
