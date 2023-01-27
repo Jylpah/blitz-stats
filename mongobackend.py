@@ -325,22 +325,29 @@ class MongoBackend(Backend):
 					self.database == __o.database
 
 
-	async def init_collection(self, DBC: str, indexes: list[list[MongoIndex]]) -> bool:
+	async def init_collection(self, 
+							  table_type: BSTableType, 
+							  indexes: list[list[BackendIndex]] | None = None ) -> bool:
 		"""Helper to create index to a collection"""
 		debug('starting')
-		try:			
+		try:
+			DBC		: str 					= self.get_table(table_type)
+			model 	: type[JSONExportable]	= self.get_model(table_type)
+			mapper 	: AliasMapper 			= AliasMapper(model)
+			
+			if indexes is None:
+				indexes = model.backend_indexes()
+						
 			try:
 				await self.db.create_collection(DBC)
 				message(f'Collection created: {DBC}')
 			except CollectionInvalid:
 				message(f'Collection exists: {DBC}')
-			
-			dbc 		: AsyncIOMotorCollection		= self.db[DBC]
-			model 		: type[JSONExportable]			= self.get_model(dbc.name)
-			mapper 		: AliasMapper = AliasMapper(model)
 
+			if len(indexes) == 0:
+				print(f'No indexes defined for {self.table_uri(table_type)}')				
 			for index in indexes:
-				await self._create_index(dbc, mapper, index)
+				await self._create_index(table_type, mapper, index)
 			return True
 		except Exception as err:
 			error(f'{err}')	
