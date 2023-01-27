@@ -16,12 +16,6 @@ from alive_progress import alive_bar		# type: ignore
 
 from multiprocessing import Manager, cpu_count
 from multiprocessing.pool import Pool, AsyncResult 
-from concurrent.futures import ProcessPoolExecutor, as_completed
-
-# from multiprocess.pool import Pool, AsyncResult 			# type: ignore
-# from multiprocess.managers import SyncManager as Manager  	# type: ignore
-# from multiprocess.queues import Queue as MPQueue			# type: ignore
-
 import queue
 
 from backend import Backend, OptAccountsInactive, BSTableType, \
@@ -1033,14 +1027,14 @@ async def  import_mp_worker(id: int = 0) -> EventCounter:
 																	force=force)))		
 		errors : int = 0
 		mapped : int = 0
-		while objs := await readQ.get():
+		while (objs := await readQ.get()) is not None:
 			debug(f'#{id}: read {len(objs)} objects')
 			try:
 				read : int = len(objs)
 				debug(f'read {read} documents')
 				stats.log('stats read', read)	
-				tank_stats, errors = transform_objs(in_type=import_model, 
-															objs=objs)		
+				tank_stats = WGtankStat.transform_objs(objs=objs, in_type=import_model)
+				errors = len(objs) - len(tank_stats)		
 				stats.log('tank stats read', len(tank_stats))				
 				stats.log('format errors', errors)
 				if rel_mapper is not None:
