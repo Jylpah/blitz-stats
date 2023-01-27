@@ -409,8 +409,7 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 																map_releases=map_releases))		
 
 		with alive_bar(N, title="Importing player achievements ", enrich_print=False, refresh_secs=0.5) as bar:
-			async for pa in import_db.player_achievements_export(model=import_model, 
-																sample=args.sample):
+			async for pa in import_db.player_achievements_export(sample=args.sample):
 				await rel_mapQ.put(pa)
 				bar()
 		
