@@ -615,7 +615,8 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def datas_get(self, table_type	: BSTableType, 
+	async def datas_get(self, 
+						table_type	: BSTableType, 
 						out_type		: type[D], 
 						pipeline 		: list[dict[str, Any]]) -> AsyncGenerator[D, None]:
 		"""Get documents """
@@ -624,26 +625,45 @@ class Backend(ABC):
 
 	
 	@abstractmethod
-	async def datas_count(self, table_type: BSTableType, 
+	async def datas_insert(self, 
+						  	table_type	: BSTableType, 
+						  	objs		: Sequence[JSONExportable]) -> tuple[int, int]:
+		"""Store data to the backend. Returns the number of added and not added"""
+		raise NotImplementedError
+
+
+
+	@abstractmethod
+	async def datas_count(self, 
+							table_type: BSTableType, 
 							pipeline : list[dict[str, Any]]) -> int:
 		"""Count documents"""
 		raise NotImplementedError
 
 
 	@abstractmethod
-	async def data_replace(self, table_type: BSTableType, obj: JSONExportable, 
+	async def data_replace(self, 
+							table_type: BSTableType, 
+							obj: JSONExportable, 
 							upsert : bool = False) -> bool:
 		"""Generic method to update an object of data_type"""	
 		raise NotImplementedError
 
 
 	@abstractmethod
-	async def data_update(self, table_type: BSTableType, 
+	async def data_update(self, 
+							table_type: BSTableType, 
 							ndx: Idx | None = None, 
 							obj : BaseModel | None = None,
 							update: dict | None = None, 							 
 							fields : list[str] | None = None) -> bool:
 		"""Updates a document into backend in the chosen backend data format"""
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def data_delete(self, table_type: BSTableType, idx: Idx) -> bool:
+		"""Delete data record from backend"""
 		raise NotImplementedError
 
 
@@ -656,7 +676,8 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def objs_export(self, table_type: BSTableType, 
+	async def objs_export(self, 
+						 table_type: BSTableType, 
 						 sample: float = 0, 
 						 batch: int = 0) -> AsyncGenerator[list[Any], None]:
 		"""Export raw objects from backend"""
@@ -681,7 +702,8 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def account_update(self, account: BSAccount,
+	async def account_update(self, 
+								account: BSAccount,
 								update: dict[str, Any] | None = None, 
 								fields: list[str] | None = None) -> bool:
 		"""Update an account in the backend. Returns False 
@@ -704,7 +726,8 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def accounts_get(self, stats_type : StatsTypes | None = None, 
+	async def accounts_get(self, 
+							stats_type : StatsTypes | None = None, 
 							regions: set[Region] = Region.API_regions(), 
 							inactive : OptAccountsInactive = OptAccountsInactive.default(), 
 							disabled: bool = False, 
@@ -845,8 +868,7 @@ class Backend(ABC):
 
 
 	@abstractmethod	
-	async def releases_export(self, model: type[JSONExportable] = BSBlitzRelease, 
-								sample: float = 0) -> AsyncGenerator[BSBlitzRelease, None]:
+	async def releases_export(self, sample: float = 0) -> AsyncGenerator[BSBlitzRelease, None]:
 		"""Export releases"""
 		raise NotImplementedError
 		yield BSBlitzRelease()
