@@ -1276,14 +1276,12 @@ class MongoBackend(Backend):
 		rel : BSBlitzRelease | None = None
 		try:
 			dbc : AsyncIOMotorCollection = self.collection_releases
-			async for r in dbc.find().sort('launch_date', DESCENDING):
-				rel = BSBlitzRelease.parse_obj(r)
-				if rel is not None:
-					return rel			
+			async for obj in dbc.find().sort('launch_date', DESCENDING):
+				return BSBlitzRelease.transform_obj(obj, self.get_model(BSTableType.Releases))
 		except ValidationError as err:
 			error(f'Incorrect data format: {err}')
 		except Exception as err:
-			error(f'Could not find the latest release from {self.backend}.{self.table_releases}: {err}')
+			error(f'Could not find the latest release from {self.table_uri(BSTableType.Releases)}: {err}')
 		return None
 
 
