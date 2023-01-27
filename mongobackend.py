@@ -756,8 +756,22 @@ class MongoBackend(Backend):
 		return False
 
 
-	async def objs_insert(self, table_type: BSTableType, 
-							objs: Sequence[D]) -> tuple[int, int]:
+	async def data_delete(self, table_type: BSTableType, idx: Idx) -> bool:
+		"""Get raw document from MongoDB"""
+		try:
+			# debug('starting')
+			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
+			res : DeleteResult = await dbc.delete_one({ '_id': idx})
+			if res.deleted_count == 1:
+				# debug(f'Delete (_id={id}) from {self.backend}.{dbc.name}')
+				return True
+			else:
+				pass
+				# debug(f'Failed to delete _id={id} from {self.backend}.{dbc.name}')				
+		except Exception as err:
+			debug(f'Error while deleting _id={id} from {self.table_uri(table_type)}: {err}')	
+		return False			
+
 		"""Store data to the backend. Returns the number of added and not added"""
 		debug('starting')
 		added		: int = 0
