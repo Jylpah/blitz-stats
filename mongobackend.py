@@ -902,12 +902,6 @@ class MongoBackend(Backend):
 			if the account was not added"""
 		debug('starting')
 		return await self._data_insert(self.collection_accounts, account)
-		
-
-	async def account_get_OLD(self, account_id: int) -> BSAccount | None:
-		"""Get account from backend"""
-		debug('starting')
-		return await self._data_get(self.collection_accounts, BSAccount, id=account_id)
 
 
 	async def account_get(self, account_id: int) -> BSAccount | None:
@@ -921,7 +915,7 @@ class MongoBackend(Backend):
 			if (res := await self.data_get(BSTableType.Accounts, idx=idx)) is not None: 
 				return BSAccount.transform_obj(res, data_type)
 		except ValidationError as err:
-			error(f'Could not validate {data_type} _id={idx} from {self.table_uri(BSTableType.Accounts)}: {err}')
+			error(f'Could not validate {data_type} _id={idx} from {self.table_accounts}: {err}')
 			await self.error_log(MongoErrorLog(table=table, doc_id=idx, type=ErrorLogType.ValidationError))
 		return None
 		
@@ -933,11 +927,10 @@ class MongoBackend(Backend):
 			if the account was not updated"""
 		try: 
 			debug('starting')
-			return await self._data_update(self.collection_accounts, 
-											id=account.id, obj=account,
-											update=update, fields=fields)
+			return await self.data_update(BSTableType.Accounts, obj=account, 
+											update=update, fields=fields)			
 		except Exception as err:
-			debug(f'Error while updating account (id={account.id}) into {self.backend}.{self.table_accounts}: {err}')	
+			debug(f'Error while updating account (id={account.id}) into {self.table_uri(BSTableType.Accounts)}: {err}')	
 		return False
 
 
@@ -945,14 +938,14 @@ class MongoBackend(Backend):
 		"""Update an account in the backend. Returns False 
 			if the account was not updated"""
 		debug('starting')
-		return await self._data_replace(self.collection_accounts, data=account,
-										id=account.id, upsert=upsert)
+		return await self.data_replace(BSTableType.Accounts, obj=account,
+										upsert=upsert)
 
 
 	async def account_delete(self, account_id: int) -> bool:
 		"""Deleta account from MongoDB backend"""
 		debug('starting')
-		return await self._data_delete(self.collection_accounts, id=account_id)
+		return await self.data_delete(BSTableType.Accounts, idx=account_id)
 
 
 	async def _mk_pipeline_accounts(self, stats_type : StatsTypes | None = None, 
@@ -1035,9 +1028,11 @@ class MongoBackend(Backend):
 				update_field = stats_type.value
 
 			if pipeline is None:
-				raise ValueError(f'could not create get-accounts {self.backend}.{self.table_accounts} cursor')
+				raise ValueError(f'could not create get-accounts {self.table_uri(BSTableType.Accounts)} cursor')
 
-			async for player in self._datas_get(self.collection_accounts, BSAccount, pipeline):
+			async for player in self.datas_get(BSTableType.Accounts, 
+												out_type=BSAccount,
+												pipeline=pipeline):
 				try:					
 					# if not force and not disabled and inactive is None and player.inactive:
 					if not disabled and inactive == OptAccountsInactive.auto and player.inactive:
@@ -1051,7 +1046,7 @@ class MongoBackend(Backend):
 				except Exception as err:
 					error(f'{err}')
 		except Exception as err:
-			error(f'Error fetching accounts from {self.backend}.{self.table_accounts}: {err}')	
+			error(f'Error fetching accounts from {self.table_uri(BSTableType.Accounts)}: {err}')	
 
 
 	async def accounts_count(self, stats_type : StatsTypes | None = None, 
@@ -1080,8 +1075,8 @@ class MongoBackend(Backend):
 															dist=dist, sample=sample, 
 															cache_valid=cache_valid)
 				if pipeline is None:
-					raise ValueError(f'Could not create pipeline for accounts {self.backend}.{dbc.name}')
-				return await self._datas_count(dbc, pipeline)
+					raise ValueError(f'Could not create pipeline for accounts {self.table_uri(BSTableType.Accounts)}')
+				return await self.datas_count(BSTableType.Accounts, pipeline)
 		except Exception as err:
 			error(f'counting accounts failed: {err}')
 		return -1
@@ -1091,17 +1086,16 @@ class MongoBackend(Backend):
 								sample : float = 0) -> AsyncGenerator[BSAccount, None]:
 		"""Import accounts from Mongo DB"""
 		debug('starting')
-		async for account in self._datas_export(self.collection_accounts, 
-												in_type=model, 
-												out_type=BSAccount, 
-												sample=sample):
-			yield account
-
+		async for obj in self.obj_export(BSTableType.Accounts, sample=sample):
+			if (rel := BSAccount.transform_obj(obj, self.model_releases)) is not None: 
+				yield rel
+		
 
 	async def accounts_insert(self, accounts: Sequence[BSAccount]) -> tuple[int, int]:
 		"""Store account to the backend. Returns the number of added and not added"""
 		debug('starting')
-		return await self._datas_insert(self.collection_accounts, accounts)
+		return await self.datas_insert(BSTableType.Accounts, accounts)
+
 
 ########################################################
 # 
