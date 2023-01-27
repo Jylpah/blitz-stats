@@ -805,6 +805,41 @@ class MongoBackend(Backend):
 		debug(f'added={added}, not_added={not_added}')
 		return added, not_added
 
+	async def datas_get(self, table_type: BSTableType, 
+						out_type: type[D], 
+						pipeline : list[dict[str, Any]]) -> AsyncGenerator[D, None]:
+		try:
+			debug('starting')
+			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
+			model : type[JSONExportable] = self.get_model(table_type)
+
+			async for obj in dbc.aggregate(pipeline, allowDiskUse=True):
+				try:
+					debug(f'{obj}')
+					if (data := out_type.transform_obj(obj, model)) is not None:
+						yield data					
+				except ValidationError as err:
+					error(f'Could not validate {out_type} ob={obj} from {self.table_uri(table_type)}: {err}')
+				except Exception as err:
+					error(f'{err}')
+		except Exception as err:
+			error(f'Error fetching data from {self.table_uri(table_type)}: {err}')
+
+
+	async def datas_count(self, table_type: BSTableType, 
+							pipeline : list[dict[str, Any]]) -> int:
+		try:
+			debug('starting')
+			pipeline.append({ '$count': 'total' })
+			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
+			async for res in dbc.aggregate(pipeline, allowDiskUse=True):
+				# print(f"_data_count(): total={res['total']}")
+				return int(res['total'])
+		except Exception as err:
+			error(f'Error counting documents in {self.table_uri(table_type)}: {err}')
+		return -1
+
+
 	async def obj_export(self, table_type: BSTableType, 
 						 sample: float = 0) -> AsyncGenerator[Any, None]:
 		"""Export raw documents from Mongo DB"""
