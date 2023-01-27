@@ -1180,8 +1180,8 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def player_achievements_export(self, model: type[JSONExportable] = WGPlayerAchievementsMaxSeries, 
-								sample: float = 0) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
+	async def player_achievements_export(self, sample: float = 0,
+										) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
 		"""Export player achievements from Mongo DB"""
 		raise NotImplementedError
 		yield WGPlayerAchievementsMaxSeries()
