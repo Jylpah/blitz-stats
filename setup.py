@@ -42,12 +42,12 @@ def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> b
 def add_args_init(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
-		collections : list[str] = ['all' ] + sorted([ tt.name for tt in BSTableType ])
-		parser.add_argument('setup_init_collections', nargs='*',
+		tables : list[str] = ['all' ] + sorted([ tt.name for tt in BSTableType ])
+		parser.add_argument('setup_init_tables', nargs='*',
 							default='all', 
-							choices=collections, 
-		 					metavar='COLLECTION [COLLECTION1...]',
-		 					help='COLLECTION(S) to initialize: ' + ", ".join(collections))
+							choices=tables, 
+		 					metavar='TABLE [TABLE...]',
+		 					help='TABLE(S) to initialize: ' + ", ".join(tables))
 		return True	
 	except Exception as err:
 		error(f'{err}')
@@ -77,11 +77,11 @@ async def cmd(db: Backend, args : Namespace) -> bool:
 async def cmd_init(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
-		collections: list[str] = args.setup_init_collections
+		tables: list[str] = args.setup_init_tables
 
-		if 'all' in collections:
-			collections = [ tt.name for tt in BSTableType ]
-		await db.init(collections=collections)
+		if 'all' in tables:
+			tables = [ tt.name for tt in BSTableType ]
+		await db.init(tables=tables)
 		return True 
 	except Exception as err:
 		error(f'{err}')
