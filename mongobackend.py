@@ -776,6 +776,35 @@ class MongoBackend(Backend):
 		return False
 
 
+	async def objs_insert(self, table_type: BSTableType, 
+							objs: Sequence[D]) -> tuple[int, int]:
+		"""Store data to the backend. Returns the number of added and not added"""
+		debug('starting')
+		added		: int = 0
+		not_added 	: int = 0
+		try:
+			debug(f'inserting to {self.table_uri(table_type)}')
+			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
+			model : type[JSONExportable] = self.get_model(table_type)
+			if len(objs) == 0:
+				raise ValueError('No data to insert')
+			datas : list[JSONExportable|None] = [ model.transform_obj(obj) for obj in objs ]
+
+			res : InsertManyResult = await dbc.insert_many( ( data.obj_db() for data in datas if data is not None), 
+															ordered=False)
+			added = len(res.inserted_ids)
+		except BulkWriteError as err:
+			if err.details is not None:
+				added = err.details['nInserted']
+				not_added = len(err.details["writeErrors"])
+				debug(f'Added {added}, could not add {not_added} entries to {self.table_uri(table_type)}')
+			else:
+				error('BulkWriteError.details is None')
+		except Exception as err:
+			error(f'Unknown error when adding entries to {self.table_uri(table_type)}: {err}')
+		debug(f'added={added}, not_added={not_added}')
+		return added, not_added
+
 	async def obj_export(self, table_type: BSTableType, 
 						 sample: float = 0) -> AsyncGenerator[Any, None]:
 		"""Export raw documents from Mongo DB"""
