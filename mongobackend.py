@@ -697,14 +697,17 @@ class MongoBackend(Backend):
 		return None
 
 
-	async def data_replace(self, table_type: BSTableType, obj: JSONExportable, 
+	async def data_replace(self, 
+							table_type: BSTableType, 
+							obj: 		JSONExportable, 
 							upsert : bool = False) -> bool:
 		"""Generic method to update an object of data_type"""		
 		try:
 			debug('starting')
 			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
 			model : type[JSONExportable] = self.get_model(table_type)
-			if (data := model.transform_obj(obj, type(obj))) is not None:
+			debug(f'obj={obj} type={type(obj)} model={model}')
+			if (data := model.transform_obj(obj)) is not None:
 				if (res := await dbc.find_one_and_replace({ '_id': data.index}, data.obj_db(), upsert=upsert)) is None:
 					debug(f'Failed to replace _id={data.index} into {self.backend}.{dbc.name}')
 					return False
@@ -772,6 +775,10 @@ class MongoBackend(Backend):
 			debug(f'Error while deleting _id={id} from {self.table_uri(table_type)}: {err}')	
 		return False			
 
+
+	async def datas_insert(self, 
+						  table_type: BSTableType, 
+						  objs		: Sequence[JSONExportable]) -> tuple[int, int]:
 		"""Store data to the backend. Returns the number of added and not added"""
 		debug('starting')
 		added		: int = 0
@@ -798,6 +805,7 @@ class MongoBackend(Backend):
 			error(f'Unknown error when adding entries to {self.table_uri(table_type)}: {err}')
 		debug(f'added={added}, not_added={not_added}')
 		return added, not_added
+
 
 	async def datas_get(self, table_type: BSTableType, 
 						out_type: type[D], 
@@ -1317,7 +1325,6 @@ class MongoBackend(Backend):
 			# 								update=update, fields=fields)
 			return await self.data_update(BSTableType.Releases, obj=release, 
 											update=update, fields=fields)
-
 		except Exception as err:
 			debug(f'Error while updating release {release.release} into {self.backend}.{self.table_accounts}: {err}')	
 		return False
@@ -1327,15 +1334,16 @@ class MongoBackend(Backend):
 		"""Update an account in the backend. Returns False 
 			if the account was not updated"""
 		debug('starting')
-		return await self._data_replace(self.collection_releases, data=release, 
-										id=release.release, upsert=upsert)	
+		# return await self._data_replace(self.collection_releases, data=release, 
+		# 								id=release.release, upsert=upsert)
+		return await self.data_replace(BSTableType.Releases, obj=release, upsert=upsert)	
 
 
 	async def release_delete(self, release: str) -> bool:
 		"""Delete a release from backend"""
 		debug('starting')
 		release = WGBlitzRelease.validate_release(release)
-		return await self._data_delete(self.collection_releases, id=release)
+		return await self.data_delete(BSTableType.Releases, idx=release)
 
 
 	async def _mk_pipeline_releases(self, release_match: str | None = None, 
@@ -1388,16 +1396,13 @@ class MongoBackend(Backend):
 			error(f'Error getting releases: {err}')
 
 
-	async def releases_export(self, model: type[JSONExportable] = BSBlitzRelease, 
-							sample : float = 0) -> AsyncGenerator[BSBlitzRelease, None]:
+	async def releases_export(self, sample : float = 0) -> AsyncGenerator[BSBlitzRelease, None]:
 		"""Import relaseses from Mongo DB"""
 		debug('starting')
-		async for release in self._datas_export(self.collection_releases, 
-												in_type=model, 
-												out_type=BSBlitzRelease, 
-												sample=sample):
-			# debug(f'Exporting release {release}: {release.json_src()}')
-			yield release
+		async for obj in self.obj_export(BSTableType.Releases,
+											sample=sample):
+			if (rel := BSBlitzRelease.transform_obj(obj, self.get_model(BSTableType.Releases))) is not None: 
+				yield rel
 
 
 ########################################################
