@@ -1288,11 +1288,10 @@ class MongoBackend(Backend):
 	async def release_get_current(self) -> BSBlitzRelease | None:
 		"""Get the latest release in the backend"""
 		debug('starting')		
-		try:
-			
+		try:			
 			dbc : AsyncIOMotorCollection = self.collection_releases
-			async for r in dbc.find({ 'launch_date': { '$lte': date.today() } }).sort('launch_date', ASCENDING):
-				return BSBlitzRelease.parse_obj(r)
+			async for obj in dbc.find({ 'launch_date': { '$lte': date.today() } }).sort('launch_date', ASCENDING):
+				return BSBlitzRelease.transform_obj(obj, self.get_model(BSTableType.Releases))
 		except ValidationError as err:
 			error(f'Incorrect data format: {err}')
 		except Exception as err:
