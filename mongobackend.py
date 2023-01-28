@@ -478,35 +478,35 @@ class MongoBackend(Backend):
 ########################################################
 
 	
-	async def _data_insert(self, dbc : AsyncIOMotorCollection, data: D) -> bool:  		# type: ignore
-		"""Generic method to get one object of data_type"""
-		try:
-			# debug('starting')
-			res : InsertOneResult = await dbc.insert_one(data.obj_db())
-			# debug(f'Inserted {type(data)} (_id={res.inserted_id}) into {self.backend}.{dbc.name}: {data}')
-			return True			
-		except Exception as err:
-			debug(f'Failed to insert {type(data)}={data} into {self.backend}.{dbc.name}: {err}')	
-		return False
+	# async def _data_insert(self, dbc : AsyncIOMotorCollection, data: D) -> bool:  		# type: ignore
+	# 	"""Generic method to get one object of data_type"""
+	# 	try:
+	# 		# debug('starting')
+	# 		res : InsertOneResult = await dbc.insert_one(data.obj_db())
+	# 		# debug(f'Inserted {type(data)} (_id={res.inserted_id}) into {self.backend}.{dbc.name}: {data}')
+	# 		return True			
+	# 	except Exception as err:
+	# 		debug(f'Failed to insert {type(data)}={data} into {self.backend}.{dbc.name}: {err}')	
+	# 	return False
 
 	
-	async def _data_get(self, dbc : AsyncIOMotorCollection, 
-						data_type: type[D], 
-						id: Idx) -> Optional[D]:
-		"""Generic method to get one object of data_type"""
-		try:
-			# debug('starting')
-			res : Any = await dbc.find_one({ '_id': id})
-			if res is not None:
-				return data_type.parse_obj(res)
-			else: 
-				return None
-		except ValidationError as err:
-			error(f'Could not validate {type(data_type)} _id={id} from {self.backend}.{dbc.name}: {err}')
-			await self.error_log(MongoErrorLog(table=dbc.name, doc_id=id, type=ErrorLogType.ValidationError))
-		except Exception as err:
-			error(f'Error getting {type(data_type)} _id={id} from {self.backend}.{dbc.name}: {err}')
-		return None
+	# async def _data_get(self, dbc : AsyncIOMotorCollection, 
+	# 					data_type: type[D], 
+	# 					id: Idx) -> Optional[D]:
+	# 	"""Generic method to get one object of data_type"""
+	# 	try:
+	# 		# debug('starting')
+	# 		res : Any = await dbc.find_one({ '_id': id})
+	# 		if res is not None:
+	# 			return data_type.parse_obj(res)
+	# 		else: 
+	# 			return None
+	# 	except ValidationError as err:
+	# 		error(f'Could not validate {type(data_type)} _id={id} from {self.backend}.{dbc.name}: {err}')
+	# 		await self.error_log(MongoErrorLog(table=dbc.name, doc_id=id, type=ErrorLogType.ValidationError))
+	# 	except Exception as err:
+	# 		error(f'Error getting {type(data_type)} _id={id} from {self.backend}.{dbc.name}: {err}')
+	# 	return None
 
 
 	async def _data_update(self, dbc : AsyncIOMotorCollection, id: Idx, 
@@ -671,7 +671,7 @@ class MongoBackend(Backend):
 ########################################################
 	
 	
-	async def data_insert(self, table_type: BSTableType, obj: JSONExportable) -> bool: 
+	async def _data_insert(self, table_type: BSTableType, obj: JSONExportable) -> bool: 
 		"""Generic method to get one object of data_type"""
 		try:
 			# debug('starting')
@@ -686,12 +686,13 @@ class MongoBackend(Backend):
 		return False
 
 
-	async def data_get(self, table_type: BSTableType, idx: Idx) -> Any:
-		"""Get raw document from MongoDB"""
+	async def _data_get(self, table_type: BSTableType, idx: Idx) -> JSONExportable | None:
+		"""Get document from MongoDB in its native data type"""
 		try:
 			# debug('starting')
 			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
-			return await dbc.find_one({ '_id': idx})
+			model : type[JSONExportable] = self.get_model(table_type)
+			return model.parse_obj(await dbc.find_one({ '_id': idx}))
 		except Exception as err:
 			error(f'Error getting _id={idx} from {self.table_uri(table_type)}: {err}')
 		return None
@@ -924,16 +925,15 @@ class MongoBackend(Backend):
 		"""Store account to the backend. Returns False 
 			if the account was not added"""
 		debug('starting')
-		return await self.data_insert(BSTableType.Accounts, account)
+		return await self._data_insert(BSTableType.Accounts, obj=account)
 
 
 	async def account_get(self, account_id: int) -> BSAccount | None:
 		"""Get account from backend"""
 		debug('starting')
-		data_type 	: type[JSONExportable] 	= self.model_accounts
-		idx			: int 					= account_id
-		if (res := await self.data_get(BSTableType.Accounts, idx=idx)) is not None: 
-			return BSAccount.transform_obj(res, data_type)
+		idx : int = account_id
+		if (res := await self._data_get(BSTableType.Accounts, idx=idx)) is not None: 
+			return BSAccount.transform_obj(res, self.model_accounts)
 		return None
 		
 
@@ -1123,7 +1123,7 @@ class MongoBackend(Backend):
 	async def player_achievement_insert(self, player_achievement: WGPlayerAchievementsMaxSeries) -> bool:		
 		"""Insert a single player achievement"""
 		debug('starting')
-		return await self.data_insert(BSTableType.PlayerAchievements, player_achievement)
+		return await self._data_insert(BSTableType.PlayerAchievements, obj=player_achievement)
 
 
 	async def player_achievement_get(self, account: BSAccount, added: int) -> WGPlayerAchievementsMaxSeries | None:
@@ -1133,7 +1133,7 @@ class MongoBackend(Backend):
 			idx	: ObjectId = WGPlayerAchievementsMaxSeries.mk_index(account_id=account.id, 
 																	region=account.region, 
 																	added=added)
-			if (res := await self.data_get(BSTableType.PlayerAchievements, idx=idx)) is not None: 
+			if (res := await self._data_get(BSTableType.PlayerAchievements, idx=idx)) is not None: 
 				return WGPlayerAchievementsMaxSeries.transform_obj(res, self.model_accounts)
 		except Exception as err:
 			error(f'Unknown error: {err}')
@@ -1288,7 +1288,7 @@ class MongoBackend(Backend):
 		debug('starting')
 		try:
 			release = WGBlitzRelease.validate_release(release)
-			if (obj := await self.data_get(BSTableType.Releases, idx = release)) is not None:
+			if (obj := await self._data_get(BSTableType.Releases, idx = release)) is not None:
 				return BSBlitzRelease.transform_obj(obj, self.model_releases)
 		except Exception as err:
 			error(f'{err}')
@@ -1327,7 +1327,7 @@ class MongoBackend(Backend):
 	async def release_insert(self, release: BSBlitzRelease) -> bool:
 		"""Insert new release to the backend"""
 		debug('starting')
-		return await self.data_insert(BSTableType.Releases, obj=release)
+		return await self._data_insert(BSTableType.Releases, obj=release)
 
 
 	async def release_update(self, release: BSBlitzRelease, 
@@ -1432,12 +1432,12 @@ class MongoBackend(Backend):
 		"""Store replay into backend"""
 		debug('starting')
 		# return await self._data_insert(self.collection_replays, replay)
-		return await self.data_insert(BSTableType.Replays, obj=replay)
+		return await self._data_insert(BSTableType.Replays, obj=replay)
 
 	async def replay_get(self, replay_id: str) -> WoTBlitzReplayData | None:
 		"""Get replay from backend"""
 		debug('starting')			
-		if (rep := await self.data_get(BSTableType.Replays, idx=replay_id)) is not None:
+		if (rep := await self._data_get(BSTableType.Replays, idx=replay_id)) is not None:
 			return WoTBlitzReplayData.transform_obj(rep, self.model_replays)
 		return None
 				
@@ -1537,7 +1537,7 @@ class MongoBackend(Backend):
 	async def tank_stat_insert(self, tank_stat: WGTankStat) -> bool:
 		"""Insert a single tank stat"""
 		debug('starting')
-		return await self._data_insert(self.collection_tank_stats, tank_stat)
+		return await self._data_insert(BSTableType.TankStats, obj=tank_stat)
 
 
 	async def tank_stat_get(self, account: BSAccount, tank_id: int, 
@@ -1545,8 +1545,9 @@ class MongoBackend(Backend):
 		"""Return tank stats from the backend"""
 		try:
 			debug('starting')
-			_id : ObjectId = WGTankStat.mk_id(account.id, last_battle_time, tank_id)
-			return await self._data_get(self.collection_tank_stats, WGTankStat, id=_id)
+			idx : ObjectId = WGTankStat.mk_id(account.id, last_battle_time, tank_id)
+			if (res:= await self._data_get(BSTableType.TankStats,  idx=idx)) is not None:
+				return WGTankStat.transform_obj(res, self.model_tank_stats)
 		except Exception as err:
 			error(f'Unknown error: {err}')
 		return None
@@ -1756,7 +1757,7 @@ class MongoBackend(Backend):
 			pipeline : list[dict[str, Any]]	
 			match_stage : list[dict[str, Any]] | None
 			if (match_stage := await self._mk_pipeline_tank_stats(release = release, 
-																regions = regions)) is None:
+																	regions = regions)) is None:
 				raise ValueError('Could not create $match pipeline')
 			match_stage.append({ alias('tank_id') : tank.tank_id })			
 			
@@ -1771,10 +1772,12 @@ class MongoBackend(Backend):
 			if sample > 0:
 				pipeline.append({ '$sample' : { 'size': sample } })
 			
-			async for _id in self.collection_tank_stats.aggregate(pipeline, allowDiskUse=True):
-				if (tank_stat := await self._data_get(self.collection_tank_stats, WGTankStat, _id)) is not None:
-					print(f'tank stat duplicate: {tank_stat}')
-					yield tank_stat
+			async for idxs in self.collection_tank_stats.aggregate(pipeline, allowDiskUse=True):				
+				for idx in idxs:
+					if (obj := await self._data_get(BSTableType.TankStats, idx)) is not None:
+						if( tank_stat := WGTankStat.transform_obj(obj)) is not None:
+							print(f'tank stat duplicate: {tank_stat}')
+							yield tank_stat
 
 		except Exception as err:
 			debug(f'Could not find duplicates from {self.table_uri(BSTableType.TankStats)}: {err}')	
@@ -1824,7 +1827,7 @@ class MongoBackend(Backend):
 	async def tankopedia_insert(self, tank: Tank) -> bool:
 		""""insert tank into Tankopedia"""
 		debug('starting')
-		return await self._data_insert(self.collection_tankopedia, data=tank)
+		return await self._data_insert(BSTableType.Tankopedia, obj=tank)
 
 
 	async def tankopedia_replace(self, tank: Tank, upsert : bool = True) -> bool:
