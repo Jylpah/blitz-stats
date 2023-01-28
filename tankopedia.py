@@ -155,9 +155,10 @@ def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 		parser.add_argument('--nation', type=str, default=None, metavar='NATION',
 								choices=[ n.name for n in EnumNation ], 
 								help="Export tanks of NATION")
-		parser.add_argument('--is-premium', type=bool, default=None, metavar='PREMIUM',
-								choices=[ True, False ], 
-								help="Export premium/non-premium tanks")
+		parser.add_argument('--premium', default=None, action='store_true', 
+								dest='is_premium', help="Export premium tanks")
+		parser.add_argument('--non-premium', default=None, action='store_false', 
+								dest='is_premium', help="Export non-premium tanks")
 		parser.add_argument('--force', action='store_true', default=False, 
 							help='Overwrite existing expoirt file')
 
