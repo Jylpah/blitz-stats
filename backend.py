@@ -37,7 +37,6 @@ MIN_UPDATE_INTERVAL 		: int = 3   # days
 ACCOUNTS_Q_MAX 		: int = 10000
 TANK_STATS_BATCH	: int = 1000
 
-
 ##############################################
 #
 ## Utils 
@@ -616,30 +615,30 @@ class Backend(ABC):
 	# 	raise NotImplementedError
 
 
-	@abstractmethod
-	async def datas_get(self, 
-						table_type	: BSTableType, 
-						out_type	: type[D], 
-						pipeline 	: list[dict[str, Any]]) -> AsyncGenerator[D, None]:
-		"""Get documents """
-		raise NotImplementedError
-		yield Any
+	# @abstractmethod
+	# async def datas_get(self, 
+	# 					table_type	: BSTableType, 
+	# 					out_type	: type[D], 
+	# 					pipeline 	: list[dict[str, Any]]) -> AsyncGenerator[D, None]:
+	# 	"""Get documents """
+	# 	raise NotImplementedError
+	# 	yield Any
 
 	
-	@abstractmethod
-	async def datas_insert(self, 
-						  	table_type	: BSTableType, 
-						  	objs		: Sequence[JSONExportable]) -> tuple[int, int]:
-		"""Store data to the backend. Returns the number of added and not added"""
-		raise NotImplementedError
+	# @abstractmethod
+	# async def datas_insert(self, 
+	# 					  	table_type	: BSTableType, 
+	# 					  	objs		: Sequence[JSONExportable]) -> tuple[int, int]:
+	# 	"""Store data to the backend. Returns the number of added and not added"""
+	# 	raise NotImplementedError
 
 
-	@abstractmethod
-	async def datas_update(self, table_type: BSTableType, 
-							objs	: Sequence[D], 
-							upsert	: bool = False) -> tuple[int, int]:
-		"""Update data in the backend. Returns number of documents updated and not updated"""
-		raise NotImplementedError
+	# @abstractmethod
+	# async def datas_update(self, table_type: BSTableType, 
+	# 						objs	: Sequence[D], 
+	# 						upsert	: bool = False) -> tuple[int, int]:
+	# 	"""Update data in the backend. Returns number of documents updated and not updated"""
+	# 	raise NotImplementedError
 
 
 	@abstractmethod
