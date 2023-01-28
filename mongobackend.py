@@ -35,7 +35,7 @@ MONGO_BATCH_SIZE	: int = 1000
 
 class MongoErrorLog(ErrorLog):
 	doc_id : ObjectId | int | str | None	= Field(default=None, alias='did')
-	
+
 	class Config:
 		arbitrary_types_allowed = True
 		allow_mutation 			= True
@@ -60,14 +60,14 @@ MongoIndex 			= BackendIndex
 class MongoBackend(Backend):
 
 	driver : str = 'mongodb'
-	# default_db : str = 'BlitzStats'	
+	# default_db : str = 'BlitzStats'
 
-	def __init__(self, 
-				config		: ConfigParser | None = None, 
-				db_config 	: dict[str, Any] | None = None,  
-				database 	: str | None = None, 
-				table_config: dict[BSTableType, str] | None = None, 
-				model_config: dict[BSTableType, type[JSONExportable]] | None = None, 
+	def __init__(self,
+				config		: ConfigParser | None = None,
+				db_config 	: dict[str, Any] | None = None,
+				database 	: str | None = None,
+				table_config: dict[BSTableType, str] | None = None,
+				model_config: dict[BSTableType, type[JSONExportable]] | None = None,
 				**kwargs):
 		"""Init MongoDB backend from config file and CLI args
 			CLI arguments overide settings in the config file"""
@@ -75,8 +75,8 @@ class MongoBackend(Backend):
 		debug('starting')
 		try:
 			super().__init__(config=config,
-							db_config=db_config,							 
-							database=database,												
+							db_config=db_config,
+							database=database,
 							**kwargs)
 
 			mongodb_rc 		: dict[str, Any] = dict()
@@ -94,16 +94,16 @@ class MongoBackend(Backend):
 			mongodb_rc['authSource']				= None
 			mongodb_rc['username']					= None
 			mongodb_rc['password']					= None
-			
+
 			if config is not None and 'MONGODB' in config.sections():
 				configMongo = config['MONGODB']
 				self._database		= configMongo.get('database', self.database)
 				mongodb_rc['host'] 	= configMongo.get('server', mongodb_rc['host'])
 				mongodb_rc['port'] 	= configMongo.getint('port', mongodb_rc['port'])
 				mongodb_rc['tls'] 	= configMongo.getboolean('tls', mongodb_rc['tls'])
-				mongodb_rc['tlsAllowInvalidCertificates']	= configMongo.getboolean('tls_invalid_certs', 
+				mongodb_rc['tlsAllowInvalidCertificates']	= configMongo.getboolean('tls_invalid_certs',
 																	mongodb_rc['tlsAllowInvalidCertificates'])
-				mongodb_rc['tlsAllowInvalidHostnames']	= configMongo.getboolean('tls_invalid_hosts', 
+				mongodb_rc['tlsAllowInvalidHostnames']	= configMongo.getboolean('tls_invalid_hosts',
 																		mongodb_rc['tlsAllowInvalidHostnames'])
 				mongodb_rc['tlsCertificateKeyFile']	= configMongo.get('cert', mongodb_rc['tlsCertificateKeyFile'])
 				mongodb_rc['tlsCAFile']				= configMongo.get('ca', mongodb_rc['tlsCAFile'])
@@ -133,18 +133,18 @@ class MongoBackend(Backend):
 				kwargs = db_config | kwargs
 			kwargs = mongodb_rc | kwargs
 			kwargs = {k: v for k, v in kwargs.items() if v is not None} 	# remove unset kwargs
-		
+
 			self.set_database(database)
 			self._client 	= AsyncIOMotorClient(**kwargs)
-			debug(f'{self._client}')		
+			debug(f'{self._client}')
 			self.db 	 	= self._client[self.database]
-			self._db_config = kwargs						
+			self._db_config = kwargs
 			self.config_tables(table_config=table_config)
 			self.config_models(model_config=model_config)
-			
+
 			## UPDATE after transition
 			message('Reminder: Rename Backend ErrorLog & AccountLog')
-		
+
 			# debug(f'Mongo DB: {self.backend}')
 			debug(f'config: ' + ', '.join([ "{0}={1}".format(k, str(v)) for k, v in kwargs.items()]))
 		except FileNotFoundError as err:
@@ -170,12 +170,12 @@ class MongoBackend(Backend):
 			if 'database' in kwargs.keys():
 				database = kwargs['database']
 				del kwargs['database']
-			
-			return MongoBackend(config=None, 
+
+			return MongoBackend(config=None,
 								db_config=self.db_config,
 								database=database,
-								table_config=self.table_config, 
-								model_config=self.model_config, 
+								table_config=self.table_config,
+								model_config=self.model_config,
 								**kwargs)
 		except Exception as err:
 			error(f'Error creating copy: {err}')
@@ -187,14 +187,14 @@ class MongoBackend(Backend):
 		try:
 			self._client = AsyncIOMotorClient(**self._db_config)
 			self.db 	 = self._client[self.database]
-			return True		
+			return True
 		except Exception as err:
 			error(f'Error connection: {self.backend}')
 		return False
 
 
 	async def test(self) -> bool:
-		try:			
+		try:
 			debug(f'trying to connect: {self.backend}')
 			# The ping command is cheap and does not require auth.
 			await self.db.command('ping')
@@ -219,7 +219,7 @@ class MongoBackend(Backend):
 	@property
 	def collection_releases(self) -> AsyncIOMotorCollection:
 		return self.get_collection(BSTableType.Releases)
-	
+
 	@property
 	def collection_replays(self) -> AsyncIOMotorCollection:
 		return self.get_collection(BSTableType.Replays)
@@ -245,9 +245,9 @@ class MongoBackend(Backend):
 		return self.get_collection(BSTableType.AccountLog)
 
 
-	async def _create_index(self, table_type: BSTableType, 
-							mapper 	: AliasMapper, 
-							index	: Sequence[MongoIndex], 
+	async def _create_index(self, table_type: BSTableType,
+							mapper 	: AliasMapper,
+							index	: Sequence[MongoIndex],
 							db_fields: list[str] | None = None ) -> bool:
 		"""Helper to create index to a collection """
 		try:
@@ -264,13 +264,13 @@ class MongoBackend(Backend):
 			if db_fields is None:
 				db_index = list(mapper.map(index).items())
 			else:
-				db_index = list()				
+				db_index = list()
 				for i in range(len(index)):
 					db_index.append( (db_fields[i], index[i][direction]) )
 			await dbc.create_index(db_index, background=True)
 			return True
 		except Exception as err:
-			error(f'{err}')	
+			error(f'{err}')
 		return False
 
 
@@ -294,17 +294,17 @@ class MongoBackend(Backend):
 
 
 	@classmethod
-	def read_args(cls, args : Namespace, 
-					driver: str, 
+	def read_args(cls, args : Namespace,
+					driver: str,
 					importdb: bool = False) -> dict[str, Any]:
 		debug('starting')
 		if driver != cls.driver:
 			raise ValueError(f'calling {cls}.read_args() for {driver} backend')
 		kwargs : dict[str, Any] = Backend.read_args_helper(args, ['host', 'database'], importdb=importdb)
-		kwargs = { k:v for k, v in kwargs.items() if v is not None }		
+		kwargs = { k:v for k, v in kwargs.items() if v is not None }
 		debug(f'args={kwargs}')
-		return kwargs	
-	
+		return kwargs
+
 
 	@property
 	def backend(self) -> str:
@@ -323,8 +323,8 @@ class MongoBackend(Backend):
 					self.database == __o.database
 
 
-	async def init_collection(self, 
-							  table_type: BSTableType, 
+	async def init_collection(self,
+							  table_type: BSTableType,
 							  indexes: list[list[BackendIndex]] | None = None ) -> bool:
 		"""Helper to create index to a collection"""
 		debug('starting')
@@ -332,10 +332,10 @@ class MongoBackend(Backend):
 			DBC		: str 					= self.get_table(table_type)
 			model 	: type[JSONExportable]	= self.get_model(table_type)
 			mapper 	: AliasMapper 			= AliasMapper(model)
-			
+
 			if indexes is None:
 				indexes = model.backend_indexes()
-						
+
 			try:
 				await self.db.create_collection(DBC)
 				message(f'Collection created: {DBC}')
@@ -343,67 +343,67 @@ class MongoBackend(Backend):
 				message(f'Collection exists: {DBC}')
 
 			if len(indexes) == 0:
-				print(f'No indexes defined for {self.table_uri(table_type)}')				
+				print(f'No indexes defined for {self.table_uri(table_type)}')
 			for index in indexes:
 				await self._create_index(table_type, mapper, index)
 			return True
 		except Exception as err:
-			error(f'{err}')	
+			error(f'{err}')
 		return False
 
 
-	async def init(self, tables: list[str] = [ tt.name for tt in BSTableType]) -> bool:   # type: ignore		
+	async def init(self, tables: list[str] = [ tt.name for tt in BSTableType]) -> bool:   # type: ignore
 		"""Init MongoDB backend: create tables and set indexes"""
 		try:
 			debug('starting')
-			DBC 	: str = 'NOT SET'			
-			indexes : list[list[MongoIndex]]			
+			DBC 	: str = 'NOT SET'
+			indexes : list[list[MongoIndex]]
 
 			# Accounts
 			if BSTableType.Accounts.name in tables:
 				try:
 					DBC 	= self.table_accounts
 					# indexes = list()
-					# indexes.append([ 	('disabled', ASCENDING), 
-					# 					('inactive', ASCENDING), 									 
-					# 					('region', 	ASCENDING), 
+					# indexes.append([ 	('disabled', ASCENDING),
+					# 					('inactive', ASCENDING),
+					# 					('region', 	ASCENDING),
 					# 					('id', 		ASCENDING)
 					# 				])
-					# indexes.append([ 	('disabled', ASCENDING), 
-					# 					('inactive', ASCENDING), 
-					# 					('id', 		ASCENDING), 
+					# indexes.append([ 	('disabled', ASCENDING),
+					# 					('inactive', ASCENDING),
+					# 					('id', 		ASCENDING),
 					# 					('updated_tank_stats', ASCENDING)
 					# 				])
 					await self.init_collection(BSTableType.Accounts)
-					
+
 				except Exception as err:
-					error(f'{self.backend}: Could not init collection {DBC} for accounts: {err}')	
-			
-			# Releases			
+					error(f'{self.backend}: Could not init collection {DBC} for accounts: {err}')
+
+			# Releases
 			if BSTableType.Releases.name in tables:
 				try:
 					DBC = self.table_releases
 					# indexes = list()
-					# indexes.append([ 	('name', ASCENDING), 
+					# indexes.append([ 	('name', ASCENDING),
 					# 					('launch_date', DESCENDING)
 					# 				])
 					await self.init_collection(BSTableType.Releases)
-				
+
 				except Exception as err:
 					error(f'{self.backend}: Could not init collection {DBC} for releases: {err}')
 
-			# Tankopedia			
+			# Tankopedia
 			if BSTableType.Tankopedia.name in tables:
 				try:
 					DBC = self.table_tankopedia
 					# indexes = list()
-					# indexes.append([ 	('tier', ASCENDING), 
+					# indexes.append([ 	('tier', ASCENDING),
 					# 					('type', ASCENDING)
 					# 				])
-					# indexes.append([ 	('tier', ASCENDING), 
+					# indexes.append([ 	('tier', ASCENDING),
 					# 					('nation', ASCENDING)
 					# 				])
-					# indexes.append([ 	('name', TEXT) 							
+					# indexes.append([ 	('name', TEXT)
 					# 				])
 					await self.init_collection(BSTableType.Tankopedia)
 
@@ -415,18 +415,18 @@ class MongoBackend(Backend):
 				try:
 					DBC = self.table_replays
 					# indexes = list()
-					# indexes.append([('data.summary.protagonist', ASCENDING), 
-					# 				('data.summary.room_type', ASCENDING), 
-					# 				('data.summary.vehicle_tier', ASCENDING), 
+					# indexes.append([('data.summary.protagonist', ASCENDING),
+					# 				('data.summary.room_type', ASCENDING),
+					# 				('data.summary.vehicle_tier', ASCENDING),
 					# 				('data.summary.battle_start_timestamp', DESCENDING)
 					# 			])
-					# indexes.append([('data.summary.room_type', ASCENDING), 
+					# indexes.append([('data.summary.room_type', ASCENDING),
 					# 				('data.summary.vehicle_tier', ASCENDING),
 					# 				('data.summary.battle_start_timestamp', DESCENDING)
 					# 			])
 
 					await self.init_collection(BSTableType.Replays)
-					
+
 				except Exception as err:
 					error(f'{self.backend}: Could not init collection {DBC} for replays: {err}')
 
@@ -438,11 +438,11 @@ class MongoBackend(Backend):
 					# 					('account_id', ASCENDING),
 					# 					('tank_id', ASCENDING),
 					# 					('last_battle_time', DESCENDING)
-					# 				])					
+					# 				])
 					# indexes.append([ 	('region', ASCENDING),
-					# 					('release', DESCENDING),										
+					# 					('release', DESCENDING),
 					# 					('tank_id', ASCENDING),
-					# 					('account_id', ASCENDING),										
+					# 					('account_id', ASCENDING),
 					# 				])
 					await self.init_collection(BSTableType.TankStats)
 
@@ -454,11 +454,11 @@ class MongoBackend(Backend):
 				try:
 					DBC = self.table_player_achievements
 					# indexes = list()
-					# indexes.append([ 	('account_id', ASCENDING), 
+					# indexes.append([ 	('account_id', ASCENDING),
 					# 					('added', DESCENDING)
 					# 				])
-					# indexes.append([ 	('release', DESCENDING),	
-					# 					('account_id', ASCENDING), 
+					# indexes.append([ 	('release', DESCENDING),
+					# 					('account_id', ASCENDING),
 					# 					('added', DESCENDING)
 					# 				])
 					await self.init_collection(BSTableType.PlayerAchievements)
@@ -472,26 +472,26 @@ class MongoBackend(Backend):
 
 
 ########################################################
-# 
+#
 # MongoBackend(): generic data_funcs
 #
 ########################################################
 
-	
+
 	# async def _data_insert(self, dbc : AsyncIOMotorCollection, data: D) -> bool:  		# type: ignore
 	# 	"""Generic method to get one object of data_type"""
 	# 	try:
 	# 		# debug('starting')
 	# 		res : InsertOneResult = await dbc.insert_one(data.obj_db())
 	# 		# debug(f'Inserted {type(data)} (_id={res.inserted_id}) into {self.backend}.{dbc.name}: {data}')
-	# 		return True			
+	# 		return True
 	# 	except Exception as err:
-	# 		debug(f'Failed to insert {type(data)}={data} into {self.backend}.{dbc.name}: {err}')	
+	# 		debug(f'Failed to insert {type(data)}={data} into {self.backend}.{dbc.name}: {err}')
 	# 	return False
 
-	
-	# async def _data_get(self, dbc : AsyncIOMotorCollection, 
-	# 					data_type: type[D], 
+
+	# async def _data_get(self, dbc : AsyncIOMotorCollection,
+	# 					data_type: type[D],
 	# 					id: Idx) -> Optional[D]:
 	# 	"""Generic method to get one object of data_type"""
 	# 	try:
@@ -499,7 +499,7 @@ class MongoBackend(Backend):
 	# 		res : Any = await dbc.find_one({ '_id': id})
 	# 		if res is not None:
 	# 			return data_type.parse_obj(res)
-	# 		else: 
+	# 		else:
 	# 			return None
 	# 	except ValidationError as err:
 	# 		error(f'Could not validate {type(data_type)} _id={id} from {self.backend}.{dbc.name}: {err}')
@@ -509,9 +509,9 @@ class MongoBackend(Backend):
 	# 	return None
 
 
-	async def _data_update(self, dbc : AsyncIOMotorCollection, id: Idx, 
+	async def _data_update(self, dbc : AsyncIOMotorCollection, id: Idx,
 							obj : BaseModel | None = None,
-							update: dict | None = None, 							 
+							update: dict | None = None,
 							fields : list[str] | None = None) -> bool:
 		"""Generic method to update an object of data_type"""
 		try:
@@ -523,29 +523,29 @@ class MongoBackend(Backend):
 				update = obj.dict(include=set(fields))
 			else:
 				raise ValueError("'update', 'obj' and 'fields' cannot be all None")
-			alias_fields : dict[str, Any] = AliasMapper(model).map(update.items())			
+			alias_fields : dict[str, Any] = AliasMapper(model).map(update.items())
 			if (res := await dbc.find_one_and_update({ '_id': id}, { '$set': alias_fields})) is None:
 				# debug(f'Failed to update _id={id} into {self.backend}.{dbc.name}')
 				return False
 			#debug(f'Updated (_id={id}) into {self.backend}.{dbc.name}')
-			return True			
+			return True
 		except Exception as err:
-			error(f'Could not update _id={id} in {self.backend}.{dbc.name}: {err}')	
+			error(f'Could not update _id={id} in {self.backend}.{dbc.name}: {err}')
 		return False
 
-	
+
 	async def _data_replace(self, dbc : AsyncIOMotorCollection, data: D, 	# type: ignore
-							id: Idx, upsert : bool = False) -> bool: 
-		"""Generic method to update an object of data_type"""		
+							id: Idx, upsert : bool = False) -> bool:
+		"""Generic method to update an object of data_type"""
 		try:
-			debug('starting')			
+			debug('starting')
 			if (res := await dbc.find_one_and_replace({ '_id': id}, data.obj_db(), upsert=upsert)) is None:
 				debug(f'Failed to replace _id={id} into {self.backend}.{dbc.name}')
 				return False
 			debug(f'Replaced (_id={id}) into {self.backend}.{dbc.name}')
-			return True			
+			return True
 		except Exception as err:
-			debug(f'Error while replacing _id={id} in {self.backend}.{dbc.name}: {err}')	
+			debug(f'Error while replacing _id={id} in {self.backend}.{dbc.name}: {err}')
 		return False
 
 
@@ -559,56 +559,56 @@ class MongoBackend(Backend):
 				return True
 			else:
 				pass
-				# debug(f'Failed to delete _id={id} from {self.backend}.{dbc.name}')				
+				# debug(f'Failed to delete _id={id} from {self.backend}.{dbc.name}')
 		except Exception as err:
-			debug(f'Error while deleting _id={id} from {self.backend}.{dbc.name}: {err}')	
+			debug(f'Error while deleting _id={id} from {self.backend}.{dbc.name}: {err}')
 		return False
 
 
-	async def _datas_insert(self, dbc : AsyncIOMotorCollection, datas: Sequence[D]) -> tuple[int, int]:
-		"""Store data to the backend. Returns the number of added and not added"""
-		debug('starting')
-		added		: int = 0
-		not_added 	: int = 0
-		try:
-			debug(f'inserting to {self.backend}.{dbc.name}')
-			if len(datas) == 0:
-				raise ValueError('No data to insert')
-			res : InsertManyResult = await dbc.insert_many( (data.obj_db() for data in datas), 
-															ordered=False)
-			added = len(res.inserted_ids)
-		except BulkWriteError as err:
-			if err.details is not None:
-				added = err.details['nInserted']
-				not_added = len(err.details["writeErrors"])
-				debug(f'Added {added}, could not add {not_added} entries to {self.backend}.{dbc.name}')
-			else:
-				error('BulkWriteError.details is None')
-		except Exception as err:
-			error(f'Unknown error when adding entries to {self.backend}.{dbc.name}: {err}')
-		debug(f'added={added}, not_added={not_added}')
-		return added, not_added
+	# async def _datas_insert(self, dbc : AsyncIOMotorCollection, datas: Sequence[D]) -> tuple[int, int]:
+	# 	"""Store data to the backend. Returns the number of added and not added"""
+	# 	debug('starting')
+	# 	added		: int = 0
+	# 	not_added 	: int = 0
+	# 	try:
+	# 		debug(f'inserting to {self.backend}.{dbc.name}')
+	# 		if len(datas) == 0:
+	# 			raise ValueError('No data to insert')
+	# 		res : InsertManyResult = await dbc.insert_many( (data.obj_db() for data in datas),
+	# 														ordered=False)
+	# 		added = len(res.inserted_ids)
+	# 	except BulkWriteError as err:
+	# 		if err.details is not None:
+	# 			added = err.details['nInserted']
+	# 			not_added = len(err.details["writeErrors"])
+	# 			debug(f'Added {added}, could not add {not_added} entries to {self.backend}.{dbc.name}')
+	# 		else:
+	# 			error('BulkWriteError.details is None')
+	# 	except Exception as err:
+	# 		error(f'Unknown error when adding entries to {self.backend}.{dbc.name}: {err}')
+	# 	debug(f'added={added}, not_added={not_added}')
+	# 	return added, not_added
 
 
-	async def _datas_update(self, dbc : AsyncIOMotorCollection, 
-							datas: list[D], upsert: bool = False) -> tuple[int, int]:
-		"""Store data to the backend. Returns number of documents inserted and not inserted"""
-		debug('starting')
-		updated			: int = 0
-		not_updated 	: int = len(datas)
-		try:
-			res : UpdateResult
-			res = await dbc.update_many( (d.obj_db() for d in datas), 
-										  upsert=upsert, ordered=False)
-			updated = res.modified_count
-			not_updated -= updated
-		except Exception as err:
-			error(f'Unknown error when updating tank stats: {err}')
-		return updated, not_updated
-	
+	# async def _datas_update(self, dbc : AsyncIOMotorCollection,
+	# 						datas: list[D], upsert: bool = False) -> tuple[int, int]:
+	# 	"""Store data to the backend. Returns number of documents inserted and not inserted"""
+	# 	debug('starting')
+	# 	updated			: int = 0
+	# 	not_updated 	: int = len(datas)
+	# 	try:
+	# 		res : UpdateResult
+	# 		res = await dbc.update_many( (d.obj_db() for d in datas),
+	# 									  upsert=upsert, ordered=False)
+	# 		updated = res.modified_count
+	# 		not_updated -= updated
+	# 	except Exception as err:
+	# 		error(f'Unknown error when updating tank stats: {err}')
+	# 	return updated, not_updated
 
-	async def _datas_get(self, dbc : AsyncIOMotorCollection, 
-						data_type: type[D], 
+
+	async def _datas_get(self, dbc : AsyncIOMotorCollection,
+						data_type: type[D],
 						pipeline : list[dict[str, Any]]) -> AsyncGenerator[D, None]:
 		try:
 			debug('starting')
@@ -616,7 +616,7 @@ class MongoBackend(Backend):
 			async for obj in dbc.aggregate(pipeline, allowDiskUse=True):
 				try:
 					debug(f'{obj}')
-					yield data_type.parse_obj(obj)					
+					yield data_type.parse_obj(obj)
 				except ValidationError as err:
 					error(f'Could not validate {data_type} ob={obj} from {self.backend}.{dbc.name}: {err}')
 				except Exception as err:
@@ -625,7 +625,7 @@ class MongoBackend(Backend):
 			error(f'Error fetching {data_type} from {self.backend}.{dbc.name}: {err}')
 
 
-	async def _datas_count(self, dbc : AsyncIOMotorCollection, 
+	async def _datas_count(self, dbc : AsyncIOMotorCollection,
 							pipeline : list[dict[str, Any]]) -> int:
 		try:
 			debug('starting')
@@ -637,10 +637,10 @@ class MongoBackend(Backend):
 			error(f'Error counting documents in {self.backend}.{dbc.name}: {err}')
 		return -1
 
-	
+
 	async def _datas_export(self, dbc : AsyncIOMotorCollection,
 							in_type: type[D],
-							out_type: type[O], 
+							out_type: type[O],
 							sample : float = 0) -> AsyncGenerator[O, None]:
 		"""Export data from Mongo DB"""
 		try:
@@ -651,27 +651,27 @@ class MongoBackend(Backend):
 				pipeline.append({ '$sample' : { 'size' : int(N * sample) }})
 			elif sample >= 1:
 				pipeline.append({ '$sample' : { 'size' : int(sample) }})
-						
+
 			async for obj in dbc.aggregate(pipeline, allowDiskUse=True):
 				try:
 					if (res:= out_type.transform_obj(obj, in_type)) is not None:
-						yield res 					
+						yield res
 				except Exception as err:
 					error(f'Could not export object={obj} type={in_type} to type={out_type}')
 					error(f'{err}: {obj}')
-		
+
 		except Exception as err:
-			error(f'Error fetching data from {self.backend}.{dbc.name}: {err}')	
+			error(f'Error fetching data from {self.backend}.{dbc.name}: {err}')
 
 
 ########################################################
-# 
+#
 # MongoBackend(): obj_
 #
 ########################################################
-	
-	
-	async def _data_insert(self, table_type: BSTableType, obj: JSONExportable) -> bool: 
+
+
+	async def _data_insert(self, table_type: BSTableType, obj: JSONExportable) -> bool:
 		"""Generic method to get one object of data_type"""
 		try:
 			# debug('starting')
@@ -680,9 +680,9 @@ class MongoBackend(Backend):
 			if (data := model.transform_obj(obj)) is not None:
 				res : InsertOneResult = await dbc.insert_one(data.obj_db())
 				# debug(f'Inserted {type(data)} (_id={res.inserted_id}) into {self.backend}.{dbc.name}: {data}')
-				return True			
+				return True
 		except Exception as err:
-			debug(f'Failed to insert obj={obj} into {self.table_uri(table_type)}: {err}')	
+			debug(f'Failed to insert obj={obj} into {self.table_uri(table_type)}: {err}')
 		return False
 
 
@@ -698,11 +698,11 @@ class MongoBackend(Backend):
 		return None
 
 
-	async def data_replace(self, 
-							table_type: BSTableType, 
-							obj: 		JSONExportable, 
+	async def data_replace(self,
+							table_type: BSTableType,
+							obj: 		JSONExportable,
 							upsert : bool = False) -> bool:
-		"""Generic method to update an object of data_type"""		
+		"""Generic method to update an object of data_type"""
 		try:
 			debug('starting')
 			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
@@ -713,50 +713,50 @@ class MongoBackend(Backend):
 					debug(f'Failed to replace _id={data.index} into {self.backend}.{dbc.name}')
 					return False
 				debug(f'Replaced (_id={data.index}) into {self.table_uri(table_type)}')
-				return True			
+				return True
 		except Exception as err:
 			error(f'Could not replace obj in {self.table_uri(table_type)}: {err}')
-			error(f'obj: {obj}')	
+			error(f'obj: {obj}')
 		return False
 
 
-	async def data_update(self, table_type: BSTableType, 
-							idx		: Idx | None = None, 
+	async def data_update(self, table_type: BSTableType,
+							idx		: Idx | None = None,
 							obj 	: JSONExportable | None = None,
-							update	: dict | None = None, 							 
+							update	: dict | None = None,
 							fields 	: list[str] | None = None) -> bool:
 		"""Generic method to update an object of data_type"""
 		try:
 			debug('starting')
 			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
-			model : type[JSONExportable] = self.get_model(table_type)			
+			model : type[JSONExportable] = self.get_model(table_type)
 
 			if obj is not None:
 				if ( data:= model.transform_obj(obj)) is None:
 					raise ValueError(f'Could not transform {type(obj)} to {model}: {obj}')
-				
+
 				if idx is None:
-					idx = data.index			
-				
+					idx = data.index
+
 				if update is not None:
 					pass
 				elif fields is not None:
 					update = data.dict(include=set(fields))
 				else:
 					raise ValueError("'update', 'obj' and 'fields' cannot be all None")
-			
+
 			elif idx is None or update is None:
 				raise ValueError("'update' is required with 'idx'")
 
-			alias_fields : dict[str, Any] = AliasMapper(model).map(update.items())			
+			alias_fields : dict[str, Any] = AliasMapper(model).map(update.items())
 
 			if (res := await dbc.find_one_and_update({ '_id': idx }, { '$set': alias_fields})) is None:
 				# debug(f'Failed to update _id={idx} into {self.backend}.{dbc.name}')
 				return False
 			#debug(f'Updated (_id={idx}) into {self.backend}.{dbc.name}')
-			return True			
+			return True
 		except Exception as err:
-			error(f'Could not update _id={idx} in {self.table_uri(table_type)}: {err}')	
+			error(f'Could not update _id={idx} in {self.table_uri(table_type)}: {err}')
 		return False
 
 
@@ -771,14 +771,14 @@ class MongoBackend(Backend):
 				return True
 			else:
 				pass
-				# debug(f'Failed to delete _id={id} from {self.backend}.{dbc.name}')				
+				# debug(f'Failed to delete _id={id} from {self.backend}.{dbc.name}')
 		except Exception as err:
-			debug(f'Error while deleting _id={id} from {self.table_uri(table_type)}: {err}')	
-		return False			
+			debug(f'Error while deleting _id={id} from {self.table_uri(table_type)}: {err}')
+		return False
 
 
-	async def datas_insert(self, 
-						  table_type: BSTableType, 
+	async def _datas_insert(self,
+						  table_type: BSTableType,
 						  objs		: Sequence[D]) -> tuple[int, int]:
 		"""Store data to the backend. Returns the number of added and not added"""
 		debug('starting')
@@ -792,7 +792,7 @@ class MongoBackend(Backend):
 				raise ValueError('No data to insert')
 			datas : list[JSONExportable|None] = [ model.transform_obj(obj) for obj in objs ]
 
-			res : InsertManyResult = await dbc.insert_many( ( data.obj_db() for data in datas if data is not None), 
+			res : InsertManyResult = await dbc.insert_many( ( data.obj_db() for data in datas if data is not None),
 															ordered=False)
 			added = len(res.inserted_ids)
 		except BulkWriteError as err:
@@ -807,20 +807,20 @@ class MongoBackend(Backend):
 		debug(f'added={added}, not_added={not_added}')
 		return added, not_added
 
-	
-	async def datas_update(self, table_type: BSTableType, 
-							objs	: Sequence[JSONExportable], 
+
+	async def _datas_update(self, table_type: BSTableType,
+							objs	: Sequence[JSONExportable],
 							upsert	: bool = False) -> tuple[int, int]:
 		"""Store data to the backend. Returns number of documents inserted and not inserted"""
 		debug('starting')
 		updated		: int = 0
 		not_updated : int = len(objs)
 		dbc 		: AsyncIOMotorCollection= self.get_collection(table_type)
-		model 		: type[JSONExportable]	= self.get_model(table_type)	
+		model 		: type[JSONExportable]	= self.get_model(table_type)
 		try:
 			datas : list[JSONExportable] = model.transform_objs(objs=objs, in_type=type(objs[0]))
 			res : UpdateResult
-			res = await dbc.update_many( (d.obj_db() for d in datas), 
+			res = await dbc.update_many( (d.obj_db() for d in datas),
 										  upsert=upsert, ordered=False)
 			updated = res.modified_count
 			not_updated -= updated
@@ -831,8 +831,8 @@ class MongoBackend(Backend):
 		return updated, not_updated
 
 
-	async def datas_get(self, table_type: BSTableType, 
-						out_type: type[D], 
+	async def datas_get(self, table_type: BSTableType,
+						out_type: type[D],
 						pipeline : list[dict[str, Any]]) -> AsyncGenerator[D, None]:
 		try:
 			debug('starting')
@@ -843,7 +843,7 @@ class MongoBackend(Backend):
 				try:
 					debug(f'{obj}')
 					if (data := out_type.transform_obj(obj, model)) is not None:
-						yield data					
+						yield data
 				except ValidationError as err:
 					error(f'Could not validate {out_type} ob={obj} from {self.table_uri(table_type)}: {err}')
 				except Exception as err:
@@ -852,7 +852,7 @@ class MongoBackend(Backend):
 			error(f'Error fetching data from {self.table_uri(table_type)}: {err}')
 
 
-	async def datas_count(self, table_type: BSTableType, 
+	async def datas_count(self, table_type: BSTableType,
 							pipeline : list[dict[str, Any]]) -> int:
 		try:
 			debug('starting')
@@ -866,7 +866,7 @@ class MongoBackend(Backend):
 		return -1
 
 
-	async def obj_export(self, table_type: BSTableType, 
+	async def obj_export(self, table_type: BSTableType,
 						 sample: float = 0) -> AsyncGenerator[Any, None]:
 		"""Export raw documents from Mongo DB"""
 		try:
@@ -874,32 +874,32 @@ class MongoBackend(Backend):
 			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
 			debug(f'export from: {self.table_uri(table_type)}')
 			pipeline : list[dict[str, Any]] = list()
-			
+
 			if sample > 0 and sample < 1:
 				N : int = await dbc.estimated_document_count()
 				pipeline.append({ '$sample' : { 'size' : int(N * sample) }})
 			elif sample >= 1:
 				pipeline.append({ '$sample' : { 'size' : int(sample) }})
-						
+
 			async for obj in dbc.aggregate(pipeline, allowDiskUse=True):
 				yield obj
 
 		except Exception as err:
-			error(f'Error fetching data from {self.table_uri(table_type)}: {err}')	
+			error(f'Error fetching data from {self.table_uri(table_type)}: {err}')
 
 
-	async def objs_export(self, table_type: BSTableType, 
-						 sample: float = 0, 
+	async def objs_export(self, table_type: BSTableType,
+						 sample: float = 0,
 						 batch: int = 0) -> AsyncGenerator[list[Any], None]:
 		"""Export raw documents as a list from Mongo DB"""
 		try:
 			debug(f'starting')
 			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
 			debug(f'export from: {self.table_uri(table_type)}')
-			if batch == 0: 
+			if batch == 0:
 				batch = MONGO_BATCH_SIZE
 			pipeline : list[dict[str, Any]] = list()
-			
+
 			if sample > 0 and sample < 1:
 				N : int = await dbc.estimated_document_count()
 				pipeline.append({ '$sample' : { 'size' : int(N * sample) }})
@@ -911,18 +911,18 @@ class MongoBackend(Backend):
 				yield objs
 			debug(f'finished exporting {table_type}')
 		except Exception as err:
-			error(f'Error fetching data from {self.table_uri(table_type)}: {err}')	
+			error(f'Error fetching data from {self.table_uri(table_type)}: {err}')
 
 
 ########################################################
-# 
+#
 # MongoBackend(): account
 #
 ########################################################
 
 
 	async def account_insert(self, account: BSAccount) -> bool:
-		"""Store account to the backend. Returns False 
+		"""Store account to the backend. Returns False
 			if the account was not added"""
 		debug('starting')
 		return await self._data_insert(BSTableType.Accounts, obj=account)
@@ -932,27 +932,27 @@ class MongoBackend(Backend):
 		"""Get account from backend"""
 		debug('starting')
 		idx : int = account_id
-		if (res := await self._data_get(BSTableType.Accounts, idx=idx)) is not None: 
+		if (res := await self._data_get(BSTableType.Accounts, idx=idx)) is not None:
 			return BSAccount.transform_obj(res, self.model_accounts)
 		return None
-		
 
-	async def account_update(self, account: BSAccount, 
-							 update: dict[str, Any] | None = None, 
+
+	async def account_update(self, account: BSAccount,
+							 update: dict[str, Any] | None = None,
 							 fields: list[str] | None = None) -> bool:
-		"""Update an account in the backend. Returns False 
+		"""Update an account in the backend. Returns False
 			if the account was not updated"""
-		try: 
+		try:
 			debug('starting')
-			return await self.data_update(BSTableType.Accounts, obj=account, 
-											update=update, fields=fields)			
+			return await self.data_update(BSTableType.Accounts, obj=account,
+											update=update, fields=fields)
 		except Exception as err:
-			debug(f'Error while updating account (id={account.id}) into {self.table_uri(BSTableType.Accounts)}: {err}')	
+			debug(f'Error while updating account (id={account.id}) into {self.table_uri(BSTableType.Accounts)}: {err}')
 		return False
 
 
 	async def account_replace(self, account: BSAccount, upsert: bool = True) -> bool:
-		"""Update an account in the backend. Returns False 
+		"""Update an account in the backend. Returns False
 			if the account was not updated"""
 		debug('starting')
 		return await self.data_replace(BSTableType.Accounts, obj=account,
@@ -965,11 +965,11 @@ class MongoBackend(Backend):
 		return await self.data_delete(BSTableType.Accounts, idx=account_id)
 
 
-	async def _mk_pipeline_accounts(self, stats_type : StatsTypes | None = None, 
-							regions: set[Region] = Region.API_regions(), 
-							inactive : OptAccountsInactive = OptAccountsInactive.default(), 
+	async def _mk_pipeline_accounts(self, stats_type : StatsTypes | None = None,
+							regions: set[Region] = Region.API_regions(),
+							inactive : OptAccountsInactive = OptAccountsInactive.default(),
 							dist : OptAccountsDistributed | None = None,
-							disabled: bool|None = False, sample : float = 0, 
+							disabled: bool|None = False, sample : float = 0,
 							cache_valid: int | None = None) -> list[dict[str, Any]] | None:
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
 		try:
@@ -985,7 +985,7 @@ class MongoBackend(Backend):
 			dbc : AsyncIOMotorCollection = self.collection_accounts
 			match : list[dict[str, str|int|float|dict|list]] = list()
 			pipeline : list[dict[str, Any]] = list()
-			
+
 			# Pipeline build based on ESR rule
 			# https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
 
@@ -993,51 +993,51 @@ class MongoBackend(Backend):
 				match.append({ alias('disabled') : True })
 			elif inactive == OptAccountsInactive.yes:
 				match.append({ alias('inactive'): True })
-			
+
 			match.append({ alias('region') : { '$in' : [ r.value for r in regions ]} })
 			# match.append({ alias('id') : {  '$lt' : WG_ACCOUNT_ID_MAX}})  # exclude Chinese account ids
-			
+
 			if dist is not None:
-				match.append({ alias('id') : {  '$mod' :  [ dist.div, dist.mod ]}})			
-	
+				match.append({ alias('id') : {  '$mod' :  [ dist.div, dist.mod ]}})
+
 			if disabled is not None and not disabled:
 				match.append({ alias('disabled'): { '$ne': True }})
 				# check inactive only if disabled == False
 				if inactive == OptAccountsInactive.auto:
 					assert update_field is not None, "automatic inactivity detection requires stat_type"
-					match.append({ '$or': [ { update_field: None}, { update_field: { '$lt': epoch_now() - cache_valid }} ] })				
+					match.append({ '$or': [ { update_field: None}, { update_field: { '$lt': epoch_now() - cache_valid }} ] })
 				elif inactive == OptAccountsInactive.no:
 					match.append({ alias('inactive'): { '$ne': True }})
 
 			if len(match) > 0:
 				pipeline.append( { '$match' : { '$and' : match } })
-			
-			if sample >= 1:				
+
+			if sample >= 1:
 				pipeline.append({ '$sample' : {'size' : int(sample) } })
 			elif sample > 0:
 				n : int = cast(int, await dbc.estimated_document_count())
 				pipeline.append({ '$sample' : {'size' : int(n * sample) } })
-			return pipeline		
+			return pipeline
 		except Exception as err:
 			error(f'{err}')
 		return None
 
 
-	async def accounts_get(self, stats_type : StatsTypes | None = None, 
-							regions: set[Region] = Region.API_regions(), 
-							inactive : OptAccountsInactive = OptAccountsInactive.default(), 	
-							disabled : bool = False, 
-							dist : OptAccountsDistributed | None = None, 
-							sample : float = 0, 
+	async def accounts_get(self, stats_type : StatsTypes | None = None,
+							regions: set[Region] = Region.API_regions(),
+							inactive : OptAccountsInactive = OptAccountsInactive.default(),
+							disabled : bool = False,
+							dist : OptAccountsDistributed | None = None,
+							sample : float = 0,
 							cache_valid: int | None = None ) -> AsyncGenerator[BSAccount, None]:
 		"""Get accounts from Mongo DB
 			inactive: true = only inactive, false = not inactive, none = AUTO"""
 		try:
 			debug('starting')
-			NOW = epoch_now()	
-			pipeline : list[dict[str, Any]] | None 
-			pipeline = await self._mk_pipeline_accounts(stats_type=stats_type, regions=regions, 
-														inactive=inactive, disabled=disabled, 
+			NOW = epoch_now()
+			pipeline : list[dict[str, Any]] | None
+			pipeline = await self._mk_pipeline_accounts(stats_type=stats_type, regions=regions,
+														inactive=inactive, disabled=disabled,
 														dist=dist, sample=sample, cache_valid=cache_valid)
 
 			update_field : str | None = None
@@ -1047,10 +1047,10 @@ class MongoBackend(Backend):
 			if pipeline is None:
 				raise ValueError(f'could not create get-accounts {self.table_uri(BSTableType.Accounts)} cursor')
 
-			async for player in self.datas_get(BSTableType.Accounts, 
+			async for player in self.datas_get(BSTableType.Accounts,
 												out_type=BSAccount,
 												pipeline=pipeline):
-				try:					
+				try:
 					# if not force and not disabled and inactive is None and player.inactive:
 					if not disabled and inactive == OptAccountsInactive.auto and player.inactive:
 						assert update_field is not None, "automatic inactivity detection requires stat_type"
@@ -1063,21 +1063,21 @@ class MongoBackend(Backend):
 				except Exception as err:
 					error(f'{err}')
 		except Exception as err:
-			error(f'Error fetching accounts from {self.table_uri(BSTableType.Accounts)}: {err}')	
+			error(f'Error fetching accounts from {self.table_uri(BSTableType.Accounts)}: {err}')
 
 
-	async def accounts_count(self, stats_type : StatsTypes | None = None, 
-							regions: set[Region] = Region.API_regions(), 
-							inactive : OptAccountsInactive = OptAccountsInactive.default(), 	
-							disabled: bool = False, 
-							dist : OptAccountsDistributed | None = None, sample : float = 0, 
+	async def accounts_count(self, stats_type : StatsTypes | None = None,
+							regions: set[Region] = Region.API_regions(),
+							inactive : OptAccountsInactive = OptAccountsInactive.default(),
+							disabled: bool = False,
+							dist : OptAccountsDistributed | None = None, sample : float = 0,
 							cache_valid: int | None = None ) -> int:
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
 		try:
 			debug('starting')
 			dbc : AsyncIOMotorCollection = self.collection_accounts
 			if stats_type is None and regions == Region.has_stats() and \
-			   inactive == OptAccountsInactive.both and disabled == False: 
+			   inactive == OptAccountsInactive.both and disabled == False:
 				total : int = cast(int, await dbc.estimated_document_count())
 				if sample == 0:
 					return total
@@ -1086,10 +1086,10 @@ class MongoBackend(Backend):
 				else:
 					return int(min(total, sample))
 			else:
-				pipeline : list[dict[str, Any]] | None 
-				pipeline = await self._mk_pipeline_accounts(stats_type=stats_type, regions=regions, 
-															inactive=inactive, disabled=disabled, 
-															dist=dist, sample=sample, 
+				pipeline : list[dict[str, Any]] | None
+				pipeline = await self._mk_pipeline_accounts(stats_type=stats_type, regions=regions,
+															inactive=inactive, disabled=disabled,
+															dist=dist, sample=sample,
 															cache_valid=cache_valid)
 				if pipeline is None:
 					raise ValueError(f'Could not create pipeline for accounts {self.table_uri(BSTableType.Accounts)}')
@@ -1103,24 +1103,24 @@ class MongoBackend(Backend):
 		"""Import accounts from Mongo DB"""
 		debug('starting')
 		async for obj in self.obj_export(BSTableType.Accounts, sample=sample):
-			if (acc := BSAccount.transform_obj(obj, self.model_accounts)) is not None: 
+			if (acc := BSAccount.transform_obj(obj, self.model_accounts)) is not None:
 				yield acc
-		
+
 
 	async def accounts_insert(self, accounts: Sequence[BSAccount]) -> tuple[int, int]:
 		"""Store account to the backend. Returns the number of added and not added"""
 		debug('starting')
-		return await self.datas_insert(BSTableType.Accounts, accounts)
+		return await self._datas_insert(BSTableType.Accounts, accounts)
 
 
 ########################################################
-# 
+#
 # MongoBackend(): player_achievements
 #
 ########################################################
 
 
-	async def player_achievement_insert(self, player_achievement: WGPlayerAchievementsMaxSeries) -> bool:		
+	async def player_achievement_insert(self, player_achievement: WGPlayerAchievementsMaxSeries) -> bool:
 		"""Insert a single player achievement"""
 		debug('starting')
 		return await self._data_insert(BSTableType.PlayerAchievements, obj=player_achievement)
@@ -1130,10 +1130,10 @@ class MongoBackend(Backend):
 		"""Return a player_achievement from the backend"""
 		debug('starting')
 		try:
-			idx	: ObjectId = WGPlayerAchievementsMaxSeries.mk_index(account_id=account.id, 
-																	region=account.region, 
+			idx	: ObjectId = WGPlayerAchievementsMaxSeries.mk_index(account_id=account.id,
+																	region=account.region,
 																	added=added)
-			if (res := await self._data_get(BSTableType.PlayerAchievements, idx=idx)) is not None: 
+			if (res := await self._data_get(BSTableType.PlayerAchievements, idx=idx)) is not None:
 				return WGPlayerAchievementsMaxSeries.transform_obj(res, self.model_accounts)
 		except Exception as err:
 			error(f'Unknown error: {err}')
@@ -1144,8 +1144,8 @@ class MongoBackend(Backend):
 		"""Delete a player achievements from the backend"""
 		try:
 			debug('starting')
-			idx : ObjectId = WGPlayerAchievementsMaxSeries.mk_index(account.id, 
-																	region=account.region, 
+			idx : ObjectId = WGPlayerAchievementsMaxSeries.mk_index(account.id,
+																	region=account.region,
 																	added=added)
 			return await self.data_delete(BSTableType.PlayerAchievements, idx=idx)
 		except Exception as err:
@@ -1156,21 +1156,21 @@ class MongoBackend(Backend):
 	async def player_achievements_insert(self, player_achievements: Sequence[WGPlayerAchievementsMaxSeries]) -> tuple[int, int]:
 		"""Store player achievements to the backend. Returns number of stats inserted and not inserted"""
 		debug('starting')
-		return await self.datas_insert(BSTableType.PlayerAchievements, player_achievements)
+		return await self._datas_insert(BSTableType.PlayerAchievements, player_achievements)
 
 
-	async def _mk_pipeline_player_achievements(self, release: BSBlitzRelease|None = None, 
-										regions: set[Region] = Region.API_regions(), 
+	async def _mk_pipeline_player_achievements(self, release: BSBlitzRelease|None = None,
+										regions: set[Region] = Region.API_regions(),
 										accounts: Iterable[Account] | None = None,
 										sample: float = 0) -> list[dict[str, Any]] | None:
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
 		try:
 			debug('starting')
-			
+
 			# class WGPlayerAchievementsMaxSeries(JSONExportable):
 			# 	id 			: ObjectId | None	= Field(default=None, alias='_id')
 			# 	jointVictory: int 				= Field(default=0, alias='jv')
-			# 	account_id	: int		 		= Field(default=0, alias='a')	
+			# 	account_id	: int		 		= Field(default=0, alias='a')
 			## 	region		: Region | None 	= Field(default=None, alias='r')
 			# 	release 	: str  | None 		= Field(default=None, alias='u')
 			# 	added		: int 				= Field(default=epoch_now(), alias='t')
@@ -1181,56 +1181,56 @@ class MongoBackend(Backend):
 			dbc : AsyncIOMotorCollection = self.collection_player_achievements
 			pipeline : list[dict[str, Any]] = list()
 			match : list[dict[str, str|int|float|dict|list]] = list()
-			
+
 			# Pipeline build based on ESR rule
 			# https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
 
 			if regions != Region.has_stats():
 				match.append({ alias('region') : { '$in' : [ r.value for r in regions ]} })
 			if accounts is not None:
-				match.append({ alias('account_id'): { '$in': [ a.id for a in accounts ]}})	
+				match.append({ alias('account_id'): { '$in': [ a.id for a in accounts ]}})
 			if release is not None:
 				match.append({ alias('release'): release.release })
 
 			if len(match) > 0:
 				pipeline.append( { '$match' : { '$and' : match } })
 
-			if sample >= 1:				
+			if sample >= 1:
 				pipeline.append({ '$sample' : {'size' : int(sample) } })
 			elif sample > 0:
 				n : int = cast(int, await dbc.estimated_document_count())
 				pipeline.append({ '$sample' : {'size' : int(n * sample) } })
-			return pipeline		
+			return pipeline
 		except Exception as err:
 			error(f'{err}')
 		return None
 
 
 	async def player_achievements_get(self, release: BSBlitzRelease | None = None,
-							regions: set[Region] = Region.API_regions(), 
+							regions: set[Region] = Region.API_regions(),
 							accounts: Iterable[Account] | None = None,
 							sample : float = 0) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
 		"""Return player achievements from the backend"""
 		try:
 			debug('starting')
-			pipeline : list[dict[str, Any]] | None 
-			pipeline = await self._mk_pipeline_player_achievements(release=release, 
-																	regions=regions, 
-																	accounts=accounts, 
-																	sample=sample)			
+			pipeline : list[dict[str, Any]] | None
+			pipeline = await self._mk_pipeline_player_achievements(release=release,
+																	regions=regions,
+																	accounts=accounts,
+																	sample=sample)
 			if pipeline is None:
 				raise ValueError(f'could not create pipeline for get player achievements {self.backend}')
 
-			async for pa in self.datas_get(BSTableType.PlayerAchievements, 
-											out_type=WGPlayerAchievementsMaxSeries, 
+			async for pa in self.datas_get(BSTableType.PlayerAchievements,
+											out_type=WGPlayerAchievementsMaxSeries,
 											pipeline=pipeline):
 				yield pa
 		except Exception as err:
-			error(f'Error fetching player achievements from {self.table_uri(BSTableType.PlayerAchievements)}: {err}')	
+			error(f'Error fetching player achievements from {self.table_uri(BSTableType.PlayerAchievements)}: {err}')
 
 
 	async def player_achievements_count(self, release: BSBlitzRelease | None = None,
-							regions: set[Region] = Region.API_regions(), 
+							regions: set[Region] = Region.API_regions(),
 							accounts: Iterable[Account] | None = None,
 							sample : float = 0) -> int:
 		"""Get number of player achievements from backend"""
@@ -1239,7 +1239,7 @@ class MongoBackend(Backend):
 			debug('starting')
 			dbc : AsyncIOMotorCollection = self.collection_player_achievements
 
-			if release is None and regions == Region.has_stats(): 
+			if release is None and regions == Region.has_stats():
 				total : int = cast(int, await dbc.estimated_document_count())
 				# print(f'player achievements: total={total}, sample={sample}')
 				if sample == 0:
@@ -1249,8 +1249,8 @@ class MongoBackend(Backend):
 				else:
 					return int(min(total, sample))
 			else:
-				pipeline : list[dict[str, Any]] | None 
-				pipeline = await self._mk_pipeline_player_achievements(release=release, regions=regions, 
+				pipeline : list[dict[str, Any]] | None
+				pipeline = await self._mk_pipeline_player_achievements(release=release, regions=regions,
 																accounts=accounts, sample=sample)
 				if pipeline is None:
 					raise ValueError(f'could not create pipeline for player achievements {self.table_uri(BSTableType.PlayerAchievements)}')
@@ -1263,21 +1263,21 @@ class MongoBackend(Backend):
 	async def player_achievements_update(self, player_achievements: list[WGPlayerAchievementsMaxSeries], upsert: bool = False) -> tuple[int, int]:
 		"""Update or upsert player achievements to the backend. Returns number of stats updated and not updated"""
 		debug('starting')
-		return await self.datas_update(BSTableType.PlayerAchievements, 
-										objs=player_achievements, 
+		return await self._datas_update(BSTableType.PlayerAchievements,
+										objs=player_achievements,
 										upsert=upsert)
-										
+
 
 	async def player_achievements_export(self, sample: float = 0
 											) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
 		"""Export player achievements from Mongo DB"""
 		async for obj in self.obj_export(BSTableType.PlayerAchievements, sample=sample):
-			if (pa := WGPlayerAchievementsMaxSeries.transform_obj(obj, self.model_player_achievements)) is not None: 
+			if (pa := WGPlayerAchievementsMaxSeries.transform_obj(obj, self.model_player_achievements)) is not None:
 				yield pa
 
 
 ########################################################
-# 
+#
 # MongoBackend(): releases
 #
 ########################################################
@@ -1292,7 +1292,7 @@ class MongoBackend(Backend):
 				return BSBlitzRelease.transform_obj(obj, self.model_releases)
 		except Exception as err:
 			error(f'{err}')
-		return None		
+		return None
 
 
 	async def release_get_latest(self) -> BSBlitzRelease | None:
@@ -1312,8 +1312,8 @@ class MongoBackend(Backend):
 
 	async def release_get_current(self) -> BSBlitzRelease | None:
 		"""Get the latest release in the backend"""
-		debug('starting')		
-		try:			
+		debug('starting')
+		try:
 			dbc : AsyncIOMotorCollection = self.collection_releases
 			async for obj in dbc.find({ 'launch_date': { '$lte': date.today() } }).sort('launch_date', ASCENDING):
 				return BSBlitzRelease.transform_obj(obj, self.model_releases)
@@ -1330,30 +1330,30 @@ class MongoBackend(Backend):
 		return await self._data_insert(BSTableType.Releases, obj=release)
 
 
-	async def release_update(self, release: BSBlitzRelease, 
-								update: dict[str, Any] | None = None, 
+	async def release_update(self, release: BSBlitzRelease,
+								update: dict[str, Any] | None = None,
 								fields: list[str] | None= None) -> bool:
-		"""Update an release in the backend. Returns False 
+		"""Update an release in the backend. Returns False
 			if the release was not updated"""
-		try: 
+		try:
 			debug('starting')
-			# return await self._data_update(self.collection_releases, 
+			# return await self._data_update(self.collection_releases,
 			# 								id=release.release, obj=release,
 			# 								update=update, fields=fields)
-			return await self.data_update(BSTableType.Releases, obj=release, 
+			return await self.data_update(BSTableType.Releases, obj=release,
 											update=update, fields=fields)
 		except Exception as err:
-			debug(f'Error while updating release {release} into {self.table_uri(BSTableType.Releases)}: {err}')	
+			debug(f'Error while updating release {release} into {self.table_uri(BSTableType.Releases)}: {err}')
 		return False
 
 
 	async def release_replace(self, release: BSBlitzRelease, upsert=False) -> bool:
-		"""Update an account in the backend. Returns False 
+		"""Update an account in the backend. Returns False
 			if the account was not updated"""
 		debug('starting')
-		# return await self._data_replace(self.collection_releases, data=release, 
+		# return await self._data_replace(self.collection_releases, data=release,
 		# 								id=release.release, upsert=upsert)
-		return await self.data_replace(BSTableType.Releases, obj=release, upsert=upsert)	
+		return await self.data_replace(BSTableType.Releases, obj=release, upsert=upsert)
 
 
 	async def release_delete(self, release: str) -> bool:
@@ -1363,8 +1363,8 @@ class MongoBackend(Backend):
 		return await self.data_delete(BSTableType.Releases, idx=release)
 
 
-	async def _mk_pipeline_releases(self, release_match: str | None = None, 
-							since : date | None = None, 
+	async def _mk_pipeline_releases(self, release_match: str | None = None,
+							since : date | None = None,
 							first : BSBlitzRelease | None = None) -> list[dict[str, Any]]:
 		"""Build aggregation pipeline for releases"""
 		try:
@@ -1379,7 +1379,7 @@ class MongoBackend(Backend):
 				match.append( { alias('launch_date'):  { '$gte': first.launch_date }})
 			if release_match is not None:
 				match.append( { alias('release'): { '$regex' : '^' + release_match } } )
-			
+
 			if len(match) > 0:
 				pipeline.append( { '$match' : { '$and' : match } })
 
@@ -1391,21 +1391,21 @@ class MongoBackend(Backend):
 			raise err
 
 
-	async def releases_get(self, release_match: str | None = None, 
-							since : date | None = None, 
+	async def releases_get(self, release_match: str | None = None,
+							since : date | None = None,
 							first : BSBlitzRelease | None = None) -> AsyncGenerator[BSBlitzRelease, None]:
 		assert since is None or first is None, 'Only one can be defined: since, first'
 		debug('starting')
-		
+
 		try:
 			pipeline : list[dict[str, Any]]
 			pipeline = await self._mk_pipeline_releases(release_match=release_match, since=since, first=first)
-			
-			# async for release in self._datas_get(self.collection_releases, 
-			# 										data_type=BSBlitzRelease, 
+
+			# async for release in self._datas_get(self.collection_releases,
+			# 										data_type=BSBlitzRelease,
 			# 										pipeline=pipeline):
-			async for release in self.datas_get(BSTableType.Releases, 
-												out_type=BSBlitzRelease, 
+			async for release in self.datas_get(BSTableType.Releases,
+												out_type=BSBlitzRelease,
 												pipeline=pipeline):
 				yield release
 
@@ -1418,12 +1418,12 @@ class MongoBackend(Backend):
 		debug('starting')
 		async for obj in self.obj_export(BSTableType.Releases,
 											sample=sample):
-			if (rel := BSBlitzRelease.transform_obj(obj, self.model_releases)) is not None: 
+			if (rel := BSBlitzRelease.transform_obj(obj, self.model_releases)) is not None:
 				yield rel
 
 
 ########################################################
-# 
+#
 # MongoBackend(): replay
 #
 ########################################################
@@ -1436,26 +1436,26 @@ class MongoBackend(Backend):
 
 	async def replay_get(self, replay_id: str) -> WoTBlitzReplayData | None:
 		"""Get replay from backend"""
-		debug('starting')			
+		debug('starting')
 		if (rep := await self._data_get(BSTableType.Replays, idx=replay_id)) is not None:
 			return WoTBlitzReplayData.transform_obj(rep, self.model_replays)
 		return None
-				
+
 
 	async def replay_delete(self, replay_id: str) -> bool:
 		"""Delete a replay from backend"""
 		debug('starting')
-		return await self._data_delete(self.collection_replays, id=replay_id)	
+		return await self._data_delete(self.collection_replays, id=replay_id)
 
 
 	async def replays_insert(self, replays: Sequence[JSONExportable]) ->  tuple[int, int]:
 		"""Insert replays to MongoDB backend"""
 		debug('starting')
 		#return await self._datas_insert(self.collection_replays, replays)
-		return await self.datas_insert(BSTableType.Replays, replays)
+		return await self._datas_insert(BSTableType.Replays, replays)
 
 
-	async def _mk_pipeline_replays(self, since: date | None = None, sample : float = 0, 
+	async def _mk_pipeline_replays(self, since: date | None = None, sample : float = 0,
 									**summary_fields) -> list[dict[str, Any]]:
 		"""Build pipeline for replays"""
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
@@ -1468,9 +1468,9 @@ class MongoBackend(Backend):
 
 		if since is not None:
 			match.append( {'d.s.bts': { '$gte': datetime.combine(since, datetime.min.time()).timestamp() }})
-		
+
 		for sf, value in summary_fields.items():
-			try:				
+			try:
 				match.append( { f'd.s.{alias(sf)}': value })
 			except KeyError:
 				error(f'No such a key in WoTBlitzReplaySummary(): {alias(sf)}')
@@ -1480,7 +1480,7 @@ class MongoBackend(Backend):
 		if len(match) > 0:
 			pipeline.append( { '$match' : { '$and' : match } })
 
-		if sample >= 1:				
+		if sample >= 1:
 			pipeline.append({ '$sample' : {'size' : int(sample) } })
 		elif sample > 0:
 			n : int = cast(int, await dbc.estimated_document_count())
@@ -1495,12 +1495,12 @@ class MongoBackend(Backend):
 		debug('starting')
 		try:
 			debug('starting')
-			pipeline : list[dict[str, Any]] 
+			pipeline : list[dict[str, Any]]
 			pipeline = await self._mk_pipeline_replays(since=since, sample=sample, **summary_fields)
 			async for replay in self._datas_get(self.collection_replays, WoTBlitzReplayData, pipeline):
 				yield replay
 		except Exception as err:
-			error(f'Error exporting replays from {self.backend}.{self.table_replays}: {err}')	
+			error(f'Error exporting replays from {self.backend}.{self.table_replays}: {err}')
 
 
 	async def replays_count(self, since: date | None = None, sample : float = 0,
@@ -1520,15 +1520,15 @@ class MongoBackend(Backend):
 								sample: float = 0) -> AsyncGenerator[WoTBlitzReplayData, None]:
 		"""Export replays from Mongo DB"""
 		debug('starting')
-		async for replay in self._datas_export(self.collection_replays, 
-												in_type=model, 
-												out_type=WoTBlitzReplayData, 
+		async for replay in self._datas_export(self.collection_replays,
+												in_type=model,
+												out_type=WoTBlitzReplayData,
 												sample=sample):
 			yield replay
 
 
 ########################################################
-# 
+#
 # MongoBackend(): tank_stats
 #
 ########################################################
@@ -1540,7 +1540,7 @@ class MongoBackend(Backend):
 		return await self._data_insert(BSTableType.TankStats, obj=tank_stat)
 
 
-	async def tank_stat_get(self, account: BSAccount, tank_id: int, 
+	async def tank_stat_get(self, account: BSAccount, tank_id: int,
 							last_battle_time: int) -> WGTankStat | None:
 		"""Return tank stats from the backend"""
 		try:
@@ -1552,27 +1552,27 @@ class MongoBackend(Backend):
 			error(f'Unknown error: {err}')
 		return None
 
-	
-	async def tank_stat_update(self, tank_stat: WGTankStat, 
-							 update: dict[str, Any] | None = None, 
+
+	async def tank_stat_update(self, tank_stat: WGTankStat,
+							 update: dict[str, Any] | None = None,
 							 fields: list[str] | None = None) -> bool:
-		"""Update an tank stat in the backend. Returns False 
+		"""Update an tank stat in the backend. Returns False
 			if the tank stat was not updated"""
-		try: 
+		try:
 			debug('starting')
-			return await self._data_update(self.collection_tank_stats, 
+			return await self._data_update(self.collection_tank_stats,
 											id=tank_stat.id, obj=tank_stat,
 											update=update, fields=fields)
 		except Exception as err:
-			debug(f'Error while updating tank stat (id={tank_stat.id}) into {self.backend}.{self.table_tank_stats}: {err}')	
+			debug(f'Error while updating tank stat (id={tank_stat.id}) into {self.backend}.{self.table_tank_stats}: {err}')
 		return False
 
 
-	async def tank_stat_delete(self, account: BSAccount, tank_id: int, 
+	async def tank_stat_delete(self, account: BSAccount, tank_id: int,
 								last_battle_time: int) -> bool:
 		try:
 			debug('starting')
-			_id : ObjectId = WGTankStat.mk_id(account.id, last_battle_time, tank_id)						
+			_id : ObjectId = WGTankStat.mk_id(account.id, last_battle_time, tank_id)
 			return await self._data_delete(self.collection_tank_stats, id=_id)
 		except Exception as err:
 			error(f'Unknown error: {err}')
@@ -1585,10 +1585,10 @@ class MongoBackend(Backend):
 		return await self._datas_insert(self.collection_tank_stats, tank_stats)
 
 
-	async def _mk_pipeline_tank_stats(self, release: BSBlitzRelease | None = None, 
-										regions: set[Region] = Region.API_regions(), 
+	async def _mk_pipeline_tank_stats(self, release: BSBlitzRelease | None = None,
+										regions: set[Region] = Region.API_regions(),
 										accounts: Iterable[Account] | None = None,
-										tanks: Iterable[Tank] | None = None, 
+										tanks: Iterable[Tank] | None = None,
 										since:  datetime | None = None,
 										sample: float = 0) -> list[dict[str, Any]] | None:
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
@@ -1609,16 +1609,16 @@ class MongoBackend(Backend):
 			# max_frags				: int  | None
 			# frags					: int  | None
 			# in_garage 			: bool | None
-			
+
 			a = AliasMapper(WGTankStat)
 			alias : Callable = a.alias
 			dbc : AsyncIOMotorCollection = self.collection_tank_stats
 			pipeline : list[dict[str, Any]] = list()
 			match : list[dict[str, str|int|float|dict|list]] = list()
-			
+
 			# Pipeline build based on ESR rule
 			# https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
-			
+
 			match.append({ alias('region') : { '$in' : [ r.value for r in regions ]} })
 			if release is not None:
 				match.append({ alias('release'): release.release })
@@ -1631,45 +1631,45 @@ class MongoBackend(Backend):
 
 			pipeline.append( { '$match' : { '$and' : match } })
 
-			if sample >= 1:				
+			if sample >= 1:
 				pipeline.append({ '$sample' : {'size' : int(sample) } })
 			elif sample > 0:
 				n : int = cast(int, await dbc.estimated_document_count())
 				pipeline.append({ '$sample' : {'size' : int(n * sample) } })
-			return pipeline		
+			return pipeline
 		except Exception as err:
 			error(f'{err}')
 		return None
 
-	
+
 	async def tank_stats_get(self, release: BSBlitzRelease | None = None,
-							regions : set[Region] = Region.API_regions(), 
+							regions : set[Region] = Region.API_regions(),
 							accounts: Iterable[Account] | None = None,
-							tanks 	: Iterable[Tank] | None = None, 
+							tanks 	: Iterable[Tank] | None = None,
 							since:  datetime | None = None,
 							sample 	: float = 0) -> AsyncGenerator[WGTankStat, None]:
 		"""Return tank stats from the backend"""
 		try:
 			debug('starting')
-			pipeline : list[dict[str, Any]] | None 
-			pipeline = await self._mk_pipeline_tank_stats(release=release, regions=regions, 
-														tanks=tanks, accounts=accounts, 
+			pipeline : list[dict[str, Any]] | None
+			pipeline = await self._mk_pipeline_tank_stats(release=release, regions=regions,
+														tanks=tanks, accounts=accounts,
 														since=since, sample=sample)
-			
+
 			if pipeline is None:
 				raise ValueError(f'could not create pipeline for get tank stats {self.backend}')
 
-			async for tank_stat in self._datas_get(self.collection_tank_stats, 
+			async for tank_stat in self._datas_get(self.collection_tank_stats,
 													WGTankStat, pipeline):
 				yield tank_stat
 		except Exception as err:
-			error(f'Error fetching tank stats from {self.table_uri(BSTableType.TankStats)}: {err}')	
+			error(f'Error fetching tank stats from {self.table_uri(BSTableType.TankStats)}: {err}')
 
 
 	async def tank_stats_count(self, release: BSBlitzRelease | None = None,
-							regions: set[Region] = Region.API_regions(), 
+							regions: set[Region] = Region.API_regions(),
 							accounts: Iterable[Account] | None = None,
-							tanks: Iterable[Tank] | None = None, 
+							tanks: Iterable[Tank] | None = None,
 							since:  datetime | None = None,
 							sample : float = 0) -> int:
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
@@ -1677,7 +1677,7 @@ class MongoBackend(Backend):
 			debug('starting')
 			dbc : AsyncIOMotorCollection = self.collection_tank_stats
 
-			if release is None and regions == Region.has_stats(): 
+			if release is None and regions == Region.has_stats():
 				total : int = cast(int, await dbc.estimated_document_count())
 				if sample == 0:
 					return total
@@ -1686,9 +1686,9 @@ class MongoBackend(Backend):
 				else:
 					return int(min(total, sample))
 			else:
-				pipeline : list[dict[str, Any]] | None 
-				pipeline = await self._mk_pipeline_tank_stats(release=release, regions=regions, 
-														tanks=tanks, accounts=accounts, 
+				pipeline : list[dict[str, Any]] | None
+				pipeline = await self._mk_pipeline_tank_stats(release=release, regions=regions,
+														tanks=tanks, accounts=accounts,
 														since=since, sample=sample)
 
 				if pipeline is None:
@@ -1699,37 +1699,37 @@ class MongoBackend(Backend):
 		return -1
 
 
-	async def tank_stats_update(self, tank_stats: list[WGTankStat], 
+	async def tank_stats_update(self, tank_stats: list[WGTankStat],
 								upsert: bool = False) -> tuple[int, int]:
 		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
 		debug('starting')
-		return await self._datas_update(self.collection_tank_stats, 
-										datas=tank_stats, upsert=upsert)
+		return await self._datas_update(BSTableType.TankStats,
+										objs=tank_stats, upsert=upsert)
 
 
 
-	async def tank_stat_export(self, model: type[JSONExportable] = WGTankStat, 
+	async def tank_stat_export(self, model: type[JSONExportable] = WGTankStat,
 								sample: float = 0) -> AsyncGenerator[WGTankStat, None]:
 		"""Export tank stats from Mongo DB"""
 		debug('starting')
-		async for tank_stat in self._datas_export(self.collection_tank_stats, 
-												in_type=model, 
-												out_type=WGTankStat, 
+		async for tank_stat in self._datas_export(self.collection_tank_stats,
+												in_type=model,
+												out_type=WGTankStat,
 												sample=sample):
 			yield tank_stat
 
 
-	async def tank_stats_export(self, model: type[JSONExportable] = WGTankStat, 
+	async def tank_stats_export(self, model: type[JSONExportable] = WGTankStat,
 								sample: float = 0, batch: int = 0) -> AsyncGenerator[list[WGTankStat], None]:
 		"""Export tank stats as list from Mongo DB"""
 		debug('starting')
-		if batch == 0: 
+		if batch == 0:
 			batch = MONGO_BATCH_SIZE
 
 		res : list[WGTankStat] = list()
-		# async for i, tank_stat in enumerate(self._datas_export(self.collection_tank_stats, 
-		# 										in_type=model, 
-		# 										out_type=WGTankStat, 
+		# async for i, tank_stat in enumerate(self._datas_export(self.collection_tank_stats,
+		# 										in_type=model,
+		# 										out_type=WGTankStat,
 		# 										sample=sample), start=1):
 		# 	res.append(tank_stat)
 		# 	if i % batch == 0:
@@ -1738,41 +1738,41 @@ class MongoBackend(Backend):
 		# # send the last batch
 		# if len(res) > 0:
 		# 	yield res
-		async for objs in self.objs_export(BSTableType.TankStats, 
-											sample=sample, 
+		async for objs in self.objs_export(BSTableType.TankStats,
+											sample=sample,
 											batch=batch):
 			yield WGTankStat.transform_objs(objs=objs, in_type=self.model_tank_stats)
 
 
-	async def tank_stats_duplicates(self, 
+	async def tank_stats_duplicates(self,
 									tank: Tank,
 									release: BSBlitzRelease,
-									regions: set[Region] = Region.API_regions(), 									
+									regions: set[Region] = Region.API_regions(),
 									sample : int = 0) -> AsyncGenerator[WGTankStat, None]:
 		"""Find duplicate tank stats from the backend"""
 		debug('starting')
 		try:
 			a = AliasMapper(WGTankStat)
 			alias : Callable = a.alias
-			pipeline : list[dict[str, Any]]	
+			pipeline : list[dict[str, Any]]
 			match_stage : list[dict[str, Any]] | None
-			if (match_stage := await self._mk_pipeline_tank_stats(release = release, 
+			if (match_stage := await self._mk_pipeline_tank_stats(release = release,
 																	regions = regions)) is None:
 				raise ValueError('Could not create $match pipeline')
-			match_stage.append({ alias('tank_id') : tank.tank_id })			
-			
-			pipeline = [{ '$match': 	{ '$and': match_stage } }, 
-						{ '$sort': 		{ alias('last_battle_time'): DESCENDING } }, 
-						{ '$group': 	{ '_id': '$' + alias('account_id'), 
+			match_stage.append({ alias('tank_id') : tank.tank_id })
+
+			pipeline = [{ '$match': 	{ '$and': match_stage } },
+						{ '$sort': 		{ alias('last_battle_time'): DESCENDING } },
+						{ '$group': 	{ '_id': '$' + alias('account_id'),
 										'all_ids': {'$push': '$_id' },
-										'len': { "$sum": 1 } } },                           
-						{ '$match': 	{ 'len': { '$gt': 1 } } }, 
+										'len': { "$sum": 1 } } },
+						{ '$match': 	{ 'len': { '$gt': 1 } } },
 						{ '$project':	{ 'ids': {  '$slice': [  '$all_ids', 1, '$len' ] } } }
 						]
 			if sample > 0:
 				pipeline.append({ '$sample' : { 'size': sample } })
-			
-			async for idxs in self.collection_tank_stats.aggregate(pipeline, allowDiskUse=True):				
+
+			async for idxs in self.collection_tank_stats.aggregate(pipeline, allowDiskUse=True):
 				for idx in idxs:
 					if (obj := await self._data_get(BSTableType.TankStats, idx)) is not None:
 						if( tank_stat := WGTankStat.transform_obj(obj)) is not None:
@@ -1780,20 +1780,20 @@ class MongoBackend(Backend):
 							yield tank_stat
 
 		except Exception as err:
-			debug(f'Could not find duplicates from {self.table_uri(BSTableType.TankStats)}: {err}')	
+			debug(f'Could not find duplicates from {self.table_uri(BSTableType.TankStats)}: {err}')
 
 	########################################################
-	# 
+	#
 	# MongoBackend(): tankopedia
 	#
 	########################################################
 
 
-	async def tankopedia_get(self, 
-							tanks 		: list[Tank] | None 		= None, 
+	async def tankopedia_get(self,
+							tanks 		: list[Tank] | None 		= None,
 							tier		: EnumVehicleTier | None 	= None,
 							tank_type	: EnumVehicleTypeStr | None = None,
-							nation		: EnumNation | None 		= None,							
+							nation		: EnumNation | None 		= None,
 							is_premium	: bool | None 				= None) -> AsyncGenerator[Tank, None]:
 		debug('starting')
 		try:
@@ -1811,7 +1811,7 @@ class MongoBackend(Backend):
 				query[alias('nation')] = nation.name
 			if tanks is not None and len(tanks) > 0:
 				query[alias('tank_id')] = { '$in': [ t.tank_id for t in tanks ] }
-			
+
 			async for obj in self.collection_tankopedia.find(query):
 				try:
 					if (tank_doc := self.model_tankopedia.parse_obj(obj)) is not None:
@@ -1833,24 +1833,24 @@ class MongoBackend(Backend):
 	async def tankopedia_replace(self, tank: Tank, upsert : bool = True) -> bool:
 		""""Replace tank in Tankopedia"""
 		debug('starting')
-		return await self._data_replace(self.collection_tankopedia, data=tank, 
-										id=tank.tank_id, upsert=upsert)	
+		return await self._data_replace(self.collection_tankopedia, data=tank,
+										id=tank.tank_id, upsert=upsert)
 
 
-	async def tankopedia_export(self, model: type[JSONExportable] = Tank, 
+	async def tankopedia_export(self, model: type[JSONExportable] = Tank,
 								sample: float = 0) -> AsyncGenerator[Tank, None]:
 		"""Export tankopedia"""
 		debug(f'starting: model={model} ')
-		async for tank in self._datas_export(self.collection_tankopedia, 
-												in_type=model, 
-												out_type=Tank, 
+		async for tank in self._datas_export(self.collection_tankopedia,
+												in_type=model,
+												out_type=Tank,
 												sample=sample):
 			yield tank
 
 
 
 	########################################################
-	# 
+	#
 	# MongoBackend(): error_
 	#
 	########################################################
@@ -1865,15 +1865,15 @@ class MongoBackend(Backend):
 			await dbc.insert_one(error.obj_db())
 			return True
 		except Exception as err:
-			debug(f'Could not log error: {error.table}: "{error.msg}" into {self.backend}.{self.table_error_log}: {err}')	
+			debug(f'Could not log error: {error.table}: "{error.msg}" into {self.backend}.{self.table_error_log}: {err}')
 		return False
 
 
-	async def errors_get(self, table_type: BSTableType | None = None, doc_id : Any | None = None, 
+	async def errors_get(self, table_type: BSTableType | None = None, doc_id : Any | None = None,
 							after: datetime | None = None) -> AsyncGenerator[ErrorLog, None]:
 		"""Return errors from backend ErrorLog"""
 		try:
-			debug('starting')			
+			debug('starting')
 			dbc : AsyncIOMotorCollection = self.collection_error_log
 			query : dict[str, Any] = dict()
 
@@ -1883,27 +1883,27 @@ class MongoBackend(Backend):
 				query['t'] = self.get_table(table_type)
 			if doc_id is not None:
 				query['did'] = doc_id
-						
+
 			err	: MongoErrorLog
 			async for error_obj in dbc.find(query).sort('d', ASCENDING):
 				try:
 					err = MongoErrorLog.parse_obj(error_obj)
 					debug(f'Read "{err.msg}" from {self.backend}.{self.table_error_log}')
-					
+
 					yield err
 				except Exception as e:
 					error(f'{e}')
-					continue			
+					continue
 		except Exception as e:
-			error(f'Error getting errors from {self.backend}.{self.table_error_log}: {e}')	
+			error(f'Error getting errors from {self.backend}.{self.table_error_log}: {e}')
 
 
-	async def errors_clear(self, table_type: BSTableType, doc_id : Any | None = None, 
+	async def errors_clear(self, table_type: BSTableType, doc_id : Any | None = None,
 							after: datetime | None = None) -> int:
 		"""Clear errors from backend ErrorLog"""
 		try:
 			debug('starting')
-			
+
 			dbc : AsyncIOMotorCollection = self.collection_error_log
 			query : dict[str, Any] = dict()
 
@@ -1912,9 +1912,9 @@ class MongoBackend(Backend):
 				query['d'] = { '$gte': after }
 			if doc_id is not None:
 				query['did'] = doc_id
-			
+
 			res : DeleteResult = await dbc.delete_many(query)
-			return res.deleted_count	
+			return res.deleted_count
 		except Exception as e:
 			error(f'Error clearing errors from {self.backend}.{self.table_error_log}: {e}')
 		return 0
