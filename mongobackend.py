@@ -1814,14 +1814,14 @@ class MongoBackend(Backend):
 			
 			async for obj in self.collection_tankopedia.find(query):
 				try:
-					tank : Tank = Tank.parse_obj(obj)
-					yield tank
+					if (tank_doc := self.model_tankopedia.parse_obj(obj)) is not None:
+						if (tank := Tank.parse_obj(tank_doc)) is not None:
+							yield tank
 				except Exception as err:
 					error(f'Could not parse object: {err}')
 					error(f'{obj}')
 		except Exception as err:
 			debug(f'Could get Tankopedia from {self.table_uri(BSTableType.Tankopedia)}: {err}')
-
 
 
 	async def tankopedia_insert(self, tank: Tank) -> bool:
