@@ -127,6 +127,7 @@ class BSTableType(StrEnum):
 	ErrorLog			= 'ErrorLog'
 	AccountLog			= 'AccountLog'
 
+
 class ErrorLogType(IntEnum):
 	OK				= 0
 	Info			= 1
@@ -500,6 +501,7 @@ class Backend(ABC):
 
 	def set_model(self, table: BSTableType | str, model: type[JSONExportable] | str | None) -> None:
 		"""Set collection model"""
+		debug(f'table: {table}, model: {model}')		
 		table_type : BSTableType
 		model_class : type[JSONExportable]
 		if model is None:
@@ -602,23 +604,23 @@ class Backend(ABC):
 	#----------------------------------------
 	
 
-	@abstractmethod
-	async def data_insert(self, table_type: BSTableType, obj: JSONExportable) -> bool: 
-		"""Generic method to get one object into backend table in its data format"""
-		raise NotImplementedError	
+	# @abstractmethod
+	# async def data_insert(self, table_type: BSTableType, obj: JSONExportable) -> bool: 
+	# 	"""Generic method to get one object into backend table in its data format"""
+	# 	raise NotImplementedError	
 
 
-	@abstractmethod
-	async def data_get(self, table_type: BSTableType, idx: Idx) -> Any:
-		"""Get raw document from MongoDB"""
-		raise NotImplementedError
+	# @abstractmethod
+	# async def data_get(self, table_type: BSTableType, idx: Idx) -> Any:
+	# 	"""Get raw document from MongoDB"""
+	# 	raise NotImplementedError
 
 
 	@abstractmethod
 	async def datas_get(self, 
 						table_type	: BSTableType, 
-						out_type		: type[D], 
-						pipeline 		: list[dict[str, Any]]) -> AsyncGenerator[D, None]:
+						out_type	: type[D], 
+						pipeline 	: list[dict[str, Any]]) -> AsyncGenerator[D, None]:
 		"""Get documents """
 		raise NotImplementedError
 		yield Any
