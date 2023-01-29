@@ -1814,16 +1814,27 @@ class MongoBackend(Backend):
 			if tanks is not None and len(tanks) > 0:
 				query[alias('tank_id')] = { '$in': [ t.tank_id for t in tanks ] }
 
-			async for obj in self.collection_tankopedia.find(query):
-				try:
-					if (tank_doc := self.model_tankopedia.parse_obj(obj)) is not None:
-						if (tank := Tank.parse_obj(tank_doc)) is not None:
-							yield tank
-				except Exception as err:
-					error(f'Could not parse object: {err}')
-					error(f'{obj}')
+
+
+	async def tankopedia_count(self, 
+								tanks 		: list[Tank] | None 		= None, 
+								tier		: EnumVehicleTier | None 	= None,
+								tank_type	: EnumVehicleTypeStr | None = None,
+								nation		: EnumNation | None 		= None,							
+								is_premium	: bool | None 				= None,
+								) -> int:
+		"""Count tanks in Tankopedia"""
+		try:
+			pipeline : list[dict[str, Any]] | None
+			if (pipeline := self._mk_tankopedia_pipeline(tanks=tanks, tier=tier, 
+														tank_type=tank_type, 
+														nation=nation, 
+														is_premium=is_premium)) is None:
+				raise ValueError('Could not create Tankopedia pipeline')
+			return await self._datas_count(BSTableType.Tankopedia, pipeline)			
 		except Exception as err:
 			debug(f'Could get Tankopedia from {self.table_uri(BSTableType.Tankopedia)}: {err}')
+		return -1
 
 
 	async def tankopedia_insert(self, tank: Tank) -> bool:

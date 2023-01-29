@@ -1275,6 +1275,17 @@ class Backend(ABC):
 		yield Tank()
 
 
+	@abstractmethod
+	async def tankopedia_count(self, 
+							tanks 		: list[Tank] | None 		= None, 
+							tier		: EnumVehicleTier | None 	= None,
+							tank_type	: EnumVehicleTypeStr | None = None,
+							nation		: EnumNation | None 		= None,							
+							is_premium	: bool | None 				= None,
+							) -> int:
+		raise NotImplementedError
+
+
 	@abstractmethod	
 	async def tankopedia_export(self, 
 								sample: float = 0) -> AsyncGenerator[Tank, None]:
