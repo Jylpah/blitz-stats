@@ -869,7 +869,7 @@ class Backend(ABC):
 
 	@abstractmethod
 	async def releases_get(self, release_match: str | None = None, 
-							since : date | None = None, 
+							since : int = 0, 
 							first : BSBlitzRelease | None = None) -> AsyncGenerator[BSBlitzRelease, None]:
 		raise NotImplementedError
 		yield BSBlitzRelease()
@@ -938,7 +938,7 @@ class Backend(ABC):
 
 	# replay fields that can be searched: protagonist, battle_start_timestamp, account_id, vehicle_tier
 	@abstractmethod
-	async def replays_get(self, since: date | None = None,
+	async def replays_get(self, since: int = 0,
 							**summary_fields) -> AsyncGenerator[WoTBlitzReplayData, None]:
 		"""Get replays from backed"""
 		raise NotImplementedError
@@ -946,7 +946,7 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def replays_count(self, since: date | None = None, 
+	async def replays_count(self, since: int = 0, 
 							sample : float = 0,
 							**summary_fields) -> int:
 		"""Count replays in backed"""
@@ -1034,8 +1034,8 @@ class Backend(ABC):
 							regions: set[Region] = Region.API_regions(), 
 							accounts: Iterable[Account] | None = None,
 							tanks: Iterable[Tank] | None = None, 
-							since:  datetime | None = None,
-							sample : float = 0) -> AsyncGenerator[WGTankStat, None]:
+							since:  int = 0,
+							sample: float = 0) -> AsyncGenerator[WGTankStat, None]:
 		"""Return tank stats from the backend"""
 		raise NotImplementedError
 		yield WGTankStat()
@@ -1046,7 +1046,7 @@ class Backend(ABC):
 							regions: set[Region] = Region.API_regions(), 
 							accounts: Iterable[Account] | None = None,
 							tanks: Iterable[Tank] | None = None, 
-							since:  datetime | None = None,
+							since:  int = 0,
 							sample : float = 0) -> int:
 		"""Get number of tank-stats from backend"""
 		raise NotImplementedError
