@@ -641,32 +641,32 @@ class Backend(ABC):
 	# 	raise NotImplementedError
 
 
-	@abstractmethod
-	async def datas_count(self, 
-							table_type: BSTableType, 
-							pipeline : list[dict[str, Any]]) -> int:
-		"""Count documents"""
-		raise NotImplementedError
+	# @abstractmethod
+	# async def datas_count(self, 
+	# 						table_type: BSTableType, 
+	# 						pipeline : list[dict[str, Any]]) -> int:
+	# 	"""Count documents"""
+	# 	raise NotImplementedError
 
 
-	@abstractmethod
-	async def data_replace(self, 
-							table_type: BSTableType, 
-							obj: JSONExportable, 
-							upsert : bool = False) -> bool:
-		"""Generic method to update an object of data_type"""	
-		raise NotImplementedError
+	# @abstractmethod
+	# async def data_replace(self, 
+	# 						table_type: BSTableType, 
+	# 						obj: JSONExportable, 
+	# 						upsert : bool = False) -> bool:
+	# 	"""Generic method to update an object of data_type"""	
+	# 	raise NotImplementedError
 
 
-	@abstractmethod
-	async def data_update(self, 
-							table_type	: BSTableType, 
-							ndx			: Idx | None = None, 
-							obj 		: JSONExportable | None = None,
-							update		: dict | None = None, 							 
-							fields 		: list[str] | None = None) -> bool:
-		"""Updates a document into backend in the chosen backend data format"""
-		raise NotImplementedError
+	# @abstractmethod
+	# async def data_update(self, 
+	# 						table_type	: BSTableType, 
+	# 						ndx			: Idx | None = None, 
+	# 						obj 		: JSONExportable | None = None,
+	# 						update		: dict | None = None, 							 
+	# 						fields 		: list[str] | None = None) -> bool:
+	# 	"""Updates a document into backend in the chosen backend data format"""
+	# 	raise NotImplementedError
 
 
 	@abstractmethod

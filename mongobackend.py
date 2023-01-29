@@ -509,44 +509,44 @@ class MongoBackend(Backend):
 	# 	return None
 
 
-	async def _data_update(self, dbc : AsyncIOMotorCollection, id: Idx,
-							obj : BaseModel | None = None,
-							update: dict | None = None,
-							fields : list[str] | None = None) -> bool:
-		"""Generic method to update an object of data_type"""
-		try:
-			debug('starting')
-			model = self.get_model(dbc.name)
-			if update is not None:
-				pass
-			elif fields is not None and obj is not None:
-				update = obj.dict(include=set(fields))
-			else:
-				raise ValueError("'update', 'obj' and 'fields' cannot be all None")
-			alias_fields : dict[str, Any] = AliasMapper(model).map(update.items())
-			if (res := await dbc.find_one_and_update({ '_id': id}, { '$set': alias_fields})) is None:
-				# debug(f'Failed to update _id={id} into {self.backend}.{dbc.name}')
-				return False
-			#debug(f'Updated (_id={id}) into {self.backend}.{dbc.name}')
-			return True
-		except Exception as err:
-			error(f'Could not update _id={id} in {self.backend}.{dbc.name}: {err}')
-		return False
+	# async def _data_update(self, dbc : AsyncIOMotorCollection, id: Idx,
+	# 						obj : BaseModel | None = None,
+	# 						update: dict | None = None,
+	# 						fields : list[str] | None = None) -> bool:
+	# 	"""Generic method to update an object of data_type"""
+	# 	try:
+	# 		debug('starting')
+	# 		model = self.get_model(dbc.name)
+	# 		if update is not None:
+	# 			pass
+	# 		elif fields is not None and obj is not None:
+	# 			update = obj.dict(include=set(fields))
+	# 		else:
+	# 			raise ValueError("'update', 'obj' and 'fields' cannot be all None")
+	# 		alias_fields : dict[str, Any] = AliasMapper(model).map(update.items())
+	# 		if (res := await dbc.find_one_and_update({ '_id': id}, { '$set': alias_fields})) is None:
+	# 			# debug(f'Failed to update _id={id} into {self.backend}.{dbc.name}')
+	# 			return False
+	# 		#debug(f'Updated (_id={id}) into {self.backend}.{dbc.name}')
+	# 		return True
+	# 	except Exception as err:
+	# 		error(f'Could not update _id={id} in {self.backend}.{dbc.name}: {err}')
+	# 	return False
 
 
-	async def _data_replace(self, dbc : AsyncIOMotorCollection, data: D, 	# type: ignore
-							id: Idx, upsert : bool = False) -> bool:
-		"""Generic method to update an object of data_type"""
-		try:
-			debug('starting')
-			if (res := await dbc.find_one_and_replace({ '_id': id}, data.obj_db(), upsert=upsert)) is None:
-				debug(f'Failed to replace _id={id} into {self.backend}.{dbc.name}')
-				return False
-			debug(f'Replaced (_id={id}) into {self.backend}.{dbc.name}')
-			return True
-		except Exception as err:
-			debug(f'Error while replacing _id={id} in {self.backend}.{dbc.name}: {err}')
-		return False
+	# async def _data_replace(self, dbc : AsyncIOMotorCollection, data: D, 	# type: ignore
+	# 						id: Idx, upsert : bool = False) -> bool:
+	# 	"""Generic method to update an object of data_type"""
+	# 	try:
+	# 		debug('starting')
+	# 		if (res := await dbc.find_one_and_replace({ '_id': id}, data.obj_db(), upsert=upsert)) is None:
+	# 			debug(f'Failed to replace _id={id} into {self.backend}.{dbc.name}')
+	# 			return False
+	# 		debug(f'Replaced (_id={id}) into {self.backend}.{dbc.name}')
+	# 		return True
+	# 	except Exception as err:
+	# 		debug(f'Error while replacing _id={id} in {self.backend}.{dbc.name}: {err}')
+	# 	return False
 
 
 	async def _data_delete(self, dbc : AsyncIOMotorCollection, id: Idx) -> bool:
@@ -625,17 +625,17 @@ class MongoBackend(Backend):
 			error(f'Error fetching {data_type} from {self.backend}.{dbc.name}: {err}')
 
 
-	async def _datas_count(self, dbc : AsyncIOMotorCollection,
-							pipeline : list[dict[str, Any]]) -> int:
-		try:
-			debug('starting')
-			pipeline.append({ '$count': 'total' })
-			async for res in dbc.aggregate(pipeline, allowDiskUse=True):
-				# print(f"_data_count(): total={res['total']}")
-				return int(res['total'])
-		except Exception as err:
-			error(f'Error counting documents in {self.backend}.{dbc.name}: {err}')
-		return -1
+	# async def _datas_count(self, dbc : AsyncIOMotorCollection,
+	# 						pipeline : list[dict[str, Any]]) -> int:
+	# 	try:
+	# 		debug('starting')
+	# 		pipeline.append({ '$count': 'total' })
+	# 		async for res in dbc.aggregate(pipeline, allowDiskUse=True):
+	# 			# print(f"_data_count(): total={res['total']}")
+	# 			return int(res['total'])
+	# 	except Exception as err:
+	# 		error(f'Error counting documents in {self.backend}.{dbc.name}: {err}')
+	# 	return -1
 
 
 	async def _datas_export(self, dbc : AsyncIOMotorCollection,
@@ -687,7 +687,7 @@ class MongoBackend(Backend):
 
 
 	async def _data_get(self, table_type: BSTableType, idx: Idx) -> JSONExportable | None:
-		"""Get document from MongoDB in its native data type"""
+		"""Get document from MongoDB in its native data type. 'idx' has to be the same as in the collection stored"""
 		try:
 			# debug('starting')
 			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
@@ -698,10 +698,10 @@ class MongoBackend(Backend):
 		return None
 
 
-	async def data_replace(self,
-							table_type: BSTableType,
-							obj: 		JSONExportable,
-							upsert : bool = False) -> bool:
+	async def _data_replace(self,
+							table_type	: BSTableType,
+							obj			: JSONExportable,
+							upsert 		: bool = False) -> bool:
 		"""Generic method to update an object of data_type"""
 		try:
 			debug('starting')
@@ -720,7 +720,7 @@ class MongoBackend(Backend):
 		return False
 
 
-	async def data_update(self, table_type: BSTableType,
+	async def _data_update(self, table_type: BSTableType,
 							idx		: Idx | None = None,
 							obj 	: JSONExportable | None = None,
 							update	: dict | None = None,
@@ -852,7 +852,7 @@ class MongoBackend(Backend):
 			error(f'Error fetching data from {self.table_uri(table_type)}: {err}')
 
 
-	async def datas_count(self, table_type: BSTableType,
+	async def _datas_count(self, table_type: BSTableType,
 							pipeline : list[dict[str, Any]]) -> int:
 		try:
 			debug('starting')
@@ -944,7 +944,7 @@ class MongoBackend(Backend):
 			if the account was not updated"""
 		try:
 			debug('starting')
-			return await self.data_update(BSTableType.Accounts, obj=account,
+			return await self._data_update(BSTableType.Accounts, obj=account,
 											update=update, fields=fields)
 		except Exception as err:
 			debug(f'Error while updating account (id={account.id}) into {self.table_uri(BSTableType.Accounts)}: {err}')
@@ -955,8 +955,7 @@ class MongoBackend(Backend):
 		"""Update an account in the backend. Returns False
 			if the account was not updated"""
 		debug('starting')
-		return await self.data_replace(BSTableType.Accounts, obj=account,
-										upsert=upsert)
+		return await self._data_replace(BSTableType.Accounts, obj=account, upsert=upsert)
 
 
 	async def account_delete(self, account_id: int) -> bool:
@@ -1093,7 +1092,7 @@ class MongoBackend(Backend):
 															cache_valid=cache_valid)
 				if pipeline is None:
 					raise ValueError(f'Could not create pipeline for accounts {self.table_uri(BSTableType.Accounts)}')
-				return await self.datas_count(BSTableType.Accounts, pipeline)
+				return await self._datas_count(BSTableType.Accounts, pipeline)
 		except Exception as err:
 			error(f'counting accounts failed: {err}')
 		return -1
@@ -1254,7 +1253,7 @@ class MongoBackend(Backend):
 																accounts=accounts, sample=sample)
 				if pipeline is None:
 					raise ValueError(f'could not create pipeline for player achievements {self.table_uri(BSTableType.PlayerAchievements)}')
-				return await self.datas_count(BSTableType.PlayerAchievements, pipeline)
+				return await self._datas_count(BSTableType.PlayerAchievements, pipeline)
 		except Exception as err:
 			error(f'counting player achievements failed: {err}')
 		return -1
@@ -1340,7 +1339,7 @@ class MongoBackend(Backend):
 			# return await self._data_update(self.collection_releases,
 			# 								id=release.release, obj=release,
 			# 								update=update, fields=fields)
-			return await self.data_update(BSTableType.Releases, obj=release,
+			return await self._data_update(BSTableType.Releases, obj=release,
 											update=update, fields=fields)
 		except Exception as err:
 			debug(f'Error while updating release {release} into {self.table_uri(BSTableType.Releases)}: {err}')
@@ -1353,7 +1352,7 @@ class MongoBackend(Backend):
 		debug('starting')
 		# return await self._data_replace(self.collection_releases, data=release,
 		# 								id=release.release, upsert=upsert)
-		return await self.data_replace(BSTableType.Releases, obj=release, upsert=upsert)
+		return await self._data_replace(BSTableType.Releases, obj=release, upsert=upsert)
 
 
 	async def release_delete(self, release: str) -> bool:
@@ -1509,7 +1508,7 @@ class MongoBackend(Backend):
 		try:
 			debug('starting')
 			pipeline : list[dict[str, Any]] = await self._mk_pipeline_replays(since=since, sample=sample, **summary_fields)
-			return await self._datas_count(self.collection_replays, pipeline)
+			return await self._datas_count(BSTableType.Replays, pipeline)
 
 		except Exception as err:
 			error(f'Error exporting replays from {self.backend}.{self.table_replays}: {err}')
@@ -1520,7 +1519,7 @@ class MongoBackend(Backend):
 								sample: float = 0) -> AsyncGenerator[WoTBlitzReplayData, None]:
 		"""Export replays from Mongo DB"""
 		debug('starting')
-		async for replay in self._datas_export(self.collection_replays,
+		async for replay in self._datas_export(BSTableType.Replays,
 												in_type=model,
 												out_type=WoTBlitzReplayData,
 												sample=sample):
@@ -1560,8 +1559,8 @@ class MongoBackend(Backend):
 			if the tank stat was not updated"""
 		try:
 			debug('starting')
-			return await self._data_update(self.collection_tank_stats,
-											id=tank_stat.id, obj=tank_stat,
+			return await self._data_update(BSTableType.TankStats,
+											idx=tank_stat.id, obj=tank_stat,
 											update=update, fields=fields)
 		except Exception as err:
 			debug(f'Error while updating tank stat (id={tank_stat.id}) into {self.backend}.{self.table_tank_stats}: {err}')
@@ -1693,7 +1692,7 @@ class MongoBackend(Backend):
 
 				if pipeline is None:
 					raise ValueError(f'could not create pipeline for tank stats {self.backend}.{dbc.name}')
-				return await self.datas_count(BSTableType.TankStats, pipeline)
+				return await self._datas_count(BSTableType.TankStats, pipeline)
 		except Exception as err:
 			error(f'counting tank stats failed: {err}')
 		return -1
@@ -1833,6 +1832,8 @@ class MongoBackend(Backend):
 	async def tankopedia_replace(self, tank: Tank, upsert : bool = True) -> bool:
 		""""Replace tank in Tankopedia"""
 		debug('starting')
+		return await self._data_replace(BSTableType.Tankopedia, obj=tank, upsert=upsert)
+
 
 	async def tankopedia_update(self, tank: Tank,
 								update: dict[str, Any] | None = None,
@@ -1853,7 +1854,7 @@ class MongoBackend(Backend):
 								sample: float = 0) -> AsyncGenerator[Tank, None]:
 		"""Export tankopedia"""
 		debug(f'starting: model={model} ')
-		async for tank in self._datas_export(self.collection_tankopedia,
+		async for tank in self._datas_export(BSTableType.Tankopedia,
 												in_type=model,
 												out_type=Tank,
 												sample=sample):
