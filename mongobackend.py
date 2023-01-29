@@ -1823,6 +1823,26 @@ class MongoBackend(Backend):
 		return None
 
 
+	async def tankopedia_get(self,
+							tanks 		: list[Tank] | None 		= None,
+							tier		: EnumVehicleTier | None 	= None,
+							tank_type	: EnumVehicleTypeStr | None = None,
+							nation		: EnumNation | None 		= None,
+							is_premium	: bool | None 				= None) -> AsyncGenerator[Tank, None]:
+		debug('starting')
+		try:
+			pipeline : list[dict[str, Any]] | None
+			if (pipeline := self._mk_tankopedia_pipeline(tanks=tanks, tier=tier, 
+														tank_type=tank_type, 
+														nation=nation, 
+														is_premium=is_premium)) is None:
+				raise ValueError('Could not create Tankopedia pipeline')
+			# debug(f'pipeline={pipeline}')
+			async for data in self._datas_get(BSTableType.Tankopedia, pipeline):
+				if (tank := Tank.transform_obj(data)) is not None:
+					yield tank
+		except Exception as err:
+			error(f'Could get Tankopedia from {self.table_uri(BSTableType.Tankopedia)}: {err}')
 
 
 	async def tankopedia_count(self, 
