@@ -18,6 +18,7 @@ from backend import Backend, OptAccountsDistributed, OptAccountsInactive, BSTabl
 from models import BSAccount, BSBlitzRelease, StatsTypes
 from pyutils import epoch_now, JSONExportable, AliasMapper, I, D, O, Idx, \
 	BackendIndexType, BackendIndex, DESCENDING, ASCENDING, TEXT
+# from pyutils.utils import transform_objs
 from blitzutils.models import Region, Account, Tank, WoTBlitzReplayJSON, WoTBlitzReplayData, WoTBlitzReplaySummary, \
 								WGTankStat, WGBlitzRelease, WGPlayerAchievementsMaxSeries, \
 								EnumNation, EnumVehicleTier, EnumVehicleTypeStr
@@ -549,20 +550,20 @@ class MongoBackend(Backend):
 	# 	return False
 
 
-	async def _data_delete(self, dbc : AsyncIOMotorCollection, id: Idx) -> bool:
-		"""Generic method to delete an object of data_type"""
-		try:
-			debug('starting')
-			res : DeleteResult = await dbc.delete_one({ '_id': id})
-			if res.deleted_count == 1:
-				# debug(f'Delete (_id={id}) from {self.backend}.{dbc.name}')
-				return True
-			else:
-				pass
-				# debug(f'Failed to delete _id={id} from {self.backend}.{dbc.name}')
-		except Exception as err:
-			debug(f'Error while deleting _id={id} from {self.backend}.{dbc.name}: {err}')
-		return False
+	# async def _data_delete(self, dbc : AsyncIOMotorCollection, id: Idx) -> bool:
+	# 	"""Generic method to delete an object of data_type"""
+	# 	try:
+	# 		debug('starting')
+	# 		res : DeleteResult = await dbc.delete_one({ '_id': id})
+	# 		if res.deleted_count == 1:
+	# 			# debug(f'Delete (_id={id}) from {self.backend}.{dbc.name}')
+	# 			return True
+	# 		else:
+	# 			pass
+	# 			# debug(f'Failed to delete _id={id} from {self.backend}.{dbc.name}')
+	# 	except Exception as err:
+	# 		debug(f'Error while deleting _id={id} from {self.backend}.{dbc.name}: {err}')
+	# 	return False
 
 
 	# async def _datas_insert(self, dbc : AsyncIOMotorCollection, datas: Sequence[D]) -> tuple[int, int]:
@@ -607,22 +608,23 @@ class MongoBackend(Backend):
 	# 	return updated, not_updated
 
 
-	async def _datas_get(self, dbc : AsyncIOMotorCollection,
-						data_type: type[D],
-						pipeline : list[dict[str, Any]]) -> AsyncGenerator[D, None]:
+	async def _datas_get(self, table_type: BSTableType,						
+						pipeline : list[dict[str, Any]]) -> AsyncGenerator[JSONExportable, None]:
 		try:
 			debug('starting')
-			debug(f'collection={dbc.name}, pipeline={pipeline}')
+			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
+			model : type[JSONExportable] = self.get_model(table_type)
+			debug(f'collection={dbc.name}, model={model}, pipeline={pipeline}')
 			async for obj in dbc.aggregate(pipeline, allowDiskUse=True):
 				try:
 					debug(f'{obj}')
-					yield data_type.parse_obj(obj)
+					yield model.parse_obj(obj)
 				except ValidationError as err:
-					error(f'Could not validate {data_type} ob={obj} from {self.backend}.{dbc.name}: {err}')
+					error(f'Could not validate {model} ob={obj} from {self.table_uri(table_type)}: {err}')
 				except Exception as err:
 					error(f'{err}')
 		except Exception as err:
-			error(f'Error fetching {data_type} from {self.backend}.{dbc.name}: {err}')
+			error(f'Error getting data from {self.table_uri(table_type)}: {err}')
 
 
 	# async def _datas_count(self, dbc : AsyncIOMotorCollection,
@@ -638,14 +640,16 @@ class MongoBackend(Backend):
 	# 	return -1
 
 
-	async def _datas_export(self, dbc : AsyncIOMotorCollection,
+	async def _datas_export(self, table_type: BSTableType,
 							in_type: type[D],
 							out_type: type[O],
 							sample : float = 0) -> AsyncGenerator[O, None]:
 		"""Export data from Mongo DB"""
 		try:
-			debug(f'starting export from: {self.backend}.{dbc.name}')
+			debug(f'starting export from: {self.table_uri(table_type)}')
+			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
 			pipeline : list[dict[str, Any]] = list()
+			
 			if sample > 0 and sample < 1:
 				N : int = await dbc.estimated_document_count()
 				pipeline.append({ '$sample' : { 'size' : int(N * sample) }})
@@ -661,7 +665,7 @@ class MongoBackend(Backend):
 					error(f'{err}: {obj}')
 
 		except Exception as err:
-			error(f'Error fetching data from {self.backend}.{dbc.name}: {err}')
+			error(f'Error fetching data from {self.table_uri(table_type)}: {err}')
 
 
 ########################################################
@@ -831,25 +835,25 @@ class MongoBackend(Backend):
 		return updated, not_updated
 
 
-	async def datas_get(self, table_type: BSTableType,
-						out_type: type[D],
-						pipeline : list[dict[str, Any]]) -> AsyncGenerator[D, None]:
-		try:
-			debug('starting')
-			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
-			model : type[JSONExportable] = self.get_model(table_type)
+	# async def _datas_get(self, table_type: BSTableType,
+	# 					out_type: type[D],
+	# 					pipeline : list[dict[str, Any]]) -> AsyncGenerator[D, None]:
+	# 	try:
+	# 		debug('starting')
+	# 		dbc : AsyncIOMotorCollection = self.get_collection(table_type)
+	# 		model : type[JSONExportable] = self.get_model(table_type)
 
-			async for obj in dbc.aggregate(pipeline, allowDiskUse=True):
-				try:
-					debug(f'{obj}')
-					if (data := out_type.transform_obj(obj, model)) is not None:
-						yield data
-				except ValidationError as err:
-					error(f'Could not validate {out_type} ob={obj} from {self.table_uri(table_type)}: {err}')
-				except Exception as err:
-					error(f'{err}')
-		except Exception as err:
-			error(f'Error fetching data from {self.table_uri(table_type)}: {err}')
+	# 		async for obj in dbc.aggregate(pipeline, allowDiskUse=True):
+	# 			try:
+	# 				debug(f'{obj}')
+	# 				if (data := out_type.transform_obj(obj, model)) is not None:
+	# 					yield data
+	# 			except ValidationError as err:
+	# 				error(f'Could not validate {out_type} ob={obj} from {self.table_uri(table_type)}: {err}')
+	# 			except Exception as err:
+	# 				error(f'{err}')
+	# 	except Exception as err:
+	# 		error(f'Error fetching data from {self.table_uri(table_type)}: {err}')
 
 
 	async def _datas_count(self, table_type: BSTableType,
@@ -1046,10 +1050,10 @@ class MongoBackend(Backend):
 			if pipeline is None:
 				raise ValueError(f'could not create get-accounts {self.table_uri(BSTableType.Accounts)} cursor')
 
-			async for player in self.datas_get(BSTableType.Accounts,
-												out_type=BSAccount,
-												pipeline=pipeline):
+			async for data in self._datas_get(BSTableType.Accounts, pipeline=pipeline):				
 				try:
+					if (player := BSAccount.transform_obj(data)) is None:
+						continue
 					# if not force and not disabled and inactive is None and player.inactive:
 					if not disabled and inactive == OptAccountsInactive.auto and player.inactive:
 						assert update_field is not None, "automatic inactivity detection requires stat_type"
@@ -1220,10 +1224,10 @@ class MongoBackend(Backend):
 			if pipeline is None:
 				raise ValueError(f'could not create pipeline for get player achievements {self.backend}')
 
-			async for pa in self.datas_get(BSTableType.PlayerAchievements,
-											out_type=WGPlayerAchievementsMaxSeries,
+			async for data in self._datas_get(BSTableType.PlayerAchievements,											
 											pipeline=pipeline):
-				yield pa
+				if (pa := WGPlayerAchievementsMaxSeries.transform_obj(data)) is not None:
+					yield pa
 		except Exception as err:
 			error(f'Error fetching player achievements from {self.table_uri(BSTableType.PlayerAchievements)}: {err}')
 
@@ -1400,13 +1404,9 @@ class MongoBackend(Backend):
 			pipeline : list[dict[str, Any]]
 			pipeline = await self._mk_pipeline_releases(release_match=release_match, since=since, first=first)
 
-			# async for release in self._datas_get(self.collection_releases,
-			# 										data_type=BSBlitzRelease,
-			# 										pipeline=pipeline):
-			async for release in self.datas_get(BSTableType.Releases,
-												out_type=BSBlitzRelease,
-												pipeline=pipeline):
-				yield release
+			async for data in self._datas_get(BSTableType.Releases, pipeline=pipeline):
+				if (release := BSBlitzRelease.transform_obj(data)) is not None:
+					yield release
 
 		except Exception as err:
 			error(f'Error getting releases: {err}')
@@ -1496,8 +1496,9 @@ class MongoBackend(Backend):
 			debug('starting')
 			pipeline : list[dict[str, Any]]
 			pipeline = await self._mk_pipeline_replays(since=since, sample=sample, **summary_fields)
-			async for replay in self._datas_get(self.collection_replays, WoTBlitzReplayData, pipeline):
-				yield replay
+			async for data in self._datas_get(BSTableType.Replays, pipeline):
+				if (replay := WoTBlitzReplayData.transform_obj(data)) is not None:
+					yield replay				
 		except Exception as err:
 			error(f'Error exporting replays from {self.backend}.{self.table_replays}: {err}')
 
@@ -1658,9 +1659,9 @@ class MongoBackend(Backend):
 			if pipeline is None:
 				raise ValueError(f'could not create pipeline for get tank stats {self.backend}')
 
-			async for tank_stat in self._datas_get(self.collection_tank_stats,
-													WGTankStat, pipeline):
-				yield tank_stat
+			async for data in self._datas_get(BSTableType.TankStats, pipeline):
+				if (tank_stat := WGTankStat.transform_obj(data)) is not None:
+					yield tank_stat
 		except Exception as err:
 			error(f'Error fetching tank stats from {self.table_uri(BSTableType.TankStats)}: {err}')
 
