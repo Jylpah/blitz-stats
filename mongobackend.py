@@ -1540,12 +1540,12 @@ class MongoBackend(Backend):
 		return await self._data_insert(BSTableType.TankStats, obj=tank_stat)
 
 
-	async def tank_stat_get(self, account: BSAccount, tank_id: int,
+	async def tank_stat_get(self, account_id: int, tank_id: int,
 							last_battle_time: int) -> WGTankStat | None:
 		"""Return tank stats from the backend"""
 		try:
 			debug('starting')
-			idx : ObjectId = WGTankStat.mk_id(account.id, last_battle_time, tank_id)
+			idx : ObjectId = WGTankStat.mk_id(account_id, last_battle_time, tank_id)
 			if (res:= await self._data_get(BSTableType.TankStats,  idx=idx)) is not None:
 				return WGTankStat.transform_obj(res, self.model_tank_stats)
 		except Exception as err:
@@ -1568,11 +1568,13 @@ class MongoBackend(Backend):
 		return False
 
 
-	async def tank_stat_delete(self, account: BSAccount, tank_id: int,
+	async def tank_stat_delete(self, 
+								account_id: int, 
+								tank_id: int,
 								last_battle_time: int) -> bool:
 		try:
 			debug('starting')
-			idx : ObjectId = WGTankStat.mk_id(account.id, last_battle_time, tank_id)
+			idx : ObjectId = WGTankStat.mk_id(account_id, last_battle_time, tank_id)
 			return await self._data_delete(BSTableType.TankStats, idx=idx)
 		except Exception as err:
 			error(f'Unknown error: {err}')

@@ -1001,7 +1001,7 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def tank_stat_get(self, account: BSAccount, tank_id: int, 
+	async def tank_stat_get(self, account_id: int, tank_id: int, 
 							last_battle_time: int) -> WGTankStat | None:
 		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
 		raise NotImplementedError
@@ -1017,7 +1017,7 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def tank_stat_delete(self, account: BSAccount, tank_id: int, 
+	async def tank_stat_delete(self, account_id: int, tank_id: int, 
 								last_battle_time: int) -> bool:
 		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
 		raise NotImplementedError
