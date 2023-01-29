@@ -1791,28 +1791,37 @@ class MongoBackend(Backend):
 	########################################################
 
 
-	async def tankopedia_get(self,
-							tanks 		: list[Tank] | None 		= None,
-							tier		: EnumVehicleTier | None 	= None,
-							tank_type	: EnumVehicleTypeStr | None = None,
-							nation		: EnumNation | None 		= None,
-							is_premium	: bool | None 				= None) -> AsyncGenerator[Tank, None]:
+	def _mk_tankopedia_pipeline(self,
+								tanks 		: list[Tank] | None 		= None,
+								tier		: EnumVehicleTier | None 	= None,
+								tank_type	: EnumVehicleTypeStr | None = None,
+								nation		: EnumNation | None 		= None,
+								is_premium	: bool | None 				= None
+								) -> list[dict[str, Any]] | None:
 		debug('starting')
 		try:
-			a 		: AliasMapper 	= AliasMapper(Tank)
+			a 		: AliasMapper 	= AliasMapper(self.model_tankopedia)
 			alias 	: Callable 		= a.alias
-			query 	: dict[str, str | int | bool | dict[str, Any]] = dict()
-
+			match : list[dict[str, str|int|float|dict|list]] = list()
+			pipeline : list[dict[str, Any]] = list()
 			if is_premium is not None:
-				query[alias('is_premium')] = is_premium
-			if tier is not None:
-				query[alias('tier')] = tier.value
+				match.append({ alias('is_premium'): is_premium  })				
+			if tier is not None:				
+				match.append({ alias('tier'): tier.value })
 			if tank_type is not None:
-				query[alias('type')] = tank_type.value
+				match.append( { alias('type'): tank_type.value })				
 			if nation is not None:
-				query[alias('nation')] = nation.name
+				match.append( { alias('nation'): nation.name })				
 			if tanks is not None and len(tanks) > 0:
-				query[alias('tank_id')] = { '$in': [ t.tank_id for t in tanks ] }
+				match.append( { alias('tank_id'): { '$in': [ t.tank_id for t in tanks ] } })
+			if len(match) > 0:
+				pipeline.append({'$match' : match })
+
+			return pipeline
+		except Exception as err:
+			error(f'could not create query: {err}')
+		return None
+
 
 
 
