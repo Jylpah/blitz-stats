@@ -51,7 +51,7 @@ TANK_STATS_BATCH 	: int = 1000
 db 			: Backend
 readQ 		: AsyncQueue[list[Any] | None]
 # readQb		: queue.Queue
-writeQ 		: queue.Queue
+# writeQ 		: queue.Queue
 in_model	: type[JSONExportable]
 #rel_mapper  : BucketMapper[BSBlitzRelease] | None
 mp_options	: dict[str, Any] = dict()
@@ -110,7 +110,7 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 			WORKERS_WGAPI	= configWG.getint('api_workers', WORKERS_WGAPI)			
 			WG_APP_ID		= configWG.get('wg_app_id', WGApi.DEFAULT_WG_APP_ID)
 
-		parser.add_argument('--threads', type=int, default=WORKERS_WGAPI, help='Set number of asynchronous threads')
+		parser.add_argument('--workers', type=int, default=WORKERS_WGAPI, help='Set number of asynchronous workers')
 		parser.add_argument('--wg-app-id', type=str, default=WG_APP_ID, help='Set WG APP ID')
 		parser.add_argument('--rate-limit', type=float, default=WG_RATE_LIMIT, metavar='RATE_LIMIT',
 							help='Rate limit for WG API')
@@ -351,7 +351,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 		
 		task_bar : Task = create_task(alive_bar_monitor([accountQ], total=accounts, 
 														title="Fetching tank stats"))
-		for _ in range(min([args.threads, ceil(accounts/4)])):
+		for _ in range(min([args.workers, ceil(accounts/4)])):
 			tasks.append(create_task(fetch_api_worker(db, wg_api=wg, accountQ=accountQ, 
 																	statsQ=statsQ, retryQ=retryQ, 
 																	disabled=args.disabled)))
@@ -367,7 +367,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 			debug(f'retryQ: size={retry_accounts} is_finished={retryQ.is_finished}')
 			task_bar = create_task(alive_bar_monitor([retryQ], total=retry_accounts, 
 													  title="Retrying failed accounts"))
-			for _ in range(min([args.threads, ceil(retry_accounts/4)])):
+			for _ in range(min([args.workers, ceil(retry_accounts/4)])):
 				tasks.append(create_task(fetch_api_worker(db, wg_api=wg,  
 																		accountQ=retryQ, 
 																		statsQ=statsQ)))
@@ -783,7 +783,7 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 # 		import_backend 	: str 							= args.import_backend
 # 		import_model 	: type[JSONExportable] | None 	= None
 # 		release_map 	: BucketMapper[BSBlitzRelease] | None = None
-# 		WORKERS 	 	: int 							= args.threads
+# 		WORKERS 	 	: int 							= args.workers
 # 		workers : list[Task] = list()
 
 # 		if (import_model := get_sub_type(args.import_model, JSONExportable)) is None:
@@ -837,7 +837,7 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 # 		import_db   	: Backend | None 				= None
 # 		import_backend 	: str 							= args.import_backend
 # 		import_model 	: type[JSONExportable] | None 	= None
-# 		WORKERS 	 	: int 							= args.threads
+# 		WORKERS 	 	: int 							= args.workers
 # 		map_releases	: bool 							= not args.no_release_map
 # 		release_map		: BucketMapper[BSBlitzRelease] | None  = None		
 # 		workers 		: list[Task] 				  	= list()
@@ -1005,8 +1005,7 @@ async def cmd_importMP(db: Backend, args : Namespace) -> bool:
 				with alive_bar(N, title="Importing tank stats ", 
 								enrich_print=False, refresh_secs=1) as bar:					
 					async for objs in import_db.objs_export(table_type=BSTableType.TankStats, 
-															sample=args.sample, 
-															batch=TANK_STATS_BATCH):
+															sample=args.sample):
 						read : int = len(objs)
 						# debug(f'read {read} tank_stat objects')
 						readQ.put(objs)
@@ -1086,6 +1085,7 @@ async def  import_mp_worker(id: int = 0) -> EventCounter:
 				if rel_mapper is not None:
 					tank_stats, mapped, errors = map_releases(tank_stats, rel_mapper)
 					stats.log('release mapped', mapped)
+					stats.log('not release mapped', read - mapped)
 					stats.log('release map errors', errors)
 				await tank_statsQ.put(tank_stats)
 			except Exception as err:

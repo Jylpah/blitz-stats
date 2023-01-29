@@ -121,7 +121,7 @@ def add_args_update_wi(parser: ArgumentParser, config: Optional[ConfigParser] = 
 		parser.add_argument('--start','--start_page',   dest='wi_start_page', 
 							metavar='START_PAGE', type=int, default=0, 
 							help='Start page to start spidering of WoTinspector.com')
-		parser.add_argument('--threads', '--workers', dest='wi_workers', 
+		parser.add_argument('--workers', '--workers', dest='wi_workers', 
 							type=int, default=WI_WORKERS, metavar='WORKERS',
 							help='Number of async workers to spider wotinspector.com')
 		parser.add_argument('--old-replay-limit', dest='wi_max_old_replays', 
