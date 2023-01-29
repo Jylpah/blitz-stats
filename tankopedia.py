@@ -75,7 +75,7 @@ def add_args_add(parser: ArgumentParser, config: Optional[ConfigParser] = None) 
 		parser.add_argument('--type', type=str, dest='tank_type', metavar='TYPE', default=None, 
 							help='tank type: ' + ', '.join([ n.name for n in EnumVehicleTypeInt ]))
 		parser.add_argument('--premium', action='store_true', default=False, dest='is_premium', 
-							help='Premium tank')
+							help='premium tank')
 
 		return True
 	except Exception as err:
@@ -86,7 +86,7 @@ def add_args_add(parser: ArgumentParser, config: Optional[ConfigParser] = None) 
 def add_args_update(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
-	
+
 		return True
 	except Exception as err:
 		error(f'{err}')
@@ -95,8 +95,20 @@ def add_args_update(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 
 def add_args_edit(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
-		debug('starting')	
-	
+		debug('starting')
+		parser.add_argument('tank_id', type=int, help='Tank to edit: tank_id > 0')
+		parser.add_argument('--name', type=str, dest='tank_name', metavar='NAME',
+								default=None, help="edit tank's name")
+		parser.add_argument('--nation', type=str, dest='tank_nation', metavar='NATION', default=None, 
+							help="edit tank's nation: " + ', '.join([ n.name for n in EnumNation ]))	
+		parser.add_argument('--tier', type=str, dest='tank_tier', metavar='TIER',
+								default=None, help="edit tank's tier I-X or 1-10")	
+		parser.add_argument('--type', type=str, dest='tank_type', metavar='TYPE', default=None, 
+							help="edit tank's type: " + ', '.join([ n.name for n in EnumVehicleTypeInt ]))
+		parser.add_argument('--premium', action='store_true', default=False, dest='is_premium', 
+							help='set tank as premium tank')						
+		parser.add_argument('--non-premium', default=None, action='store_false', 
+							dest='is_premium', help="set tank as a non-premium tank")	
 		return True
 	except Exception as err:
 		error(f'{err}')
@@ -144,23 +156,23 @@ def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 		parser.add_argument('format', type=str, nargs='?', choices=EXPORT_SUPPORTED_FORMATS, 
 								default=EXPORT_FORMAT, help='Export file format')
 		parser.add_argument('filename', metavar='FILE', type=str, nargs='?', default=EXPORT_FILE, 
-								help='File to export tank-stats to. Use \'-\' for STDIN')
+								help='file to export tank-stats to. Use \'-\' for STDIN')
 		parser.add_argument('--tanks', type=int, default=None, nargs='*', metavar='TANK_ID [TANK_ID1 ...]',
-								help="Export tank stats for the listed TANK_ID(s)")
+								help="export tank stats for the listed TANK_ID(s)")
 		parser.add_argument('--tier', type=int, default=None, metavar='TIER', choices=range(1,11),
-								help="Export tanks of TIER")
+								help="export tanks of TIER")
 		parser.add_argument('--type', type=str, default=None, metavar='TYPE',
 								choices=[ n.name for n in EnumVehicleTypeStr ],
-								help="Export tanks of TYPE")
+								help="export tanks of TYPE")
 		parser.add_argument('--nation', type=str, default=None, metavar='NATION',
 								choices=[ n.name for n in EnumNation ], 
-								help="Export tanks of NATION")
+								help="export tanks of NATION")
 		parser.add_argument('--premium', default=None, action='store_true', 
-								dest='is_premium', help="Export premium tanks")
+								dest='is_premium', help="export premium tanks")
 		parser.add_argument('--non-premium', default=None, action='store_false', 
-								dest='is_premium', help="Export non-premium tanks")
+								dest='is_premium', help="export non-premium tanks")
 		parser.add_argument('--force', action='store_true', default=False, 
-							help='Overwrite existing expoirt file')
+							help='overwrite existing expoirt file')
 
 		return True
 	except Exception as err:
