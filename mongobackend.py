@@ -782,8 +782,8 @@ class MongoBackend(Backend):
 
 
 	async def _datas_insert(self,
-						  table_type: BSTableType,
-						  objs		: Sequence[D]) -> tuple[int, int]:
+							table_type: BSTableType,
+							objs		: Sequence[D]) -> tuple[int, int]:
 		"""Store data to the backend. Returns the number of added and not added"""
 		debug('starting')
 		added		: int = 0
@@ -977,7 +977,7 @@ class MongoBackend(Backend):
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
 		try:
 			debug('starting')
-			a = AliasMapper(BSAccount)
+			a = AliasMapper(self.model_accounts)
 			alias : Callable = a.alias
 
 			if cache_valid is None:
@@ -1178,7 +1178,7 @@ class MongoBackend(Backend):
 			# 	release 	: str  | None 		= Field(default=None, alias='u')
 			# 	added		: int 				= Field(default=epoch_now(), alias='t')
 
-			a = AliasMapper(WGPlayerAchievementsMaxSeries)
+			a = AliasMapper(self.model_player_achievements)
 			alias : Callable = a.alias
 
 			dbc : AsyncIOMotorCollection = self.collection_player_achievements
@@ -1367,17 +1367,18 @@ class MongoBackend(Backend):
 
 
 	async def _mk_pipeline_releases(self, release_match: str | None = None,
-							since : date | None = None,
+							since : int = 0,
 							first : BSBlitzRelease | None = None) -> list[dict[str, Any]]:
 		"""Build aggregation pipeline for releases"""
 		try:
 			debug('starting')
 			match : list[dict[str, str|int|float|datetime|dict|list]] = list()
 			pipeline : list[dict[str, Any]] = list()
-			a = AliasMapper(BSBlitzRelease)
+			a = AliasMapper(self.model_releases)
 			alias : Callable = a.alias
-			if since is not None:
-				match.append( { alias('launch_date'):  { '$gte': datetime.combine(since, datetime.min.time()) }})
+			if since > 0:
+				# match.append( { alias('launch_date'):  { '$gte': datetime.combine(since, datetime.min.time()) }})
+				match.append( { alias('launch_date'):  { '$gte': since }})
 			if first is not None:
 				match.append( { alias('launch_date'):  { '$gte': first.launch_date }})
 			if release_match is not None:
@@ -1395,11 +1396,10 @@ class MongoBackend(Backend):
 
 
 	async def releases_get(self, release_match: str | None = None,
-							since : date | None = None,
+							since : int = 0,
 							first : BSBlitzRelease | None = None) -> AsyncGenerator[BSBlitzRelease, None]:
-		assert since is None or first is None, 'Only one can be defined: since, first'
+		assert since == 0 or first is None, 'Only one can be defined: since, first'
 		debug('starting')
-
 		try:
 			pipeline : list[dict[str, Any]]
 			pipeline = await self._mk_pipeline_releases(release_match=release_match, since=since, first=first)
@@ -1454,25 +1454,25 @@ class MongoBackend(Backend):
 		return await self._datas_insert(BSTableType.Replays, replays)
 
 
-	async def _mk_pipeline_replays(self, since: date | None = None, sample : float = 0,
+	async def _mk_pipeline_replays(self, since: int = 0, sample : float = 0,
 									**summary_fields) -> list[dict[str, Any]]:
 		"""Build pipeline for replays"""
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
 		debug('starting')
-		match : list[dict[str, str|int|float|dict|list]] = list()
-		pipeline : list[dict[str, Any]] = list()
-		dbc : AsyncIOMotorCollection = self.collection_replays
-		a : AliasMapper = AliasMapper(WoTBlitzReplaySummary)
-		alias : Callable = a.alias
+		match 	: list[dict[str, str|int|float|dict|list]] = list()
+		pipeline: list[dict[str, Any]] = list()
+		dbc   	: AsyncIOMotorCollection = self.collection_replays
+		a 	  	: AliasMapper 	= AliasMapper(self.model_replays)
+		alias 	: Callable 		= a.alias
 
-		if since is not None:
-			match.append( {'d.s.bts': { '$gte': datetime.combine(since, datetime.min.time()).timestamp() }})
+		if since > 0:
+			match.append( {'s.bts': { '$gte': since }})
 
 		for sf, value in summary_fields.items():
 			try:
-				match.append( { f'd.s.{alias(sf)}': value })
+				match.append( { f's.{alias(sf)}': value })
 			except KeyError:
-				error(f'No such a key in WoTBlitzReplaySummary(): {alias(sf)}')
+				error(f'No such a key in {self.model_replays.__qualname__}: {alias(sf)}')
 			except Exception as err:
 				error(f"Error setting filter for summary field '{alias(sf)}': {err}")
 
@@ -1488,8 +1488,10 @@ class MongoBackend(Backend):
 		return pipeline
 
 
-	async def replays_get(self, since: date | None = None, sample : float = 0,
-							**summary_fields) ->  AsyncGenerator[WoTBlitzReplayData, None]:
+	async def replays_get(self, 
+						  since: int = 0, 
+						  sample : float = 0,
+						  **summary_fields) ->  AsyncGenerator[WoTBlitzReplayData, None]:
 		"""Get replays from mongodb backend"""
 		debug('starting')
 		try:
@@ -1500,10 +1502,10 @@ class MongoBackend(Backend):
 				if (replay := WoTBlitzReplayData.transform_obj(data)) is not None:
 					yield replay				
 		except Exception as err:
-			error(f'Error exporting replays from {self.backend}.{self.table_replays}: {err}')
+			error(f'Error exporting replays from {self.table_uri(BSTableType.Replays)}: {err}')
 
 
-	async def replays_count(self, since: date | None = None, sample : float = 0,
+	async def replays_count(self, since: int = 0, sample : float = 0,
 							**summary_fields) -> int:
 		"""Count replays in backed"""
 		try:
@@ -1512,16 +1514,16 @@ class MongoBackend(Backend):
 			return await self._datas_count(BSTableType.Replays, pipeline)
 
 		except Exception as err:
-			error(f'Error exporting replays from {self.backend}.{self.table_replays}: {err}')
+			error(f'Error exporting replays from {self.table_uri(BSTableType.Replays)}: {err}')
 		return -1
 
 
-	async def replays_export(self, model: type[JSONExportable] = WoTBlitzReplayData,
-								sample: float = 0) -> AsyncGenerator[WoTBlitzReplayData, None]:
+	async def replays_export(self, 
+							 sample: float = 0) -> AsyncGenerator[WoTBlitzReplayData, None]:
 		"""Export replays from Mongo DB"""
 		debug('starting')
 		async for replay in self._datas_export(BSTableType.Replays,
-												in_type=model,
+												in_type=self.model_replays,
 												out_type=WoTBlitzReplayData,
 												sample=sample):
 			yield replay
@@ -1564,7 +1566,7 @@ class MongoBackend(Backend):
 											idx=tank_stat.id, obj=tank_stat,
 											update=update, fields=fields)
 		except Exception as err:
-			debug(f'Error while updating tank stat (id={tank_stat.id}) into {self.backend}.{self.table_tank_stats}: {err}')
+			debug(f'Error while updating tank stat (id={tank_stat.id}) into {self.table_uri(BSTableType.TankStats)}: {err}')
 		return False
 
 
@@ -1584,14 +1586,14 @@ class MongoBackend(Backend):
 	async def tank_stats_insert(self, tank_stats: Sequence[WGTankStat]) -> tuple[int, int]:
 		"""Store tank stats to the backend. Returns the number of added and not added"""
 		debug('starting')
-		return await self._datas_insert(self.collection_tank_stats, tank_stats)
+		return await self._datas_insert(BSTableType.TankStats, tank_stats)
 
 
 	async def _mk_pipeline_tank_stats(self, release: BSBlitzRelease | None = None,
 										regions: set[Region] = Region.API_regions(),
 										accounts: Iterable[Account] | None = None,
 										tanks: Iterable[Tank] | None = None,
-										since:  datetime | None = None,
+										since:  int = 0,
 										sample: float = 0) -> list[dict[str, Any]] | None:
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
 		try:
@@ -1612,7 +1614,7 @@ class MongoBackend(Backend):
 			# frags					: int  | None
 			# in_garage 			: bool | None
 
-			a = AliasMapper(WGTankStat)
+			a = AliasMapper(self.model_tank_stats)
 			alias : Callable = a.alias
 			dbc : AsyncIOMotorCollection = self.collection_tank_stats
 			pipeline : list[dict[str, Any]] = list()
@@ -1628,8 +1630,8 @@ class MongoBackend(Backend):
 				match.append({ alias('account_id'): { '$in': [ a.id for a in accounts ]}})
 			if tanks is not None:
 				match.append({ alias('tank_id'): { '$in': [ t.tank_id for t in tanks ]}})
-			if since is not None:
-				match.append({ alias('last_battle_time'): { '$gte': since.timestamp() } })
+			if since > 0:
+				match.append({ alias('last_battle_time'): { '$gte': since } })
 
 			pipeline.append( { '$match' : { '$and' : match } })
 
@@ -1638,6 +1640,8 @@ class MongoBackend(Backend):
 			elif sample > 0:
 				n : int = cast(int, await dbc.estimated_document_count())
 				pipeline.append({ '$sample' : {'size' : int(n * sample) } })
+			
+			#debug(f'pipeline={pipeline}')
 			return pipeline
 		except Exception as err:
 			error(f'{err}')
@@ -1648,7 +1652,7 @@ class MongoBackend(Backend):
 							regions : set[Region] = Region.API_regions(),
 							accounts: Iterable[Account] | None = None,
 							tanks 	: Iterable[Tank] | None = None,
-							since:  datetime | None = None,
+							since	: int = 0,
 							sample 	: float = 0) -> AsyncGenerator[WGTankStat, None]:
 		"""Return tank stats from the backend"""
 		try:
@@ -1657,7 +1661,6 @@ class MongoBackend(Backend):
 			pipeline = await self._mk_pipeline_tank_stats(release=release, regions=regions,
 														tanks=tanks, accounts=accounts,
 														since=since, sample=sample)
-
 			if pipeline is None:
 				raise ValueError(f'could not create pipeline for get tank stats {self.backend}')
 
@@ -1669,11 +1672,11 @@ class MongoBackend(Backend):
 
 
 	async def tank_stats_count(self, release: BSBlitzRelease | None = None,
-							regions: set[Region] = Region.API_regions(),
-							accounts: Iterable[Account] | None = None,
-							tanks: Iterable[Tank] | None = None,
-							since:  datetime | None = None,
-							sample : float = 0) -> int:
+								regions: set[Region] = Region.API_regions(),
+								accounts: Iterable[Account] | None = None,
+								tanks: Iterable[Tank] | None = None,
+								since:  int = 0,
+								sample : float = 0) -> int:
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
 		try:
 			debug('starting')
@@ -1690,11 +1693,11 @@ class MongoBackend(Backend):
 			else:
 				pipeline : list[dict[str, Any]] | None
 				pipeline = await self._mk_pipeline_tank_stats(release=release, regions=regions,
-														tanks=tanks, accounts=accounts,
-														since=since, sample=sample)
+																tanks=tanks, accounts=accounts,
+																since=since, sample=sample)
 
 				if pipeline is None:
-					raise ValueError(f'could not create pipeline for tank stats {self.backend}.{dbc.name}')
+					raise ValueError(f'could not create pipeline for tank stats {self.table_uri(BSTableType.TankStats)}')
 				return await self._datas_count(BSTableType.TankStats, pipeline)
 		except Exception as err:
 			error(f'counting tank stats failed: {err}')
@@ -1709,37 +1712,23 @@ class MongoBackend(Backend):
 										objs=tank_stats, upsert=upsert)
 
 
-
-	async def tank_stat_export(self, model: type[JSONExportable] = WGTankStat,
+	async def tank_stat_export(self, 
 								sample: float = 0) -> AsyncGenerator[WGTankStat, None]:
 		"""Export tank stats from Mongo DB"""
 		debug('starting')
-		async for tank_stat in self._datas_export(self.collection_tank_stats,
-												in_type=model,
+		async for tank_stat in self._datas_export(BSTableType.TankStats,
+												in_type=self.model_tank_stats,
 												out_type=WGTankStat,
 												sample=sample):
 			yield tank_stat
 
 
-	async def tank_stats_export(self, model: type[JSONExportable] = WGTankStat,
-								sample: float = 0, batch: int = 0) -> AsyncGenerator[list[WGTankStat], None]:
+	async def tank_stats_export(self, sample: float = 0, batch: int = 0
+									) -> AsyncGenerator[list[WGTankStat], None]:
 		"""Export tank stats as list from Mongo DB"""
 		debug('starting')
 		if batch == 0:
 			batch = MONGO_BATCH_SIZE
-
-		res : list[WGTankStat] = list()
-		# async for i, tank_stat in enumerate(self._datas_export(self.collection_tank_stats,
-		# 										in_type=model,
-		# 										out_type=WGTankStat,
-		# 										sample=sample), start=1):
-		# 	res.append(tank_stat)
-		# 	if i % batch == 0:
-		# 		yield res
-		# 		res = list()
-		# # send the last batch
-		# if len(res) > 0:
-		# 	yield res
 		async for objs in self.objs_export(BSTableType.TankStats,
 											sample=sample,
 											batch=batch):
@@ -1754,32 +1743,34 @@ class MongoBackend(Backend):
 		"""Find duplicate tank stats from the backend"""
 		debug('starting')
 		try:
-			a = AliasMapper(WGTankStat)
-			alias : Callable = a.alias
-			pipeline : list[dict[str, Any]]
-			match_stage : list[dict[str, Any]] | None
-			if (match_stage := await self._mk_pipeline_tank_stats(release = release,
-																	regions = regions)) is None:
+			a = AliasMapper(self.model_tank_stats)
+			alias : Callable = a.alias			
+			pipeline : list[dict[str, Any]] | None
+			if (pipeline := await self._mk_pipeline_tank_stats(release = release,
+																regions = regions, 
+																tanks = [tank])) is None:
 				raise ValueError('Could not create $match pipeline')
-			match_stage.append({ alias('tank_id') : tank.tank_id })
 
-			pipeline = [{ '$match': 	{ '$and': match_stage } },
-						{ '$sort': 		{ alias('last_battle_time'): DESCENDING } },
-						{ '$group': 	{ '_id': '$' + alias('account_id'),
-										'all_ids': {'$push': '$_id' },
-										'len': { "$sum": 1 } } },
-						{ '$match': 	{ 'len': { '$gt': 1 } } },
-						{ '$project':	{ 'ids': {  '$slice': [  '$all_ids', 1, '$len' ] } } }
-						]
+			pipeline.append({ '$sort': 		{ alias('last_battle_time'): DESCENDING } })
+			pipeline.append({ '$group': 	{ '_id': '$' + alias('account_id'),
+												'all_ids': {'$push': '$_id' },
+												'len': { "$sum": 1 } } 
+							})
+			pipeline.append({ '$match': 	{ 'len': { '$gt': 1 } } })
+			pipeline.append({ '$project':	{ 'ids': {  '$slice': [  '$all_ids', 1, '$len' ] } } })										
+		
 			if sample > 0:
 				pipeline.append({ '$sample' : { 'size': sample } })
 
 			async for idxs in self.collection_tank_stats.aggregate(pipeline, allowDiskUse=True):
-				for idx in idxs:
-					if (obj := await self._data_get(BSTableType.TankStats, idx)) is not None:
-						if( tank_stat := WGTankStat.transform_obj(obj)) is not None:
-							print(f'tank stat duplicate: {tank_stat}')
-							yield tank_stat
+				try:
+					for idx in idxs['ids']:
+						if (obj := await self._data_get(BSTableType.TankStats, idx)) is not None:
+							if( tank_stat := WGTankStat.transform_obj(obj)) is not None:
+								# debug(f'tank stat duplicate: {tank_stat}')
+								yield tank_stat
+				except Exception as err:
+					error(f'{err}')
 
 		except Exception as err:
 			debug(f'Could not find duplicates from {self.table_uri(BSTableType.TankStats)}: {err}')
@@ -1893,12 +1884,12 @@ class MongoBackend(Backend):
 
 
 
-	async def tankopedia_export(self, model: type[JSONExportable] = Tank,
+	async def tankopedia_export(self, 
 								sample: float = 0) -> AsyncGenerator[Tank, None]:
 		"""Export tankopedia"""
-		debug(f'starting: model={model} ')
+		debug(f'starting: model={self.model_tankopedia} ')
 		async for tank in self._datas_export(BSTableType.Tankopedia,
-												in_type=model,
+												in_type=self.model_tankopedia,
 												out_type=Tank,
 												sample=sample):
 			yield tank
@@ -1921,7 +1912,7 @@ class MongoBackend(Backend):
 			await dbc.insert_one(error.obj_db())
 			return True
 		except Exception as err:
-			debug(f'Could not log error: {error.table}: "{error.msg}" into {self.backend}.{self.table_error_log}: {err}')
+			debug(f'Could not log error: {error.table}: "{error.msg}" into {self.table_uri(BSTableType.ErrorLog)}: {err}')
 		return False
 
 
@@ -1944,14 +1935,14 @@ class MongoBackend(Backend):
 			async for error_obj in dbc.find(query).sort('d', ASCENDING):
 				try:
 					err = MongoErrorLog.parse_obj(error_obj)
-					debug(f'Read "{err.msg}" from {self.backend}.{self.table_error_log}')
+					debug(f'Read "{err.msg}" from {self.table_uri(BSTableType.ErrorLog)}')
 
 					yield err
 				except Exception as e:
 					error(f'{e}')
 					continue
 		except Exception as e:
-			error(f'Error getting errors from {self.backend}.{self.table_error_log}: {e}')
+			error(f'Error getting errors from {self.table_uri(BSTableType.ErrorLog)}: {e}')
 
 
 	async def errors_clear(self, table_type: BSTableType, doc_id : Any | None = None,
@@ -1972,7 +1963,7 @@ class MongoBackend(Backend):
 			res : DeleteResult = await dbc.delete_many(query)
 			return res.deleted_count
 		except Exception as e:
-			error(f'Error clearing errors from {self.backend}.{self.table_error_log}: {e}')
+			error(f'Error clearing errors from {self.table_uri(BSTableType.ErrorLog)}: {e}')
 		return 0
 
 # Register backend
