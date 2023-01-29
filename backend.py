@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from models import BSAccount, BSBlitzRelease, StatsTypes
 from blitzutils.models import Region, WoTBlitzReplayJSON, WoTBlitzReplayData, WGTankStat, \
-		Account, WGTank, Tank, WGPlayerAchievementsMaxSeries, \
+		Account, WGTank, Tank, WGPlayerAchievementsMaxSeries, WGPlayerAchievementsMain, \
 		EnumVehicleTier, EnumNation, EnumVehicleTypeStr
 from pyutils import EventCounter, JSONExportable, epoch_now, is_alphanum, Idx, D, O
 # from mongobackend import MongoBackend
@@ -1189,12 +1189,21 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def player_achievements_export(self, sample: float = 0,
+	async def player_achievement_export(self, sample: float = 0,
 										) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
 		"""Export player achievements from Mongo DB"""
 		raise NotImplementedError
 		yield WGPlayerAchievementsMaxSeries()
 
+
+	@abstractmethod
+	async def player_achievements_export(self, 
+										 sample: float = 0, 
+										 batch: int = 0,
+											) -> AsyncGenerator[list[WGPlayerAchievementsMaxSeries], None]:
+		"""Export player achievements in a batch from Mongo DB"""
+		raise NotImplementedError
+		yield [ WGPlayerAchievementsMaxSeries()	]
 
 	async def player_achievements_insert_worker(self, 
 							player_achievementsQ : Queue[list[WGPlayerAchievementsMaxSeries]], 
