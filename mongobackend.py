@@ -1833,8 +1833,20 @@ class MongoBackend(Backend):
 	async def tankopedia_replace(self, tank: Tank, upsert : bool = True) -> bool:
 		""""Replace tank in Tankopedia"""
 		debug('starting')
-		return await self._data_replace(self.collection_tankopedia, data=tank,
-										id=tank.tank_id, upsert=upsert)
+
+	async def tankopedia_update(self, tank: Tank,
+								update: dict[str, Any] | None = None,
+								fields: list[str] | None= None) -> bool:
+		"""Update a tank in the backend's tankopedia. Returns False
+			if the tank was not updated"""
+		try:
+			debug('starting')
+			return await self._data_update(BSTableType.Tankopedia, obj=tank,
+											update=update, fields=fields)
+		except Exception as err:
+			debug(f"Could't update tank {tank} in {self.table_uri(BSTableType.Tankopedia)}: {err}")
+		return False
+
 
 
 	async def tankopedia_export(self, model: type[JSONExportable] = Tank,

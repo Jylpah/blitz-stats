@@ -1287,6 +1287,15 @@ class Backend(ABC):
 		""""Replace tank in Tankopedia"""
 		raise NotImplementedError
 
+	
+	@abstractmethod
+	async def tankopedia_update(self, tank: Tank,
+								update: dict[str, Any] | None = None,
+								fields: list[str] | None= None) -> bool:
+		"""Update a tank in the backend's tankopedia. Returns False
+			if the tank was not updated"""
+		raise NotImplementedError
+
 
 	@abstractmethod
 	async def tankopedia_insert(self, tank: Tank) -> bool:
