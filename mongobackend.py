@@ -19,8 +19,9 @@ from models import BSAccount, BSBlitzRelease, StatsTypes
 from pyutils import epoch_now, JSONExportable, AliasMapper, I, D, O, Idx, \
 	BackendIndexType, BackendIndex, DESCENDING, ASCENDING, TEXT
 # from pyutils.utils import transform_objs
-from blitzutils.models import Region, Account, Tank, WoTBlitzReplayJSON, WoTBlitzReplayData, WoTBlitzReplaySummary, \
-								WGTankStat, WGBlitzRelease, WGPlayerAchievementsMaxSeries, \
+from blitzutils.models import Region, Account, Tank, WoTBlitzReplayJSON, WoTBlitzReplayData, \
+								WoTBlitzReplaySummary, WGTankStat, WGBlitzRelease, \
+								WGPlayerAchievementsMaxSeries, \
 								EnumNation, EnumVehicleTier, EnumVehicleTypeStr
 
 # Setup logging
@@ -1271,13 +1272,27 @@ class MongoBackend(Backend):
 										upsert=upsert)
 
 
-	async def player_achievements_export(self, sample: float = 0
+	async def player_achievement_export(self, sample: float = 0
 											) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
 		"""Export player achievements from Mongo DB"""
 		async for obj in self.obj_export(BSTableType.PlayerAchievements, sample=sample):
 			if (pa := WGPlayerAchievementsMaxSeries.transform_obj(obj, self.model_player_achievements)) is not None:
 				yield pa
 
+
+	async def player_achievements_export(self, 
+										sample: float = 0, 
+										batch: int = 0,
+										) -> AsyncGenerator[list[WGPlayerAchievementsMaxSeries], None]:
+		"""Export player achievements as a list from Mongo DB"""
+		debug('starting')
+		if batch == 0:
+			batch = MONGO_BATCH_SIZE
+		async for objs in self.objs_export(BSTableType.PlayerAchievements,
+											sample=sample,
+											batch=batch):
+			yield WGPlayerAchievementsMaxSeries.transform_objs(objs=objs, in_type=self.model_player_achievements)
+				
 
 ########################################################
 #
