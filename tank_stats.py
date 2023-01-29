@@ -42,7 +42,7 @@ debug	= logger.debug
 
 WORKERS_WGAPI 		: int = 75
 WORKERS_IMPORTERS	: int = 5
-TANK_STATS_Q_MAX 	: int = 50
+TANK_STATS_Q_MAX 	: int = 1000
 TANK_STATS_BATCH 	: int = 1000
 
 # Globals
@@ -191,10 +191,15 @@ def add_args_edit_remap_release(parser: ArgumentParser, config: Optional[ConfigP
 
 def add_args_prune(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	debug('starting')
+	parser.add_argument('release', type=str, metavar='RELEASE',  
+						help='prune tank stats for a RELEASE')
+	parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
+							default=[ r.value for r in Region.API_regions() ], 
+							help='Filter by region (default: eu + com + asia + ru)')
 	parser.add_argument('--commit', action='store_true', default=False, 
-							help='Prune stats instead of just listing duplicates')
+							help='prune stats instead of just listing duplicates')
 	parser.add_argument('--sample', type=int, default=0, metavar='SAMPLE',
-						help='Sample size')
+						help='sample size')
 
 	return True
 
@@ -215,18 +220,18 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 			if not backend.add_args_import(import_parser, config=config):
 				raise Exception(f'Failed to define argument parser for: tank-stats import {backend.driver}')
 		parser.add_argument('--workers', type=int, default=0, 
-							help='Set number of worker processes (default=0 i.e. auto)')
+							help='set number of worker processes (default=0 i.e. auto)')
 		parser.add_argument('--import-model', metavar='IMPORT-TYPE', type=str, required=True,
 							choices=['WGTankStat'], 
-							help='Data format to import. Default is blitz-stats native format.')
+							help='data format to import. Default is blitz-stats native format.')
 		parser.add_argument('--sample', type=float, default=0, 
 							help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
 		parser.add_argument('--force', action='store_true', default=False, 
-							help='Overwrite existing stats when importing')
+							help='overwrite existing stats when importing')
 		# parser.add_argument('--mp', action='store_true', default=False, 
 		# 					help='Use multi-processing')
 		parser.add_argument('--no-release-map', action='store_true', default=False, 
-							help='Do not map releases when importing')
+							help='do not map releases when importing')
 		# parser.add_argument('--last', action='store_true', default=False, help=SUPPRESS)
 
 		return True
@@ -248,29 +253,28 @@ def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 			EXPORT_FILE		= configTS.get('export_file', EXPORT_FILE )
 
 		parser.add_argument('format', type=str, nargs='?', choices=EXPORT_SUPPORTED_FORMATS, 
-		 					 default=EXPORT_FORMAT, help='Export file format')
+		 					 default=EXPORT_FORMAT, help='export file format')
 		parser.add_argument('filename', metavar='FILE', type=str, nargs='?', default=EXPORT_FILE, 
-							help='File to export tank-stats to. Use \'-\' for STDIN')
+							help='file to export tank-stats to. Use \'-\' for STDIN')
 		parser.add_argument('--append', action='store_true', default=False, help='Append to file(s)')
 		parser.add_argument('--force', action='store_true', default=False, 
-								help='Overwrite existing file(s) when exporting')
+								help='overwrite existing file(s) when exporting')
 		# parser.add_argument('--disabled', action='store_true', default=False, help='Disabled accounts')
 		# parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
 								# default=OptAccountsInactive.no.value, help='Include inactive accounts')
 		parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
 								default=[ r.value for r in Region.API_regions() ], 
-								help='Filter by region (default is API = eu + com + asia)')
+								help='filter by region (default is API = eu + com + asia)')
 		parser.add_argument('--by-region', action='store_true', default=False, help='Export tank-stats by region')
 		parser.add_argument('--accounts', type=str, default=[], nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
-								help="Exports tank stats for the listed ACCOUNT_ID(s). \
+								help="exports tank stats for the listed ACCOUNT_ID(s). \
 									ACCOUNT_ID format 'account_id:region' or 'account_id'")
 		parser.add_argument('--tanks', type=int, default=[], nargs='*', metavar='TANK_ID [TANK_ID1 ...]',
-								help="Export tank stats for the listed TANK_ID(s)")
+								help="export tank stats for the listed TANK_ID(s)")
 		parser.add_argument('--release', type=str, metavar='RELEASE', default=None, 
-							help='Export stats for a RELEASE')
+							help='export stats for a RELEASE')
 		parser.add_argument('--sample', type=float, default=0, 
-								help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
-		
+								help='sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
 		return True	
 	except Exception as err:
 		error(f'{err}')
@@ -297,6 +301,9 @@ async def cmd(db: Backend, args : Namespace) -> bool:
 
 		elif args.tank_stats_cmd == 'import':
 			return await cmd_importMP(db, args)
+		
+		elif args.tank_stats_cmd == 'prune':
+			return await cmd_prune(db, args)
 			
 	except Exception as err:
 		error(f'{err}')
@@ -531,16 +538,16 @@ async def cmd_edit(db: Backend, args : Namespace) -> bool:
 			release = BSBlitzRelease(release=args.release)
 		stats 		: EventCounter 			= EventCounter('tank-stats edit')
 		regions		: set[Region] 			= { Region(r) for r in args.region }
-		since		: datetime | None 		= None
+		since		: int = 0
 		if args.since is not None:
-			since = datetime.fromisoformat(args.since)
+			since = int(datetime.fromisoformat(args.since).timestamp())
 		accounts 	: list[BSAccount] | None= read_account_strs(args.accounts)
 		sample 		: float 				= args.sample
 		commit 		: bool  				= args.commit
 
 		tank_statQ : Queue[WGTankStat] 		= Queue(maxsize=TANK_STATS_Q_MAX)
 		edit_task : Task
-
+		message('Counting tank-stats to scan for edits')
 		N : int = await db.tank_stats_count(release=release, regions=regions, 
 											accounts=accounts,since=since, sample=sample)
 		if args.tank_stats_edit_cmd == 'remap-release':
@@ -567,8 +574,10 @@ async def cmd_edit(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def cmd_edit_rel_remap(db: Backend, tank_statQ : Queue[WGTankStat], 
-										commit: bool = False, total: int | None = None) -> EventCounter:
+async def cmd_edit_rel_remap(db: Backend, 
+								tank_statQ : Queue[WGTankStat], 
+								commit: bool = False, 
+								total: int | None = None) -> EventCounter:
 	"""Remap tank stat's releases"""
 	debug('starting')
 	stats : EventCounter = EventCounter('remap releases')
@@ -576,7 +585,7 @@ async def cmd_edit_rel_remap(db: Backend, tank_statQ : Queue[WGTankStat],
 		release 	: BSBlitzRelease | None
 		release_map : BucketMapper[BSBlitzRelease] = await release_mapper(db)
 		with alive_bar(total, title="Remapping tank stats' releases ", refresh_secs=1,
-						enrich_print=False, disable=not commit) as bar:
+						enrich_print=False) as bar:
 			while True:
 				ts : WGTankStat = await tank_statQ.get()			
 				try:
@@ -623,12 +632,48 @@ async def cmd_prune(db: Backend, args : Namespace) -> bool:
 	"""prune tank stats"""	
 	debug('starting')
 	try:
+		stats 		: EventCounter 		= EventCounter('tank-stats prune')
+		regions		: set[Region] 		= { Region(r) for r in args.region }
+		sample 		: int 				= args.sample
+		release 	: BSBlitzRelease  	= BSBlitzRelease(release=args.release)
+		commit 		: bool 				= args.commit
 
+		progress_str : str 				= 'Finding duplicates ' 
+		if commit:
+			message(f'Pruning tank stats from {db.table_uri(BSTableType.TankStats)}')
+			message('Press CTRL+C to cancel in 3 secs...')
+			await sleep(3)
+			progress_str = 'Pruning duplicates '
+		N : int = await db.tankopedia_count()
+
+		with alive_bar(N, title=progress_str, refresh_secs=1) as bar:
+			async for tank in db.tankopedia_get():
+				async for dup in db.tank_stats_duplicates(tank, release, regions, sample=sample):
+					stats.log('duplicates found')
+					if commit:
+						# verbose(f'deleting duplicate: {dup}')
+						if await db.tank_stat_delete(account_id=dup.account_id, 
+													last_battle_time=dup.last_battle_time, 
+													tank_id=dup.tank_id):
+							verbose(f'deleted duplicate: {dup}')
+							stats.log('duplicates deleted')
+						else:
+							error(f'failed to delete duplicate: {dup}')
+							stats.log('deletion errors')
+					else:
+						verbose(f'duplicate:  {dup}')
+						async for newer in db.tank_stats_get(release=release, regions=regions, 
+																accounts=[BSAccount(id=dup.account_id)], 
+																tanks=[tank], 
+																since=dup.last_battle_time + 1):
+							verbose(f'newer stat: {newer}')
+				bar()
+
+		stats.print()
 		return True
 	except Exception as err:
 		error(f'{err}')
 	return False
-
 
 
 ########################################################
