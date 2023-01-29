@@ -760,8 +760,8 @@ class MongoBackend(Backend):
 		return False
 
 
-	async def data_delete(self, table_type: BSTableType, idx: Idx) -> bool:
-		"""Get raw document from MongoDB"""
+	async def _data_delete(self, table_type: BSTableType, idx: Idx) -> bool:
+		"""Delete a document from MongoDB"""
 		try:
 			# debug('starting')
 			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
@@ -961,7 +961,7 @@ class MongoBackend(Backend):
 	async def account_delete(self, account_id: int) -> bool:
 		"""Deleta account from MongoDB backend"""
 		debug('starting')
-		return await self.data_delete(BSTableType.Accounts, idx=account_id)
+		return await self._data_delete(BSTableType.Accounts, idx=account_id)
 
 
 	async def _mk_pipeline_accounts(self, stats_type : StatsTypes | None = None,
@@ -1146,7 +1146,7 @@ class MongoBackend(Backend):
 			idx : ObjectId = WGPlayerAchievementsMaxSeries.mk_index(account.id,
 																	region=account.region,
 																	added=added)
-			return await self.data_delete(BSTableType.PlayerAchievements, idx=idx)
+			return await self._data_delete(BSTableType.PlayerAchievements, idx=idx)
 		except Exception as err:
 			error(f'Unknown error: {err}')
 		return False
@@ -1359,7 +1359,7 @@ class MongoBackend(Backend):
 		"""Delete a release from backend"""
 		debug('starting')
 		release = WGBlitzRelease.validate_release(release)
-		return await self.data_delete(BSTableType.Releases, idx=release)
+		return await self._data_delete(BSTableType.Releases, idx=release)
 
 
 	async def _mk_pipeline_releases(self, release_match: str | None = None,
@@ -1444,7 +1444,7 @@ class MongoBackend(Backend):
 	async def replay_delete(self, replay_id: str) -> bool:
 		"""Delete a replay from backend"""
 		debug('starting')
-		return await self._data_delete(self.collection_replays, id=replay_id)
+		return await self._data_delete(BSTableType.Replays, idx=replay_id)
 
 
 	async def replays_insert(self, replays: Sequence[JSONExportable]) ->  tuple[int, int]:
@@ -1571,8 +1571,8 @@ class MongoBackend(Backend):
 								last_battle_time: int) -> bool:
 		try:
 			debug('starting')
-			_id : ObjectId = WGTankStat.mk_id(account.id, last_battle_time, tank_id)
-			return await self._data_delete(self.collection_tank_stats, id=_id)
+			idx : ObjectId = WGTankStat.mk_id(account.id, last_battle_time, tank_id)
+			return await self._data_delete(BSTableType.TankStats, idx=idx)
 		except Exception as err:
 			error(f'Unknown error: {err}')
 		return False

@@ -669,10 +669,10 @@ class Backend(ABC):
 	# 	raise NotImplementedError
 
 
-	@abstractmethod
-	async def data_delete(self, table_type: BSTableType, idx: Idx) -> bool:
-		"""Delete data record from backend"""
-		raise NotImplementedError
+	# @abstractmethod
+	# async def data_delete(self, table_type: BSTableType, idx: Idx) -> bool:
+	# 	"""Delete data record from backend"""
+	# 	raise NotImplementedError
 
 
 	@abstractmethod
