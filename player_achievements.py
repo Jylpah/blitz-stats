@@ -2,12 +2,17 @@ from argparse import ArgumentParser, Namespace, SUPPRESS
 from configparser import ConfigParser
 from typing import Optional, Any, Iterable, cast
 import logging
-from asyncio import create_task, gather, Queue, CancelledError, Task, sleep, Condition
+from asyncio import create_task, run, gather, Queue, CancelledError, Task, sleep, Condition
 from aiofiles import open
 from os.path import isfile
+from os import getpid
 from math import ceil
 from asyncstdlib import enumerate
 from alive_progress import alive_bar		# type: ignore
+
+from multiprocessing import Manager, cpu_count
+from multiprocessing.pool import Pool, AsyncResult 
+import queue
 
 from backend import Backend, OptAccountsInactive, BSTableType, \
 	ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL, get_sub_type
@@ -16,7 +21,7 @@ from accounts import split_accountQ_by_region, create_accountQ
 from releases import release_mapper
 
 from pyutils import BucketMapper, IterableQueue, QueueDone, \
-	EventCounter, JSONExportable, \
+	EventCounter, JSONExportable, AsyncQueue, \
 	get_url, get_url_JSON_model, epoch_now, alive_bar_monitor, \
 	is_alphanum
 from blitzutils.models import Region, WGPlayerAchievementsMain, \
@@ -32,8 +37,15 @@ debug	= logger.debug
 # Constants
 
 WORKERS_WGAPI 				: int = 40
-WORKERS_IMPORTERS			: int = 1
+WORKERS_IMPORTERS			: int = 5
 PLAYER_ACHIEVEMENTS_Q_MAX 	: int = 5000
+
+# Globals
+
+db 			: Backend
+readQ 		: AsyncQueue[list[Any] | None]
+in_model	: type[JSONExportable]
+mp_options	: dict[str, Any] = dict()
 
 ########################################################
 # 
@@ -85,7 +97,7 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 			WORKERS_WGAPI	= configWG.getint('api_workers', WORKERS_WGAPI)			
 			WG_APP_ID		= configWG.get('wg_app_id', WGApi.DEFAULT_WG_APP_ID)
 
-		parser.add_argument('--threads', type=int, default=WORKERS_WGAPI, help='Set number of asynchronous threads')
+		parser.add_argument('--workers', type=int, default=WORKERS_WGAPI, help='Set number of asynchronous workers')
 		parser.add_argument('--wg-app-id', type=str, default=WG_APP_ID, help='Set WG APP ID')
 		parser.add_argument('--rate-limit', type=float, default=WG_RATE_LIMIT, metavar='RATE_LIMIT',
 							help='Rate limit for WG API')
@@ -130,7 +142,7 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 			import_parser =  import_parsers.add_parser(backend.driver, help=f'player-achievements import {backend.driver} help')
 			if not backend.add_args_import(import_parser, config=config):
 				raise Exception(f'Failed to define argument parser for: player-achievements import {backend.driver}')
-		parser.add_argument('--threads', type=int, default=WORKERS_IMPORTERS, help='Set number of asynchronous threads')
+		parser.add_argument('--workers', type=int, default=0, help='Set number of asynchronous workers')
 		parser.add_argument('--import-model', metavar='IMPORT-TYPE', type=str, required=True,
 							choices=['WGPlayerAchievementsMaxSeries', 'WGPlayerAchievementsMain'], 
 							help='Data format to import. Default is blitz-stats native format.')
@@ -168,7 +180,7 @@ async def cmd(db: Backend, args : Namespace) -> bool:
 		# 	return await cmd_export(db, args)
 
 		elif args.player_achievements_cmd == 'import':
-			return await cmd_import(db, args)
+			return await cmd_importMP(db, args)
 
 		else:
 			raise ValueError(f'Unsupported command: player-achievements { args.player_achievements_cmd}')
@@ -206,7 +218,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 												cache_valid=args.cache_valid)		
 		for r in regions:
 			regionQs[r.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)			
-			for _ in range(ceil(min([args.threads, accounts])/len(regions))):
+			for _ in range(ceil(min([args.workers, accounts])/len(regions))):
 				tasks.append(create_task(fetch_player_achievements_api_region_worker(wg_api=wg, region=r, 
 																					accountQ=regionQs[r.name], 
 																					statsQ=statsQ, 
@@ -229,7 +241,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 			for r in regions:
 				# do not fill the old queues or it will never complete				
 				regionQs[r.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX) 
-				for _ in range(ceil(min([args.threads, accounts])/len(regions))):
+				for _ in range(ceil(min([args.workers, accounts])/len(regions))):
 					tasks.append(create_task(fetch_player_achievements_api_region_worker(wg_api=wg, region=r, 
 																					accountQ=regionQs[r.name],																					
 																					statsQ=statsQ)))
@@ -375,7 +387,7 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 		player_achievementsQ	: Queue[list[WGPlayerAchievementsMaxSeries]]= Queue(PLAYER_ACHIEVEMENTS_Q_MAX)
 		rel_mapQ				: Queue[WGPlayerAchievementsMaxSeries]		= Queue()
 		stats 			: EventCounter 	= EventCounter('player-achievements import')
-		WORKERS 	 	: int 							= args.threads
+		WORKERS 	 	: int 							= args.workers
 		import_db   	: Backend | None 				= None
 		import_backend 	: str 							= args.import_backend
 		import_model 	: type[JSONExportable] | None 	= None
@@ -393,7 +405,7 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 														import_type=BSTableType.PlayerAchievements, 
 														copy_from=db,
 														config_file=args.import_config)) is None:
-			raise ValueError(f'Could not init {import_backend} to import releases from')
+			raise ValueError(f'Could not init {import_backend} to import player achievements from')
 		# debug(f'import_db: {await import_db._client.server_info()}')
 		message(f'Import from: {import_db.backend}.{import_db.table_player_achievements}')
 				
@@ -408,8 +420,9 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 																outputQ=player_achievementsQ, 
 																map_releases=map_releases))		
 
-		with alive_bar(N, title="Importing player achievements ", enrich_print=False, refresh_secs=0.5) as bar:
-			async for pa in import_db.player_achievements_export(sample=args.sample):
+		with alive_bar(N, title="Importing player achievements ", 
+						enrich_print=False, refresh_secs=1) as bar:
+			async for pa in import_db.player_achievement_export(sample=args.sample):
 				await rel_mapQ.put(pa)
 				bar()
 		
@@ -423,6 +436,164 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 	except Exception as err:
 		error(f'{err}')	
 	return False
+
+
+async def cmd_importMP(db: Backend, args : Namespace) -> bool:
+	"""Import player achievements from other backend"""	
+	try:
+		debug('starting')		
+		stats 			: EventCounter 					= EventCounter('player-achievements import')
+		import_db   	: Backend | None 				= None
+		import_backend 	: str 							= args.import_backend
+		import_model 	: type[JSONExportable] | None 	= None
+		WORKERS 	 	: int 							= args.workers
+
+		if WORKERS == 0:
+			WORKERS = max( [cpu_count() - 1, 1 ])
+		
+		if (import_model := get_sub_type(args.import_model, JSONExportable)) is None:
+			raise ValueError("--import-model has to be subclass of JSONExportable")
+
+		if (import_db := Backend.create_import_backend(driver=import_backend, 
+														args=args, 
+														import_type=BSTableType.PlayerAchievements, 
+														copy_from=db,
+														config_file=args.import_config)) is None:
+			raise ValueError(f'Could not init {import_backend} to import player achievements from')
+
+		with Manager() as manager:
+			
+			readQ	: queue.Queue[list[Any] | None] = manager.Queue(PLAYER_ACHIEVEMENTS_Q_MAX)
+			options : dict[str, Any] 				= dict()
+			options['force'] 						= args.force
+			# options['map_releases'] 				= not args.no_release_map
+			
+			with Pool(processes=WORKERS, initializer=import_mp_init, 
+					  initargs=[ db.config, readQ, import_model, options ]) as pool:
+
+				debug(f'starting {WORKERS} workers')
+				results : AsyncResult = pool.map_async(import_mp_worker_start, range(WORKERS))
+				pool.close()
+
+				message('Counting player achievements to import ...')
+				N : int = await import_db.player_achievements_count(sample=args.sample)
+				
+				with alive_bar(N, title="Importing player achievements ", 
+								enrich_print=False, refresh_secs=1) as bar:					
+					async for objs in import_db.objs_export(table_type=BSTableType.PlayerAchievements, 
+															sample=args.sample):
+						read : int = len(objs)
+						# debug(f'read {read} player achievements objects')
+						readQ.put(objs)
+						stats.log(f'{db.driver}:stats read', read)
+						bar(read)	
+				
+				debug(f'Finished exporting {import_model} from {import_db.table_uri(BSTableType.PlayerAchievements)}')
+				for _ in range(WORKERS):
+					readQ.put(None) # add sentinel
+				
+				for res in results.get():
+					stats.merge_child(res)
+				pool.join()
+		
+		message(stats.print(do_print=False, clean=True))
+		return True
+	except Exception as err:
+		error(f'{err}')	
+	return False
+
+
+def import_mp_init( backend_config	: dict[str, Any],					
+					inputQ 			: queue.Queue, 
+					import_model	: type[JSONExportable],
+					options 		: dict[str, Any]):
+	"""Initialize static/global backend into a forked process"""
+	global db, readQ, in_model, mp_options
+	debug(f'starting (PID={getpid()})')
+
+	if (tmp_db := Backend.create(**backend_config)) is None:
+		raise ValueError('could not create backend')	
+	db 					= tmp_db
+	readQ 				= AsyncQueue.from_queue(inputQ)
+	in_model 			= import_model	
+	mp_options			= options
+	debug('finished')
+
+
+def import_mp_worker_start(id: int = 0) -> EventCounter:
+	"""Forkable player achievements import worker"""
+	debug(f'starting import worker #{id}')
+	return run(import_mp_worker(id), debug=False)
+
+
+async def  import_mp_worker(id: int = 0) -> EventCounter:
+	"""Forkable player achievements import worker"""
+	debug(f'#{id}: starting')
+	stats : EventCounter = EventCounter('importer')
+	workers 	: list[Task] 				= list()
+	try: 
+		global db, readQ, in_model, mp_options
+		THREADS 			: int 									= 4		
+		import_model		: type[JSONExportable] 					= in_model
+		rel_mapper 			: BucketMapper[BSBlitzRelease]  		=  await release_mapper(db)
+		player_achievementsQ: Queue[list[WGPlayerAchievementsMaxSeries]] = Queue(100)
+		force 		: bool 											= mp_options['force']
+		player_achievements : list[WGPlayerAchievementsMaxSeries]
+		# rel_map		: bool								= mp_options['map_releases']
+
+		for _ in range(THREADS):
+			workers.append(create_task(db.player_achievements_insert_worker(player_achievementsQ=player_achievementsQ, 
+																			force=force)))		
+		errors : int = 0
+		mapped : int = 0
+		while (objs := await readQ.get()) is not None:
+			debug(f'#{id}: read {len(objs)} objects')
+			try:
+				read : int = len(objs)
+				debug(f'read {read} documents')
+				stats.log('stats read', read)	
+				player_achievements = WGPlayerAchievementsMaxSeries.transform_objs(objs=objs, in_type=import_model)
+				errors = len(objs) - len(player_achievements)		
+				stats.log('player achievements read', len(player_achievements))				
+				stats.log('format errors', errors)
+
+				player_achievements, mapped, errors = map_releases(player_achievements, rel_mapper)
+				stats.log('release mapped', mapped)
+				stats.log('not release mapped', read - mapped)
+				stats.log('release map errors', errors)
+
+				await player_achievementsQ.put(player_achievements)
+			except Exception as err:
+				error(f'{err}')
+			finally:
+				readQ.task_done()		
+		debug(f'#{id}: finished reading objects')
+		readQ.task_done()	
+		await player_achievementsQ.join() 		# add sentinel for other workers
+		await stats.gather_stats(workers)	
+	except CancelledError:
+		pass
+	except Exception as err:
+		error(f'{err}')	
+	return stats
+
+
+def map_releases(player_achievements: list[WGPlayerAchievementsMaxSeries], 
+				release_map: BucketMapper[BSBlitzRelease]) -> tuple[list[WGPlayerAchievementsMaxSeries], int, int]:
+	debug('starting')
+	mapped: int = 0
+	errors: int = 0
+	res : list[WGPlayerAchievementsMaxSeries] = list()
+	for player_achievement in player_achievements:		
+		try:			
+			if (release := release_map.get(player_achievement.added)) is not None:
+				player_achievement.release = release.release
+				mapped += 1									
+		except Exception as err:
+			error(f'{err}')
+			errors += 1
+		res.append(player_achievement)
+	return res, mapped, errors
 
 
 async def player_achievements_map_releases_worker(release_map: BucketMapper[BSBlitzRelease], 
