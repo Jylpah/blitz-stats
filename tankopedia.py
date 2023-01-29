@@ -339,7 +339,7 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 
 		debug(f'import_db: {import_db.table_uri(BSTableType.Tankopedia)}')
 
-		async for tank in import_db.tankopedia_export(model=import_model, sample=args.sample):
+		async for tank in import_db.tankopedia_export(sample=args.sample):
 			await tankQ.put(tank)
 			stats.log('tanks read')
 

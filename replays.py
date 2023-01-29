@@ -228,7 +228,7 @@ async def  cmd_import(db: Backend, args : Namespace) -> bool:
 		N : int = await import_db.replays_count(sample=sample)
 		with alive_bar(N, title="Importing replays ", enrich_print=False) as bar:
 		
-			async for replay in import_db.replays_export(model=import_model, sample=sample):
+			async for replay in import_db.replays_export(sample=sample):
 				await replayQ.put(replay)
 				bar()
 				stats.log('read')

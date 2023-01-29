@@ -5,7 +5,7 @@ import logging
 from asyncio import create_task, gather, Queue, CancelledError, Task, sleep
 
 from aiohttp import ClientResponse
-from datetime import date
+from datetime import date, datetime
 from os.path import isfile
 
 from pyutils import EventCounter, is_alphanum, export, JSONExportable, CSVExportable, \
@@ -238,13 +238,13 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		releaseQ : Queue[BSBlitzRelease] = Queue(100)
-		since 	 : date | None 			 = None
+		since 	 : int = 0 
 		export_worker : Task		
 		export_worker = create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], releaseQ), 
 											format=args.format, filename=args.file, force=args.force))
 				
 		if args.since is not None:
-			since = date.fromisoformat(args.since)
+			since = int(datetime.combine(date.fromisoformat(args.since), datetime.min.time()).timestamp())
 
 		async for release in db.releases_get(release_match=args.release_match, since=since):
 			debug(f'adding release {release.release} to the export queue')
