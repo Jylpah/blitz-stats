@@ -676,7 +676,8 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def obj_export(self, model: BSTableType, 
+	async def obj_export(self, 
+						 table_type: BSTableType, 
 						 sample: float = 0) -> AsyncGenerator[Any, None]:
 		"""Export raw object from backend"""
 		raise NotImplementedError
@@ -982,7 +983,7 @@ class Backend(ABC):
 		return stats
 	
 
-	async def replays_export(self, model: type[JSONExportable] = WoTBlitzReplayData,
+	async def replays_export(self, 
 							 sample: float = 0) -> AsyncGenerator[WoTBlitzReplayData, None]:			
 		"""Export replays from Mongo DB"""
 		raise NotImplementedError
@@ -1058,7 +1059,7 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def tank_stat_export(self, model: type[JSONExportable] = WGTankStat, 
+	async def tank_stat_export(self, 
 								sample: float = 0) -> AsyncGenerator[WGTankStat, None]:
 		"""Export tank stats from Mongo DB"""
 		raise NotImplementedError
@@ -1066,7 +1067,7 @@ class Backend(ABC):
 
 	
 	@abstractmethod
-	async def tank_stats_export(self, model: type[JSONExportable] = WGTankStat, 
+	async def tank_stats_export(self,  
 								sample: float = 0, batch: int = 0) -> AsyncGenerator[list[WGTankStat], None]:
 		"""Export tank stats from Mongo DB"""
 		raise NotImplementedError
@@ -1275,7 +1276,7 @@ class Backend(ABC):
 
 
 	@abstractmethod	
-	async def tankopedia_export(self, model: type[JSONExportable] = Tank, 
+	async def tankopedia_export(self, 
 								sample: float = 0) -> AsyncGenerator[Tank, None]:
 		"""Export tankopedia"""
 		raise NotImplementedError
