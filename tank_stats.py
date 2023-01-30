@@ -195,9 +195,9 @@ def add_args_prune(parser: ArgumentParser, config: Optional[ConfigParser] = None
 						help='prune tank stats for a RELEASE')
 	parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
 							default=[ r.value for r in Region.API_regions() ], 
-							help='Filter by region (default: eu + com + asia + ru)')
+							help='filter by region (default: eu + com + asia + ru)')
 	parser.add_argument('--commit', action='store_true', default=False, 
-							help='prune stats instead of just listing duplicates')
+							help='execute pruning stats instead of listing duplicates')
 	parser.add_argument('--sample', type=int, default=0, metavar='SAMPLE',
 						help='sample size')
 
@@ -345,7 +345,11 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 		tasks.append(create_task(fetch_backend_worker(db, statsQ)))
 
 		# Process accountQ
-		accounts : int = await db.accounts_count(StatsTypes.tank_stats, regions=regions, 
+		accounts : int 
+		if len(args.accounts) > 0:
+			accounts = len(args.accounts)
+		else:	
+			accounts = await db.accounts_count(StatsTypes.tank_stats, regions=regions, 
 												inactive=inactive, disabled=args.disabled, 
 												sample=args.sample, cache_valid=args.cache_valid)
 		
@@ -678,7 +682,7 @@ async def cmd_prune(db: Backend, args : Namespace) -> bool:
 
 ########################################################
 # 
-# cmd_tank_stat_export()
+# cmd_export()
 #
 ########################################################
 
