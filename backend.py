@@ -1167,6 +1167,7 @@ class Backend(ABC):
 	async def player_achievements_get(self, release: BSBlitzRelease | None = None,
 							regions: set[Region] = Region.API_regions(), 
 							accounts: Iterable[Account] | None = None,
+							since:  int = 0,
 							sample : float = 0) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
 		"""Return player achievements from the backend"""
 		raise NotImplementedError
@@ -1200,10 +1201,21 @@ class Backend(ABC):
 	async def player_achievements_export(self, 
 										 sample: float = 0, 
 										 batch: int = 0,
-											) -> AsyncGenerator[list[WGPlayerAchievementsMaxSeries], None]:
+										) -> AsyncGenerator[list[WGPlayerAchievementsMaxSeries], None]:
 		"""Export player achievements in a batch from Mongo DB"""
 		raise NotImplementedError
 		yield [ WGPlayerAchievementsMaxSeries()	]
+	
+
+	@abstractmethod
+	async def player_achievements_duplicates(self, 
+											release: BSBlitzRelease,
+											regions: set[Region] = Region.API_regions(), 									
+											sample : int = 0) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
+		"""Find duplicate player achievements from the backend"""
+		raise NotImplementedError
+		yield WGPlayerAchievementsMaxSeries()
+
 
 	async def player_achievements_insert_worker(self, 
 							player_achievementsQ : Queue[list[WGPlayerAchievementsMaxSeries]], 
