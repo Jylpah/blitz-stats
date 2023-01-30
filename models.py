@@ -41,6 +41,7 @@ class BSAccount(Account):
 	_exclude_export_src_fields = None
 	_include_export_DB_fields = None
 	_include_export_src_fields= None
+	_exclude_defaults 		= False
 	
 	class Config:
 		allow_population_by_field_name = True
@@ -52,11 +53,11 @@ class BSAccount(Account):
 	def backend_indexes(cls) -> list[list[tuple[str, BackendIndexType]]]:
 		"""return backend search indexes"""
 		indexes : list[list[tuple[str, BackendIndexType]]] = list()
-		indexes = list()
 		indexes.append([ 	('disabled', ASCENDING), 
 							('inactive', ASCENDING), 									 
 							('region', 	ASCENDING), 
-							('id', 		ASCENDING)
+							('id', 		ASCENDING), 
+							('added', 	DESCENDING)
 						])
 		# indexes.append([ 	('disabled', ASCENDING), 
 		# 					('inactive', ASCENDING), 
