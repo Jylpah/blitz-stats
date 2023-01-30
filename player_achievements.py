@@ -111,7 +111,7 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 							help='Fetch only accounts with stats older than DAYS')		
 		parser.add_argument('--distributed', '--dist',type=str, dest='distributed', metavar='I:N', 
 							default=None, help='Distributed fetching for accounts: id %% N == I')
-		parser.add_argument('--accounts', type=int, default=[], nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
+		parser.add_argument('--accounts', type=str, default=[], nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
 							help='Fetch player achievements for the listed ACCOUNT_ID(s)')
 		parser.add_argument('--file',type=str, metavar='FILENAME', default=None, 
 							help='Read account_ids from FILENAME one account_id per line')
@@ -124,6 +124,15 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 
 def add_args_prune(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	debug('starting')
+	parser.add_argument('release', type=str, metavar='RELEASE',  
+						help='prune player achievements for a RELEASE')
+	parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
+							default=[ r.value for r in Region.API_regions() ], 
+							help='filter by region (default: eu + com + asia + ru)')
+	parser.add_argument('--commit', action='store_true', default=False, 
+							help='execute pruning stats instead of listing duplicates')
+	parser.add_argument('--sample', type=int, default=0, metavar='SAMPLE',
+						help='sample size')
 	return True
 
 
@@ -181,6 +190,9 @@ async def cmd(db: Backend, args : Namespace) -> bool:
 
 		elif args.player_achievements_cmd == 'import':
 			return await cmd_importMP(db, args)
+		
+		elif args.player_achievements_cmd == 'prune':
+			return await cmd_prune(db, args)
 
 		else:
 			raise ValueError(f'Unsupported command: player-achievements { args.player_achievements_cmd}')
@@ -211,7 +223,12 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 		tasks : list[Task] = list()
 		tasks.append(create_task(fetch_player_achievements_backend_worker(db, statsQ)))
 
-		accounts : int = await db.accounts_count(StatsTypes.player_achievements, 
+		# Process accountQ
+		accounts : int 
+		if len(args.accounts) > 0:
+			accounts = len(args.accounts)
+		else:	
+			accounts = await db.accounts_count(StatsTypes.player_achievements, 
 												regions=regions, 
 												inactive=OptAccountsInactive.no,  
 												sample=args.sample, 
@@ -393,8 +410,8 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 		import_model 	: type[JSONExportable] | None 	= None
 		map_releases	: bool 							= not args.no_release_map
 
-		if (import_model := get_sub_type(args.import_model, JSONExportable)) is None:
-			assert False, "--import-model has to be subclass of JSONExportable" 
+		# if (import_model := get_sub_type(args.import_model, JSONExportable)) is None:
+		# 	assert False, "--import-model has to be subclass of JSONExportable" 
 
 		release_map : BucketMapper[BSBlitzRelease] = await release_mapper(db)
 		workers : list[Task] = list()
@@ -485,7 +502,7 @@ async def cmd_importMP(db: Backend, args : Namespace) -> bool:
 						read : int = len(objs)
 						# debug(f'read {read} player achievements objects')
 						readQ.put(objs)
-						stats.log(f'{db.driver}:stats read', read)
+						stats.log(f'{db.driver}: stats read', read)
 						bar(read)	
 				
 				debug(f'Finished exporting {import_model} from {import_db.table_uri(BSTableType.PlayerAchievements)}')
@@ -643,3 +660,54 @@ async def player_achievements_map_releases_worker(release_map: BucketMapper[BSBl
 		error(f'{err}')	
 	# await outputQ.finish()
 	return stats
+
+########################################################
+# 
+# cmd_prune()
+#
+########################################################
+
+
+async def cmd_prune(db: Backend, args : Namespace) -> bool:
+	"""prune  player achievements"""	
+	debug('starting')
+	try:
+		stats 		: EventCounter 		= EventCounter(' player-achievements prune')
+		regions		: set[Region] 		= { Region(r) for r in args.region }
+		sample 		: int 				= args.sample
+		release 	: BSBlitzRelease  	= BSBlitzRelease(release=args.release)
+		commit 		: bool 				= args.commit
+
+		progress_str : str 				= 'Finding duplicates ' 
+		if commit:
+			message(f'Pruning  player achievements from {db.table_uri(BSTableType.PlayerAchievements)}')
+			message('Press CTRL+C to cancel in 3 secs...')
+			await sleep(3)
+			progress_str = 'Pruning duplicates '
+		
+		with alive_bar(len(regions), title=progress_str, refresh_secs=1) as bar:
+			for region in regions:
+				async for dup in db.player_achievements_duplicates(release, regions={region}, sample=sample):
+					stats.log('duplicates found')
+					if commit:
+						# verbose(f'deleting duplicate: {dup}')
+						if await db.player_achievement_delete(account=BSAccount(id=dup.account_id), 
+															  added=dup.added):
+							verbose(f'deleted duplicate: {dup}')
+							stats.log('duplicates deleted')
+						else:
+							error(f'failed to delete duplicate: {dup}')
+							stats.log('deletion errors')
+					else:
+						verbose(f'duplicate:  {dup}')
+						async for newer in db.player_achievements_get(release=release, regions={region}, 
+																accounts=[BSAccount(id=dup.account_id)], 																
+																since=dup.added + 1):
+							verbose(f'newer stat: {newer}')
+				bar()
+
+		stats.print()
+		return True
+	except Exception as err:
+		error(f'{err}')
+	return False
