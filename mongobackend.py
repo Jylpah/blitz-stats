@@ -1148,6 +1148,7 @@ class MongoBackend(Backend):
 		"""Delete a player achievements from the backend"""
 		try:
 			debug('starting')
+			debug(f'account={account}, added={added}')
 			idx : ObjectId = WGPlayerAchievementsMaxSeries.mk_index(account.id,
 																	region=account.region,
 																	added=added)
@@ -1166,6 +1167,7 @@ class MongoBackend(Backend):
 	async def _mk_pipeline_player_achievements(self, release: BSBlitzRelease|None = None,
 										regions: set[Region] = Region.API_regions(),
 										accounts: Iterable[Account] | None = None,
+										since:  int = 0,
 										sample: float = 0) -> list[dict[str, Any]] | None:
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
 		try:
@@ -1189,13 +1191,15 @@ class MongoBackend(Backend):
 			# Pipeline build based on ESR rule
 			# https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
 
+			if release is not None:
+				match.append({ alias('release'): release.release })
 			if regions != Region.has_stats():
 				match.append({ alias('region') : { '$in' : [ r.value for r in regions ]} })
 			if accounts is not None:
 				match.append({ alias('account_id'): { '$in': [ a.id for a in accounts ]}})
-			if release is not None:
-				match.append({ alias('release'): release.release })
-
+			if since > 0:
+				match.append({ alias('added'): { '$gte': since } })			
+			
 			if len(match) > 0:
 				pipeline.append( { '$match' : { '$and' : match } })
 
@@ -1213,6 +1217,7 @@ class MongoBackend(Backend):
 	async def player_achievements_get(self, release: BSBlitzRelease | None = None,
 							regions: set[Region] = Region.API_regions(),
 							accounts: Iterable[Account] | None = None,
+							since:  int = 0,
 							sample : float = 0) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
 		"""Return player achievements from the backend"""
 		try:
@@ -1221,6 +1226,7 @@ class MongoBackend(Backend):
 			pipeline = await self._mk_pipeline_player_achievements(release=release,
 																	regions=regions,
 																	accounts=accounts,
+																	since=since,
 																	sample=sample)
 			if pipeline is None:
 				raise ValueError(f'could not create pipeline for get player achievements {self.backend}')
@@ -1292,7 +1298,46 @@ class MongoBackend(Backend):
 											sample=sample,
 											batch=batch):
 			yield WGPlayerAchievementsMaxSeries.transform_objs(objs=objs, in_type=self.model_player_achievements)
-				
+	
+
+	async def player_achievements_duplicates(self, 
+											release: BSBlitzRelease,
+											regions: set[Region] = Region.API_regions(), 									
+											sample : int = 0) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
+		"""Find duplicate player achievements from the backend"""
+		debug('starting')
+		try:
+			a 		: AliasMapper = AliasMapper(self.model_player_achievements)
+			alias 	: Callable 	= a.alias			
+			pipeline: list[dict[str, Any]] | None
+			if (pipeline := await self._mk_pipeline_player_achievements(release = release,
+																		regions = regions)) is None:
+				raise ValueError('Could not create $match pipeline')
+
+			pipeline.append({ '$sort': 		{ alias('added'): DESCENDING } })
+			pipeline.append({ '$group': 	{ '_id': '$' + alias('account_id'),
+												'all_ids': {'$push': '$_id' },
+												'len': { "$sum": 1 } } 
+							})
+			pipeline.append({ '$match': 	{ 'len': { '$gt': 1 } } })
+			pipeline.append({ '$project':	{ 'ids': {  '$slice': [  '$all_ids', 1, '$len' ] } } })										
+		
+			if sample > 0:
+				pipeline.append({ '$sample' : { 'size': sample } })
+
+			async for idxs in self.collection_player_achievements.aggregate(pipeline, allowDiskUse=True):
+				try:
+					for idx in idxs['ids']:
+						if (obj := await self._data_get(BSTableType.PlayerAchievements, idx)) is not None:
+							if( pa := WGPlayerAchievementsMaxSeries.transform_obj(obj)) is not None:
+								# debug(f'tank stat duplicate: {tank_stat}')
+								yield pa
+				except Exception as err:
+					error(f'{err}')
+
+		except Exception as err:
+			debug(f'Could not find duplicates from {self.table_uri(BSTableType.PlayerAchievements)}: {err}')
+
 
 ########################################################
 #
