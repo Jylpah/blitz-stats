@@ -5,6 +5,7 @@ from os.path import isfile
 from typing import Optional, Any, Iterable, Sequence, Union, Tuple, Literal, Final, \
 					AsyncGenerator, TypeVar, ClassVar, cast, Generic, Callable
 import logging
+import re
 
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCursor, AsyncIOMotorCollection  # type: ignore
@@ -21,7 +22,7 @@ from pyutils import epoch_now, JSONExportable, AliasMapper, I, D, O, Idx, \
 # from pyutils.utils import transform_objs
 from blitzutils.models import Region, Account, Tank, WoTBlitzReplayJSON, WoTBlitzReplayData, \
 								WoTBlitzReplaySummary, WGTankStat, WGBlitzRelease, \
-								WGPlayerAchievementsMaxSeries, \
+								WGPlayerAchievementsMaxSeries, WoTBlitzTankString,\
 								EnumNation, EnumVehicleTier, EnumVehicleTypeStr
 
 # Setup logging
@@ -115,6 +116,7 @@ class MongoBackend(Backend):
 
 				self.set_table(BSTableType.Accounts, 	configMongo.get('t_accounts'))
 				self.set_table(BSTableType.Tankopedia, 	configMongo.get('t_tankopedia'))
+				self.set_table(BSTableType.TankStrings, configMongo.get('t_tank_strings'))
 				self.set_table(BSTableType.Releases, 	configMongo.get('t_releases'))
 				self.set_table(BSTableType.Replays, 	configMongo.get('t_replays'))
 				self.set_table(BSTableType.TankStats, 	configMongo.get('t_tank_stats'))
@@ -124,6 +126,7 @@ class MongoBackend(Backend):
 
 				self.set_model(BSTableType.Accounts, 	configMongo.get('m_accounts'))
 				self.set_model(BSTableType.Tankopedia, 	configMongo.get('m_tankopedia'))
+				self.set_model(BSTableType.TankStrings, configMongo.get('m_tank_strings'))
 				self.set_model(BSTableType.Releases, 	configMongo.get('m_releases'))
 				self.set_model(BSTableType.Replays, 	configMongo.get('m_replays'))
 				self.set_model(BSTableType.TankStats, 	configMongo.get('m_tank_stats'))
@@ -229,6 +232,10 @@ class MongoBackend(Backend):
 	@property
 	def collection_tankopedia(self) -> AsyncIOMotorCollection:
 		return self.get_collection(BSTableType.Tankopedia)
+
+	@property
+	def collection_tank_strings(self) -> AsyncIOMotorCollection:
+		return self.get_collection(BSTableType.TankStrings)
 
 	@property
 	def collection_player_achievements(self) -> AsyncIOMotorCollection:
@@ -1500,6 +1507,7 @@ class MongoBackend(Backend):
 		# return await self._data_insert(self.collection_replays, replay)
 		return await self._data_insert(BSTableType.Replays, obj=replay)
 
+
 	async def replay_get(self, replay_id: str) -> WoTBlitzReplayData | None:
 		"""Get replay from backend"""
 		debug('starting')
@@ -1976,6 +1984,49 @@ class MongoBackend(Backend):
 		"""Delete a tank from Tankopedia"""
 		return await self._data_delete(BSTableType.Tankopedia, idx=tank.tank_id)
 
+
+	########################################################
+	#
+	# MongoBackend(): tank_string_
+	#
+	########################################################
+
+
+	async def tank_string_insert(self, tank_str: WoTBlitzTankString) -> bool:
+		""""insert a tank string"""
+		return await self._data_insert(BSTableType.TankStrings, tank_str)
+
+
+	async def tank_string_get(self, code: str) -> WoTBlitzTankString | None:
+		"""Get a tank string from the backend"""
+		debug('starting')
+		if (tank_str := await self._data_get(BSTableType.TankStrings, idx=code)) is not None:
+			return WoTBlitzTankString.transform_obj(tank_str, self.model_tank_strings)
+		return None
+	
+
+	async def tank_strings_get(self, search: str | None) -> AsyncGenerator[WoTBlitzTankString, None]:
+		debug('starting')
+		try:
+			model : type[JSONExportable] = self.model_tank_strings
+			mapper : AliasMapper = AliasMapper(model)
+			alias : Callable = mapper.alias
+			if search is not None and bool(re.match(r'^[a-zA-Z\s]+$', search)):
+				async for obj in self.collection_tank_strings.find({ alias('name') : { '$regex': search, 
+																						'$options': 'i' } }):
+					if (res:= WoTBlitzTankString.transform_obj(obj, model)) is not None:
+						yield res
+			else:
+				async for obj in self.collection_tank_strings.find():
+					if (res:= WoTBlitzTankString.transform_obj(obj, model)) is not None:
+						yield res		
+		except Exception as err:
+			error(f"Could't get tank strings for search string: {search}: {err}")
+
+
+	async def tank_string_replace(self, tank_str: WoTBlitzTankString, upsert : bool = True) -> bool:
+		""""Replace tank in Tankopedia"""
+		return await self._data_replace(BSTableType.TankStrings, obj=tank_str, upsert=upsert)
 
 
 	########################################################
