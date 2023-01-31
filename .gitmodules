@@ -1,3 +1,7 @@
 [submodule "pyutils"]
 	path = pyutils
 	url = https://github.com/Jylpah/pyutils.git
+	branch = dev
+[submodule "blitzutils"]
+	path = blitzutils
+	url = https://github.com/Jylpah/blitzutils.git

@@ -10,5 +10,5 @@ RUN python3.10 -m pip install --no-cache-dir -U pip
 RUN python3.10 -m pip install --no-cache-dir -r requirements.txt
 COPY tanks.json maps.json ./
 COPY *.py ./
-COPY blitzstats.ini.default ./
+COPY blitzstats.ini.docker ./blitzstats.ini
 CMD ["/bin/bash"]
