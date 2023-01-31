@@ -1283,9 +1283,13 @@ class Backend(ABC):
 	# Tankopedia
 	#----------------------------------------
 
+	@abstractmethod
+	async def tankopedia_get(self, tank_id 	: int) -> Tank | None:
+		raise NotImplementedError
+		
 
 	@abstractmethod
-	async def tankopedia_get(self, 
+	async def tankopedia_get_many(self, 
 							tanks 		: list[Tank] | None 		= None, 
 							tier		: EnumVehicleTier | None 	= None,
 							tank_type	: EnumVehicleTypeStr | None = None,
@@ -1296,14 +1300,20 @@ class Backend(ABC):
 		yield Tank()
 
 
+
+
 	@abstractmethod
 	async def tankopedia_count(self, 
+								tanks 		: list[Tank] | None 		= None, 
 							tanks 		: list[Tank] | None 		= None, 
-							tier		: EnumVehicleTier | None 	= None,
-							tank_type	: EnumVehicleTypeStr | None = None,
+								tanks 		: list[Tank] | None 		= None, 
+								tier		: EnumVehicleTier | None 	= None,
+								tank_type	: EnumVehicleTypeStr | None = None,
+								nation		: EnumNation | None 		= None,							
 							nation		: EnumNation | None 		= None,							
-							is_premium	: bool | None 				= None,
-							) -> int:
+								nation		: EnumNation | None 		= None,							
+								is_premium	: bool | None 				= None,
+								) -> int:
 		raise NotImplementedError
 
 
@@ -1327,6 +1337,12 @@ class Backend(ABC):
 								fields: list[str] | None= None) -> bool:
 		"""Update a tank in the backend's tankopedia. Returns False
 			if the tank was not updated"""
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def tankopedia_delete(self, tank: Tank) -> bool:
+		"""Delete a tank from Tankopedia"""
 		raise NotImplementedError
 
 
