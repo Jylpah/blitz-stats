@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from models import BSAccount, BSBlitzRelease, StatsTypes
 from blitzutils.models import Region, WoTBlitzReplayJSON, WoTBlitzReplayData, WGTankStat, \
 		Account, WGTank, Tank, WGPlayerAchievementsMaxSeries, WGPlayerAchievementsMain, \
-		EnumVehicleTier, EnumNation, EnumVehicleTypeStr
+		EnumVehicleTier, EnumNation, EnumVehicleTypeStr, WoTBlitzTankString
 from pyutils import EventCounter, JSONExportable, epoch_now, is_alphanum, Idx, D, O
 # from mongobackend import MongoBackend
 
@@ -119,6 +119,7 @@ class OptAccountsDistributed():
 class BSTableType(StrEnum):
 	Accounts 			= 'Accounts'
 	Tankopedia 			= 'Tankopedia'
+	TankStrings  		= 'TankStrings'
 	Releases			= 'Releases'
 	Replays 			= 'Replays'
 	TankStats 			= 'TankStats'
@@ -184,16 +185,19 @@ class Backend(ABC):
 		# default tables 
 		self.set_table(BSTableType.Accounts, 	'Accounts')
 		self.set_table(BSTableType.Tankopedia,  'Tankopedia')
+		self.set_table(BSTableType.TankStrings,  'TankStrings')
 		self.set_table(BSTableType.Releases,  	'Releases')
 		self.set_table(BSTableType.Replays,  	'Replays')
 		self.set_table(BSTableType.AccountLog,  'AccountLog') 	
 		self.set_table(BSTableType.ErrorLog,  	'ErrorLog')
 		self.set_table(BSTableType.TankStats,  	'TankStats')
 		self.set_table(BSTableType.PlayerAchievements,  'PlayerAchievements')
+
 		
 		# set default models
 		self.set_model(BSTableType.Accounts, 	BSAccount)
 		self.set_model(BSTableType.Tankopedia, 	Tank)
+		self.set_model(BSTableType.TankStrings, WoTBlitzTankString)
 		self.set_model(BSTableType.Releases, 	BSBlitzRelease)
 		self.set_model(BSTableType.Replays, 	WoTBlitzReplayJSON)
 		self.set_model(BSTableType.AccountLog, 	ErrorLog)
@@ -206,6 +210,7 @@ class Backend(ABC):
 			self._cache_valid 	= configBackend.getint('cache_valid', MIN_UPDATE_INTERVAL)
 			self.set_table(BSTableType.Accounts, 	configBackend.get('t_accounts'))
 			self.set_table(BSTableType.Tankopedia, 	configBackend.get('t_tankopedia'))
+			self.set_table(BSTableType.TankStrings, configBackend.get('t_tank_strings'))
 			self.set_table(BSTableType.Releases, 	configBackend.get('t_releases'))
 			self.set_table(BSTableType.Replays, 	configBackend.get('t_replays'))
 			self.set_table(BSTableType.TankStats, 	configBackend.get('t_tank_stats'))
@@ -215,6 +220,7 @@ class Backend(ABC):
 
 			self.set_model(BSTableType.Accounts, 	configBackend.get('m_accounts'))
 			self.set_model(BSTableType.Tankopedia, 	configBackend.get('m_tankopedia'))
+			self.set_model(BSTableType.TankStrings, configBackend.get('m_tank_strings'))
 			self.set_model(BSTableType.Releases, 	configBackend.get('m_releases'))
 			self.set_model(BSTableType.Replays, 	configBackend.get('m_replays'))
 			self.set_model(BSTableType.TankStats, 	configBackend.get('m_tank_stats'))
@@ -530,6 +536,11 @@ class Backend(ABC):
 
 
 	@property
+	def table_tank_strings(self) -> str:
+		return self.get_table(BSTableType.TankStrings)
+
+
+	@property
 	def table_releases(self) -> str:
 		return self.get_table(BSTableType.Releases)
 
@@ -567,6 +578,11 @@ class Backend(ABC):
 	@property
 	def model_tankopedia(self) -> type[JSONExportable]:
 		return self.get_model(BSTableType.Tankopedia)
+
+
+	@property
+	def model_tank_strings(self) -> type[JSONExportable]:
+		return self.get_model(BSTableType.TankStrings)
 
 
 	@property
@@ -1019,7 +1035,7 @@ class Backend(ABC):
 	@abstractmethod
 	async def tank_stat_delete(self, account_id: int, tank_id: int, 
 								last_battle_time: int) -> bool:
-		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
+		"""Delete a tank stat from the backend. Returns True if successful"""
 		raise NotImplementedError
 
 
@@ -1305,12 +1321,8 @@ class Backend(ABC):
 	@abstractmethod
 	async def tankopedia_count(self, 
 								tanks 		: list[Tank] | None 		= None, 
-							tanks 		: list[Tank] | None 		= None, 
-								tanks 		: list[Tank] | None 		= None, 
 								tier		: EnumVehicleTier | None 	= None,
 								tank_type	: EnumVehicleTypeStr | None = None,
-								nation		: EnumNation | None 		= None,							
-							nation		: EnumNation | None 		= None,							
 								nation		: EnumNation | None 		= None,							
 								is_premium	: bool | None 				= None,
 								) -> int:
@@ -1392,7 +1404,7 @@ class Backend(ABC):
 									) -> EventCounter:
 		stats 		: EventCounter 			= EventCounter('get tankopedia')
 		try:
-			async for tank in self.tankopedia_get(tanks=tanks, 
+			async for tank in self.tankopedia_get_many(tanks=tanks, 
 													tier=tier, 
 													tank_type=tank_type, 
 													nation=nation,
@@ -1404,40 +1416,29 @@ class Backend(ABC):
 		return stats
 		
 
-# def init_backend(driver: str, 
-# 				config: ConfigParser | None, 
-# 				database : str | None = None, 
-# 				table_config : dict[BSTableType, str] | None = None, 
-# 				model_config : dict[BSTableType, type[JSONExportable]] | None = None, 
-# 				**kwargs ) -> bool:
-# 	try:
-# 		global db 
-# 		# db : Backend = Backend.create(driver=driver, config=config, **kwargs)
-# 		return True
-# 	except Exception as err:
-# 		error(f'{err}')
-# 	return False
+	#----------------------------------------
+	# Tank Strings
+	#----------------------------------------
 
- 
-# class ForkedBackend():
+
+	@abstractmethod
+	async def tank_string_insert(self, tank_str: WoTBlitzTankString) -> bool:
+		""""insert a tank string"""
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def tank_string_get(self, code: str) -> WoTBlitzTankString | None:
+		raise NotImplementedError
 	
-# 	def __init__(self, 
-# 				db			: Backend, 
-# 				readQ 		: queue.Queue, 
-# 				import_model: type[JSONExportable], 
-# 				options		: dict[str, Any] = dict()):
-# 		"""Import Backend for forked processes"""		
-# 		self.db				: Backend = db
-# 		self.readQ			: queue.Queue = readQ
-# 		self.import_model	: type[JSONExportable] = import_model
-# 		self._options		: dict[str, Any] = options
+
+	@abstractmethod
+	async def tank_strings_get(self, search: str | None) -> AsyncGenerator[WoTBlitzTankString, None]:
+		raise NotImplementedError
+		yield WoTBlitzTankString()
 
 
-# 	def add_option(self, option: str, value: Any):
-# 		self._options[option] = value
-
-
-# 	def option(self, option: str) -> Any | None:
-# 		if option in self._options:
-# 			return self._options[option]
-# 		return None
+	@abstractmethod
+	async def tank_string_replace(self, tank_str: WoTBlitzTankString, upsert : bool = True) -> bool:
+		""""Replace tank in Tankopedia"""
+		raise NotImplementedError
