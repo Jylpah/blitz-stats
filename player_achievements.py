@@ -373,8 +373,8 @@ async def fetch_player_achievements_backend_worker(db: Backend,
 					debug(f'Read {len(player_achievements)} from queue')
 					rel : BSBlitzRelease | None = releases.get(epoch_now())
 					if rel is not None:
-						for pa in player_achievements:
-							pa.release = rel.release
+						for pac in player_achievements:
+							pac.release = rel.release
 					added, not_added = await db.player_achievements_insert(player_achievements)
 			except Exception as err:
 				error(f'{err}')
@@ -439,8 +439,8 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 
 		with alive_bar(N, title="Importing player achievements ", 
 						enrich_print=False, refresh_secs=1) as bar:
-			async for pa in import_db.player_achievement_export(sample=args.sample):
-				await rel_mapQ.put(pa)
+			async for pac in import_db.player_achievement_export(sample=args.sample):
+				await rel_mapQ.put(pac)
 				bar()
 		
 		await rel_mapQ.join()
@@ -629,18 +629,18 @@ async def player_achievements_map_releases_worker(release_map: BucketMapper[BSBl
 	try:		
 		# await outputQ.add_producer()
 		while True:
-			pa = await inputQ.get()
-			# debug(f'read: {pa}')
+			pac = await inputQ.get()
+			# debug(f'read: {pac}')
 			try:
 				if map_releases:
-					if (release := release_map.get(pa.added)) is not None:
-						pa.release = release.release
+					if (release := release_map.get(pac.added)) is not None:
+						pac.release = release.release
 						# debug(f'mapped: release={release.release}')
 						stats.log('mapped')
 					else:
-						error(f'Could not map release: added={pa.added}')
+						error(f'Could not map release: added={pac.added}')
 						stats.log('errors')
-				pa_list.append(pa)
+				pa_list.append(pac)
 				if len(pa_list) == IMPORT_BATCH:
 					await outputQ.put(pa_list)
 					# debug(f'put {len(pa_list)} items to outputQ')
