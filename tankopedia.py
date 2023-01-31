@@ -4,15 +4,16 @@ from typing import Optional, Iterable, Any, cast
 import logging
 from asyncio import run, create_task, gather, Queue, CancelledError, Task, Runner, \
 					sleep, wait
-
+import aiofiles
+import json
 from alive_progress import alive_bar		# type: ignore
 #from yappi import profile 					# type: ignore
 
 from backend import Backend, OptAccountsInactive, BSTableType, \
 					ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL, get_sub_type
 from models import BSAccount, BSBlitzRelease, StatsTypes
-from blitzutils.models import EnumNation, EnumVehicleTier, EnumVehicleTypeStr, EnumVehicleTypeInt, \
-			Tank, WGTank
+from blitzutils.models import EnumNation, EnumVehicleTier, EnumVehicleTypeStr, \
+							EnumVehicleTypeInt, Tank, WGTank, WGApiTankopedia, WoTBlitzTankString
 from pyutils import export, CSVExportable, JSONExportable, TXTExportable, EventCounter
 
 logger 	= logging.getLogger()
@@ -20,6 +21,8 @@ error 	= logger.error
 message	= logger.warning
 verbose	= logger.info
 debug	= logger.debug
+
+TANKOPEDIA_FILE : str = 'tanks.json'
 
 ########################################################
 # 
@@ -86,7 +89,9 @@ def add_args_add(parser: ArgumentParser, config: Optional[ConfigParser] = None) 
 def add_args_update(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
-
+		parser.add_argument('file', type=str, default=TANKOPEDIA_FILE, nargs='?',help='tankopedia file')
+		parser.add_argument('--force', action='store_true', default=False, 
+							help='Overwrite existing tanks entries instead of updating new ones')
 		return True
 	except Exception as err:
 		error(f'{err}')
@@ -189,13 +194,13 @@ def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 async def cmd(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
-		# if args.tankopedia_cmd == 'update':
-		# 	return await cmd_update(db, args)
+		if args.tankopedia_cmd == 'update':
+			return await cmd_update(db, args)
 
 		# elif args.tankopedia_cmd == 'edit':
 		# 	return await cmd_edit(db, args)
 
-		if args.tankopedia_cmd == 'export':
+		elif args.tankopedia_cmd == 'export':
 			return await cmd_export(db, args)
 
 		elif args.tankopedia_cmd == 'import':
@@ -315,7 +320,7 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 
 
 async def cmd_import(db: Backend, args : Namespace) -> bool:
-	"""Import tankopedio from other backend"""	
+	"""Import tankopedia from other backend"""	
 	try:		
 		debug('starting')
 		debug(f'{args}')
@@ -350,3 +355,59 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 	except Exception as err:
 		error(f'{err}')	
 	return False
+
+
+########################################################
+# 
+# cmd_update()
+#
+########################################################
+
+
+async def cmd_update(db: Backend, args : Namespace) -> bool:
+	"""Update tankopedia in the database from a file"""
+	debug('starting')
+	filename 	: str 	= args.file
+	force 		: bool 	= args.force
+	stats 		: EventCounter = EventCounter('tankopedia update')
+	try:		
+		async with aiofiles.open(filename, 'rt', encoding="utf8") as fp:
+			# Update Tankopedia
+			tankopedia : WGApiTankopedia = WGApiTankopedia.parse_raw(await fp.read())
+			if tankopedia.data is None:
+				raise ValueError(f'Could not find tanks from file: {filename}')
+			
+			for wgtank in tankopedia.data.values():
+				if (tank := Tank.transform(wgtank)) is None:
+					error(f'Could not convert format to Tank: {tank}')
+					continue
+				# print(f'tank_id={tank.tank_id}, name={tank.name}, tier={tank.tier}')
+				try:
+					if force:
+						if await db.tankopedia_replace(tank=tank):
+							verbose(f'Replaced: tank_id={tank.tank_id} {tank.name}')
+							stats.log('tanks updated')
+					else:
+						if await db.tankopedia_get(tank.tank_id) is None:
+							if await db.tankopedia_insert(tank=tank):
+								verbose(f'Added: tank_id={tank.tank_id} {tank.name}')
+								stats.log('tanks added')
+				except Exception as err:
+					error(f'Unexpected error ({tank.tank_id}): {err}')
+
+			tank_strs : list[WoTBlitzTankString] | None
+			if (tank_strs := WoTBlitzTankString.from_tankopedia(tankopedia)) is not None:
+				for tank_str in tank_strs:
+					if force:
+						if await db.tank_string_replace(tank_str):
+							stats.log('tank strings updated')
+					else:
+						if await db.tank_string_get(tank_str.code) is None:
+							if await db.tank_string_insert(tank_str):
+								stats.log('tank strings added')				
+					
+			
+	except Exception as err:	
+		error(f'Failed to update tankopedia from {filename}: {err}')
+	stats.print()
+	return True			
