@@ -1962,6 +1962,11 @@ class MongoBackend(Backend):
 			yield tank
 
 
+	async def tankopedia_delete(self, tank: Tank) -> bool:
+		"""Delete a tank from Tankopedia"""
+		return await self._data_delete(BSTableType.Tankopedia, idx=tank.tank_id)
+
+
 
 	########################################################
 	#
