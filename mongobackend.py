@@ -1881,7 +1881,17 @@ class MongoBackend(Backend):
 		return None
 
 
-	async def tankopedia_get(self,
+	async def tankopedia_get(self, tank_id 	: int) -> Tank | None:
+		debug('starting')
+		try:			
+			if (obj := await self._data_get(BSTableType.Tankopedia, idx = tank_id)) is not None:
+				return Tank.transform_obj(obj, self.model_tankopedia)
+		except Exception as err:
+			error(f'{err}')
+		return None
+		
+
+	async def tankopedia_get_many(self,
 							tanks 		: list[Tank] | None 		= None,
 							tier		: EnumVehicleTier | None 	= None,
 							tank_type	: EnumVehicleTypeStr | None = None,
