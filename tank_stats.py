@@ -651,7 +651,7 @@ async def cmd_prune(db: Backend, args : Namespace) -> bool:
 		N : int = await db.tankopedia_count()
 
 		with alive_bar(N, title=progress_str, refresh_secs=1) as bar:
-			async for tank in db.tankopedia_get():
+			async for tank in db.tankopedia_get_many():
 				async for dup in db.tank_stats_duplicates(tank, release, regions, sample=sample):
 					stats.log('duplicates found')
 					if commit:
