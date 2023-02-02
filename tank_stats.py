@@ -1,35 +1,41 @@
 from argparse import ArgumentParser, Namespace, SUPPRESS
 from configparser import ConfigParser
 from datetime import datetime
-from typing import Optional, Iterable, Any, cast
+from typing import Optional, Literal, Any, cast
 import logging
-from asyncio import run, create_task, gather, Queue, CancelledError, Task, Runner, \
-					sleep, wait, get_event_loop, get_running_loop
+from asyncio import run, create_task, gather, sleep, wait, Queue, CancelledError, Task
 
-from os import getpid
+from os import getpid, makedirs
 from aiofiles import open
-from os.path import isfile
+from os.path import isfile, dirname
+import os.path
 from math import ceil
 # from asyncstdlib import enumerate
 from alive_progress import alive_bar		# type: ignore
 #from yappi import profile 					# type: ignore
 
+# multiprocessing
 from multiprocessing import Manager, cpu_count
 from multiprocessing.pool import Pool, AsyncResult 
 import queue
 
+# export data
+import pandas as pd  						# type: ignore
+import pyarrow as pa						# type: ignore
+import pyarrow.dataset as ds				# type: ignore
+from pandas.io.json import json_normalize	# type: ignore
+
 from backend import Backend, OptAccountsInactive, BSTableType, \
 					ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL, get_sub_type
 from models import BSAccount, BSBlitzRelease, StatsTypes
-from accounts import create_accountQ, read_account_strs
+from accounts import create_accountQ, read_args_accounts
 from releases import get_releases, release_mapper
 
 from pyutils import alive_bar_monitor, \
 					is_alphanum, JSONExportable, TXTExportable, CSVExportable, export, \
 					BucketMapper, IterableQueue, QueueDone, EventCounter, \
 					AsyncQueue
-from blitzutils.models import WoTBlitzReplayJSON, Region, WGApiWoTBlitzTankStats, \
-								WGTankStat, Tank
+from blitzutils.models import Region, WGTankStat, Tank, EnumVehicleTier, EnumNation, EnumVehicleTypeInt
 from blitzutils.wg import WGApi 
 
 logger 	= logging.getLogger()
@@ -43,17 +49,16 @@ debug	= logger.debug
 WORKERS_WGAPI 		: int = 75
 WORKERS_IMPORTERS	: int = 5
 TANK_STATS_Q_MAX 	: int = 1000
-TANK_STATS_BATCH 	: int = 1000
+TANK_STATS_BATCH 	: int = 2000
 
+EXPORT_DATA_FORMATS : list[str] = [ 'parquet', 'arrow' ]
+DEFAULT_EXPORT_DATA_FORMAT = EXPORT_DATA_FORMATS[0]
 # Globals
 
-# FB 	: ForkedBackend
 db 			: Backend
 readQ 		: AsyncQueue[list[Any] | None]
-# readQb		: queue.Queue
-# writeQ 		: queue.Queue
+progressQ   : AsyncQueue[int | None]
 in_model	: type[JSONExportable]
-#rel_mapper  : BucketMapper[BSBlitzRelease] | None
 mp_options	: dict[str, Any] = dict()
 
 ########################################################
@@ -90,6 +95,11 @@ def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> b
 		export_parser = tank_stats_parsers.add_parser('export', help="tank-stats export help")
 		if not add_args_export(export_parser, config=config):
 			raise Exception("Failed to define argument parser for: tank-stats export")
+		
+		export_data_parser = tank_stats_parsers.add_parser('export-data', help="tank-stats export-data help")
+		if not add_args_export_data(export_data_parser, config=config):
+			raise Exception("Failed to define argument parser for: tank-stats export-data")
+
 		debug('Finished')	
 		return True
 	except Exception as err:
@@ -256,6 +266,8 @@ def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 		 					 default=EXPORT_FORMAT, help='export file format')
 		parser.add_argument('filename', metavar='FILE', type=str, nargs='?', default=EXPORT_FILE, 
 							help='file to export tank-stats to. Use \'-\' for STDIN')
+		parser.add_argument('--basedir', metavar='FILE', type=str, nargs='?', default='.', 
+							help='base dir to export data')
 		parser.add_argument('--append', action='store_true', default=False, help='Append to file(s)')
 		parser.add_argument('--force', action='store_true', default=False, 
 								help='overwrite existing file(s) when exporting')
@@ -280,6 +292,37 @@ def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 		error(f'{err}')
 	return False
 
+def add_args_export_data(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+	try:
+		debug('starting')
+		EXPORT_FORMAT 	: str = DEFAULT_EXPORT_DATA_FORMAT
+		EXPORT_FILE 	: str = 'update_totals'
+		EXPORT_DIR 		: str = 'export' 
+		
+		if config is not None and 'TANK_STATS' in config.sections():
+			configTS 		= config['TANK_STATS']
+			EXPORT_FORMAT	= configTS.get('export_data_format', DEFAULT_EXPORT_DATA_FORMAT)
+			EXPORT_FILE		= configTS.get('export_data_file', EXPORT_FILE )
+			EXPORT_DIR		= configTS.get('export_data_file', EXPORT_DIR )
+		parser.add_argument('RELEASE', type=str, 
+							help='export stats for a RELEASE')
+		parser.add_argument('--format', type=str, nargs='?', choices=EXPORT_DATA_FORMATS, 
+		 					 default=EXPORT_FORMAT, help='export file format')
+		parser.add_argument('--filename', metavar='FILE', type=str, nargs='?', default=EXPORT_FILE, 
+							help='file to export tank-stats to. Use \'-\' for STDIN')
+		parser.add_argument('--basedir', metavar='FILE', type=str, nargs='?', default=EXPORT_DIR, 
+							help='base dir to export data')
+		parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
+								default=[ r.value for r in Region.API_regions() ], 
+								help='filter by region (default is API = eu + com + asia)')
+		
+		parser.add_argument('--force', action='store_true', default=False, 
+								help='overwrite existing file(s) when exporting')
+
+		return True	
+	except Exception as err:
+		error(f'{err}')
+	return False
 
 ###########################################
 # 
@@ -297,7 +340,10 @@ async def cmd(db: Backend, args : Namespace) -> bool:
 			return await cmd_edit(db, args)
 
 		elif args.tank_stats_cmd == 'export':
-			return await cmd_export(db, args)
+			return await cmd_export_text(db, args)
+		
+		elif args.tank_stats_cmd == 'export-data':
+			return await cmd_export_data(db, args)
 
 		elif args.tank_stats_cmd == 'import':
 			return await cmd_importMP(db, args)
@@ -545,7 +591,7 @@ async def cmd_edit(db: Backend, args : Namespace) -> bool:
 		since		: int = 0
 		if args.since is not None:
 			since = int(datetime.fromisoformat(args.since).timestamp())
-		accounts 	: list[BSAccount] | None= read_account_strs(args.accounts)
+		accounts 	: list[BSAccount] | None= read_args_accounts(args.accounts)
 		sample 		: float 				= args.sample
 		commit 		: bool  				= args.commit
 
@@ -682,11 +728,11 @@ async def cmd_prune(db: Backend, args : Namespace) -> bool:
 
 ########################################################
 # 
-# cmd_export()
+# cmd_export_text()
 #
 ########################################################
 
-async def cmd_export(db: Backend, args : Namespace) -> bool:
+async def cmd_export_text(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')		
 		assert type(args.sample) in [int, float], 'param "sample" has to be a number'
@@ -697,7 +743,7 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 		force		: bool 					= args.force
 		export_stdout : bool 				= filename == '-'
 		sample 		: float = args.sample
-		accounts 	: list[BSAccount] | None = read_account_strs(args.accounts)
+		accounts 	: list[BSAccount] | None = read_args_accounts(args.accounts)
 		tanks 		: list[Tank] | None 	= read_args_tanks(args.tanks)
 		release 	: BSBlitzRelease | None = None
 		if args.release is not None:
@@ -766,6 +812,213 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 	except Exception as err:
 		error(f'{err}')
 	return False
+
+
+########################################################
+# 
+# cmd_export_data()
+#
+########################################################
+
+async def cmd_export_data(db: Backend, args : Namespace) -> bool:
+	debug('starting')	
+	assert args.format in EXPORT_DATA_FORMATS, "--format has to be 'arrow' or 'parquet'"
+	MAX_WORKERS : int 			= 10
+	stats 		: EventCounter 	= EventCounter('tank-stats export')	
+	try:
+		
+		
+		regions		: set[Region] 			= { Region(r) for r in args.region }
+		release 	: BSBlitzRelease		= BSBlitzRelease(release=args.RELEASE)
+
+		# sample 		: float 				= args.sample
+		# accounts 	: list[BSAccount] | None= read_args_accounts(args.accounts)
+		# tanks 		: list[Tank] | None 	= read_args_tanks(args.tanks)
+		# tanks_tiers : dict[EnumVehicleTier, list[Tank]] = dict()
+
+		## Logic
+		# Form a update/region/tank Queue in main process
+		# MP processes to fetch, validate, transform, flatten and join the data with tank_id/tier
+		# writing to dataset in the main process
+
+		with Manager() as manager:			
+			doneQ : queue.Queue[int | None]	= manager.Queue()
+			options : dict[str, Any] 		= dict()
+			options['force'] 				= args.force
+			options['format']				= args.format
+			options['basedir']				= args.basedir
+			options["filename"]				= args.filename
+			options['regions']				= regions
+			options['release']				= release.release
+			
+			WORKERS : int = min( [cpu_count() - 1, MAX_WORKERS ])
+
+			with Pool(processes=WORKERS, initializer=export_data_mp_init, 
+					  initargs=[ db.config, doneQ, db.model_tank_stats, options ]) as pool:
+
+				debug(f'starting {WORKERS} workers')
+				results : AsyncResult = pool.map_async(export_data_mp_worker_start, range(1,11))
+				pool.close()
+
+				N : int = await db.tankopedia_count()
+
+				with alive_bar(N, title="Exporting tank stats ", 
+								enrich_print=False, refresh_secs=1) as bar:	
+					active : int = 10
+					tank_id : int | None
+					while active > 0:
+						if (tank_id:= doneQ.get()) is None:
+							active -= 1
+						else:
+							debug(f'tank_id {tank_id} processed')
+							stats.log("tanks exported")
+							bar()
+				
+				for res in results.get():
+					stats.merge_child(res)
+				pool.join()
+
+	except Exception as err:
+		error(f'{err}')
+	stats.print()
+	return False
+
+
+def export_data_mp_init(backend_config	: dict[str, Any],					
+						doneQ 			: queue.Queue[int | None],
+						import_model	: type[JSONExportable],
+						options 		: dict[str, Any]):
+	"""Initialize static/global backend into a forked process"""
+	global db, progressQ, in_model, mp_options
+	debug(f'starting (PID={getpid()})')
+
+	if (tmp_db := Backend.create(**backend_config)) is None:
+		raise ValueError('could not create backend')	
+	db 					= tmp_db
+	progressQ 			= AsyncQueue.from_queue(doneQ)
+	in_model 			= import_model	
+	mp_options			= options
+	debug('finished')
+	
+
+def export_data_mp_worker_start(tier: int = 0) -> EventCounter:
+	"""Forkable tank stats import worker"""
+	debug(f'starting import worker #{tier}')
+	return run(export_data_mp_worker(tier), debug=False)
+
+
+async def  export_data_mp_worker(tier: int = 0) -> EventCounter:
+	"""Forkable tank stats import worker"""
+	debug(f'#{id}: starting')
+	stats 		: EventCounter 	= EventCounter('importer')
+	workers 	: list[Task]	= list()
+	try: 
+		global db, progressQ, in_model, mp_options
+		THREADS 	: int = 4		
+		import_model: type[JSONExportable] 		= in_model
+		
+		tankQ			: Queue[Tank | None] 	= Queue()
+		dataQ 			: Queue[pd.DataFrame]	= Queue(100)
+		force 			: bool 					= mp_options['force']
+		export_format	: str					= mp_options['format']
+		basedir 		: str 					= mp_options["basedir"]
+		filename 		: str 					= mp_options["filename"]		
+		regions 		: set[Region]			= mp_options['regions']	
+		release 		: BSBlitzRelease 		= BSBlitzRelease(release=mp_options['release'])
+
+		export_file : str = os.path.join(basedir, release.release, f'{filename}.{tier}')
+
+		for _ in range(THREADS):
+			workers.append(create_task(export_data_fetcher(db, progressQ, release, tankQ, dataQ, regions) ))		
+		workers.append(create_task(export_data_writer(export_file, dataQ, export_format, force)))
+
+		async for tank in db.tankopedia_get_many(tier=EnumVehicleTier(tier)):
+			await tankQ.put(tank)
+		await tankQ.put(None)
+		
+		await tankQ.join()
+		await dataQ.join()
+
+		await stats.gather_stats(workers)	
+	except CancelledError:
+		pass
+	except Exception as err:
+		error(f'{err}')	
+	return stats
+
+
+async def export_data_fetcher(db: Backend, 
+							  progressQ : AsyncQueue[int | None], 
+							  release 	: BSBlitzRelease,
+							  tankQ 	: Queue[Tank | None], 
+							  dataQ 	: Queue[pd.DataFrame], 
+							  regions 	: set[Region],
+							  ) -> EventCounter:
+	"""Fetch tanks stats data from backend and convert to Pandas data frames"""
+	debug('starting')
+	stats : EventCounter 	= EventCounter(f'fetch {db.driver}')
+	tank  : Tank | None
+	tank_stats : list[dict[str, Any]] = list()
+	BATCH : int = TANK_STATS_BATCH
+	try:		
+		while (tank := await tankQ.get()) is not None:
+			async for tank_stat in db.tank_stats_get(release=release, regions=regions, tanks=[tank]):
+				tank_stats.append(tank_stat.obj_src())
+				if len(tank_stats) == BATCH:
+					await dataQ.put(pd.json_normalize(tank_stats).drop('id', axis=1))
+					stats.log('tank stats read', len(tank_stats))
+					tank_stats = list()
+			
+			stats.log('tanks processed')
+			await progressQ.put(tank.tank_id)
+			tankQ.task_done()
+		
+		if len(tank_stats) > 0:
+			await dataQ.put(pd.json_normalize(tank_stats).drop('id', axis=1))
+			stats.log('tank stats read', len(tank_stats))
+		
+		tankQ.task_done()
+		await progressQ.put(None)  # add sentinel
+		
+	except CancelledError:
+		debug('cancelled')
+	except Exception as err:
+		error(f'{err}')	
+	return stats
+
+
+async def export_data_writer(filename: str, 
+							dataQ : Queue[pd.DataFrame], 
+							export_format : str, 
+							force: bool = False) -> EventCounter:
+	"""Worker to write on data stats to a file in format"""
+	debug('starting')
+	assert export_format in EXPORT_DATA_FORMATS, f"export format has to be one of: {', '.join(EXPORT_DATA_FORMATS)}"
+	stats : EventCounter 	= EventCounter(f'writer')
+	try:
+		export_file : str = f'{filename}.{export_format}'
+		if not force and isfile(export_file):
+			raise FileExistsError(export_file)
+		makedirs(dirname(filename), exist_ok=True)
+		batch 	: pa.RecordBatch = pa.RecordBatch.from_pandas(await dataQ.get())
+		schema 	: pa.Schema 	 = batch.schema
+		with pa.OSFile(export_file, 'wb') as sink:
+			with pa.ipc.new_file(sink, schema, 
+								options=pa.ipc.IpcWriteOptions(compression='lz4')) as writer:
+				while True:
+					try:
+						writer.write_batch(batch)
+					except Exception as err:
+						error(f'{err}')	
+					stats.log('rows written', batch.num_rows)
+					dataQ.task_done()
+					batch = pa.RecordBatch.from_pandas(await dataQ.get(), schema)					
+
+	except CancelledError:
+		debug('cancelled')
+	except Exception as err:
+		error(f'{err}')	
+	return stats
 
 
 ########################################################
