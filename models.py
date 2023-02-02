@@ -5,12 +5,11 @@ from typing import Optional, ClassVar
 from math import ceil
 from pydantic import validator, Field, HttpUrl
 
-
 import logging
 
 
 from blitzutils.models import Region, Account, WGBlitzRelease
-from pyutils.utils import epoch_now, TypeExcludeDict, I, D, Idx, \
+from pyutils.utils import JSONExportable, epoch_now, TypeExcludeDict, I, D, Idx, \
 						BackendIndexType, BackendIndex, DESCENDING, ASCENDING, TEXT
 
 TYPE_CHECKING = True
@@ -165,3 +164,7 @@ class BSBlitzRelease(WGBlitzRelease):
 		if format == 'rich':
 			extra = f"\t{self.cut_off}"
 		return super().txt_row(format) + extra
+
+
+class YastatistAccount(JSONExportable):
+	id: int
