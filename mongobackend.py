@@ -1881,7 +1881,7 @@ class MongoBackend(Backend):
 			if tanks is not None and len(tanks) > 0:
 				match.append( { alias('tank_id'): { '$in': [ t.tank_id for t in tanks ] } })
 			if len(match) > 0:
-				pipeline.append({'$match' : match })
+				pipeline.append( { '$match' : { '$and' : match } })
 
 			return pipeline
 		except Exception as err:
