@@ -680,7 +680,7 @@ async def count_accounts(db: Backend, args : Namespace, stats_type: StatsTypes |
 	accounts_N : int = 0
 	try:
 		regions	 	: set[Region]	= { Region(r) for r in args.region }
-		accounts 	: list[BSAccount] | None = read_account_strs(args.accounts)
+		accounts 	: list[BSAccount] | None = read_args_accounts(args.accounts)
 
 		if accounts is not None:
 			accounts_N = len(accounts)
@@ -718,7 +718,7 @@ async def create_accountQ(db: Backend, args : Namespace,
 	stats : EventCounter = EventCounter(f'{db.driver}: accounts')
 	try:
 		regions	 	: set[Region]	= { Region(r) for r in args.region }
-		accounts 	: list[BSAccount] | None = read_account_strs(args.accounts)
+		accounts 	: list[BSAccount] | None = read_args_accounts(args.accounts)
 		
 		await accountQ.add_producer()
 
@@ -790,7 +790,7 @@ async def create_accountQ_BAK(db: Backend, args : Namespace,
 	raise DeprecationWarning('create_accountQ_BAK is depreciated')
 	try:
 		regions	 	: set[Region]	= { Region(r) for r in args.region }
-		accounts 	: list[BSAccount] | None = read_account_strs(args.accounts)
+		accounts 	: list[BSAccount] | None = read_args_accounts(args.accounts)
 
 		accounts_N 		: int = 0
 		accounts_added 	: int = 0
@@ -897,7 +897,7 @@ async def create_accountQ_BAK(db: Backend, args : Namespace,
 	return None
 
 
-def read_account_strs(accounts: list[str]) -> list[BSAccount] | None:
+def read_args_accounts(accounts: list[str]) -> list[BSAccount] | None:
 	res : list[BSAccount] = list()
 	for a in accounts:
 		try:

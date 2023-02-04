@@ -127,7 +127,7 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 							help='import release launched after LAUNCH_DATE. By default, imports all releases.')
 		return True	
 	except Exception as err:
-		error(f'add_args_import() : {err}')
+		error(f'{err}')
 	return False
 
 
@@ -147,10 +147,27 @@ def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 							help='Overwrite existing file(s) when exporting')
 		return True	
 	except Exception as err:
-		error(f'add_args_remove() : {err}')
+		error(f'{err}')
 	return False
 
 
+
+def read_args_releases(strs: list[str] | None) -> list[BSBlitzRelease] | None:
+	"""Read releases from arguments"""
+	debug('starting')
+	try:
+		releases : list[BSBlitzRelease] = list()
+		if strs is not None:			
+			for r in strs:
+				try:
+					releases.append(BSBlitzRelease(release=r))
+				except Exception as err:
+					error(f'{err}')
+			return releases
+	except Exception as err:
+		error(f'{err}')
+	return None
+	
 
 ###########################################
 # 
