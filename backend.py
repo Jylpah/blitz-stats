@@ -19,7 +19,7 @@ from blitzutils.models import Region, WoTBlitzReplayJSON, WoTBlitzReplayData, WG
 		Account, WGTank, Tank, WGPlayerAchievementsMaxSeries, WGPlayerAchievementsMain, \
 		EnumVehicleTier, EnumNation, EnumVehicleTypeStr, WoTBlitzTankString
 from pyutils import EventCounter, JSONExportable, epoch_now, is_alphanum, Idx, D, O
-# from mongobackend import MongoBackend
+
 
 # Setup logging
 logger	= logging.getLogger()
@@ -33,10 +33,12 @@ MAX_UPDATE_INTERVAL : int = 4*30*24*60*60 # 4 months
 INACTIVE_THRESHOLD 	: int = 2*30*24*60*60 # 2 months
 WG_ACCOUNT_ID_MAX 	: int = int(31e8)
 MAX_RETRIES 		: int = 3
-MIN_UPDATE_INTERVAL 		: int = 3   # days
+MIN_UPDATE_INTERVAL : int = 3   # days
 ACCOUNTS_Q_MAX 		: int = 10000
 TANK_STATS_BATCH	: int = 1000
 
+
+A = TypeVar('A')
 ##############################################
 #
 ## Utils 
@@ -1099,6 +1101,19 @@ class Backend(ABC):
 		"""Find duplicate tank stats from the backend"""
 		raise NotImplementedError
 		yield WGTankStat()
+
+
+	@abstractmethod
+	async def tank_stats_unique(self,
+								field	: str,
+								field_type: type[A], 
+								release	: BSBlitzRelease | None = None,
+								regions	: set[Region] = Region.API_regions(),
+								account	: BSAccount | None = None, 
+								tank	: Tank | None = None
+								) -> list[A] | None:
+		"""Return unique values of field"""
+		raise NotImplementedError
 
 
 	async def tank_stats_get_worker(self, tank_statsQ : Queue[WGTankStat], **getargs) -> EventCounter:

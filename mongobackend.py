@@ -15,7 +15,8 @@ from pydantic import BaseModel, ValidationError, Field
 from asyncstdlib import enumerate
 
 from backend import Backend, OptAccountsDistributed, OptAccountsInactive, BSTableType, \
-					MAX_UPDATE_INTERVAL, WG_ACCOUNT_ID_MAX, MIN_UPDATE_INTERVAL, ErrorLog, ErrorLogType
+					MAX_UPDATE_INTERVAL, WG_ACCOUNT_ID_MAX, MIN_UPDATE_INTERVAL, ErrorLog, \
+					ErrorLogType, A
 from models import BSAccount, BSBlitzRelease, StatsTypes
 from pyutils import epoch_now, JSONExportable, AliasMapper, I, D, O, Idx, \
 	BackendIndexType, BackendIndex, DESCENDING, ASCENDING, TEXT
@@ -316,7 +317,7 @@ class MongoBackend(Backend):
 
 
 	@property
-	def backend(self) -> str:
+	def backend(self: 'MongoBackend') -> str:
 		host : str = 'UNKNOWN'
 		try:
 			host, port = self._client.address
@@ -1850,6 +1851,38 @@ class MongoBackend(Backend):
 
 		except Exception as err:
 			debug(f'Could not find duplicates from {self.table_uri(BSTableType.TankStats)}: {err}')
+
+
+	async def tank_stats_unique(self,
+								field	: str,
+								field_type: type[A], 
+								release	: BSBlitzRelease | None = None,
+								regions	: set[Region] = Region.API_regions(),
+								account	: BSAccount | None = None, 
+								tank	: Tank | None = None
+								) -> list[A] | None:
+		"""Return unique values of field"""
+		debug('starting')
+		try:
+			a 		: AliasMapper 	= AliasMapper(self.model_tank_stats)
+			alias 	: Callable 		= a.alias
+			db_field: str = alias(field)
+			dbc 	: AsyncIOMotorCollection = self.collection_tank_stats
+			query 	: dict[str, Any] = dict()
+
+			if release is not None:
+				query[alias('release')] = release.release
+			query[alias('region')] = { '$in': list(regions)}
+			if tank is not None:
+				query[alias('tank_id')] = tank.tank_id
+			if account is not None:
+				query[alias('account_id')] = account.id
+			
+			return await dbc.distinct(key = db_field, filter=query)		# type: ignore
+
+		except Exception as err:
+			error(f'{err}')
+		return None
 
 	########################################################
 	#
