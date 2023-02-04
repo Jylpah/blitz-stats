@@ -58,6 +58,8 @@ DEFAULT_EXPORT_DATA_FORMAT = EXPORT_DATA_FORMATS[0]
 db 			: Backend
 readQ 		: AsyncQueue[list[Any] | None]
 progressQ   : AsyncQueue[int | None]
+workQ   	: AsyncQueue[int | None]
+writeQ 		: AsyncQueue[pd.DataFrame]
 in_model	: type[JSONExportable]
 mp_options	: dict[str, Any] = dict()
 
@@ -816,6 +818,213 @@ async def cmd_export_text(db: Backend, args : Namespace) -> bool:
 
 ########################################################
 # 
+# cmd_export_data() OLD VERSION
+#
+########################################################
+
+# async def cmd_export_data(db: Backend, args : Namespace) -> bool:
+# 	debug('starting')	
+# 	assert args.format in EXPORT_DATA_FORMATS, "--format has to be 'arrow' or 'parquet'"
+# 	MAX_WORKERS : int 			= 10
+# 	stats 		: EventCounter 	= EventCounter('tank-stats export')	
+# 	try:
+		
+		
+# 		regions		: set[Region] 			= { Region(r) for r in args.region }
+# 		release 	: BSBlitzRelease		= BSBlitzRelease(release=args.RELEASE)
+
+# 		# sample 		: float 				= args.sample
+# 		# accounts 	: list[BSAccount] | None= read_args_accounts(args.accounts)
+# 		# tanks 		: list[Tank] | None 	= read_args_tanks(args.tanks)
+# 		# tanks_tiers : dict[EnumVehicleTier, list[Tank]] = dict()
+
+# 		## Logic TODO
+# 		# Form a tank Queue in main process
+# 		# MP processes to fetch, validate, transform, flatten and join the data with tank_id/tier
+# 		# writing to dataset in the main process
+
+# 		with Manager() as manager:			
+# 			doneQ : queue.Queue[int | None]	= manager.Queue()
+# 			options : dict[str, Any] 		= dict()
+# 			options['force'] 				= args.force
+# 			options['format']				= args.format
+# 			options['basedir']				= args.basedir
+# 			options["filename"]				= args.filename
+# 			options['regions']				= regions
+# 			options['release']				= release.release
+			
+# 			WORKERS : int = min( [cpu_count() - 1, MAX_WORKERS ])
+
+# 			with Pool(processes=WORKERS, initializer=export_data_mp_init, 
+# 					  initargs=[ db.config, doneQ, db.model_tank_stats, options ]) as pool:
+
+# 				debug(f'starting {WORKERS} workers')
+# 				results : AsyncResult = pool.map_async(export_data_mp_worker_start, range(1,11))
+# 				pool.close()
+
+# 				N : int = await db.tankopedia_count()
+
+# 				with alive_bar(N, title="Exporting tank stats ", 
+# 								enrich_print=False, refresh_secs=1) as bar:	
+# 					active : int = 10
+# 					tank_id : int | None
+# 					while active > 0:
+# 						if (tank_id:= doneQ.get()) is None:
+# 							active -= 1
+# 						else:
+# 							debug(f'tank_id {tank_id} processed')
+# 							stats.log("tanks exported")
+# 							bar()
+				
+# 				for res in results.get():
+# 					stats.merge_child(res)
+# 				pool.join()
+
+# 	except Exception as err:
+# 		error(f'{err}')
+# 	stats.print()
+# 	return False
+
+
+# def export_data_mp_init(backend_config	: dict[str, Any],					
+# 						doneQ 			: queue.Queue[int | None],
+# 						import_model	: type[JSONExportable],
+# 						options 		: dict[str, Any]):
+# 	"""Initialize static/global backend into a forked process"""
+# 	global db, progressQ, in_model, mp_options
+# 	debug(f'starting (PID={getpid()})')
+
+# 	if (tmp_db := Backend.create(**backend_config)) is None:
+# 		raise ValueError('could not create backend')	
+# 	db 					= tmp_db
+# 	progressQ 			= AsyncQueue.from_queue(doneQ)
+# 	in_model 			= import_model	
+# 	mp_options			= options
+# 	debug('finished')
+	
+
+# def export_data_mp_worker_start(tier: int = 0) -> EventCounter:
+# 	"""Forkable tank stats import worker"""
+# 	debug(f'starting import worker #{tier}')
+# 	return run(export_data_mp_worker(tier), debug=False)
+
+
+# async def  export_data_mp_worker(tier: int = 0) -> EventCounter:
+# 	"""Forkable tank stats import worker"""
+# 	debug(f'#{id}: starting')
+# 	stats 		: EventCounter 	= EventCounter('importer')
+# 	workers 	: list[Task]	= list()
+# 	try: 
+# 		global db, progressQ, in_model, mp_options
+# 		THREADS 	: int = 4		
+# 		import_model: type[JSONExportable] 		= in_model
+		
+# 		tankQ			: Queue[Tank | None] 	= Queue()
+# 		dataQ 			: Queue[pd.DataFrame]	= Queue(100)
+# 		force 			: bool 					= mp_options['force']
+# 		export_format	: str					= mp_options['format']
+# 		basedir 		: str 					= mp_options["basedir"]
+# 		filename 		: str 					= mp_options["filename"]		
+# 		regions 		: set[Region]			= mp_options['regions']	
+# 		release 		: BSBlitzRelease 		= BSBlitzRelease(release=mp_options['release'])
+
+# 		export_file : str = os.path.join(basedir, release.release, f'{filename}.{tier}')
+
+# 		for _ in range(THREADS):
+# 			workers.append(create_task(export_data_fetcher(db, progressQ, release, tankQ, dataQ, regions) ))		
+# 		workers.append(create_task(export_data_writer(export_file, dataQ, export_format, force)))
+
+# 		async for tank in db.tankopedia_get_many(tier=EnumVehicleTier(tier)):
+# 			await tankQ.put(tank)
+# 		await tankQ.put(None)
+		
+# 		await tankQ.join()
+# 		await dataQ.join()
+
+# 		await stats.gather_stats(workers)	
+# 	except CancelledError:
+# 		pass
+# 	except Exception as err:
+# 		error(f'{err}')	
+# 	return stats
+
+
+# async def export_data_fetcher(db: Backend, 
+# 							  progressQ : AsyncQueue[int | None], 
+# 							  release 	: BSBlitzRelease,
+# 							  tankQ 	: Queue[Tank | None], 
+# 							  dataQ 	: Queue[pd.DataFrame], 
+# 							  regions 	: set[Region],
+# 							  ) -> EventCounter:
+# 	"""Fetch tanks stats data from backend and convert to Pandas data frames"""
+# 	debug('starting')
+# 	stats : EventCounter 	= EventCounter(f'fetch {db.driver}')
+# 	tank  : Tank | None
+# 	tank_stats : list[dict[str, Any]] = list()
+# 	BATCH : int = TANK_STATS_BATCH
+# 	try:		
+# 		while (tank := await tankQ.get()) is not None:
+# 			async for tank_stat in db.tank_stats_get(release=release, regions=regions, tanks=[tank]):
+# 				tank_stats.append(tank_stat.obj_src())
+# 				if len(tank_stats) == BATCH:
+# 					await dataQ.put(pd.json_normalize(tank_stats).drop('id', axis=1))
+# 					stats.log('tank stats read', len(tank_stats))
+# 					tank_stats = list()
+			
+# 			stats.log('tanks processed')
+# 			await progressQ.put(tank.tank_id)
+# 			tankQ.task_done()
+		
+# 		if len(tank_stats) > 0:
+# 			await dataQ.put(pd.json_normalize(tank_stats).drop('id', axis=1))
+# 			stats.log('tank stats read', len(tank_stats))
+		
+# 		tankQ.task_done()
+# 		await progressQ.put(None)  # add sentinel
+		
+# 	except CancelledError:
+# 		debug('cancelled')
+# 	except Exception as err:
+# 		error(f'{err}')	
+# 	return stats
+
+
+# async def export_data_writer(filename: str, 
+# 							dataQ : Queue[pd.DataFrame], 
+# 							export_format : str, 
+# 							force: bool = False) -> EventCounter:
+# 	"""Worker to write on data stats to a file in format"""
+# 	debug('starting')
+# 	assert export_format in EXPORT_DATA_FORMATS, f"export format has to be one of: {', '.join(EXPORT_DATA_FORMATS)}"
+# 	stats : EventCounter 	= EventCounter(f'writer')
+# 	try:
+# 		export_file : str = f'{filename}.{export_format}'
+# 		if not force and isfile(export_file):
+# 			raise FileExistsError(export_file)
+# 		makedirs(dirname(filename), exist_ok=True)
+# 		batch 	: pa.RecordBatch = pa.RecordBatch.from_pandas(await dataQ.get())
+# 		schema 	: pa.Schema 	 = batch.schema
+# 		with pa.OSFile(export_file, 'wb') as sink:
+# 			with pa.ipc.new_file(sink, schema, 
+# 								options=pa.ipc.IpcWriteOptions(compression='lz4')) as writer:
+# 				while True:
+# 					try:
+# 						writer.write_batch(batch)
+# 					except Exception as err:
+# 						error(f'{err}')	
+# 					stats.log('rows written', batch.num_rows)
+# 					dataQ.task_done()
+# 					batch = pa.RecordBatch.from_pandas(await dataQ.get(), schema)					
+
+# 	except CancelledError:
+# 		debug('cancelled')
+# 	except Exception as err:
+# 		error(f'{err}')	
+# 	return stats
+
+
+########################################################
+# 
 # cmd_export_data()
 #
 ########################################################
@@ -823,61 +1032,67 @@ async def cmd_export_text(db: Backend, args : Namespace) -> bool:
 async def cmd_export_data(db: Backend, args : Namespace) -> bool:
 	debug('starting')	
 	assert args.format in EXPORT_DATA_FORMATS, "--format has to be 'arrow' or 'parquet'"
-	MAX_WORKERS : int 			= 10
+	MAX_WORKERS : int 			= 16
 	stats 		: EventCounter 	= EventCounter('tank-stats export')	
-	try:
-		
-		
-		regions		: set[Region] 			= { Region(r) for r in args.region }
-		release 	: BSBlitzRelease		= BSBlitzRelease(release=args.RELEASE)
-
-		# sample 		: float 				= args.sample
-		# accounts 	: list[BSAccount] | None= read_args_accounts(args.accounts)
-		# tanks 		: list[Tank] | None 	= read_args_tanks(args.tanks)
-		# tanks_tiers : dict[EnumVehicleTier, list[Tank]] = dict()
-
-		## Logic TODO
-		# Form a tank Queue in main process
-		# MP processes to fetch, validate, transform, flatten and join the data with tank_id/tier
-		# writing to dataset in the main process
+	try:		
+		regions			: set[Region] 	= { Region(r) for r in args.region }
+		release 		: BSBlitzRelease= BSBlitzRelease(release=args.RELEASE)
+		force 			: bool			= args.force
+		export_format 	: str			= args.format
+		basedir 		: str			= args.basedir
+		filename 		: str			= args.filename
+		export_file 	: str 			= os.path.join(basedir, release.release, filename)
+		options 		: dict[str, Any]= dict()
+		options['regions']				= regions
+		options['release']				= release.release
+		tank_id 		: int
+		WORKERS 		: int 			= min( [cpu_count() - 1, MAX_WORKERS ])
 
 		with Manager() as manager:			
-			doneQ : queue.Queue[int | None]	= manager.Queue()
-			options : dict[str, Any] 		= dict()
-			options['force'] 				= args.force
-			options['format']				= args.format
-			options['basedir']				= args.basedir
-			options["filename"]				= args.filename
-			options['regions']				= regions
-			options['release']				= release.release
-			
-			WORKERS : int = min( [cpu_count() - 1, MAX_WORKERS ])
+			dataQ : queue.Queue[pd.DataFrame]= manager.Queue(TANK_STATS_Q_MAX)
+			tankQ : queue.Queue[int | None] = manager.Queue()
+			adataQ: AsyncQueue[pd.DataFrame]=AsyncQueue.from_queue(dataQ)
+			atankQ: AsyncQueue[int | None]  = AsyncQueue.from_queue(tankQ)
+			worker : Task = create_task(export_data_writer(export_file, adataQ, export_format, force))
 
 			with Pool(processes=WORKERS, initializer=export_data_mp_init, 
-					  initargs=[ db.config, doneQ, db.model_tank_stats, options ]) as pool:
+					  initargs=[ db.config, tankQ, dataQ, options ]) as pool:
+				
+				if (tank_ids := await db.tank_stats_unique('tank_id', int, regions=regions, 
+															release=release)) is None:
+					raise ValueError(f'Could not fetch tank_ids from the backend: {db.driver}')
+				else:
+					# print(f'tank_ids: {tank_ids}')
+					for tank_id in tank_ids: 
+						await atankQ.put(tank_id)					
 
-				debug(f'starting {WORKERS} workers')
-				results : AsyncResult = pool.map_async(export_data_mp_worker_start, range(1,11))
+				debug(f'starting {WORKERS} workers, {atankQ.qsize()} tanks')
+				results : AsyncResult = pool.map_async(export_data_mp_worker_start, range(WORKERS))
 				pool.close()
-
-				N : int = await db.tankopedia_count()
-
+				
+				N 	: int = len(tank_ids)
+				prev: int = 0
+				done: int
 				with alive_bar(N, title="Exporting tank stats ", 
 								enrich_print=False, refresh_secs=1) as bar:	
-					active : int = 10
-					tank_id : int | None
-					while active > 0:
-						if (tank_id:= doneQ.get()) is None:
-							active -= 1
-						else:
-							debug(f'tank_id {tank_id} processed')
-							stats.log("tanks exported")
-							bar()
-				
+					while True:
+						done = min([N + WORKERS - atankQ.qsize(), N])
+						bar(done - prev)
+						prev = done
+						if atankQ.qsize() <= WORKERS:
+							break
+						await sleep(1)
+
+				await atankQ.join()
+				for _ in range(WORKERS):
+					await atankQ.put(None)				
 				for res in results.get():
 					stats.merge_child(res)
 				pool.join()
 
+			await adataQ.join()
+			await stats.gather_stats([worker])
+			
 	except Exception as err:
 		error(f'{err}')
 	stats.print()
@@ -885,61 +1100,47 @@ async def cmd_export_data(db: Backend, args : Namespace) -> bool:
 
 
 def export_data_mp_init(backend_config	: dict[str, Any],					
-						doneQ 			: queue.Queue[int | None],
-						import_model	: type[JSONExportable],
-						options 		: dict[str, Any]):
+						 tankQ 			: queue.Queue[int | None],
+						 dataQ 			: queue.Queue[pd.DataFrame],
+						 options 		: dict[str, Any]):
 	"""Initialize static/global backend into a forked process"""
-	global db, progressQ, in_model, mp_options
+	global db, workQ, writeQ, mp_options
 	debug(f'starting (PID={getpid()})')
 
 	if (tmp_db := Backend.create(**backend_config)) is None:
 		raise ValueError('could not create backend')	
-	db 					= tmp_db
-	progressQ 			= AsyncQueue.from_queue(doneQ)
-	in_model 			= import_model	
-	mp_options			= options
+	db 			= tmp_db
+	workQ 		= AsyncQueue.from_queue(tankQ)
+	writeQ 		= AsyncQueue.from_queue(dataQ)
+	mp_options	= options
 	debug('finished')
 	
 
-def export_data_mp_worker_start(tier: int = 0) -> EventCounter:
+def export_data_mp_worker_start(worker: int = 0) -> EventCounter:
 	"""Forkable tank stats import worker"""
-	debug(f'starting import worker #{tier}')
-	return run(export_data_mp_worker(tier), debug=False)
+	debug(f'starting import worker #{worker}')
+	return run(export_data_mp_worker(worker), debug=False)
 
 
-async def  export_data_mp_worker(tier: int = 0) -> EventCounter:
+async def  export_data_mp_worker(worker: int = 0) -> EventCounter:
 	"""Forkable tank stats import worker"""
-	debug(f'#{id}: starting')
+	global db, workQ, writeQ, mp_options
+
+	debug(f'#{worker}: starting')
 	stats 		: EventCounter 	= EventCounter('importer')
 	workers 	: list[Task]	= list()
-	try: 
-		global db, progressQ, in_model, mp_options
-		THREADS 	: int = 4		
-		import_model: type[JSONExportable] 		= in_model
-		
-		tankQ			: Queue[Tank | None] 	= Queue()
-		dataQ 			: Queue[pd.DataFrame]	= Queue(100)
-		force 			: bool 					= mp_options['force']
-		export_format	: str					= mp_options['format']
-		basedir 		: str 					= mp_options["basedir"]
-		filename 		: str 					= mp_options["filename"]		
+	THREADS 	: int = 4		
+
+	try:		
 		regions 		: set[Region]			= mp_options['regions']	
 		release 		: BSBlitzRelease 		= BSBlitzRelease(release=mp_options['release'])
 
-		export_file : str = os.path.join(basedir, release.release, f'{filename}.{tier}')
-
 		for _ in range(THREADS):
-			workers.append(create_task(export_data_fetcher(db, progressQ, release, tankQ, dataQ, regions) ))		
-		workers.append(create_task(export_data_writer(export_file, dataQ, export_format, force)))
+			workers.append(create_task(export_data_fetcher(db, release, regions, workQ, writeQ) ))		
 
-		async for tank in db.tankopedia_get_many(tier=EnumVehicleTier(tier)):
-			await tankQ.put(tank)
-		await tankQ.put(None)
-		
-		await tankQ.join()
-		await dataQ.join()
-
-		await stats.gather_stats(workers)	
+		for w in workers:
+			stats.merge_child(await w)
+		debug(f'#{worker}: async workers done')
 	except CancelledError:
 		pass
 	except Exception as err:
@@ -947,22 +1148,23 @@ async def  export_data_mp_worker(tier: int = 0) -> EventCounter:
 	return stats
 
 
-async def export_data_fetcher(db: Backend, 
-							  progressQ : AsyncQueue[int | None], 
+async def export_data_fetcher(db: Backend, 							  
 							  release 	: BSBlitzRelease,
-							  tankQ 	: Queue[Tank | None], 
-							  dataQ 	: Queue[pd.DataFrame], 
 							  regions 	: set[Region],
+							  tankQ 	: AsyncQueue[int | None], 
+							  dataQ 	: AsyncQueue[pd.DataFrame],							  
 							  ) -> EventCounter:
 	"""Fetch tanks stats data from backend and convert to Pandas data frames"""
 	debug('starting')
-	stats : EventCounter 	= EventCounter(f'fetch {db.driver}')
-	tank  : Tank | None
-	tank_stats : list[dict[str, Any]] = list()
-	BATCH : int = TANK_STATS_BATCH
+	stats 		: EventCounter 			= EventCounter(f'fetch {db.driver}')
+	tank_stats 	: list[dict[str, Any]] 	= list()
+	BATCH 		: int 					= TANK_STATS_BATCH
+
 	try:		
-		while (tank := await tankQ.get()) is not None:
-			async for tank_stat in db.tank_stats_get(release=release, regions=regions, tanks=[tank]):
+		while (tank_id := await tankQ.get()) is not None:
+
+			async for tank_stat in db.tank_stats_get(release=release, regions=regions, 
+														tanks=[Tank(tank_id=tank_id)]):
 				tank_stats.append(tank_stat.obj_src())
 				if len(tank_stats) == BATCH:
 					await dataQ.put(pd.json_normalize(tank_stats).drop('id', axis=1))
@@ -970,7 +1172,6 @@ async def export_data_fetcher(db: Backend,
 					tank_stats = list()
 			
 			stats.log('tanks processed')
-			await progressQ.put(tank.tank_id)
 			tankQ.task_done()
 		
 		if len(tank_stats) > 0:
@@ -978,7 +1179,7 @@ async def export_data_fetcher(db: Backend,
 			stats.log('tank stats read', len(tank_stats))
 		
 		tankQ.task_done()
-		await progressQ.put(None)  # add sentinel
+		await tankQ.put(None)	
 		
 	except CancelledError:
 		debug('cancelled')
@@ -988,7 +1189,7 @@ async def export_data_fetcher(db: Backend,
 
 
 async def export_data_writer(filename: str, 
-							dataQ : Queue[pd.DataFrame], 
+							dataQ : AsyncQueue[pd.DataFrame], 
 							export_format : str, 
 							force: bool = False) -> EventCounter:
 	"""Worker to write on data stats to a file in format"""
@@ -1008,209 +1209,10 @@ async def export_data_writer(filename: str,
 				while True:
 					try:
 						writer.write_batch(batch)
+						stats.log('rows written', batch.num_rows)
 					except Exception as err:
 						error(f'{err}')	
-					stats.log('rows written', batch.num_rows)
-					dataQ.task_done()
-					batch = pa.RecordBatch.from_pandas(await dataQ.get(), schema)					
-
-	except CancelledError:
-		debug('cancelled')
-	except Exception as err:
-		error(f'{err}')	
-	return stats
-
-
-########################################################
-# 
-# cmd_export_data()
-#
-########################################################
-
-async def cmd_export_data2(db: Backend, args : Namespace) -> bool:
-	debug('starting')	
-	assert args.format in EXPORT_DATA_FORMATS, "--format has to be 'arrow' or 'parquet'"
-	MAX_WORKERS : int 			= 10
-	stats 		: EventCounter 	= EventCounter('tank-stats export')	
-	try:		
-		regions		: set[Region] 			= { Region(r) for r in args.region }
-		release 	: BSBlitzRelease		= BSBlitzRelease(release=args.RELEASE)
-		
-		## Logic TODO
-		# Form a tank Queue in main process
-		# MP processes to fetch, validate, transform, flatten and join the data with tank_id/tier
-		# writing to dataset in the main process
-
-		with Manager() as manager:			
-			dataQ : queue.Queue[pd.DataFrame]	= manager.Queue(TANK_STATS_Q_MAX)
-			options : dict[str, Any] 		= dict()
-			#options['force'] 				= args.force
-			#options['format']				= args.format
-			#options['basedir']				= args.basedir
-			#options["filename"]				= args.filename
-			options['regions']				= regions
-			options['release']				= release.release
-			
-			WORKERS : int = min( [cpu_count() - 1, MAX_WORKERS ])
-
-			with Pool(processes=WORKERS, initializer=export_data_mp_init2, 
-					  initargs=[ db.config, dataQ, options ]) as pool:
-				
-				debug(f'starting {WORKERS} workers')
-				results : AsyncResult = pool.map_async(export_data_mp_worker_start2, range(1,11))
-				pool.close()
-
-				N : int = await db.tankopedia_count()
-
-				with alive_bar(N, title="Exporting tank stats ", 
-								enrich_print=False, refresh_secs=1) as bar:	
-					active : int = 10
-					tank_id : int | None
-					while active > 0:
-						if (tank_id:= doneQ.get()) is None:
-							active -= 1
-						else:
-							debug(f'tank_id {tank_id} processed')
-							stats.log("tanks exported")
-							bar()
-				
-				for res in results.get():
-					stats.merge_child(res)
-				pool.join()
-
-	except Exception as err:
-		error(f'{err}')
-	stats.print()
-	return False
-
-
-def export_data_mp_init2(backend_config	: dict[str, Any],					
-						doneQ 			: queue.Queue[int | None],
-						import_model	: type[JSONExportable],
-						options 		: dict[str, Any]):
-	"""Initialize static/global backend into a forked process"""
-	global db, progressQ, in_model, mp_options
-	debug(f'starting (PID={getpid()})')
-
-	if (tmp_db := Backend.create(**backend_config)) is None:
-		raise ValueError('could not create backend')	
-	db 					= tmp_db
-	progressQ 			= AsyncQueue.from_queue(doneQ)
-	in_model 			= import_model	
-	mp_options			= options
-	debug('finished')
-	
-
-def export_data_mp_worker_start2(tier: int = 0) -> EventCounter:
-	"""Forkable tank stats import worker"""
-	debug(f'starting import worker #{tier}')
-	return run(export_data_mp_worker2(tier), debug=False)
-
-
-async def  export_data_mp_worker2(tier: int = 0) -> EventCounter:
-	"""Forkable tank stats import worker"""
-	debug(f'#{id}: starting')
-	stats 		: EventCounter 	= EventCounter('importer')
-	workers 	: list[Task]	= list()
-	try: 
-		global db, progressQ, in_model, mp_options
-		THREADS 	: int = 4		
-		import_model: type[JSONExportable] 		= in_model
-		
-		tankQ			: Queue[Tank | None] 	= Queue()
-		dataQ 			: Queue[pd.DataFrame]	= Queue(100)
-		force 			: bool 					= mp_options['force']
-		export_format	: str					= mp_options['format']
-		basedir 		: str 					= mp_options["basedir"]
-		filename 		: str 					= mp_options["filename"]		
-		regions 		: set[Region]			= mp_options['regions']	
-		release 		: BSBlitzRelease 		= BSBlitzRelease(release=mp_options['release'])
-
-		export_file : str = os.path.join(basedir, release.release, f'{filename}.{tier}')
-
-		for _ in range(THREADS):
-			workers.append(create_task(export_data_fetcher2(db, progressQ, release, tankQ, dataQ, regions) ))		
-		workers.append(create_task(export_data_writer2(export_file, dataQ, export_format, force)))
-
-		async for tank in db.tankopedia_get_many(tier=EnumVehicleTier(tier)):
-			await tankQ.put(tank)
-		await tankQ.put(None)
-		
-		await tankQ.join()
-		await dataQ.join()
-
-		await stats.gather_stats(workers)	
-	except CancelledError:
-		pass
-	except Exception as err:
-		error(f'{err}')	
-	return stats
-
-
-async def export_data_fetcher2(db: Backend, 
-							  progressQ : AsyncQueue[int | None], 
-							  release 	: BSBlitzRelease,
-							  tankQ 	: Queue[Tank | None], 
-							  dataQ 	: Queue[pd.DataFrame], 
-							  regions 	: set[Region],
-							  ) -> EventCounter:
-	"""Fetch tanks stats data from backend and convert to Pandas data frames"""
-	debug('starting')
-	stats : EventCounter 	= EventCounter(f'fetch {db.driver}')
-	tank  : Tank | None
-	tank_stats : list[dict[str, Any]] = list()
-	BATCH : int = TANK_STATS_BATCH
-	try:		
-		while (tank := await tankQ.get()) is not None:
-			async for tank_stat in db.tank_stats_get(release=release, regions=regions, tanks=[tank]):
-				tank_stats.append(tank_stat.obj_src())
-				if len(tank_stats) == BATCH:
-					await dataQ.put(pd.json_normalize(tank_stats).drop('id', axis=1))
-					stats.log('tank stats read', len(tank_stats))
-					tank_stats = list()
-			
-			stats.log('tanks processed')
-			await progressQ.put(tank.tank_id)
-			tankQ.task_done()
-		
-		if len(tank_stats) > 0:
-			await dataQ.put(pd.json_normalize(tank_stats).drop('id', axis=1))
-			stats.log('tank stats read', len(tank_stats))
-		
-		tankQ.task_done()
-		await progressQ.put(None)  # add sentinel
-		
-	except CancelledError:
-		debug('cancelled')
-	except Exception as err:
-		error(f'{err}')	
-	return stats
-
-
-async def export_data_writer2(filename: str, 
-							dataQ : Queue[pd.DataFrame], 
-							export_format : str, 
-							force: bool = False) -> EventCounter:
-	"""Worker to write on data stats to a file in format"""
-	debug('starting')
-	assert export_format in EXPORT_DATA_FORMATS, f"export format has to be one of: {', '.join(EXPORT_DATA_FORMATS)}"
-	stats : EventCounter 	= EventCounter(f'writer')
-	try:
-		export_file : str = f'{filename}.{export_format}'
-		if not force and isfile(export_file):
-			raise FileExistsError(export_file)
-		makedirs(dirname(filename), exist_ok=True)
-		batch 	: pa.RecordBatch = pa.RecordBatch.from_pandas(await dataQ.get())
-		schema 	: pa.Schema 	 = batch.schema
-		with pa.OSFile(export_file, 'wb') as sink:
-			with pa.ipc.new_file(sink, schema, 
-								options=pa.ipc.IpcWriteOptions(compression='lz4')) as writer:
-				while True:
-					try:
-						writer.write_batch(batch)
-					except Exception as err:
-						error(f'{err}')	
-					stats.log('rows written', batch.num_rows)
+					
 					dataQ.task_done()
 					batch = pa.RecordBatch.from_pandas(await dataQ.get(), schema)					
 
