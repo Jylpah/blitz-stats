@@ -23,6 +23,7 @@ import queue
 import pandas as pd  						# type: ignore
 import pyarrow as pa						# type: ignore
 import pyarrow.dataset as ds				# type: ignore
+import pyarrow.parquet as pq				# type: ignore
 from pandas.io.json import json_normalize	# type: ignore
 
 from backend import Backend, OptAccountsInactive, BSTableType, \
@@ -1203,18 +1204,17 @@ async def export_data_writer(filename: str,
 		makedirs(dirname(filename), exist_ok=True)
 		batch 	: pa.RecordBatch = pa.RecordBatch.from_pandas(await dataQ.get())
 		schema 	: pa.Schema 	 = batch.schema
-		with pa.OSFile(export_file, 'wb') as sink:
-			with pa.ipc.new_file(sink, schema, 
-								options=pa.ipc.IpcWriteOptions(compression='lz4')) as writer:
-				while True:
-					try:
-						writer.write_batch(batch)
-						stats.log('rows written', batch.num_rows)
-					except Exception as err:
-						error(f'{err}')	
-					
-					dataQ.task_done()
-					batch = pa.RecordBatch.from_pandas(await dataQ.get(), schema)					
+		## dataset as format? 
+		with pq.ParquetWriter(export_file, schema, compression='lz4') as writer:
+			while True:
+				try:
+					writer.write_batch(batch)
+					stats.log('rows written', batch.num_rows)
+				except Exception as err:
+					error(f'{err}')	
+				
+				dataQ.task_done()
+				batch = pa.RecordBatch.from_pandas(await dataQ.get(), schema)					
 
 	except CancelledError:
 		debug('cancelled')
