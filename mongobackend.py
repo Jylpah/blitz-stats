@@ -632,7 +632,6 @@ class MongoBackend(Backend):
 			debug(f'collection={dbc.name}, model={model}, pipeline={pipeline}')
 			async for obj in dbc.aggregate(pipeline, allowDiskUse=True):
 				try:
-					debug(f'{obj}')
 					yield model.parse_obj(obj)
 				except ValidationError as err:
 					error(f'Could not validate {model} ob={obj} from {self.table_uri(table_type)}: {err}')
@@ -1742,6 +1741,8 @@ class MongoBackend(Backend):
 			async for data in self._datas_get(BSTableType.TankStats, pipeline):
 				if (tank_stat := WGTankStat.transform_obj(data)) is not None:
 					yield tank_stat
+				else:
+					error(f'could not transform data to WGTankStat: {data}')
 		except Exception as err:
 			error(f'Error fetching tank stats from {self.table_uri(BSTableType.TankStats)}: {err}')
 
