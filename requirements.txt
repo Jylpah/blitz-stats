@@ -14,7 +14,9 @@ lxml
 lz4
 motor
 mypy
+pandas
 pip-chill
+pyarrow
 pydantic
 tomli
 types-aiofiles
