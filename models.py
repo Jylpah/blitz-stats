@@ -166,5 +166,3 @@ class BSBlitzRelease(WGBlitzRelease):
 		return super().txt_row(format) + extra
 
 
-class YastatistAccount(JSONExportable):
-	id: int
