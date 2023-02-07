@@ -711,7 +711,8 @@ class MongoBackend(Backend):
 			# debug('starting')
 			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
 			model : type[JSONExportable] = self.get_model(table_type)
-			return model.parse_obj(await dbc.find_one({ '_id': idx}))
+			if (res := await dbc.find_one({ '_id': idx})) is not None:
+				return model.parse_obj(res)
 		except Exception as err:
 			error(f'Error getting _id={idx} from {self.table_uri(table_type)}: {err}')
 		return None
