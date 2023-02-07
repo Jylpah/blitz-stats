@@ -30,10 +30,16 @@ message	= logger.warning
 verbose	= logger.info
 debug	= logger.debug
 
+# wotinspector.com
 WI_MAX_PAGES 	: int 				= 100
 WI_MAX_OLD_REPLAYS: int 			= 30
 WI_RATE_LIMIT	: Optional[float] 	= None
 WI_AUTH_TOKEN	: Optional[str] 	= None
+
+# yastati.st
+YS_CLIENT_ID 		: str = 'none'
+YS_CLIENT_SECRET 	: str = 'missing'
+YS_DAYS_SINCE 		: int = 30
 
 EXPORT_SUPPORTED_FORMATS : list[str] = ['json', 'txt', 'csv']
 
@@ -77,17 +83,21 @@ def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> b
 def add_args_update(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
-		accounts_update_parsers = parser.add_subparsers(dest='accounts_update_source', 	
+		update_parsers = parser.add_subparsers(dest='accounts_update_source', 	
 														title='accounts update source',
 														description='valid sources', 
-														metavar='wi | files')
-		accounts_update_parsers.required = True
-		accounts_update_wi_parser = accounts_update_parsers.add_parser('wi', help='accounts update wi help')
-		if not add_args_update_wi(accounts_update_wi_parser, config=config):
+														metavar='wi | ys | files')
+		update_parsers.required = True
+		update_wi_parser = update_parsers.add_parser('wi', help='accounts update wi help')
+		if not add_args_update_wi(update_wi_parser, config=config):
 			raise Exception("Failed to define argument parser for: accounts update wi")
 		
-		accounts_update_files_parser = accounts_update_parsers.add_parser('files', help='accounts update files help')
-		if not add_args_update_files(accounts_update_files_parser, config=config):
+		update_ys_parser = update_parsers.add_parser('ys', help='accounts update ys help')
+		if not add_args_update_ys(update_ys_parser, config=config):
+			raise Exception("Failed to define argument parser for: accounts update ys")
+
+		update_files_parser = update_parsers.add_parser('files', help='accounts update files help')
+		if not add_args_update_files(update_files_parser, config=config):
 			raise Exception("Failed to define argument parser for: accounts update files")		
 		
 		parser.add_argument('--force', action='store_true', default=False, 
@@ -132,6 +142,34 @@ def add_args_update_wi(parser: ArgumentParser, config: Optional[ConfigParser] = 
 							help='Start page to start spidering of WoTinspector.com')
 		parser.add_argument('--wi-rate-limit', type=float, default=WI_RATE_LIMIT, metavar='RATE_LIMIT',
 							help='Rate limit for WoTinspector.com')
+		
+		return True	
+	except Exception as err:
+		error(f'{err}')
+	return False
+
+
+def add_args_update_ys(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+	try:
+		debug('starting')
+		global YS_CLIENT_ID, YS_CLIENT_SECRET, YS_DAYS_SINCE
+
+		if config is not None and 'YASTATIST' in config.sections():
+			configYS 		= config['YASTATIST']
+			# YS_RATE_LIMIT	= configYS.getfloat('rate_limit', YS_RATE_LIMIT)			
+			YS_CLIENT_ID	= configYS.get('client_id', YS_CLIENT_ID)
+			YS_CLIENT_SECRET= configYS.get('client_secret', YS_CLIENT_SECRET)
+			YS_DAYS_SINCE 	= configYS.getint('days_since', YS_DAYS_SINCE)
+
+		parser.add_argument('--since','--days-since',   dest='ys_days_since', 
+							metavar='DAYS', type=int, default=YS_DAYS_SINCE, 
+							help='fetch accounts that have been active since DAYS')
+		parser.add_argument('--client-id', dest='ys_client_id', 
+							type=str, default=YS_CLIENT_ID, metavar='CLIENT_ID',
+							help='client ID for Yastati.st')
+		parser.add_argument('--client-secret', dest='ys_client_secret', 
+							type=str, default=YS_CLIENT_SECRET, metavar='CLIENT_SECRET',
+							help='client secret for Yastati.st')
 		
 		return True	
 	except Exception as err:
@@ -284,6 +322,11 @@ async def cmd_update(db: Backend, args : Namespace) -> bool:
 			if args.accounts_update_source == 'wi':
 				debug('wi')
 				stats.merge_child(await cmd_update_wi(db, args, accountQ))
+			
+			elif args.accounts_update_source == 'ys':
+				debug('ys')
+				stats.merge_child(await cmd_update_ys(db, args, accountQ))
+
 			elif args.accounts_update_source == 'files':
 				debug('files')
 				stats.merge_child(await cmd_update_files(db, args, accountQ))
@@ -517,6 +560,17 @@ async def update_wi_get_replay_ids(db: Backend, wi: WoTinspector, args: Namespac
 					stats.log('replays not added')
 			finally:
 				replay_idQ.task_done()
+	except Exception as err:
+		error(f'{err}')	
+	return stats
+
+
+async def cmd_update_ys(db: Backend, args : Namespace, accountQ : Queue[list[int]]) -> EventCounter:
+	"""Fetch account_ids fromy yastati.st"""
+	debug('starting')
+	stats		: EventCounter = EventCounter('Yastati.st')
+	try:
+		raise NotImplementedError
 	except Exception as err:
 		error(f'{err}')	
 	return stats
