@@ -316,7 +316,7 @@ async def cmd_update(db: Backend, args : Namespace) -> bool:
 		
 		stats = EventCounter('accounts update')
 		accountQ : Queue[list[int]] = Queue(maxsize=ACCOUNTS_Q_MAX)
-		db_worker = create_task(accounts_add_worker(db, accountQ))
+		db_worker = create_task(add_worker(db, accountQ))
 
 		try:
 			if args.accounts_update_source == 'wi':
@@ -349,7 +349,7 @@ async def cmd_update(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def accounts_add_worker(db: Backend, accountQ: Queue[list[int]]) -> EventCounter:
+async def add_worker(db: Backend, accountQ: Queue[list[int]]) -> EventCounter:
 	"""worker to read accounts from queue and add those to backend"""
 	debug('starting')
 	stats : EventCounter = EventCounter(f'{db.driver}')
@@ -367,7 +367,7 @@ async def accounts_add_worker(db: Backend, accountQ: Queue[list[int]]) -> EventC
 						try:
 							accounts.append(BSAccount(id=player, added=epoch_now()))  # type: ignore
 						except Exception as err:
-							error(f'cound not create account object for account_id: {player}')
+							debug(f'cound not create account object for account_id: {player}')
 					added, not_added= await db.accounts_insert(accounts)
 					stats.log('accounts added', added)
 					stats.log('old accounts found', not_added)
@@ -425,7 +425,7 @@ async def cmd_update_wi(db: Backend, args : Namespace, accountQ : Queue[list[int
 		replays_left: int = replays
 		with alive_bar(replays, title="Fetching replays ", manual=True, enrich_print=False) as bar:
 			for _ in range(workersN):
-				workers.append(create_task(accounts_update_wi_fetch_replays(db, wi, replay_idQ, accountQ)))
+				workers.append(create_task(update_wi_fetch_replays(db, wi, replay_idQ, accountQ)))
 			while True:
 				await sleep(1)
 				replays_left = replay_idQ.qsize()
@@ -445,7 +445,7 @@ async def cmd_update_wi(db: Backend, args : Namespace, accountQ : Queue[list[int
 	return stats
 
 
-async def accounts_update_wi_spider_replays(db: Backend, wi: WoTinspector, args: Namespace,
+async def update_wi_spider_replays(db: Backend, wi: WoTinspector, args: Namespace,
 											replay_idQ: Queue[str], pages: range) -> EventCounter:
 	"""Spider replays.WoTinspector.com and feed found replay IDs into replayQ. Return stats"""
 	debug('starting')
@@ -539,6 +539,7 @@ async def update_wi_get_replay_ids(db: Backend, wi: WoTinspector, args: Namespac
 	return stats
 
 
+async def update_wi_fetch_replays(db: Backend, wi: WoTinspector, replay_idQ : Queue[str], 
 											accountQ : Queue[list[int]]) -> EventCounter:
 	debug('starting')
 	stats : EventCounter = EventCounter('Fetch replays')
