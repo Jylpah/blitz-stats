@@ -376,7 +376,7 @@ async def cmd_update_wi(db: Backend, args : Namespace, accountQ : Queue[list[int
 		
 		pages : range = range(start_page,(start_page + max_pages), step)
 
-		stats.merge_child(await accounts_update_wi_spider_replays(db, wi, args, replay_idQ, pages))
+		stats.merge_child(await update_wi_get_replay_ids(db, wi, args, replay_idQ, pages))
 
 		replays 	: int = replay_idQ.qsize()
 		replays_left: int = replays
@@ -454,7 +454,48 @@ async def accounts_update_wi_spider_replays(db: Backend, wi: WoTinspector, args:
 	return stats
 
 
-async def accounts_update_wi_fetch_replays(db: Backend, wi: WoTinspector, replay_idQ : Queue[str], 
+async def update_wi_get_replay_ids(db: Backend, wi: WoTinspector, args: Namespace,
+									replay_idQ: Queue[str], pages: range) -> EventCounter:
+	"""Spider replays.WoTinspector.com and feed found replay IDs into replayQ. Return stats"""
+	debug('starting')
+	stats			: EventCounter = EventCounter('Crawler')
+	max_old_replays	: int 	= args.wi_max_old_replays
+	force			: bool 	= args.force
+	old_replays		: int 	= 0
+
+	try:
+		debug(f'Starting ({len(pages)} pages)')
+		with alive_bar(len(pages), title= "Spidering replays", enrich_print=False) as bar:
+			for page in pages:			
+				try:
+					if old_replays > max_old_replays:						
+						raise CancelledError
+						#  break
+					debug(f'spidering page {page}')
+					
+					for replay_id in await wi.get_replay_ids(page):
+						res: WoTBlitzReplayData | None = await db.replay_get(replay_id=replay_id)
+						if res is not None:
+							debug(f'Replay already in the {db.backend}: {replay_id}')
+							stats.log('old replays found')
+							if not force:
+								old_replays += 1
+							continue
+						else:
+							await replay_idQ.put(replay_id)
+							stats.log('new replays')
+				except Exception as err:
+					error(f'{err}')
+				finally:
+					bar()
+	except CancelledError as err:
+		# debug(f'Cancelled')
+		message(f'{max_old_replays} found. Stopping spidering for more')
+	except Exception as err:
+		error(f'{err}')
+	return stats
+
+
 											accountQ : Queue[list[int]]) -> EventCounter:
 	debug('starting')
 	stats : EventCounter = EventCounter('Fetch replays')
