@@ -1023,7 +1023,9 @@ class MongoBackend(Backend):
 				# check inactive only if disabled == False
 				if inactive == OptAccountsInactive.auto:
 					assert update_field is not None, "automatic inactivity detection requires stat_type"
-					match.append({ '$or': [ { update_field: None}, { update_field: { '$lt': epoch_now() - cache_valid }} ] })
+					match.append({ '$or': [ { update_field: None}, 
+											{ update_field: { '$lt': epoch_now() - cache_valid }},											
+										  ] })
 				elif inactive == OptAccountsInactive.no:
 					match.append({ alias('inactive'): { '$ne': True }})
 
