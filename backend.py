@@ -4,7 +4,7 @@ import logging
 from abc import ABC, abstractmethod
 from bson import ObjectId
 from os.path import isfile
-from typing import Optional, Any, Iterable, Sequence, AsyncGenerator, TypeVar, cast
+from typing import Optional, Any, Sequence, AsyncGenerator, TypeVar, cast
 from time import time
 from re import compile
 from datetime import date, datetime
@@ -1040,8 +1040,8 @@ class Backend(ABC):
 
 	@abstractmethod
 	async def tank_stat_update(self, tank_stat: WGTankStat, 
-							 update: dict[str, Any] | None = None, 
-							 fields: list[str] | None = None) -> bool:
+							 	update: dict[str, Any] | None = None, 
+							 	fields: list[str] | None = None) -> bool:
 		"""Update an tank stat in the backend. Returns False 
 			if the tank stat was not updated"""
 		raise NotImplementedError
@@ -1219,7 +1219,7 @@ class Backend(ABC):
 	@abstractmethod
 	async def player_achievements_get(self, release: BSBlitzRelease | None = None,
 							regions: set[Region] = Region.API_regions(), 
-							accounts: Iterable[Account] | None = None,
+							accounts: Sequence[Account] | None = None,
 							since:  int = 0,
 							sample : float = 0) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
 		"""Return player achievements from the backend"""
@@ -1230,7 +1230,7 @@ class Backend(ABC):
 	@abstractmethod
 	async def player_achievements_count(self, release: BSBlitzRelease | None = None,
 							regions: set[Region] = Region.API_regions(), 
-							accounts: Iterable[Account] | None = None,
+							accounts: Sequence[Account] | None = None,
 							sample : float = 0) -> int:
 		"""Get number of player achievements from backend"""
 		raise NotImplementedError
