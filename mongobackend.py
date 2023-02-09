@@ -1408,7 +1408,11 @@ class MongoBackend(Backend):
 		debug('starting')
 		try:
 			dbc : AsyncIOMotorCollection = self.collection_releases
-			async for obj in dbc.find({ 'launch_date': { '$gt': release.launch_date } }).sort('launch_date', ASCENDING):
+			if (rel := await self.release_get(release.release)) is None:
+				raise ValueError()
+			else:
+				release = rel
+			async for obj in dbc.find({ 'cut_off': { '$gt': release.cut_off } }).sort('cut_off', ASCENDING):
 				return BSBlitzRelease.transform_obj(obj, self.model_releases)
 		except ValidationError as err:
 			error(f'Incorrect data format: {err}')
@@ -1422,8 +1426,14 @@ class MongoBackend(Backend):
 		debug('starting')
 		try:
 			dbc : AsyncIOMotorCollection = self.collection_releases
-			async for obj in dbc.find({ 'launch_date': { '$lt': release.launch_date } }).sort('launch_date', DESCENDING):
+			if (rel := await self.release_get(release.release)) is None:
+				raise ValueError()
+			else:
+				release = rel
+			async for obj in dbc.find({ 'cut_off': { '$lt': release.cut_off } }).sort('cut_off', DESCENDING):
+				debug(f'{obj}')
 				return BSBlitzRelease.transform_obj(obj, self.model_releases)
+			error('find() returned zero')
 		except ValidationError as err:
 			error(f'Incorrect data format: {err}')
 		except Exception as err:
