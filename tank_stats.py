@@ -1123,7 +1123,7 @@ async def cmd_export_career(db: Backend, args : Namespace) -> bool:
 		release 	: BSBlitzRelease= BSBlitzRelease(release=args.RELEASE)
 		force 		: bool			= args.force
 		format		: str			= args.format
-		basedir 	: str			= os.path.join(args.basedir, release.release) 
+		basedir 	: str			= os.path.join(args.basedir, release.release, 'career') 
 		options 		: dict[str, Any]= dict()
 		options['release']				= release
 		options['before']				= args.before
