@@ -1989,6 +1989,39 @@ class MongoBackend(Backend):
 			error(f'{err}')
 		
 		
+	async def tank_stats_unique_count(self,
+								field	: str,
+								field_type: type[A], 
+								release	: BSBlitzRelease | None = None,
+								regions	: set[Region] = Region.API_regions(),
+								account	: BSAccount | None = None, 
+								tank	: Tank | None = None
+								) -> int:
+		"""Return count of unique values of field"""
+		debug('starting')
+		count : int = 0
+		try:
+			a 		: AliasMapper 	= AliasMapper(self.model_tank_stats)
+			alias 	: Callable 		= a.alias
+			db_field: str = alias(field)
+			dbc 	: AsyncIOMotorCollection = self.collection_tank_stats
+			query 	: dict[str, Any] = dict()
+
+			if release is not None:
+				query[alias('release')] = release.release
+			query[alias('region')] = { '$in': list(regions)}
+			if tank is not None:
+				query[alias('tank_id')] = tank.tank_id
+			if account is not None:
+				query[alias('account_id')] = account.id
+			
+			return len(await dbc.distinct(key = db_field, filter=query))		# type: ignore
+				
+		except Exception as err:
+			error(f'{err}')
+		return 0
+
+
 	########################################################
 	#
 	# MongoBackend(): tankopedia

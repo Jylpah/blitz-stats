@@ -1138,6 +1138,20 @@ class Backend(ABC):
 		raise NotImplementedError
 		yield 
 
+	
+	@abstractmethod
+	async def tank_stats_unique_count(self,
+								field	: str,
+								field_type: type[A], 
+								release	: BSBlitzRelease | None = None,
+								regions	: set[Region] = Region.API_regions(),
+								account	: BSAccount | None = None, 
+								tank	: Tank | None = None
+								) -> int:
+		"""Return count of unique values of field"""
+		raise NotImplementedError
+
+
 	async def tank_stats_get_worker(self, tank_statsQ : Queue[WGTankStat], **getargs) -> EventCounter:
 		debug('starting')
 		stats : EventCounter = EventCounter('tank_stats')
