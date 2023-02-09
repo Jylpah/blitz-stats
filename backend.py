@@ -1073,6 +1073,15 @@ class Backend(ABC):
 
 
 	@abstractmethod
+	async def tank_stats_export_career(self, 						
+									account: Account,							
+									release	: BSBlitzRelease,							
+									before	: bool = False) -> AsyncGenerator[list[WGTankStat], None]:
+		"""Return tank stats from the backend"""
+		raise NotImplementedError
+		yield list()
+
+	@abstractmethod
 	async def tank_stats_count(self, release: BSBlitzRelease | None = None,
 							regions: 	set[Region] = Region.API_regions(), 
 							accounts: 	Sequence[Account] | None = None,

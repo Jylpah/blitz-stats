@@ -1823,6 +1823,36 @@ class MongoBackend(Backend):
 			error(f'Error fetching tank stats from {self.table_uri(BSTableType.TankStats)}: {err}')
 
 
+	async def tank_stats_export_career(self, 						
+										account: Account,							
+										release	: BSBlitzRelease,							
+										before	: bool = False) -> AsyncGenerator[list[WGTankStat], None]:
+		"""Return tank stats from the backend"""
+		try:
+			debug('starting')
+			pipeline : list[dict[str, Any]] | None
+
+			if before:
+				if (rel:= await self.release_get_previous(release)) is None:
+					raise ValueError(f'Could not find previous release: {release}')
+				else:
+					release = rel
+
+			pipeline = await self._mk_pipeline_tank_stats_latest(account=account, release=release)
+			if pipeline is None:
+				raise ValueError(f'{self.backend}: could not create pipeline for get latest tank stats')
+
+			async for data in self.objs_export(BSTableType.TankStats, pipeline):
+				if len(tank_stats := WGTankStat.transform_objs(data, self.model_tank_stats)) > 0:
+					yield tank_stats
+				# if (tank_stat := WGTankStat.transform_obj(data)) is not None:
+				# 	yield tank_stat
+				# else:
+				# 	error(f'could not transform data to WGTankStat: {data}')
+		except Exception as err:
+			error(f'Error fetching tank stats from {self.table_uri(BSTableType.TankStats)}: {err}')
+
+
 	async def tank_stats_count(self, release: BSBlitzRelease | None = None,
 								regions: 	set[Region] = Region.API_regions(),
 								accounts: 	Sequence[Account] | None = None,
