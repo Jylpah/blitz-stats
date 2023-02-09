@@ -1824,11 +1824,11 @@ class MongoBackend(Backend):
 
 
 	async def tank_stats_count(self, release: BSBlitzRelease | None = None,
-								regions: set[Region] = Region.API_regions(),
-								accounts: Iterable[Account] | None = None,
-								tanks: Iterable[Tank] | None = None,
-								since:  int = 0,
-								sample : float = 0) -> int:
+								regions: 	set[Region] = Region.API_regions(),
+								accounts: 	Sequence[Account] | None = None,
+								tanks: 		Sequence[Tank] | None = None,
+								since:  	int = 0,
+								sample : 	float = 0) -> int:
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
 		try:
 			debug('starting')
