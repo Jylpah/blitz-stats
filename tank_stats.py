@@ -211,6 +211,8 @@ def add_args_prune(parser: ArgumentParser, config: Optional[ConfigParser] = None
 							help='filter by region (default: eu + com + asia + ru)')
 	parser.add_argument('--commit', action='store_true', default=False, 
 							help='execute pruning stats instead of listing duplicates')
+	parser.add_argument('--workers', type=int, default=WORKERS_PRUNE, 
+							help=f'set number of worker processes (default={WORKERS_PRUNE})')
 	parser.add_argument('--sample', type=int, default=0, metavar='SAMPLE',
 						help='sample size')
 
@@ -682,7 +684,8 @@ async def cmd_edit_rel_remap(db: Backend,
 
 
 async def cmd_prune(db: Backend, args : Namespace) -> bool:
-	"""prune tank stats"""	
+	"""prune tank stats"""
+	# performance can be increased 5-10x with multiprocessing
 	debug('starting')
 	try:
 		stats 		: EventCounter 		= EventCounter('tank-stats prune')
@@ -690,43 +693,105 @@ async def cmd_prune(db: Backend, args : Namespace) -> bool:
 		sample 		: int 				= args.sample
 		release 	: BSBlitzRelease  	= BSBlitzRelease(release=args.release)
 		commit 		: bool 				= args.commit
-
+		tankQ 		: Queue[Tank]		= Queue()
+		workers 	: list[Task]		= list()
 		progress_str : str 				= 'Finding duplicates ' 
 		if commit:
 			message(f'Pruning tank stats from {db.table_uri(BSTableType.TankStats)}')
 			message('Press CTRL+C to cancel in 3 secs...')
 			await sleep(3)
 			progress_str = 'Pruning duplicates '
-		N : int = await db.tankopedia_count()
+		
+		async for tank_id in db.tank_stats_unique('tank_id', int, 
+													release=release, 
+													regions=regions):
+			await tankQ.put(Tank(tank_id=tank_id))
 
+		# N : int = await db.tankopedia_count()
+		N : int = tankQ.qsize()
+
+		for _ in range(args.workers):
+			workers.append(create_task(prune_worker(db, tankQ=tankQ, release=release, 
+													regions=regions, commit=commit)))
+		prev : int = 0
+		done : int
+		left : int
 		with alive_bar(N, title=progress_str, refresh_secs=1) as bar:
-			async for tank in db.tankopedia_get_many():
-				async for dup in db.tank_stats_duplicates(tank, release, regions, sample=sample):
-					stats.log('duplicates found')
-					if commit:
-						# verbose(f'deleting duplicate: {dup}')
-						if await db.tank_stat_delete(account_id=dup.account_id, 
-													last_battle_time=dup.last_battle_time, 
-													tank_id=dup.tank_id):
-							verbose(f'deleted duplicate: {dup}')
-							stats.log('duplicates deleted')
-						else:
-							error(f'failed to delete duplicate: {dup}')
-							stats.log('deletion errors')
-					else:
-						verbose(f'duplicate:  {dup}')
-						async for newer in db.tank_stats_get(release=release, regions=regions, 
-																accounts=[BSAccount(id=dup.account_id)], 
-																tanks=[tank], 
-																since=dup.last_battle_time + 1):
-							verbose(f'newer stat: {newer}')
-				bar()
-
+			while (left := tankQ.qsize()) > 0:
+				done = N - left
+				if (done - prev) > 0:
+					bar(done - prev)
+				prev = done
+				await sleep(1)
+			#async for tank in db.tankopedia_get_many():   # could use tank_stats_unique()
+			
+				# async for dup in db.tank_stats_duplicates(tank, release, regions, sample=sample):
+				# 	stats.log('duplicates found')
+				# 	if commit:
+				# 		# verbose(f'deleting duplicate: {dup}')
+				# 		if await db.tank_stat_delete(account_id=dup.account_id, 
+				# 									last_battle_time=dup.last_battle_time, 
+				# 									tank_id=tank_id):
+				# 			verbose(f'deleted duplicate: {dup}')
+				# 			stats.log('duplicates deleted')
+				# 		else:
+				# 			error(f'failed to delete duplicate: {dup}')
+				# 			stats.log('deletion errors')
+				# 	else:
+				# 		verbose(f'duplicate:  {dup}')
+				# 		async for newer in db.tank_stats_get(release=release, 
+				# 												regions=regions, 
+				# 												accounts=[BSAccount(id=dup.account_id)], 
+				# 												tanks=[tank], 
+				# 												since=dup.last_battle_time + 1):
+				# 			verbose(f'newer stat: {newer}')
+				# bar()
+		await tankQ.join()
+		await stats.gather_stats(workers)
 		stats.print()
 		return True
 	except Exception as err:
 		error(f'{err}')
 	return False
+
+
+async def prune_worker(db : Backend, 
+						tankQ: Queue[Tank],
+						# tank: Tank, 
+						release: BSBlitzRelease, 
+						regions : set[Region], 
+						commit: bool = False) -> EventCounter:
+	"""Worker to delete duplicates"""
+	debug(f'starting')
+	stats 	: EventCounter 	= EventCounter('duplicates')
+	try:
+		while True:
+			tank = await tankQ.get()
+			async for dup in db.tank_stats_duplicates(tank, release, regions):
+				stats.log('found')
+				if commit:
+					if await db.tank_stat_delete(account_id=dup.account_id, 
+												last_battle_time=dup.last_battle_time, 
+												tank_id=tank.tank_id):
+						verbose(f'deleted duplicate: {dup}')
+						stats.log('deleted')
+					else:
+						error(f'failed to delete duplicate: {dup}')
+						stats.log('deletion errors')
+				else:
+					verbose(f'duplicate:  {dup}')
+					async for newer in db.tank_stats_get(release=release, 
+														regions=regions, 
+														accounts=[BSAccount(id=dup.account_id)], 
+														tanks=[tank], 
+														since=dup.last_battle_time + 1):
+						verbose(f'newer stat: {newer}')
+			tankQ.task_done()
+	except CancelledError:
+		debug('cancelled')		
+	except Exception as err:
+		error(f'{err}')
+	return stats
 
 
 ########################################################
