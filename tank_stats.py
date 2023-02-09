@@ -1428,7 +1428,7 @@ async def export_update_fetcher(db: Backend,
 														tanks=[Tank(tank_id=tank_id)]):
 				tank_stats.append(tank_stat.obj_src())
 				if len(tank_stats) == TANK_STATS_BATCH:
-					await dataQ.put(pd.json_normalize(tank_stats).drop('id', axis=1))
+					await dataQ.put(pd.json_normalize(tank_stats))
 					stats.log('tank stats read', len(tank_stats))
 					tank_stats = list()
 			
@@ -1436,7 +1436,7 @@ async def export_update_fetcher(db: Backend,
 			tankQ.task_done()
 		
 		if len(tank_stats) > 0:
-			await dataQ.put(pd.json_normalize(tank_stats).drop('id', axis=1))
+			await dataQ.put(pd.json_normalize(tank_stats))
 			stats.log('tank stats read', len(tank_stats))
 		
 	except CancelledError:
