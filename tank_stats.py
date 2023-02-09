@@ -1145,7 +1145,9 @@ async def cmd_export_career(db: Backend, args : Namespace) -> bool:
 
 			with Pool(processes=WORKERS, initializer=export_career_mp_init, 
 					  initargs=[ db.config, workQ, dataQ, options ]) as pool:
-				
+				N : int = await db.tank_stats_unique_count('account_id', int, 
+															release=release, 
+															regions=regions)
 				Qcreator : Task = create_task(accountQ_active(db, aworkQ, release, regions ))
 				debug(f'starting {WORKERS} workers')
 				results : AsyncResult = pool.map_async(export_career_stats_mp_worker_start, 
@@ -1155,7 +1157,7 @@ async def cmd_export_career(db: Backend, args : Namespace) -> bool:
 				prev: int = 0
 				done: int = 0
 				delta: int = 0
-				with alive_bar(None, title="Exporting tank stats ", 
+				with alive_bar(N, title="Exporting tank stats ", 
 								enrich_print=False, refresh_secs=1) as bar:	
 					
 					while not Qcreator.done():						
@@ -1433,13 +1435,14 @@ async def export_update_fetcher(db: Backend,
 			await dataQ.put(pd.json_normalize(tank_stats).drop('id', axis=1))
 			stats.log('tank stats read', len(tank_stats))
 		
-		tankQ.task_done()
-		await tankQ.put(None)	
-		
 	except CancelledError:
 		debug('cancelled')
 	except Exception as err:
 		error(f'{err}')	
+	
+	tankQ.task_done()
+	await tankQ.put(None)	
+	
 	return stats
 
 
