@@ -15,7 +15,7 @@ from csv import DictWriter, DictReader, Dialect, Sniffer, excel
 
 from backend import Backend, OptAccountsInactive, OptAccountsDistributed, \
 	BSTableType, ACCOUNTS_Q_MAX, get_sub_type
-from models import BSAccount, StatsTypes
+from models import BSAccount, StatsTypes, BSBlitzRelease
 from models_import import WG_Account
 from pyutils import CounterQueue, EventCounter,  TXTExportable, \
 	CSVExportable, JSONExportable, IterableQueue, QueueDone, \
@@ -807,11 +807,33 @@ async def count_accounts(db: Backend, args : Namespace, stats_type: StatsTypes |
 	return accounts_N
 
 
+async def accountQ_active(db: Backend, 
+							accountQ: Queue[BSAccount], 
+							release: BSBlitzRelease, 
+							regions: set[Region]) -> EventCounter:
+	"""Add accounts active during a release to accountQ """
+	debug('starting')
+	stats : EventCounter = EventCounter(f'accounts')
+	try:
+		async for account_id in db.tank_stats_unique('account_id', int, 
+													release=release, regions=regions):
+			try:
+				await accountQ.put(BSAccount(id=account_id))
+				stats.log('added')
+			except Exception as err:
+				error(f'{err}')
+				stats.log('errors')
+	except Exception as err:
+		error(f'{err}')
+	return stats
+
+
 async def create_accountQ(db: Backend, args : Namespace, 
 							accountQ: IterableQueue[BSAccount], 
 							stats_type: StatsTypes | None) -> EventCounter:
 	"""Helper to make accountQ from arguments"""	
 	stats : EventCounter = EventCounter(f'{db.driver}: accounts')
+	debug('starting')
 	try:
 		regions	 	: set[Region]	= { Region(r) for r in args.region }
 		accounts 	: list[BSAccount] | None = read_args_accounts(args.accounts)
