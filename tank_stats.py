@@ -1123,7 +1123,8 @@ async def cmd_export_career(db: Backend, args : Namespace) -> bool:
 		release 	: BSBlitzRelease= BSBlitzRelease(release=args.RELEASE)
 		force 		: bool			= args.force
 		format		: str			= args.format
-		basedir 	: str			= os.path.join(args.basedir, release.release, 'career') 
+		basedir 	: str			= os.path.join(args.basedir, release.release, \
+													'career_' + ('before' if args.before else 'after') ) 
 		options 		: dict[str, Any]= dict()
 		options['release']				= release
 		options['before']				= args.before
@@ -1468,8 +1469,7 @@ async def export_dataset_writer(basedir: str,
 		schema 	: pa.Schema 	 	= WGTankStat.arrow_schema()
 		part 	: ds.Partitioning 	= ds.partitioning(pa.schema([("region", pa.string())]))
 		dfs 	: list[pa.RecordBatch] 	= list()
-		rows: int = 0
-		
+		rows: int = 0		
 		i 	: int = 0
 		try:
 			while True:
@@ -1485,6 +1485,7 @@ async def export_dataset_writer(basedir: str,
 										partitioning=part, 
 										schema=schema, 
 										existing_data_behavior='overwrite_or_ignore')
+						stats.log('stats written', rows)
 						rows = 0
 						i += 1
 						dfs = list()
@@ -1503,10 +1504,10 @@ async def export_dataset_writer(basedir: str,
 							partitioning=part, 
 							schema=schema, 
 							existing_data_behavior='overwrite_or_ignore')
+			stats.log('stats written', rows)
 
 	except Exception as err:
-		error(f'{err}')	
-
+		error(f'{err}')
 	return stats
 
 
