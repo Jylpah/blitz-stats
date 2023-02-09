@@ -1218,9 +1218,14 @@ async def  export_career_stats_mp_worker(worker: int = 0) -> EventCounter:
 		release : BSBlitzRelease 	= mp_options['release']
 		before	: bool 				= mp_options['before']
 		workers : list[Task]		= list()
-	
+		if before:			
+			if (rel := await db.release_get_previous(release)) is None:
+				raise ValueError(f'could not find previous release: {release}')
+			else:
+				release = rel
+				
 		for _ in range(THREADS):
-			workers.append(create_task(export_career_fetcher(db, workQ_a, writeQ, release, before) ))		
+			workers.append(create_task(export_career_fetcher(db, workQ_a, writeQ, release)))		
 
 		for w in workers:
 			stats.merge_child(await w)
@@ -1235,8 +1240,7 @@ async def  export_career_stats_mp_worker(worker: int = 0) -> EventCounter:
 async def export_career_fetcher(db: Backend, 							  
 							  accountQ 	: AsyncQueue[BSAccount | None], 
 							  dataQ 	: AsyncQueue[pd.DataFrame],
-							  release 	: BSBlitzRelease,							  
-							  before 	: bool = False,							  
+							  release 	: BSBlitzRelease
 							  ) -> EventCounter:
 	"""Fetch tanks stats data from backend and convert to Pandas data frames"""
 	debug('starting')
@@ -1254,7 +1258,7 @@ async def export_career_fetcher(db: Backend,
 			# 		stats.log('tank stats read', len(tank_stats))
 			# 		tank_stats = list()
 			
-			async for tank_stats in db.tank_stats_export_career(account=account, release=release, before=before):
+			async for tank_stats in db.tank_stats_export_career(account=account, release=release):
 				datas.extend([ ts.obj_src() for ts in tank_stats ])
 				if len(datas) >= TANK_STATS_BATCH:
 					# error(f'putting DF to dataQ: {len(tank_stats)} rows')
@@ -1262,7 +1266,7 @@ async def export_career_fetcher(db: Backend,
 					stats.log('tank stats read', len(datas))
 					datas = list()
 	
-			stats.log('tanks processed')
+			stats.log('accounts')
 			accountQ.task_done()
 	
 		if len(datas) > 0:
