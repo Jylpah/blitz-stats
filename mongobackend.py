@@ -1400,6 +1400,34 @@ class MongoBackend(Backend):
 		return None
 
 
+	async def release_get_next(self, release: BSBlitzRelease) -> BSBlitzRelease | None:
+		"""Get the latest release in the backend"""
+		debug('starting')
+		try:
+			dbc : AsyncIOMotorCollection = self.collection_releases
+			async for obj in dbc.find({ 'launch_date': { '$gt': release.launch_date } }).sort('launch_date', ASCENDING):
+				return BSBlitzRelease.transform_obj(obj, self.model_releases)
+		except ValidationError as err:
+			error(f'Incorrect data format: {err}')
+		except Exception as err:
+			error(f'Could not find the latest release from {self.table_uri(BSTableType.Releases)}: {err}')
+		return None
+
+
+	async def release_get_previous(self, release: BSBlitzRelease) -> BSBlitzRelease | None:
+		"""Get the latest release in the backend"""
+		debug('starting')
+		try:
+			dbc : AsyncIOMotorCollection = self.collection_releases
+			async for obj in dbc.find({ 'launch_date': { '$lt': release.launch_date } }).sort('launch_date', DESCENDING):
+				return BSBlitzRelease.transform_obj(obj, self.model_releases)
+		except ValidationError as err:
+			error(f'Incorrect data format: {err}')
+		except Exception as err:
+			error(f'Could not find the latest release from {self.table_uri(BSTableType.Releases)}: {err}')
+		return None
+
+
 	async def release_insert(self, release: BSBlitzRelease) -> bool:
 		"""Insert new release to the backend"""
 		debug('starting')

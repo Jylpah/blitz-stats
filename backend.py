@@ -887,6 +887,18 @@ class Backend(ABC):
 
 
 	@abstractmethod
+	async def release_get_next(self, release: BSBlitzRelease) -> BSBlitzRelease | None:
+		"""Get next release"""
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def release_get_previous(self, release: BSBlitzRelease) -> BSBlitzRelease | None:
+		"""Get previous release"""
+		raise NotImplementedError
+
+
+	@abstractmethod
 	async def releases_get(self, release_match: str | None = None, 
 							since : int = 0, 
 							first : BSBlitzRelease | None = None) -> AsyncGenerator[BSBlitzRelease, None]:
