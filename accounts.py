@@ -810,13 +810,16 @@ async def count_accounts(db: Backend, args : Namespace, stats_type: StatsTypes |
 async def accountQ_active(db: Backend, 
 							accountQ: Queue[BSAccount], 
 							release: BSBlitzRelease, 
-							regions: set[Region]) -> EventCounter:
+							regions: set[Region], 
+							randomize: bool = True) -> EventCounter:
 	"""Add accounts active during a release to accountQ """
 	debug('starting')
 	stats : EventCounter = EventCounter(f'accounts')
 	try:
 		async for account_id in db.tank_stats_unique('account_id', int, 
-													release=release, regions=regions):
+													release=release, 
+													regions=regions, 
+													randomize=randomize):
 			try:
 				await accountQ.put(BSAccount(id=account_id))
 				stats.log('added')
