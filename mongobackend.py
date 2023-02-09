@@ -1692,11 +1692,11 @@ class MongoBackend(Backend):
 
 
 	async def _mk_pipeline_tank_stats(self, release: BSBlitzRelease | None = None,
-										regions: set[Region] = Region.API_regions(),
-										accounts: Iterable[Account] | None = None,
-										tanks: Iterable[Tank] | None = None,
-										since:  int = 0,
-										sample: float = 0) -> list[dict[str, Any]] | None:
+										regions: 	set[Region] = Region.API_regions(),
+										accounts: 	Sequence[Account] | None = None,
+										tanks: 		Sequence[Tank] | None = None,
+										since:  	int = 0,
+										sample: 	float = 0) -> list[dict[str, Any]] | None:
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
 		try:
 			debug('starting')
@@ -1800,8 +1800,8 @@ class MongoBackend(Backend):
 
 	async def tank_stats_get(self, release: BSBlitzRelease | None = None,
 							regions : set[Region] = Region.API_regions(),
-							accounts: Iterable[Account] | None = None,
-							tanks 	: Iterable[Tank] | None = None,
+							accounts: Sequence[Account] | None = None,
+							tanks 	: Sequence[Tank] | None = None,
 							since	: int = 0,
 							sample 	: float = 0) -> AsyncGenerator[WGTankStat, None]:
 		"""Return tank stats from the backend"""
@@ -1809,8 +1809,8 @@ class MongoBackend(Backend):
 			debug('starting')
 			pipeline : list[dict[str, Any]] | None
 			pipeline = await self._mk_pipeline_tank_stats(release=release, regions=regions,
-														tanks=tanks, accounts=accounts,
-														since=since, sample=sample)
+															tanks=tanks, accounts=accounts,
+															since=since, sample=sample)
 			if pipeline is None:
 				raise ValueError(f'could not create pipeline for get tank stats {self.backend}')
 

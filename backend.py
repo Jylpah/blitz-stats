@@ -1062,11 +1062,11 @@ class Backend(ABC):
 
 	@abstractmethod
 	async def tank_stats_get(self, release: BSBlitzRelease | None = None,
-							regions: set[Region] = Region.API_regions(), 
-							accounts: Iterable[Account] | None = None,
-							tanks: Iterable[Tank] | None = None, 
-							since:  int = 0,
-							sample: float = 0) -> AsyncGenerator[WGTankStat, None]:
+							regions: 	set[Region] = Region.API_regions(), 
+							accounts: 	Sequence[Account] | None = None,
+							tanks: 		Sequence[Tank] | None = None, 
+							since:  	int = 0,
+							sample: 	float = 0) -> AsyncGenerator[WGTankStat, None]:
 		"""Return tank stats from the backend"""
 		raise NotImplementedError
 		yield WGTankStat()
@@ -1074,11 +1074,11 @@ class Backend(ABC):
 
 	@abstractmethod
 	async def tank_stats_count(self, release: BSBlitzRelease | None = None,
-							regions: set[Region] = Region.API_regions(), 
-							accounts: Iterable[Account] | None = None,
-							tanks: Iterable[Tank] | None = None, 
-							since:  int = 0,
-							sample : float = 0) -> int:
+							regions: 	set[Region] = Region.API_regions(), 
+							accounts: 	Sequence[Account] | None = None,
+							tanks: 		Sequence[Tank] | None = None, 
+							since:  	int = 0,
+							sample : 	float = 0) -> int:
 		"""Get number of tank-stats from backend"""
 		raise NotImplementedError
 
