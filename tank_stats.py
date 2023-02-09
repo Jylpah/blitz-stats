@@ -322,8 +322,8 @@ def add_args_export_data(parser: ArgumentParser, config: Optional[ConfigParser] 
 								help='exports stats before release, default is False')
 		parser.add_argument('--format', type=str, nargs='?', choices=EXPORT_DATA_FORMATS, 
 		 					 default=EXPORT_FORMAT, help='export file format')
-		parser.add_argument('--filename', metavar='FILE', type=str, nargs='?', default=None, 
-							help='file to export tank-stats to')
+		# parser.add_argument('--filename', metavar='FILE', type=str, nargs='?', default=None, 
+		# 					help='file to export tank-stats to')
 		parser.add_argument('--basedir', metavar='FILE', type=str, nargs='?', default=EXPORT_DIR, 
 							help='base dir to export data')
 		parser.add_argument('--region', type=str, nargs='*', 
@@ -1302,8 +1302,8 @@ async def cmd_export_update(db: Backend, args : Namespace) -> bool:
 		release 		: BSBlitzRelease= BSBlitzRelease(release=args.RELEASE)
 		force 			: bool			= args.force
 		export_format 	: str			= args.format
-		basedir 		: str			= os.path.join(args.basedir, release.release) 
-		filename 		: str			= args.filename
+		basedir 		: str			= os.path.join(args.basedir, release.release, 'update_total') 
+		# filename 		: str			= args.filename
 		options 		: dict[str, Any]= dict()
 		options['regions']				= regions
 		options['release']				= release.release
@@ -1315,7 +1315,7 @@ async def cmd_export_update(db: Backend, args : Namespace) -> bool:
 			tankQ : queue.Queue[int | None] = manager.Queue()
 			adataQ: AsyncQueue[pd.DataFrame]=AsyncQueue.from_queue(dataQ)
 			atankQ: AsyncQueue[int | None]  = AsyncQueue.from_queue(tankQ)
-			worker : Task = create_task(export_data_writer(basedir, filename, adataQ, export_format, force))
+			worker : Task = create_task(export_dataset_writer(basedir, adataQ, export_format, force))
 
 			with Pool(processes=WORKERS, initializer=export_update_mp_init, 
 					  initargs=[ db.config, tankQ, dataQ, options ]) as pool:
