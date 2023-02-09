@@ -23,6 +23,7 @@ from pyutils import CounterQueue, EventCounter,  TXTExportable, \
 		export, is_alphanum
 from blitzutils.models import WoTBlitzReplayJSON, WoTBlitzReplayData, Region, Account
 from blitzutils.wotinspector import WoTinspector
+from yastatist import get_accounts_since
 
 logger 	= logging.getLogger()
 error 	= logger.error
@@ -351,6 +352,7 @@ async def cmd_update(db: Backend, args : Namespace) -> bool:
 
 async def add_worker(db: Backend, accountQ: Queue[list[int]]) -> EventCounter:
 	"""worker to read accounts from queue and add those to backend"""
+	## REFACTOR: use Queue[list[BSAccount]] instead
 	debug('starting')
 	stats : EventCounter = EventCounter(f'{db.driver}')
 	added 		: int
@@ -365,7 +367,7 @@ async def add_worker(db: Backend, accountQ: Queue[list[int]]) -> EventCounter:
 					accounts : list[BSAccount] = list()
 					for player in players:
 						try:
-							accounts.append(BSAccount(id=player, added=epoch_now()))  # type: ignore
+							accounts.append(BSAccount(id=player))  # type: ignore
 						except Exception as err:
 							debug(f'cound not create account object for account_id: {player}')
 					added, not_added= await db.accounts_insert(accounts)
@@ -571,7 +573,27 @@ async def cmd_update_ys(db: Backend, args : Namespace, accountQ : Queue[list[int
 	debug('starting')
 	stats		: EventCounter = EventCounter('Yastati.st')
 	try:
-		raise NotImplementedError
+		since 			: int = args.ys_days_since
+		client_id 		: str = args.ys_client_id
+		client_secret 	: str = args.ys_client_secret
+		BATCH : int = 100
+		accounts : list[int] = list()
+		with alive_bar(None, title='Getting accounts from yastati.st ') as bar:
+			for region in [Region.eu, Region.ru]:
+				async for account in get_accounts_since(region, days= since,
+														client_id = client_id, 
+														secret = client_secret):
+					accounts.append(account.id)
+					stats.log('accounts read')
+					if len(accounts) > BATCH:
+						await accountQ.put(accounts)
+						bar(len(accounts))
+						accounts = list()		
+
+			if len(accounts) > 0:
+				await accountQ.put(accounts)
+				bar(len(accounts))
+
 	except Exception as err:
 		error(f'{err}')	
 	return stats
