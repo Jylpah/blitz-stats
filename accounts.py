@@ -853,15 +853,18 @@ async def accountQ_active(db: Backend,
 	return stats
 
 
-async def create_accountQ(db: Backend, args : Namespace, 
-							accountQ: IterableQueue[BSAccount], 
-							stats_type: StatsTypes | None) -> EventCounter:
+async def create_accountQ(db: Backend, 
+						  args : Namespace, 
+						  accountQ: IterableQueue[BSAccount], 
+						  stats_type: StatsTypes | None) -> EventCounter:
 	"""Helper to make accountQ from arguments"""	
 	stats : EventCounter = EventCounter(f'{db.driver}: accounts')
 	debug('starting')
 	try:
 		regions	 	: set[Region]	= { Region(r) for r in args.region }
 		accounts 	: list[BSAccount] | None = read_args_accounts(args.accounts)
+		inactive 	: OptAccountsInactive 	= OptAccountsInactive(args.inactive)
+		disabled 	: bool 					= args.disabled
 		
 		await accountQ.add_producer()
 
@@ -906,8 +909,11 @@ async def create_accountQ(db: Backend, args : Namespace,
 		
 		else:
 			async for account in db.accounts_get(stats_type=stats_type, 
-												regions=regions, sample=args.sample, 
-												cache_valid=args.cache_valid):
+													regions=regions, 
+													inactive=inactive,
+													disabled=disabled,
+													sample=args.sample, 
+													cache_valid=args.cache_valid):
 				try:
 					await accountQ.put(account)
 					stats.log('read')
