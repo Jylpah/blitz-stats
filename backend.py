@@ -705,6 +705,7 @@ class Backend(ABC):
 	@abstractmethod
 	async def objs_export(self, 
 						 table_type: BSTableType, 
+						 pipeline : list[dict[str, Any]] = list(),
 						 sample: float = 0, 
 						 batch: int = 0) -> AsyncGenerator[list[Any], None]:
 		"""Export raw objects from backend"""

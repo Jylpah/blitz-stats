@@ -908,9 +908,11 @@ class MongoBackend(Backend):
 			error(f'Error fetching data from {self.table_uri(table_type)}: {err}')
 
 
-	async def objs_export(self, table_type: BSTableType,
-						 sample: float = 0,
-						 batch: int = 0) -> AsyncGenerator[list[Any], None]:
+	async def objs_export(self, 
+						table_type: BSTableType,
+						pipeline : list[dict[str, Any]] = list(),
+						sample: float = 0,
+						batch: int = 0) -> AsyncGenerator[list[Any], None]:
 		"""Export raw documents as a list from Mongo DB"""
 		try:
 			debug(f'starting')
@@ -918,8 +920,7 @@ class MongoBackend(Backend):
 			debug(f'export from: {self.table_uri(table_type)}')
 			if batch == 0:
 				batch = MONGO_BATCH_SIZE
-			pipeline : list[dict[str, Any]] = list()
-
+			
 			if sample > 0 and sample < 1:
 				N : int = await dbc.estimated_document_count()
 				pipeline.append({ '$sample' : { 'size' : int(N * sample) }})
