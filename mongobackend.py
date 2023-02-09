@@ -1750,6 +1750,54 @@ class MongoBackend(Backend):
 		return None
 
 
+	async def _mk_pipeline_tank_stats_latest(self, 
+											account: 	Account, 
+											release: 	BSBlitzRelease,
+											# tanks: 		Sequence[Tank] | None = None,
+											) -> list[dict[str, Any]] | None:		
+		try:
+			debug('starting')
+
+			# class WGTankStat(JSONExportable, JSONImportable):
+			# 	id					: ObjectId  	= Field(alias='_id')
+			## 	region				: Region | None = Field(default=None, alias='r')
+			# 	all					: WGTankStatAll = Field(..., alias='s')
+			# 	last_battle_time	: int			= Field(..., alias='lb')
+			# 	account_id			: int			= Field(..., alias='a')
+			# 	tank_id				: int 			= Field(..., alias='t')
+			# 	mark_of_mastery		: int 			= Field(default=0, alias='m')
+			# 	battle_life_time	: int 			= Field(default=0, alias='l')
+			# 	release 			: str  | None 	= Field(default=None, alias='u')
+			# 	max_xp				: int  | None
+			# 	in_garage_updated	: int  | None
+			# 	max_frags			: int  | None
+			# 	frags				: int  | None
+			# 	in_garage 			: bool | None
+
+			a = AliasMapper(self.model_tank_stats)
+			alias : Callable = a.alias
+			pipeline : list[dict[str, Any]] = list()
+			match : list[dict[str, str|int|float|dict|list]] = list()
+
+			# Pipeline build based on ESR rule
+			# https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
+
+			match.append({ alias('region'): account.region.value })			
+			match.append({ alias('account_id'): account.id })			
+			match.append({ alias('last_battle_time') : { '$lte' : release.cut_off }})
+			
+			pipeline.append( { '$match' : { '$and' : match } })
+			pipeline.append( { '$sort': { alias('last_battle_time'): DESCENDING }})
+			pipeline.append( { '$group' :   { '_id' : '$' + alias('tank_id'), 'doc': { '$first': '$$ROOT'}  }})
+			pipeline.append( { '$replaceWith' : '$doc'} )
+			pipeline.append( { '$project' : { '_id': 0 }} )
+			#debug(f'pipeline={pipeline}')
+			return pipeline
+		except Exception as err:
+			error(f'{err}')
+		return None
+
+
 	async def tank_stats_get(self, release: BSBlitzRelease | None = None,
 							regions : set[Region] = Region.API_regions(),
 							accounts: Iterable[Account] | None = None,
