@@ -1527,19 +1527,18 @@ async def export_data_writer(basedir		: str,
 		export_file : str = os.path.join(basedir, f'{filename}.{export_format}')
 		if not force and isfile( export_file):
 			raise FileExistsError(export_file)
-
-		batch 	: pa.RecordBatch = pa.RecordBatch.from_pandas(await dataQ.get())
-		schema 	: pa.Schema 	 = batch.schema
+		schema 	: pa.Schema 	 = WGTankStat.arrow_schema()
 
 		with pq.ParquetWriter(export_file, schema, compression='lz4') as writer:
 			while True:
+				batch = pa.RecordBatch.from_pandas(await dataQ.get(), schema)
 				try:
 					writer.write_batch(batch)
 					stats.log('rows written', batch.num_rows)
 				except Exception as err:
 					error(f'{err}')				
 				dataQ.task_done()
-				batch = pa.RecordBatch.from_pandas(await dataQ.get(), schema)
+				
 
 	except CancelledError:
 		debug('cancelled')
