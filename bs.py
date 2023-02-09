@@ -49,6 +49,9 @@ async def main(argv: list[str]):
 
 	chdir(dirname(sys.argv[0]))
 	
+	## UPDATE after transition
+	message('Reminder: Rename Backend ErrorLog & AccountLog')
+	
 	# Default params
 	WG_APP_ID 	= 'wg-app-id-missing'
 	CONFIG 		= 'blitzstats.ini'	

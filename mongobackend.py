@@ -148,9 +148,6 @@ class MongoBackend(Backend):
 			self.config_tables(table_config=table_config)
 			self.config_models(model_config=model_config)
 
-			## UPDATE after transition
-			message('Reminder: Rename Backend ErrorLog & AccountLog')
-
 			# debug(f'Mongo DB: {self.backend}')
 			debug(f'config: ' + ', '.join([ "{0}={1}".format(k, str(v)) for k, v in kwargs.items()]))
 		except FileNotFoundError as err:
