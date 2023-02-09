@@ -1081,6 +1081,7 @@ class Backend(ABC):
 		raise NotImplementedError
 		yield list()
 
+
 	@abstractmethod
 	async def tank_stats_count(self, release: BSBlitzRelease | None = None,
 							regions: 	set[Region] = Region.API_regions(), 
@@ -1132,7 +1133,8 @@ class Backend(ABC):
 								release	: BSBlitzRelease | None = None,
 								regions	: set[Region] = Region.API_regions(),
 								account	: BSAccount | None = None, 
-								tank	: Tank | None = None
+								tank	: Tank | None = None, 
+								randomize: bool = True
 								) -> AsyncGenerator[A, None]:
 		"""Return unique values of field"""
 		raise NotImplementedError

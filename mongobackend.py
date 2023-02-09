@@ -4,6 +4,7 @@ from datetime import date, datetime
 from os.path import isfile
 from typing import Optional, Any, Iterable, Sequence, Union, Tuple, Literal, Final, \
 					AsyncGenerator, TypeVar, ClassVar, cast, Generic, Callable
+import random
 import logging
 import re
 
@@ -1964,7 +1965,8 @@ class MongoBackend(Backend):
 								release	: BSBlitzRelease | None = None,
 								regions	: set[Region] = Region.API_regions(),
 								account	: BSAccount | None = None, 
-								tank	: Tank | None = None
+								tank	: Tank | None = None, 
+								randomize: bool = True
 								) -> AsyncGenerator[A, None]:
 		"""Return unique values of field"""
 		debug('starting')
@@ -1982,8 +1984,10 @@ class MongoBackend(Backend):
 				query[alias('tank_id')] = tank.tank_id
 			if account is not None:
 				query[alias('account_id')] = account.id
-			
-			for item in await dbc.distinct(key = db_field, filter=query):		# type: ignore
+			values : list[A] = await dbc.distinct(key = db_field, filter=query)
+			if randomize:
+				random.shuffle(values)
+			for item in values:		# type: ignore
 				yield item
 		except Exception as err:
 			error(f'{err}')
