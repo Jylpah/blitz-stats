@@ -1124,10 +1124,10 @@ class Backend(ABC):
 								regions	: set[Region] = Region.API_regions(),
 								account	: BSAccount | None = None, 
 								tank	: Tank | None = None
-								) -> list[A] | None:
+								) -> AsyncGenerator[A, None]:
 		"""Return unique values of field"""
 		raise NotImplementedError
-
+		yield 
 
 	async def tank_stats_get_worker(self, tank_statsQ : Queue[WGTankStat], **getargs) -> EventCounter:
 		debug('starting')

@@ -1935,7 +1935,7 @@ class MongoBackend(Backend):
 								regions	: set[Region] = Region.API_regions(),
 								account	: BSAccount | None = None, 
 								tank	: Tank | None = None
-								) -> list[A] | None:
+								) -> AsyncGenerator[A, None]:
 		"""Return unique values of field"""
 		debug('starting')
 		try:
@@ -1953,12 +1953,12 @@ class MongoBackend(Backend):
 			if account is not None:
 				query[alias('account_id')] = account.id
 			
-			return await dbc.distinct(key = db_field, filter=query)		# type: ignore
-
+			for item in await dbc.distinct(key = db_field, filter=query):		# type: ignore
+				yield item
 		except Exception as err:
 			error(f'{err}')
-		return None
-
+		
+		
 	########################################################
 	#
 	# MongoBackend(): tankopedia
