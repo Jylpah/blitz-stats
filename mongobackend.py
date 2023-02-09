@@ -1431,13 +1431,12 @@ class MongoBackend(Backend):
 			else:
 				release = rel
 			async for obj in dbc.find({ 'cut_off': { '$lt': release.cut_off } }).sort('cut_off', DESCENDING):
-				debug(f'{obj}')
 				return BSBlitzRelease.transform_obj(obj, self.model_releases)
 			error('find() returned zero')
 		except ValidationError as err:
 			error(f'Incorrect data format: {err}')
 		except Exception as err:
-			error(f'Could not find the latest release from {self.table_uri(BSTableType.Releases)}: {err}')
+			error(f'Could not find the previous release for {release} from {self.table_uri(BSTableType.Releases)}: {err}')
 		return None
 
 
@@ -1839,17 +1838,11 @@ class MongoBackend(Backend):
 	async def tank_stats_export_career(self, 						
 										account: Account,							
 										release	: BSBlitzRelease,							
-										before	: bool = False) -> AsyncGenerator[list[WGTankStat], None]:
+										) -> AsyncGenerator[list[WGTankStat], None]:
 		"""Return tank stats from the backend"""
 		try:
 			debug('starting')
 			pipeline : list[dict[str, Any]] | None
-
-			if before:
-				if (rel:= await self.release_get_previous(release)) is None:
-					raise ValueError(f'Could not find previous release: {release}')
-				else:
-					release = rel
 
 			pipeline = await self._mk_pipeline_tank_stats_latest(account=account, release=release)
 			if pipeline is None:
