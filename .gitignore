@@ -144,4 +144,6 @@ dmypy.json
 # VS Code
 *.code-workspace
 .vscode/
-export/
+
+# export dir
+export
