@@ -454,6 +454,9 @@ async def cmd(db: Backend, args : Namespace) -> bool:
 		if args.accounts_cmd == 'fetch':
 			return await cmd_fetch(db, args)
 
+		elif args.accounts_cmd == 'update':
+			return await cmd_update(db, args)
+
 		elif args.accounts_cmd == 'export':
 			return await cmd_export(db, args)
 		
@@ -468,13 +471,178 @@ async def cmd(db: Backend, args : Namespace) -> bool:
 	return False
 
 
+
+async def cmd_update(db: Backend, args : Namespace) -> bool:
+	try:
+		debug('starting')
+		
+		stats = EventCounter('accounts update')
+		accountQ : IterableQueue[BSAccount] = IterableQueue(maxsize=10000)
+		db_worker = create_task(db.accounts_insert_worker(accountQ, force=args.force))
+		
+		try:
+			if args.accounts_update_source == 'wg':
+				debug('wg')
+				stats.merge_child(await cmd_update_wg(db, args, accountQ))
+			else:
+				raise ValueError(f'unknown accounts update source: {args.accounts_update_source}')
+			
+		except Exception as err:
+			error(f'{err}')
+
+		await accountQ.join()
+		await stats.gather_stats([db_worker])	
+		stats.print()
+
+	except Exception as err:
+		error(f'{err}')
+	return False
+
+
+###########################################
+# 
+# cmd_update_wg()
+#
+###########################################
+
+
+async def cmd_update_wg(db		: Backend, 
+						args 	: Namespace, 
+						outQ 	: IterableQueue[BSAccount]) -> EventCounter:
+	"""Update accounts from WG API"""
+	debug('starting')
+	stats		: EventCounter = EventCounter('WG API')
+	try:		
+		regions			: set[Region] 	= { Region(r) for r in args.region }
+		wg 				: WGApi = WGApi(app_id = args.wg_app_id, 
+										ru_app_id= args.ru_app_id,
+										rate_limit = args.wg_rate_limit)
+		WORKERS 		: int 	= max( int(args.wg_workers / len(Region.API_regions())), 1)
+		workQ_creators	: list[Task]	= list()
+		api_workers 	: list[Task]	= list()
+		workQs 			: dict[Region, IterableQueue[list[BSAccount]]] = dict()
+		opt_inactive 	: OptAccountsInactive = OptAccountsInactive.both
+
+		if args.inactive:
+			opt_inactive = OptAccountsInactive.yes
+		elif args.active:
+			opt_inactive = OptAccountsInactive.no
+
+		for region in regions:
+			try:
+				workQs[region] = IterableQueue(maxsize=100)
+				
+				workQ_creators.append(create_task(create_accountQ_batch(db, workQs[region], 
+																		region=region,
+																		inactive=opt_inactive,
+																		disabled=args.disabled, 
+																		sample=args.sample) ))
+				for _ in range(WORKERS):
+					api_workers.append(create_task(update_account_info_worker(wg, region, 
+																			 workQs[region], outQ)))
+			except Exception as err:
+				error(f"could not create account Q maker for '{region}': {err}")				
+		
+		with alive_bar(None, title='Updating accounts from WG API ') as bar:
+			try:
+				prev 	: int = 0
+				done	: int
+				while not outQ.is_filled:
+					done = outQ.count
+					if done - prev > 0:
+						bar(done - prev)
+					prev = done
+					await sleep(1)						
+
+			except KeyboardInterrupt:
+				message('cancelled')
+				for workQ in workQs.values():
+					await workQ.shutdown()		
+		await stats.gather_stats(workQ_creators, merge_child=False)
+		for region in workQs.keys():
+			debug(f'waiting for idQ for {region} to complete')
+			await workQs[region].join()
+		await stats.gather_stats(api_workers)
+		wg.print()
+		await wg.close()
+	except Exception as err:
+		error(f'{err}')	
+	return stats
+
+
+async def update_account_info_worker(wg		: WGApi, 
+									region	: Region, 
+									workQ	: IterableQueue[list[BSAccount]], 
+									outQ	: IterableQueue[BSAccount], 
+									) -> EventCounter:
+	"""Update accounts with data from WG API accounts/info"""
+	debug('starting')
+	stats	: EventCounter = EventCounter(f'{region}')
+	infos 	: list[WGAccountInfo] | None
+	accounts: dict[int, BSAccount]
+	ids		: list[int] = list()
+
+	try:
+		await outQ.add_producer()
+
+		while True:
+			accounts = dict()
+			for a in await workQ.get():
+				accounts[a.id] = a
+			N 	: int = len(accounts)			
+			try:				
+				stats.log('account_ids', N)
+				if N == 0 or N > 100:
+					raise ValueError(f'Incorrect number of account_ids give {N}')
+
+				ids = [ a.id for a in accounts.values() ]
+				if (infos:= await wg.get_account_info(ids, region)) is not None:					
+					stats.log('stats found', len(infos))
+					
+					for info in infos:
+						try:
+							a = accounts[info.account_id]
+							# debug(f'updating account_id={a.id}: {info}')
+							if a.update(info):
+								# debug(f'updated: {a}')
+								await outQ.put(a)
+								stats.log('stats valid')
+							else:
+								# debug(f'BSAccount.update() failed: account_id={a.id}]')
+								stats.log('update failed')
+						except KeyError as err:
+							error(f'{err}')						
+				else:
+					stats.log('query errors')
+				
+			except ValueError:				
+				stats.log('errors', N)				
+			except Exception as err:
+				stats.log('errors')
+				error(f'{err}')	
+			finally:
+				# debug(f'accounts={len(accounts)}, left={left}')
+				workQ.task_done()
+		
+	except QueueDone:
+		debug('account_id queue is done')
+	except CancelledError:
+		debug('cancelled')
+	except Exception as err:
+		error(f'{err}')
+	finally:
+		debug(f'closing outQ: {region}')
+		await outQ.finish()
+	return stats
+
+
 async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		
 		stats = EventCounter('accounts fetch')
-		accountQ : IterableQueue[list[BSAccount]] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
-		db_worker = create_task(add_worker(db, accountQ))
+		accountQ : IterableQueue[BSAccount] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
+		db_worker = create_task(db.accounts_insert_worker(accountQ))
 
 		try:
 			if args.accounts_fetch_source == 'wg':
@@ -495,15 +663,8 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 		except Exception as err:
 			error(f'{err}')
 
-		await accountQ.join()
-		db_worker.cancel()
-		worker_res : tuple[EventCounter | BaseException] = await gather(db_worker,return_exceptions=True)
-		for res in worker_res:
-			if type(res) is EventCounter:
-				stats.merge_child(res)
-			elif type(res) is BaseException:
-				error(f'{db.driver}: add_accounts_worker() returned error: {str(res)}')
-
+		await accountQ.join()		
+		await stats.gather_stats([db_worker])
 		stats.print()
 
 	except Exception as err:
@@ -511,41 +672,41 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def add_worker(db: Backend, accountQ: Queue[list[BSAccount]]) -> EventCounter:
-	"""worker to read accounts from queue and add those to backend"""
-	## REFACTOR: use Queue[list[BSAccount]] instead
-	debug('starting')
-	stats 		: EventCounter = EventCounter(f'{db.driver}')
-	added 		: int
-	not_added 	: int
-	try:
-		while True:
-			accounts : list[BSAccount] = await accountQ.get()
-			try:
-				debug(f'Read {len(accounts)} from queue')
-				stats.log('accounts total', len(accounts))
-				try:					
-					added, not_added= await db.accounts_insert(accounts)
-					stats.log('accounts added', added)
-					stats.log('old accounts found', not_added)
-				except Exception as err:
-					stats.log('errors')
-					error(f'Cound not add accounts do {db.backend}: {err}')
-			except Exception as err:
-				error(f'{err}')
-			finally:
-				accountQ.task_done()
-	except QueueDone:
-		debug('account queue is done')
-	except CancelledError as err:
-		debug(f'Cancelled')
-	except Exception as err:
-		error(f'{err}')
-	return stats
+# async def add_worker(db: Backend, accountQ: Queue[list[BSAccount]]) -> EventCounter:
+# 	"""worker to read accounts from queue and add those to backend"""
+# 	## REFACTOR: use Queue[list[BSAccount]] instead
+# 	debug('starting')
+# 	stats 		: EventCounter = EventCounter(f'{db.driver}')
+# 	added 		: int
+# 	not_added 	: int
+# 	try:
+# 		while True:
+# 			accounts : list[BSAccount] = await accountQ.get()
+# 			try:
+# 				debug(f'Read {len(accounts)} from queue')
+# 				stats.log('accounts total', len(accounts))
+# 				try:					
+# 					added, not_added= await db.accounts_insert(accounts)
+# 					stats.log('accounts added', added)
+# 					stats.log('old accounts found', not_added)
+# 				except Exception as err:
+# 					stats.log('errors')
+# 					error(f'Cound not add accounts do {db.backend}: {err}')
+# 			except Exception as err:
+# 				error(f'{err}')
+# 			finally:
+# 				accountQ.task_done()
+# 	except QueueDone:
+# 		debug('account queue is done')
+# 	except CancelledError as err:
+# 		debug(f'Cancelled')
+# 	except Exception as err:
+# 		error(f'{err}')
+# 	return stats
 
 
 async def cmd_fetch_files(db: Backend, args : Namespace, 
-							accountQ : Queue[list[BSAccount]]) -> EventCounter:
+							accountQ : Queue[BSAccount]) -> EventCounter:
 	
 	debug('starting')
 	raise NotImplementedError
@@ -560,7 +721,7 @@ async def cmd_fetch_files(db: Backend, args : Namespace,
 
 async def cmd_fetch_wg(db		: Backend, 
 						args 	: Namespace, 
-						accountQ: IterableQueue[list[BSAccount]]) -> EventCounter:
+						accountQ: IterableQueue[BSAccount]) -> EventCounter:
 	"""Fetch account_ids fromy yastati.st"""
 	debug('starting')
 	stats		: EventCounter = EventCounter('WG API')
@@ -611,7 +772,7 @@ async def cmd_fetch_wg(db		: Backend,
 				while not accountQ.is_filled:
 					done = accountQ.count
 					if done - prev > 0:
-						bar((done - prev)*100)
+						bar(done - prev)
 					prev = done
 					await sleep(1)						
 
@@ -645,7 +806,7 @@ async def account_idQ_maker(idQ : IterableQueue[Sequence[int]],
 			await idQ.put(range(i, i + batch))
 			last = i + batch		
 	except QueueDone:
-		error('queue done')
+		debug('queue done')
 	except Exception as err:
 		error(f'{err}')
 	stats.log('queued', last - start)
@@ -657,7 +818,8 @@ async def account_idQ_maker(idQ : IterableQueue[Sequence[int]],
 async def fetch_account_info_worker(wg		: WGApi, 
 									region	: Region, 
 									idQ		: IterableQueue[Sequence[int]], 
-									accountQ: IterableQueue[list[BSAccount]], 
+									accountQ: IterableQueue[BSAccount], 
+									force 	: bool = False, 
 									null_responses : int = 100) -> EventCounter:
 	"""Fetch account info from WG API accounts/info"""
 	debug('starting')
@@ -665,15 +827,13 @@ async def fetch_account_info_worker(wg		: WGApi,
 	left 	: int 	= null_responses
 	infos 	: list[WGAccountInfo] | None
 	ids		: Sequence[int]
-	accounts: list[BSAccount]
 
 	try:
 		await accountQ.add_producer()
 		while True:
-			accounts = list()	
+			valid_stats : bool = False
 			ids = await idQ.get()
-			N_ids : int = len(ids)
-
+			N_ids 		: int = len(ids)			
 			try:				
 				stats.log('account_ids', N_ids)
 				if N_ids == 0 or N_ids > 100:
@@ -684,9 +844,11 @@ async def fetch_account_info_worker(wg		: WGApi,
 					
 					for info in infos:
 						if (acc := BSAccount.transform(info)) is not None:
-							accounts.append(acc)
-					stats.log('stats valid', len(accounts))
-					stats.log('transformation errors', len(infos) - len(accounts))					
+							await accountQ.put(acc)
+							stats.log('stats valid')
+							valid_stats = True
+						else:
+							stats.log('transformation errors')
 				else:
 					stats.log('query errors')
 				
@@ -697,14 +859,11 @@ async def fetch_account_info_worker(wg		: WGApi,
 				error(f'{err}')	
 			finally:
 				# debug(f'accounts={len(accounts)}, left={left}')
-				if len(accounts) == 0:
-					left -= 1
-				else:
-					left = null_responses
-					await accountQ.put(accounts)
-				idQ.task_done()	
-				if left <= 0: 				# too many NULL responses, stop					
-					break			
+				idQ.task_done()
+				if not force:
+					left = null_responses if valid_stats else left - 1					
+					if left <= 0:	# too many NULL responses, stop					
+						break			
 		
 	except QueueDone:
 		debug('account_id queue is done')
@@ -746,7 +905,9 @@ async def fetch_account_info_worker(wg		: WGApi,
 # 	return stats
 
 
-async def cmd_fetch_wi(db: Backend, args : Namespace, accountQ : IterableQueue[list[BSAccount]]) -> EventCounter:
+async def cmd_fetch_wi(db: Backend, 
+						args : Namespace, 
+						accountQ : IterableQueue[BSAccount]) -> EventCounter:
 	"""Fetch account_ids from replays.wotinspector.com replays"""
 	debug('starting')
 	stats		: EventCounter = EventCounter('WoTinspector')
@@ -894,10 +1055,10 @@ async def update_wi_get_replay_ids(db: Backend, wi: WoTinspector, args: Namespac
 	return stats
 
 
-async def update_wi_fetch_replays(db: Backend, 
-									wi: WoTinspector, 
-									replay_idQ : Queue[str], 
-									accountQ : Queue[list[BSAccount]]
+async def update_wi_fetch_replays(db			: Backend, 
+								  wi			: WoTinspector, 
+								  replay_idQ 	: Queue[str], 
+								  accountQ 		: Queue[BSAccount]
 								 ) -> EventCounter:
 	debug('starting')
 	stats : EventCounter = EventCounter('Fetch replays')
@@ -912,7 +1073,8 @@ async def update_wi_fetch_replays(db: Backend,
 					continue
 				account_ids : list[int] = replay.get_players()
 				stats.log('players found', len(account_ids))
-				await accountQ.put([ BSAccount(id=account_id) for account_id in account_ids] )
+				for account_id in account_ids:
+					await accountQ.put(BSAccount(id=account_id))
 				if await db.replay_insert(replay):
 					stats.log('replays added')
 				else:
@@ -924,7 +1086,9 @@ async def update_wi_fetch_replays(db: Backend,
 	return stats
 
 
-async def cmd_fetch_ys(db: Backend, args : Namespace, accountQ : IterableQueue[list[BSAccount]]) -> EventCounter:
+async def cmd_fetch_ys(db: Backend, 
+						args : Namespace, 
+						accountQ : IterableQueue[BSAccount]) -> EventCounter:
 	"""Fetch account_ids fromy yastati.st"""
 	debug('starting')
 	stats		: EventCounter = EventCounter('Yastati.st')
@@ -932,24 +1096,16 @@ async def cmd_fetch_ys(db: Backend, args : Namespace, accountQ : IterableQueue[l
 		since 			: int = args.ys_days_since
 		client_id 		: str = args.ys_client_id
 		client_secret 	: str = args.ys_client_secret
-		BATCH : int = 100
-		accounts : list[BSAccount] = list()
+		
 		await accountQ.add_producer()
 		with alive_bar(None, title='Getting accounts from yastati.st ') as bar:
 			for region in [Region.eu, Region.ru]:
 				async for account in get_accounts_since(region, days= since,
 														client_id = client_id, 
 														secret = client_secret):
-					accounts.append(account)
+					await accountQ.put(account)
 					stats.log('accounts read')
-					if len(accounts) > BATCH:
-						await accountQ.put(accounts)
-						bar(len(accounts))
-						accounts = list()		
-
-			if len(accounts) > 0:
-				await accountQ.put(accounts)
-				bar(len(accounts))
+					bar()
 
 	except Exception as err:
 		error(f'{err}')
@@ -963,15 +1119,14 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 		stats 			: EventCounter 			= EventCounter('accounts import')
 		accountQ 		: Queue[BSAccount]		= Queue(ACCOUNTS_Q_MAX)
 		regions 		: set[Region]			= { Region(r) for r in args.region }
-		import_db   	: Backend | None 		= None
-		import_model 	: type[JSONExportable] | None 	= None
+		import_db   	: Backend | None 		= None		
 		import_backend 	: str 					= args.import_backend
-
-		if (import_model := get_sub_type(args.import_model, JSONExportable)) is None:
-			raise ValueError("--import-model has to be subclass of JSONExportable")
-
+		force 			: bool | None 			= None
+		if args.force:
+			force = True
+		
 		write_worker : Task = create_task(db.accounts_insert_worker(accountQ=accountQ, 
-																	force=args.force))
+																	force=force))
 
 		if (import_db := Backend.create_import_backend(driver=import_backend, 
 														args=args, 
@@ -1153,6 +1308,7 @@ async def split_accountQ_by_region(Q_all : IterableQueue[BSAccount],
 
 async def count_accounts(db: Backend, args : Namespace, stats_type: StatsTypes | None) -> int:
 	"""Helper to count accounts based on CLI args"""
+	debug('starting')
 	accounts_N : int = 0
 	try:
 		regions	 	: set[Region]	= { Region(r) for r in args.region }
@@ -1187,12 +1343,12 @@ async def count_accounts(db: Backend, args : Namespace, stats_type: StatsTypes |
 	return accounts_N
 
 
-async def accountQ_active(db: Backend, 
+async def create_accountQ_active(db: Backend, 
 							accountQ: Queue[BSAccount], 
 							release: BSBlitzRelease, 
 							regions: set[Region], 
 							randomize: bool = True) -> EventCounter:
-	"""Add accounts active during a release to accountQ """
+	"""Add accounts active during a release to accountQ"""
 	debug('starting')
 	stats : EventCounter = EventCounter(f'accounts')
 	try:
@@ -1211,9 +1367,9 @@ async def accountQ_active(db: Backend,
 	return stats
 
 
-async def create_accountQ(db: Backend, 
-						  args : Namespace, 
-						  accountQ: IterableQueue[BSAccount], 
+async def create_accountQ(db		: Backend, 
+						  args 		: Namespace, 
+						  accountQ	: IterableQueue[BSAccount], 
 						  stats_type: StatsTypes | None) -> EventCounter:
 	"""Helper to make accountQ from arguments"""	
 	stats : EventCounter = EventCounter(f'{db.driver}: accounts')
