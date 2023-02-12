@@ -1341,110 +1341,119 @@ async def create_accountQ_batch(db			: Backend,
 	return stats
 
 
+# async def create_accountQ_BAK(db: Backend, args : Namespace, 
+# 							accountQ: Queue[BSAccount], 
+# 							stats_type: StatsTypes | None, 
+# 							bar_title : str | None = None) -> None:
+# 	"""Helper to make accountQ from arguments"""	
+# 	raise DeprecationWarning('create_accountQ_BAK is depreciated')
+# 	try:
+# 		regions	 	: set[Region]	= { Region(r) for r in args.region }
+# 		accounts 	: list[BSAccount] | None = read_args_accounts(args.accounts)
 
-		accounts_N 		: int = 0
-		accounts_added 	: int = 0
-		progress		: bool = False 
+# 		accounts_N 		: int = 0
+# 		accounts_added 	: int = 0
+# 		progress		: bool = False 
 
-		# count number of accounts
-		if bar_title is not None:
-			progress = True
-			if accounts is not None:
-				accounts_N = len(accounts)
-			elif args.file is not None:
-				message(f'Reading accounts from {args.file}')
-				async with open(args.file, mode='r') as f:
-					async for accounts_N, _ in enumerate(f):
-						pass
-				accounts_N += 1
-				if args.file.endswith('.csv'):
-					accounts_N -= 1
-			else:
-				if args.sample > 1:
-					accounts_N = int(args.sample)
-				else:				
-					message('Counting accounts to fetch stats...')
-					inactive : OptAccountsInactive = OptAccountsInactive.default()
-					try: 
-						inactive = OptAccountsInactive(args.inactive)
-					except ValueError as err:
-						assert False, f"Incorrect value for argument 'inactive': {args.inactive}"
+# 		# count number of accounts
+# 		if bar_title is not None:
+# 			progress = True
+# 			if accounts is not None:
+# 				accounts_N = len(accounts)
+# 			elif args.file is not None:
+# 				message(f'Reading accounts from {args.file}')
+# 				async with open(args.file, mode='r') as f:
+# 					async for accounts_N, _ in enumerate(f):
+# 						pass
+# 				accounts_N += 1
+# 				if args.file.endswith('.csv'):
+# 					accounts_N -= 1
+# 			else:
+# 				if args.sample > 1:
+# 					accounts_N = int(args.sample)
+# 				else:				
+# 					message('Counting accounts to fetch stats...')
+# 					inactive : OptAccountsInactive = OptAccountsInactive.default()
+# 					try: 
+# 						inactive = OptAccountsInactive(args.inactive)
+# 					except ValueError as err:
+# 						assert False, f"Incorrect value for argument 'inactive': {args.inactive}"
 
-					accounts_N = await db.accounts_count(stats_type=stats_type, regions=regions, 
-														inactive=inactive, sample=args.sample, 
-														cache_valid=args.cache_valid)
+# 					accounts_N = await db.accounts_count(stats_type=stats_type, regions=regions, 
+# 														inactive=inactive, sample=args.sample, 
+# 														cache_valid=args.cache_valid)
 		
-		if accounts_N == 0:
-			raise ValueError('No accounts found')		
+# 		if accounts_N == 0:
+# 			raise ValueError('No accounts found')		
 
-		with alive_bar(accounts_N, title= bar_title, manual=True, 
-						enrich_print=False, disable=not progress) as bar:
+# 		with alive_bar(accounts_N, title= bar_title, manual=True, 
+# 						enrich_print=False, disable=not progress) as bar:
 			
-			if accounts is not None:
+# 			if accounts is not None:
 
-				async for accounts_added, account in enumerate(accounts):
-					try:
-						await accountQ.put(account)
-					except Exception as err:
-						error(f'Could not add account ({account.id}) to queue')
-					finally:
-						bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
+# 				async for accounts_added, account in enumerate(accounts):
+# 					try:
+# 						await accountQ.put(account)
+# 					except Exception as err:
+# 						error(f'Could not add account ({account.id}) to queue')
+# 					finally:
+# 						bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
 
-			elif args.file is not None:
+# 			elif args.file is not None:
 
-				if args.file.endswith('.txt'):
-					async for accounts_added, account in enumerate(BSAccount.import_txt(args.file)):
-						try:
-							await accountQ.put(account)
-						except Exception as err:
-							error(f'Could not add account to the queue: {err}')
-						finally:
-							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
+# 				if args.file.endswith('.txt'):
+# 					async for accounts_added, account in enumerate(BSAccount.import_txt(args.file)):
+# 						try:
+# 							await accountQ.put(account)
+# 						except Exception as err:
+# 							error(f'Could not add account to the queue: {err}')
+# 						finally:
+# 							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
 
-				elif args.file.endswith('.csv'):					
-					async for accounts_added, account in enumerate(BSAccount.import_csv(args.file)):
-						try:
-							await accountQ.put(account)
-						except Exception as err:
-							error(f'Could not add account to the queue: {err}')
-						finally:
-							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
+# 				elif args.file.endswith('.csv'):					
+# 					async for accounts_added, account in enumerate(BSAccount.import_csv(args.file)):
+# 						try:
+# 							await accountQ.put(account)
+# 						except Exception as err:
+# 							error(f'Could not add account to the queue: {err}')
+# 						finally:
+# 							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
 
-				elif args.file.endswith('.json'):				
-					async for accounts_added, account in enumerate(BSAccount.import_json(args.file)):
-						try:
-							await accountQ.put(account)
-						except Exception as err:
-							error(f'Could not add account to the queue: {err}')
-						finally:
-							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
+# 				elif args.file.endswith('.json'):				
+# 					async for accounts_added, account in enumerate(BSAccount.import_json(args.file)):
+# 						try:
+# 							await accountQ.put(account)
+# 						except Exception as err:
+# 							error(f'Could not add account to the queue: {err}')
+# 						finally:
+# 							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
 			
-			else:
-				async for accounts_added, account in enumerate(db.accounts_get(stats_type=StatsTypes.player_achievements, 
-																			regions=regions, sample=args.sample, 
-																			cache_valid=args.cache_valid)):
-					try:
-						await accountQ.put(account)
-					except Exception as err:
-						error(f'Could not add account ({account.id}) to queue')
-					finally:	
-						if progress:
-							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
+# 			else:
+# 				async for accounts_added, account in enumerate(db.accounts_get(stats_type=StatsTypes.player_achievements, 
+# 																			regions=regions, sample=args.sample, 
+# 																			cache_valid=args.cache_valid)):
+# 					try:
+# 						await accountQ.put(account)
+# 					except Exception as err:
+# 						error(f'Could not add account ({account.id}) to queue')
+# 					finally:	
+# 						if progress:
+# 							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
 
-			incomplete : bool = False
-			while accountQ.qsize() > 0:
-				incomplete = True
-				await sleep(1)
-				bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
-			if incomplete:						# FIX the edge case of queue getting processed before while loop
-				bar(1)
+# 			incomplete : bool = False
+# 			while accountQ.qsize() > 0:
+# 				incomplete = True
+# 				await sleep(1)
+# 				bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
+# 			if incomplete:						# FIX the edge case of queue getting processed before while loop
+# 				bar(1)
 
-		await accountQ.join()
-	except CancelledError as err:
-		debug(f'Cancelled')
-	except Exception as err:
-		error(f'{err}')
-	return None
+# 		await accountQ.join()
+# 	except CancelledError as err:
+# 		debug(f'Cancelled')
+# 	except Exception as err:
+# 		error(f'{err}')
+# 	return None
 
 
 def read_args_accounts(accounts: list[str]) -> list[BSAccount] | None:
