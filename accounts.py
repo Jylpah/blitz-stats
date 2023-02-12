@@ -102,6 +102,8 @@ def add_args_update(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 		if not add_args_update_files(update_files_parser, config=config):
 			raise Exception("Failed to define argument parser for: accounts update files")		
 		
+		parser.add_argument('--force', action='store_true', default=False, 
+							help='add accounts not found in the backend')
 		return True	
 	except Exception as err:
 		error(f'{err}')
@@ -122,13 +124,23 @@ def add_args_update_wg(parser: ArgumentParser, config: Optional[ConfigParser] = 
 		WG_RATE_LIMIT 	: float = 10
 		WG_WORKERS 		: int 	= 10
 		WG_APP_ID		: str 	= WGApi.DEFAULT_WG_APP_ID
-		DEFAULT_NULL_ACCOUNTS : int = 1000
+		# Lesta / RU
+		LESTA_RATE_LIMIT: float = 10
+		LESTA_WORKERS 	: int 	= 10
+		LESTA_APP_ID 	: str 	= WGApi.DEFAULT_LESTA_APP_ID
+		# NULL_RESPONSES 	: int 	= 20
 		
 		if config is not None and 'WG' in config.sections():
 			configWG 		= config['WG']
 			WG_RATE_LIMIT	= configWG.getfloat('rate_limit', WG_RATE_LIMIT)
 			WG_WORKERS		= configWG.getint('api_workers', WG_WORKERS)			
-			WG_APP_ID		= configWG.get('app_id', WGApi.DEFAULT_WG_APP_ID)
+			WG_APP_ID		= configWG.get('app_id', WG_APP_ID)
+
+		if config is not None and 'LESTA' in config.sections():
+			configRU 		= config['LESTA']
+			LESTA_RATE_LIMIT	= configRU.getfloat('rate_limit', LESTA_RATE_LIMIT)
+			LESTA_WORKERS		= configRU.getint('api_workers', LESTA_WORKERS)			
+			LESTA_APP_ID		= configRU.get('app_id', LESTA_APP_ID)		
 
 		parser.add_argument('--workers', dest='wg_workers', 
 							type=int, default=WG_WORKERS, metavar='WORKERS',
@@ -137,20 +149,25 @@ def add_args_update_wg(parser: ArgumentParser, config: Optional[ConfigParser] = 
 							help='Set WG APP ID')
 		parser.add_argument('--wg-rate-limit', type=float, default=WG_RATE_LIMIT, metavar='RATE_LIMIT',
 							help='rate limit for WG API per server')
+		parser.add_argument('--ru-app-id', type=str, default=LESTA_APP_ID, metavar='APP_ID',
+							help='Set Lesta (RU) APP ID')
 		parser.add_argument('--region', type=str, nargs='*', 
 							choices=[ r.value for r in Region.API_regions() ], 
 							default=[ r.value for r in Region.API_regions() ], 
 							help='filter by region (default: ' + ' + '.join(Region.API_regions()) + ')')
 		parser.add_argument('--inactive', action='store_true', default=False, 
-							help='Check existing inactive accounts')
+							help='Check existing inactive accounts only')
+		parser.add_argument('--active', action='store_true', default=False, 
+							help='Check existing active accounts only')
 		parser.add_argument('--disabled', action='store_true', default=False, 
 							help='Check existing disabled accounts')
 		# parser.add_argument('--start', dest='wg_start_id', 
 		# 					metavar='ACCOUNT_ID', type=int, default=0, 
 		# 					help='start fetching account_ids from ACCOUNT_ID (default = 0 \
 		# 						start from highest ACCOUNT_ID in backend)')
-		parser.add_argument('--force', action='store_true', default=False, 
-							help='fetch accounts starting from --start ACCOUNT_ID')
+
+		parser.add_argument('--sample', type=float, default=0, metavar='SAMPLE',
+							help='update SAMPLE of accounts. If 0 < SAMPLE < 1, SAMPLE defines a %% of users')
 							
 		return True	
 	except Exception as err:
