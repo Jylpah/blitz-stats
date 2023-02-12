@@ -457,12 +457,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 	except Exception as err:
 		error(f'{err}')
 	finally:
-	
-		wg_stats : dict[str, str] | None = wg.print_server_stats()
-		if wg_stats is not None and logger.level <= logging.WARNING:
-			message('WG API stats:')
-			for server in wg_stats:
-				message(f'{server.capitalize():7s}: {wg_stats[server]}')
+		wg.print()
 		await wg.close()
 	return False
 
