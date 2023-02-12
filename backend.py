@@ -18,7 +18,7 @@ from models import BSAccount, BSBlitzRelease, StatsTypes
 from blitzutils.models import Region, WoTBlitzReplayJSON, WoTBlitzReplayData, WGTankStat, \
 		Account, WGTank, Tank, WGPlayerAchievementsMaxSeries, WGPlayerAchievementsMain, \
 		EnumVehicleTier, EnumNation, EnumVehicleTypeStr, WoTBlitzTankString
-from pyutils import EventCounter, JSONExportable, epoch_now, is_alphanum, Idx, D, O
+from pyutils import EventCounter, JSONExportable, epoch_now, is_alphanum, Idx, D, O, QueueDone
 
 
 # Setup logging
@@ -746,6 +746,7 @@ class Backend(ABC):
 			if the account was not updated"""
 		raise NotImplementedError
 
+
 	@abstractmethod
 	async def account_delete(self, account_id: int) -> bool:
 		"""Delete account from the backend. Returns False 
@@ -799,28 +800,33 @@ class Backend(ABC):
 
 
 	async def accounts_insert_worker(self, accountQ : Queue[BSAccount], 
-									force: bool = False) -> EventCounter:
+									force: bool | None = None) -> EventCounter:
+		"""insert/replace accounts. force=None: insert, force=True/False: upsert=force"""
 		debug(f'starting, force={force}')
 		stats : EventCounter = EventCounter('accounts insert')
 		try:
 			while True:
 				account = await accountQ.get()
 				try:
-					if force:
-						debug(f'Trying to upsert account_id={account.id} into {self.backend}.{self.table_accounts}')
-						await self.account_replace(account, upsert=True)
-					else:
+					if force is None:
 						debug(f'Trying to insert account_id={account.id} into {self.backend}.{self.table_accounts}')
 						await self.account_insert(account)
-					if force:
-						stats.log('accounts added/updated')
+						stats.log('added')
 					else:
-						stats.log('accounts added')
+						debug(f'Trying to upsert account_id={account.id} into {self.backend}.{self.table_accounts}')
+						await self.account_replace(account, upsert=force)					
+						if force:
+							stats.log('added/updated')
+						else:
+							stats.log('updated')
 				except Exception as err:
 					debug(f'Error: {err}')
-					stats.log('accounts not added')
+					stats.log('not added/updated')
 				finally:
 					accountQ.task_done()
+		except QueueDone:
+			# IterableQueue() support
+			pass		
 		except CancelledError as err:
 			debug(f'Cancelled')
 		except Exception as err:
