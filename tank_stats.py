@@ -29,7 +29,7 @@ from pandas.io.json import json_normalize	# type: ignore
 from backend import Backend, OptAccountsInactive, BSTableType, \
 					ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL, get_sub_type
 from models import BSAccount, BSBlitzRelease, StatsTypes
-from accounts import create_accountQ, read_args_accounts, accountQ_active
+from accounts import create_accountQ, read_args_accounts, create_accountQ_active
 from releases import get_releases, release_mapper
 
 from pyutils import alive_bar_monitor, \
@@ -586,7 +586,7 @@ async def fetch_backend_worker(db: Backend, statsQ: Queue[list[WGTankStat]]) -> 
 						account.inactive = False
 					else:
 						stats.log('accounts w/o new stats')
-						if account.is_inactive(StatsTypes.tank_stats): 
+						if account.is_inactive(): 
 							if not account.inactive:
 								stats.log('accounts marked inactive')
 							account.inactive = True
@@ -1159,9 +1159,9 @@ async def cmd_export_career(db: Backend, args : Namespace) -> bool:
 				N : int = await db.tank_stats_unique_count('account_id', int, 
 															release=release, 
 															regions=regions)
-				Qcreator : Task = create_task(accountQ_active(db, aworkQ, release, 
-																regions, 
-																randomize=True ))
+				Qcreator : Task = create_task(create_accountQ_active(db, aworkQ, release, 
+																	regions, 
+																	randomize=True ))
 				debug(f'starting {WORKERS} workers')
 				results : AsyncResult = pool.map_async(export_career_stats_mp_worker_start, 
 														range(WORKERS))
