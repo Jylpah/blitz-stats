@@ -1289,15 +1289,58 @@ async def create_accountQ(db: Backend,
 	return stats
 
 
-async def create_accountQ_BAK(db: Backend, args : Namespace, 
-							accountQ: Queue[BSAccount], 
-							stats_type: StatsTypes | None, 
-							bar_title : str | None = None) -> None:
-	"""Helper to make accountQ from arguments"""	
-	raise DeprecationWarning('create_accountQ_BAK is depreciated')
+###########################################
+# 
+# create_accountQ_batch()  
+#
+###########################################
+
+
+async def create_accountQ_batch(db			: Backend, 
+								accountQ 	: IterableQueue[list[BSAccount]],
+								region		: Region,
+								batch 		: int = 100,  
+								stats_type 	: StatsTypes | None = None, 							
+								inactive 	: OptAccountsInactive = OptAccountsInactive.default(), 
+								disabled	: bool = False, 
+								dist 		: OptAccountsDistributed | None = None, 
+								sample 		: float = 0, 
+								cache_valid	: int | None = None) -> EventCounter:
+	"""Create accountQ of batch size lists"""
+	debug('starting')
+	assert batch > 0, "batch must be > 0"
+	stats : EventCounter = EventCounter(f'{db.driver}: accounts')
 	try:
-		regions	 	: set[Region]	= { Region(r) for r in args.region }
-		accounts 	: list[BSAccount] | None = read_args_accounts(args.accounts)
+		await accountQ.add_producer()
+		accounts: list[BSAccount] = list()
+		async for account in db.accounts_get(stats_type=stats_type, 
+											regions={region}, 
+											inactive=inactive,
+											disabled=disabled,
+											dist= dist, 
+											sample=sample, 
+											cache_valid=cache_valid):
+				try:
+					accounts.append(account)
+					if len(accounts) == batch:
+						await accountQ.put(accounts)
+						stats.log('read', len(accounts))
+						accounts = list()					
+				except Exception as err:
+					error(f'Could not add account ({account.id}) to queue')
+					stats.log('errors')	
+		if len(accounts) > 0:
+			await accountQ.put(accounts)
+			stats.log('read', len(accounts))
+
+	except QueueDone:
+		debug('accountQ raise QueueDone')
+	except Exception as err:
+		error(f'{err}')
+	await accountQ.finish()
+	return stats
+
+
 
 		accounts_N 		: int = 0
 		accounts_added 	: int = 0
