@@ -1,9 +1,9 @@
 from enum import StrEnum
 from sys import maxsize
 from time import time
-from typing import Optional, ClassVar
+from typing import Optional, ClassVar, Any
 from math import ceil
-from pydantic import validator, Field, HttpUrl
+from pydantic import validator, root_validator, Field, HttpUrl
 
 import logging
 
@@ -112,6 +112,14 @@ class BSAccount(Account):
 			return v
 		else:
 			ValueError('time field must be >= 0')
+
+	@root_validator()
+	def set_inactive(cls, values: dict[str, Any]) -> dict[str, Any]:
+		lbt : int | None 
+		if (lbt := values.get('last_battle_time')) is not None:
+			inactive : bool = epoch_now() - lbt > cls._min_inactivity_days*24*3600
+			values['inactive'] = inactive
+		return values
 
 
 	def stats_updated(self, stats: StatsTypes) -> None:
