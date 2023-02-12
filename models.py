@@ -36,11 +36,11 @@ class BSAccount(Account):
 
 	_min_inactivity_days: int = MIN_INACTIVITY_DAYS
 
-	_exclude_export_DB_fields = None
-	_exclude_export_src_fields = None
-	_include_export_DB_fields = None
-	_include_export_src_fields= None
-	_exclude_defaults 		= False
+	_exclude_export_DB_fields 	= None
+	_exclude_export_src_fields 	= None
+	_include_export_DB_fields 	= None
+	_include_export_src_fields	= None
+	_exclude_defaults 			= False
 	
 	class Config:
 		allow_population_by_field_name = True
