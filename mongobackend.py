@@ -984,11 +984,13 @@ class MongoBackend(Backend):
 
 
 	async def _mk_pipeline_accounts(self, stats_type : StatsTypes | None = None,
-							regions: set[Region] = Region.API_regions(),
-							inactive : OptAccountsInactive = OptAccountsInactive.default(),
-							dist : OptAccountsDistributed | None = None,
-							disabled: bool|None = False, sample : float = 0,
-							cache_valid: int | None = None) -> list[dict[str, Any]] | None:
+							regions	: set[Region] = Region.API_regions(),
+							inactive: OptAccountsInactive = OptAccountsInactive.auto,
+							dist 	: OptAccountsDistributed | None = None,
+							disabled: bool|None = False, 
+							sample	: float = 0,
+							cache_valid: int | None = None
+							) -> list[dict[str, Any]] | None:
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
 		try:
 			debug('starting')
@@ -1007,27 +1009,24 @@ class MongoBackend(Backend):
 			# Pipeline build based on ESR rule
 			# https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
 
-			if disabled:
-				match.append({ alias('disabled') : True })
-			elif inactive == OptAccountsInactive.yes:
+			if disabled is not None:
+				match.append({ alias('disabled') : disabled })
+			if inactive == OptAccountsInactive.yes:
 				match.append({ alias('inactive'): True })
+			elif inactive == OptAccountsInactive.no:
+					match.append({ alias('inactive'): False })
 
 			match.append({ alias('region') : { '$in' : [ r.value for r in regions ]} })
 			# match.append({ alias('id') : {  '$lt' : WG_ACCOUNT_ID_MAX}})  # exclude Chinese account ids
 
 			if dist is not None:
 				match.append({ alias('id') : {  '$mod' :  [ dist.div, dist.mod ]}})
-
-			if disabled is not None and not disabled:
-				match.append({ alias('disabled'): { '$ne': True }})
-				# check inactive only if disabled == False
-				if inactive == OptAccountsInactive.auto:
-					assert update_field is not None, "automatic inactivity detection requires stat_type"
-					match.append({ '$or': [ { update_field: None}, 
-											{ update_field: { '$lt': epoch_now() - cache_valid }},											
-										  ] })
-				elif inactive == OptAccountsInactive.no:
-					match.append({ alias('inactive'): { '$ne': True }})
+				
+			if inactive == OptAccountsInactive.auto:
+				assert update_field is not None, "automatic inactivity detection requires stat_type"
+				match.append({ '$or': [ { update_field: None}, 
+										{ update_field: { '$lt': epoch_now() - cache_valid }},											
+										] })				
 
 			if len(match) > 0:
 				pipeline.append( { '$match' : { '$and' : match } })
@@ -1088,7 +1087,7 @@ class MongoBackend(Backend):
 
 	async def accounts_count(self, stats_type : StatsTypes | None = None,
 							regions: set[Region] = Region.API_regions(),
-							inactive : OptAccountsInactive = OptAccountsInactive.default(),
+							inactive : OptAccountsInactive = OptAccountsInactive.auto,
 							disabled: bool = False,
 							dist : OptAccountsDistributed | None = None, sample : float = 0,
 							cache_valid: int | None = None ) -> int:
