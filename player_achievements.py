@@ -232,7 +232,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 		stats 	 	: EventCounter								= EventCounter('player-achievements fetch')
 		regions	 	: set[Region]								= { Region(r) for r in args.region }
 		regionQs 	: dict[str, IterableQueue[BSAccount]]		= dict()
-		accountQ	: IterableQueue[BSAccount] 					= IterableQueue(maxsize=ACCOUNTS_Q_MAX)
+		accountQ	: IterableQueue[BSAccount] 					= IterableQueue(maxsize=10000)
 		retryQ  	: IterableQueue[BSAccount] 					= IterableQueue() 
 		statsQ	 	: Queue[list[WGPlayerAchievementsMaxSeries]]= Queue(maxsize=PLAYER_ACHIEVEMENTS_Q_MAX)
 
@@ -418,11 +418,7 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 		WORKERS 	 	: int 							= args.workers
 		import_db   	: Backend | None 				= None
 		import_backend 	: str 							= args.import_backend
-		import_model 	: type[JSONExportable] | None 	= None
 		map_releases	: bool 							= not args.no_release_map
-
-		# if (import_model := get_sub_type(args.import_model, JSONExportable)) is None:
-		# 	assert False, "--import-model has to be subclass of JSONExportable" 
 
 		release_map : BucketMapper[BSBlitzRelease] = await release_mapper(db)
 		workers : list[Task] = list()
