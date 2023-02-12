@@ -134,6 +134,22 @@ class BSAccount(Account):
 			# cannot tell, but assumption is that yes
 			return True
 
+	@classmethod
+	def transform_Account(cls, in_obj: Account) -> Optional['BSAccount']:
+		"""Transform Account object to BSAccount"""
+		try:			
+			return BSAccount(id = in_obj.id, 
+							region = in_obj.region, 
+							last_battle_time = in_obj.last_battle_time,
+							created_at = in_obj.created_at,
+							updated_at = in_obj.updated_at,
+							nickname = in_obj.nickname)			
+		except Exception as err:
+			error(f'{err}')
+		return None
+
+
+BSAccount.register_transformation(Account, BSAccount.transform_Account)
 
 class BSBlitzRelease(WGBlitzRelease):
 	cut_off: int 	= Field(default=maxsize)
