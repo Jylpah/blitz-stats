@@ -29,7 +29,7 @@ verbose	= logger.info
 debug	= logger.debug
 
 # Constants
-MAX_UPDATE_INTERVAL : int = 4*30*24*60*60 # 4 months
+MAX_UPDATE_INTERVAL : int = 6*30*24*60*60 # 4 months
 INACTIVE_THRESHOLD 	: int = 2*30*24*60*60 # 2 months
 WG_ACCOUNT_ID_MAX 	: int = int(31e8)
 MAX_RETRIES 		: int = 3
@@ -759,7 +759,7 @@ class Backend(ABC):
 							stats_type : StatsTypes | None = None, 
 							regions: set[Region] = Region.API_regions(), 
 							inactive : OptAccountsInactive = OptAccountsInactive.default(), 
-							disabled: bool = False, 
+							disabled: bool | None = False, 
 							dist : OptAccountsDistributed | None = None, 
 							sample : float = 0, 
 							cache_valid: int | None = None ) -> AsyncGenerator[BSAccount, None]:
