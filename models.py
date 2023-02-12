@@ -19,7 +19,7 @@ message	= logger.warning
 verbose	= logger.info
 debug	= logger.debug
 
-MIN_INACTIVITY_DAYS : int = 90 # days
+MIN_INACTIVITY_DAYS : int = 60 # days
 
 class StatsTypes(StrEnum):
 	tank_stats 			= 'updated_tank_stats'
