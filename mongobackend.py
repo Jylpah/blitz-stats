@@ -1000,9 +1000,9 @@ class MongoBackend(Backend):
 			update_field : str | None = None
 			if stats_type is not None:
 				update_field = alias(stats_type.value)
-			dbc : AsyncIOMotorCollection = self.collection_accounts
-			match : list[dict[str, str|int|float|dict|list]] = list()
-			pipeline : list[dict[str, Any]] = list()
+			dbc 	: AsyncIOMotorCollection = self.collection_accounts
+			match 	: list[dict[str, str|int|float|dict|list]] = list()
+			pipeline: list[dict[str, Any]] = list()
 
 			# Pipeline build based on ESR rule
 			# https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
@@ -1131,6 +1131,40 @@ class MongoBackend(Backend):
 		"""Store account to the backend. Returns the number of added and not added"""
 		debug('starting')
 		return await self._datas_insert(BSTableType.Accounts, accounts)
+
+	
+	async def accounts_latest(self, regions: set[Region]) -> dict[Region, BSAccount]:
+		"""Return the latest accounts (=highest account_id) per region"""
+		debug('starting')
+		res : dict[Region, BSAccount] = dict()
+		try:
+			model 	: type[JSONExportable] = self.model_accounts
+			dbc 	: AsyncIOMotorCollection = self.collection_accounts
+			a = AliasMapper(model)
+			alias : Callable = a.alias
+			pipeline: list[dict[str, Any]] | None 
+			
+			if (pipeline := await self._mk_pipeline_accounts(regions=regions, 
+												  inactive=OptAccountsInactive.both, 
+												  disabled=None)) is None:
+				raise ValueError('could not create pipeline')
+
+			pipeline.append({ '$sort': { alias('id'): DESCENDING }} )
+			pipeline.append({ '$group' : {
+								'_id' : '$' + alias('region'), 
+								'latest': { '$first': '$$ROOT' }
+			 				}})
+			account : BSAccount | None
+			async for doc in dbc.aggregate(pipeline, allowDiskUse = True):				
+				try:
+					if (account := BSAccount.transform_obj(doc['latest'], model)) is not None:
+						res[account.region] = account
+				except Exception as err:
+					error(f'document: {doc}: error: {err}')		
+
+		except Exception as err:
+			error(f'{err}')	
+		return res
 
 
 ########################################################

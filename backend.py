@@ -34,7 +34,7 @@ INACTIVE_THRESHOLD 	: int = 2*30*24*60*60 # 2 months
 WG_ACCOUNT_ID_MAX 	: int = int(31e8)
 MAX_RETRIES 		: int = 3
 MIN_UPDATE_INTERVAL : int = 3   # days
-ACCOUNTS_Q_MAX 		: int = 10000
+ACCOUNTS_Q_MAX 		: int = 1000
 TANK_STATS_BATCH	: int = 1000
 
 
@@ -833,6 +833,12 @@ class Backend(ABC):
 		"""import accounts"""
 		raise NotImplementedError
 		yield BSAccount()
+
+
+	@abstractmethod
+	async def accounts_latest(self, regions: set[Region]) -> dict[Region, BSAccount]:
+		"""Return the latest accounts (=highest account_id) per region"""
+		raise NotImplementedError
 
 
 	#----------------------------------------
