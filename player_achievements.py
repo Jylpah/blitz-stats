@@ -251,7 +251,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 			await Q.join()
 		task_bar.cancel()
 
-		print(f'retryQ: size={retryQ.qsize()},  is_finished={retryQ.is_finished}')
+		print(f'retryQ: size={retryQ.qsize()},  is_filled={retryQ.is_filled}')
 		if not retryQ.empty():
 			regionQs = dict()
 			accounts = retryQ.qsize()

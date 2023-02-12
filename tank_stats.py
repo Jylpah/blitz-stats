@@ -434,7 +434,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 		# Process retryQ
 		if retryQ is not None and not retryQ.empty():
 			retry_accounts : int = retryQ.qsize()
-			debug(f'retryQ: size={retry_accounts} is_finished={retryQ.is_finished}')
+			debug(f'retryQ: size={retry_accounts} is_filled={retryQ.is_filled}')
 			task_bar = create_task(alive_bar_monitor([retryQ], total=retry_accounts, 
 													  title="Retrying failed accounts"))
 			for _ in range(min([args.workers, ceil(retry_accounts/4)])):
