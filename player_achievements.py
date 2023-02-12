@@ -17,7 +17,7 @@ import queue
 from backend import Backend, OptAccountsInactive, BSTableType, \
 	ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL, get_sub_type
 from models import BSAccount, BSBlitzRelease, StatsTypes
-from accounts import split_accountQ_by_region, create_accountQ
+from accounts import split_accountQ, create_accountQ
 from releases import release_mapper
 
 from pyutils import BucketMapper, IterableQueue, QueueDone, \
@@ -258,7 +258,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 																					retryQ=retryQ)))
 		task_bar : Task = create_task(alive_bar_monitor(list(regionQs.values()), total=accounts, 
 														title="Fetching player achievement"))
-		tasks.append(create_task(split_accountQ_by_region(accountQ, regionQs)))
+		tasks.append(create_task(split_accountQ(accountQ, regionQs)))
 		stats.merge_child(await create_accountQ(db, args, accountQ, StatsTypes.player_achievements))
 		
 		# waiting for region queues to finish
@@ -280,7 +280,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 																					statsQ=statsQ)))
 			task_bar = create_task(alive_bar_monitor(list(regionQs.values()), total=accounts, 
 														title="Re-trying player achievement"))
-			await split_accountQ_by_region(retryQ, regionQs)
+			await split_accountQ(retryQ, regionQs)
 			for rname, Q in regionQs.items():
 				debug(f'waiting for region re-try queue to finish: {rname} size={Q.qsize()}')
 				await Q.join()
