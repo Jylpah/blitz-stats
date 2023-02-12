@@ -100,12 +100,7 @@ async def main(argv: list[str]):
 			if 'GENERAL' in config.sections():
 				debug('Reading config section GENERAL')
 				configDef = config['GENERAL']
-				BACKEND = configDef.get('backend', None)
-			## Is this really needed here? 
-			# if 'WG' in config.sections():
-			# 	configWG 		= config['WG']
-			# 	WG_APP_ID		= configWG.get('wg_app_id', WG_APP_ID)
-			# 	WG_RATE_LIMIT	= configWG.getfloat('rate_limit', WG_RATE_LIMIT)
+				BACKEND = configDef.get('backend', None)			
 		else:
 			debug("No config file found")		
 
