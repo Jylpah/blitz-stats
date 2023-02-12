@@ -1367,6 +1367,57 @@ async def create_accountQ_active(db: Backend,
 	return stats
 
 
+
+
+async def batch_accountQ(inQ	: IterableQueue[BSAccount],
+						outQs   : dict[Region, IterableQueue[list[BSAccount]]],						
+						batch 	: int = 100) -> EventCounter:
+	"""Make accountQ batches by region"""
+	stats : EventCounter = EventCounter('batch maker')
+	batches : dict[Region, list[BSAccount]] = dict()
+	region : Region
+	try:		
+		for region, Q in outQs.items():
+			batches[region] = list()
+			await Q.add_producer()
+
+		while True:
+			account = await inQ.get()
+			try:
+				region = account.region
+				# if account.region is None:
+				# 	raise ValueError(f'account ({account.id}) does not have region defined')
+				if region in outQs.keys(): 
+					batches[region].append(account)					
+					if len(batches[region]) == batch:
+						await outQs[region].put(batches[region])
+						stats.log(f'{region} accounts', len(batches[region]))
+						batches[region] = list()
+				else:
+					stats.log(f'excluded region: {region}')
+			except CancelledError:
+				raise CancelledError from None
+			except Exception as err:
+				stats.log('errors')
+				error(f'{err}')
+			finally:
+				stats.log('total')
+				inQ.task_done()
+	except QueueDone:
+		debug('inQ done')
+		for region in batches.keys():
+			if len(batches[region]) > 0:
+				await outQs[region].put(batches[region])
+				stats.log(f'{region} accounts', len(batches[region]))	
+	except CancelledError as err:
+		debug(f'Cancelled')
+	except Exception as err:
+		error(f'{err}')
+	for Q in outQs.values():
+		await Q.finish()
+	return stats
+
+
 async def create_accountQ(db		: Backend, 
 						  args 		: Namespace, 
 						  accountQ	: IterableQueue[BSAccount], 
