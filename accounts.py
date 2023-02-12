@@ -1421,16 +1421,43 @@ async def batch_accountQ(inQ	: IterableQueue[BSAccount],
 async def create_accountQ(db		: Backend, 
 						  args 		: Namespace, 
 						  accountQ	: IterableQueue[BSAccount], 
-						  stats_type: StatsTypes | None) -> EventCounter:
+						  stats_type: StatsTypes | None = None) -> EventCounter:
 	"""Helper to make accountQ from arguments"""	
 	stats : EventCounter = EventCounter(f'{db.driver}: accounts')
 	debug('starting')
 	try:
 		regions	 	: set[Region]	= { Region(r) for r in args.region }
-		accounts 	: list[BSAccount] | None = read_args_accounts(args.accounts)
-		inactive 	: OptAccountsInactive 	= OptAccountsInactive(args.inactive)
-		disabled 	: bool 					= args.disabled
+	
+		accounts 	: list[BSAccount] | None = None
+		try:
+			accounts = read_args_accounts(args.accounts)
+		except:
+			debug('could not read --accounts')
+	
+		inactive 	: OptAccountsInactive 	= OptAccountsInactive.both
+		try:
+			inactive = OptAccountsInactive(args.inactive)
+		except:
+			debug('could not read --inactive')
+
+		disabled : bool | None = None
+		try:
+			disabled = args.disabled
+		except:
+			debug('could not read --disabled')
 		
+		sample : float = 0
+		try:
+			sample = args.sample
+		except:
+			debug('could not read --sample')
+
+		cache_valid : int | None = None
+		try:
+			cache_valid = args.cache_valid
+		except:
+			debug('could not read --cache-valid')
+
 		await accountQ.add_producer()
 
 		if accounts is not None:
@@ -1477,8 +1504,8 @@ async def create_accountQ(db		: Backend,
 													regions=regions, 
 													inactive=inactive,
 													disabled=disabled,
-													sample=args.sample, 
-													cache_valid=args.cache_valid):
+													sample=sample, 
+													cache_valid=cache_valid):
 				try:
 					await accountQ.put(account)
 					stats.log('read')
