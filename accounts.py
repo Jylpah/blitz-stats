@@ -1,6 +1,6 @@
 from argparse import ArgumentParser, Namespace
 from configparser import ConfigParser
-from typing import Optional, cast, Type, Any, TypeVar
+from typing import Optional, cast, Type, Any, TypeVar, Sequence
 import logging
 from asyncio import create_task, gather, wait, Queue, CancelledError, Task, Condition, sleep
 from aiofiles import open
@@ -21,8 +21,8 @@ from pyutils import CounterQueue, EventCounter,  TXTExportable, \
 	CSVExportable, JSONExportable, IterableQueue, QueueDone, \
 		alive_bar_monitor, get_url, get_url_JSON_model, epoch_now, \
 		export, is_alphanum
-from blitzutils.models import WoTBlitzReplayJSON, WoTBlitzReplayData, Region, Account
-from blitzutils.wotinspector import WoTinspector
+from blitzutils.models import WoTBlitzReplayJSON, WoTBlitzReplayData, Region, Account, WGAccountInfo
+from blitzutils import WoTinspector, WGApi
 from yastatist import get_accounts_since
 
 logger 	= logging.getLogger()
@@ -56,13 +56,17 @@ def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> b
 		accounts_parsers = parser.add_subparsers(dest='accounts_cmd', 	
 												title='accounts commands',
 												description='valid commands',
-												metavar='update | export | remove')
+												metavar='fetch | update | export | remove')
 		accounts_parsers.required = True
 		
-		update_parser = accounts_parsers.add_parser('update', aliases=['get'], help="accounts update help")
+		fetch_parser = accounts_parsers.add_parser('fetch', aliases=['get'], help="accounts fetch help")
+		if not add_args_fetch(fetch_parser, config=config):
+			raise Exception("Failed to define argument parser for: accounts fetch")
+		
+		update_parser = accounts_parsers.add_parser('update', help="accounts update help")
 		if not add_args_update(update_parser, config=config):
 			raise Exception("Failed to define argument parser for: accounts update")
-		
+
 		export_parser = accounts_parsers.add_parser('export', help="accounts export help")
 		if not add_args_export(export_parser, config=config):
 			raise Exception("Failed to define argument parser for: accounts export")
@@ -85,21 +89,99 @@ def add_args_update(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 	try:
 		debug('starting')
 		update_parsers = parser.add_subparsers(dest='accounts_update_source', 	
-														title='accounts update source',
-														description='valid sources', 
-														metavar='wi | ys | files')
+													title='accounts update source',
+													description='valid sources', 
+													metavar='wg | files')
 		update_parsers.required = True
-		update_wi_parser = update_parsers.add_parser('wi', help='accounts update wi help')
-		if not add_args_update_wi(update_wi_parser, config=config):
-			raise Exception("Failed to define argument parser for: accounts update wi")
-		
-		update_ys_parser = update_parsers.add_parser('ys', help='accounts update ys help')
-		if not add_args_update_ys(update_ys_parser, config=config):
-			raise Exception("Failed to define argument parser for: accounts update ys")
+
+		update_wg_parser = update_parsers.add_parser('wg', help='accounts update wg help')
+		if not add_args_update_wg(update_wg_parser, config=config):
+			raise Exception("Failed to define argument parser for: accounts update wg")
 
 		update_files_parser = update_parsers.add_parser('files', help='accounts update files help')
 		if not add_args_update_files(update_files_parser, config=config):
 			raise Exception("Failed to define argument parser for: accounts update files")		
+		
+		return True	
+	except Exception as err:
+		error(f'{err}')
+	return False
+
+
+def add_args_update_files(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+	"""Update accounts from file(s)"""
+	debug(f'add_args_update_files(): not implemented')
+	return True
+
+
+def add_args_update_wg(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+	"""Update existing accounts from WG API"""
+	try:
+		debug('starting')		
+
+		WG_RATE_LIMIT 	: float = 10
+		WG_WORKERS 		: int 	= 10
+		WG_APP_ID		: str 	= WGApi.DEFAULT_WG_APP_ID
+		DEFAULT_NULL_ACCOUNTS : int = 1000
+		
+		if config is not None and 'WG' in config.sections():
+			configWG 		= config['WG']
+			WG_RATE_LIMIT	= configWG.getfloat('rate_limit', WG_RATE_LIMIT)
+			WG_WORKERS		= configWG.getint('api_workers', WG_WORKERS)			
+			WG_APP_ID		= configWG.get('app_id', WGApi.DEFAULT_WG_APP_ID)
+
+		parser.add_argument('--workers', dest='wg_workers', 
+							type=int, default=WG_WORKERS, metavar='WORKERS',
+							help='number of async workers')
+		parser.add_argument('--wg-app-id', type=str, default=WG_APP_ID, metavar='APP_ID',
+							help='Set WG APP ID')
+		parser.add_argument('--wg-rate-limit', type=float, default=WG_RATE_LIMIT, metavar='RATE_LIMIT',
+							help='rate limit for WG API per server')
+		parser.add_argument('--region', type=str, nargs='*', 
+							choices=[ r.value for r in Region.API_regions() ], 
+							default=[ r.value for r in Region.API_regions() ], 
+							help='filter by region (default: ' + ' + '.join(Region.API_regions()) + ')')
+		parser.add_argument('--inactive', action='store_true', default=False, 
+							help='Check existing inactive accounts')
+		parser.add_argument('--disabled', action='store_true', default=False, 
+							help='Check existing disabled accounts')
+		# parser.add_argument('--start', dest='wg_start_id', 
+		# 					metavar='ACCOUNT_ID', type=int, default=0, 
+		# 					help='start fetching account_ids from ACCOUNT_ID (default = 0 \
+		# 						start from highest ACCOUNT_ID in backend)')
+		parser.add_argument('--force', action='store_true', default=False, 
+							help='fetch accounts starting from --start ACCOUNT_ID')
+							
+		return True	
+	except Exception as err:
+		error(f'{err}')
+	return False
+	
+
+def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+	try:
+		debug('starting')
+		fetch_parsers = parser.add_subparsers(dest='accounts_fetch_source', 	
+														title='accounts fetch source',
+														description='valid sources', 
+														metavar='wg | wi | ys | files')
+		fetch_parsers.required = True
+		fetch_wg_parser = fetch_parsers.add_parser('wg', help='accounts fetch wg help')
+		if not add_args_fetch_wg(fetch_wg_parser, config=config):
+			raise Exception("Failed to define argument parser for: accounts fetch wg")
+		
+
+		fetch_wi_parser = fetch_parsers.add_parser('wi', help='accounts fetch wi help')
+		if not add_args_fetch_wi(fetch_wi_parser, config=config):
+			raise Exception("Failed to define argument parser for: accounts fetch wi")
+		
+		fetch_ys_parser = fetch_parsers.add_parser('ys', help='accounts fetch ys help')
+		if not add_args_fetch_ys(fetch_ys_parser, config=config):
+			raise Exception("Failed to define argument parser for: accounts fetch ys")
+
+		fetch_files_parser = fetch_parsers.add_parser('files', help='accounts fetch files help')
+		if not add_args_fetch_files(fetch_files_parser, config=config):
+			raise Exception("Failed to define argument parser for: accounts fetch files")		
 		
 		parser.add_argument('--force', action='store_true', default=False, 
 							help='Ignore existing accounts exporting')
@@ -110,7 +192,65 @@ def add_args_update(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 	return False
 
 
-def add_args_update_wi(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+
+def add_args_fetch_wg(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+	try:
+		debug('starting')		
+
+		WG_RATE_LIMIT 	: float = 10
+		WG_WORKERS 		: int 	= 10
+		WG_APP_ID		: str 	= WGApi.DEFAULT_WG_APP_ID
+		# Lesta / RU
+		LESTA_RATE_LIMIT: float = 10
+		LESTA_WORKERS 	: int 	= 10
+		LESTA_APP_ID 	: str 	= WGApi.DEFAULT_LESTA_APP_ID
+		NULL_RESPONSES 	: int 	= 20
+		
+		if config is not None and 'WG' in config.sections():
+			configWG 		= config['WG']
+			WG_RATE_LIMIT	= configWG.getfloat('rate_limit', WG_RATE_LIMIT)
+			WG_WORKERS		= configWG.getint('api_workers', WG_WORKERS)			
+			WG_APP_ID		= configWG.get('app_id', WG_APP_ID)
+
+		if config is not None and 'LESTA' in config.sections():
+			configRU 		= config['LESTA']
+			LESTA_RATE_LIMIT	= configRU.getfloat('rate_limit', LESTA_RATE_LIMIT)
+			LESTA_WORKERS		= configRU.getint('api_workers', LESTA_WORKERS)			
+			LESTA_APP_ID		= configRU.get('app_id', LESTA_APP_ID)
+
+		parser.add_argument('--workers', dest='wg_workers', 
+							type=int, default=WG_WORKERS, metavar='WORKERS',
+							help='number of async workers')
+		parser.add_argument('--wg-app-id', type=str, default=WG_APP_ID, metavar='APP_ID',
+							help='Set WG APP ID')
+		parser.add_argument('--wg-rate-limit', type=float, default=WG_RATE_LIMIT, metavar='RATE_LIMIT',
+							help='rate limit for WG API per server')
+		parser.add_argument('--ru-app-id', type=str, default=LESTA_APP_ID, metavar='APP_ID',
+							help='Set Lesta (RU) APP ID')
+		parser.add_argument('--region', type=str, nargs='*', 
+							choices=[ r.value for r in Region.API_regions() ], 
+							default=[ r.value for r in Region.API_regions() ], 
+							help='filter by region (default: ' + ' + '.join(Region.API_regions()) + ')')
+		parser.add_argument('--start', dest='wg_start_id', 
+							metavar='ACCOUNT_ID', type=int, default=0, 
+							help='start fetching account_ids from ACCOUNT_ID (default = 0 \
+								start from highest ACCOUNT_ID in backend)')
+		parser.add_argument('--force', action='store_true', default=False, 
+							help='fetch accounts starting from --start ACCOUNT_ID')
+		parser.add_argument('--max', dest='max_accounts', 
+							type=int, default=0, metavar='ACCOUNT_IDS',
+							help='maximum number of accounts to try')
+		parser.add_argument('--end', dest='null_responses', 
+							type=int, default=NULL_RESPONSES, metavar='N',
+							help='end fetching accounts after N consequtive empty responses')
+							
+		return True	
+	except Exception as err:
+		error(f'{err}')
+	return False
+
+
+def add_args_fetch_wi(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		global WI_MAX_OLD_REPLAYS
@@ -132,7 +272,7 @@ def add_args_update_wi(parser: ArgumentParser, config: Optional[ConfigParser] = 
 		parser.add_argument('--start','--start_page',   dest='wi_start_page', 
 							metavar='START_PAGE', type=int, default=0, 
 							help='Start page to start spidering of WoTinspector.com')
-		parser.add_argument('--workers', '--workers', dest='wi_workers', 
+		parser.add_argument('--workers', dest='wi_workers', 
 							type=int, default=WI_WORKERS, metavar='WORKERS',
 							help='Number of async workers to spider wotinspector.com')
 		parser.add_argument('--old-replay-limit', dest='wi_max_old_replays', 
@@ -150,7 +290,7 @@ def add_args_update_wi(parser: ArgumentParser, config: Optional[ConfigParser] = 
 	return False
 
 
-def add_args_update_ys(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_fetch_ys(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		global YS_CLIENT_ID, YS_CLIENT_SECRET, YS_DAYS_SINCE
@@ -178,7 +318,7 @@ def add_args_update_ys(parser: ArgumentParser, config: Optional[ConfigParser] = 
 	return False
 
 
-def add_args_update_files(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_fetch_files(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
 		debug('starting')
 		IMPORT_FORMAT 	= 'txt'
@@ -294,8 +434,8 @@ async def cmd(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 
-		if args.accounts_cmd == 'update':
-			return await cmd_update(db, args)
+		if args.accounts_cmd == 'fetch':
+			return await cmd_fetch(db, args)
 
 		elif args.accounts_cmd == 'export':
 			return await cmd_export(db, args)
@@ -311,26 +451,30 @@ async def cmd(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def cmd_update(db: Backend, args : Namespace) -> bool:
+async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		
-		stats = EventCounter('accounts update')
-		accountQ : Queue[list[int]] = Queue(maxsize=ACCOUNTS_Q_MAX)
+		stats = EventCounter('accounts fetch')
+		accountQ : IterableQueue[list[BSAccount]] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
 		db_worker = create_task(add_worker(db, accountQ))
 
 		try:
-			if args.accounts_update_source == 'wi':
-				debug('wi')
-				stats.merge_child(await cmd_update_wi(db, args, accountQ))
-			
-			elif args.accounts_update_source == 'ys':
-				debug('ys')
-				stats.merge_child(await cmd_update_ys(db, args, accountQ))
+			if args.accounts_fetch_source == 'wg':
+				debug('wg')
+				stats.merge_child(await cmd_fetch_wg(db, args, accountQ))
 
-			elif args.accounts_update_source == 'files':
+			if args.accounts_fetch_source == 'wi':
+				debug('wi')
+				stats.merge_child(await cmd_fetch_wi(db, args, accountQ))
+			
+			elif args.accounts_fetch_source == 'ys':
+				debug('ys')
+				stats.merge_child(await cmd_fetch_ys(db, args, accountQ))
+
+			elif args.accounts_fetch_source == 'files':
 				debug('files')
-				stats.merge_child(await cmd_update_files(db, args, accountQ))
+				stats.merge_child(await cmd_fetch_files(db, args, accountQ))
 		except Exception as err:
 			error(f'{err}')
 
@@ -350,26 +494,20 @@ async def cmd_update(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def add_worker(db: Backend, accountQ: Queue[list[int]]) -> EventCounter:
+async def add_worker(db: Backend, accountQ: Queue[list[BSAccount]]) -> EventCounter:
 	"""worker to read accounts from queue and add those to backend"""
 	## REFACTOR: use Queue[list[BSAccount]] instead
 	debug('starting')
-	stats : EventCounter = EventCounter(f'{db.driver}')
+	stats 		: EventCounter = EventCounter(f'{db.driver}')
 	added 		: int
 	not_added 	: int
 	try:
 		while True:
-			players : list[int] = await accountQ.get()
+			accounts : list[BSAccount] = await accountQ.get()
 			try:
-				debug(f'Read {len(players)} from queue')
-				stats.log('accounts total', len(players))
-				try:
-					accounts : list[BSAccount] = list()
-					for player in players:
-						try:
-							accounts.append(BSAccount(id=player))  # type: ignore
-						except Exception as err:
-							debug(f'cound not create account object for account_id: {player}')
+				debug(f'Read {len(accounts)} from queue')
+				stats.log('accounts total', len(accounts))
+				try:					
 					added, not_added= await db.accounts_insert(accounts)
 					stats.log('accounts added', added)
 					stats.log('old accounts found', not_added)
@@ -380,6 +518,8 @@ async def add_worker(db: Backend, accountQ: Queue[list[int]]) -> EventCounter:
 				error(f'{err}')
 			finally:
 				accountQ.task_done()
+	except QueueDone:
+		debug('account queue is done')
 	except CancelledError as err:
 		debug(f'Cancelled')
 	except Exception as err:
@@ -387,14 +527,209 @@ async def add_worker(db: Backend, accountQ: Queue[list[int]]) -> EventCounter:
 	return stats
 
 
-async def cmd_update_files(db: Backend, args : Namespace, 
-									accountQ : Queue[list[int]]) -> EventCounter:
+async def cmd_fetch_files(db: Backend, args : Namespace, 
+							accountQ : Queue[list[BSAccount]]) -> EventCounter:
 	
 	debug('starting')
 	raise NotImplementedError
 
 
-async def cmd_update_wi(db: Backend, args : Namespace, accountQ : Queue[list[int]]) -> EventCounter:
+###########################################
+# 
+# cmd_fetch_wg()
+#
+###########################################
+
+
+async def cmd_fetch_wg(db		: Backend, 
+						args 	: Namespace, 
+						accountQ: IterableQueue[list[BSAccount]]) -> EventCounter:
+	"""Fetch account_ids fromy yastati.st"""
+	debug('starting')
+	stats		: EventCounter = EventCounter('WG API')
+	try:		
+		regions		: set[Region] 	= { Region(r) for r in args.region }
+		start 		: int 			= args.wg_start_id
+		if start > 0 and len(regions) > 1:
+			raise ValueError('if --start > 0, only one region can be chosen')
+		force 		: bool 			= args.force		
+		null_responses: int 		= args.null_responses
+		max_accounts: int 			= args.max_accounts
+		wg 			: WGApi 		= WGApi(app_id = args.wg_app_id, 
+											ru_app_id= args.ru_app_id,
+											rate_limit = args.wg_rate_limit)
+		WORKERS 	: int 			= max( int(args.wg_workers / len(Region.API_regions())), 1)
+		id_creators	: list[Task]	= list()
+		api_workers : list[Task]	= list()
+		idQs 		: dict[Region, IterableQueue[Sequence[int]]] = dict()
+
+		if start == 0 and not force:				
+			latest : dict[Region, BSAccount] = await db.accounts_latest(regions)
+		for region in regions:
+			try:
+				idQs[region] = IterableQueue(maxsize=100)
+				id_range : range = region.id_range()
+				if start == 0 and not force:
+					id_range = range(latest[region].id + 1, id_range.stop)
+				else:
+					id_range = range(start, id_range.stop)
+				if max_accounts > 0:
+					id_range = range(id_range.start, min([ id_range.start + max_accounts,  id_range.stop]))
+	
+				message(f'fetching accounts for {region}: start={id_range.start}, stop={id_range.stop}')
+				id_creators.append(create_task(account_idQ_maker(idQs[region], id_range.start, id_range.stop)))
+				for _ in range(WORKERS):
+					api_workers.append(create_task(fetch_account_info_worker(wg, region, 
+																			idQs[region], accountQ, 
+																			null_responses=null_responses)))
+
+			except Exception as err:
+				error(f"could not create account Q maker for '{region}': {err}")
+				
+		
+		with alive_bar(None, title='Getting accounts from WG API ') as bar:
+			try:
+				prev 	: int = 0
+				done	: int
+				while not accountQ.is_filled:
+					done = accountQ.count
+					if done - prev > 0:
+						bar((done - prev)*100)
+					prev = done
+					await sleep(1)						
+
+			except KeyboardInterrupt:
+				message('cancelled')
+				for idQ in idQs.values():
+					await idQ.shutdown()		
+		await stats.gather_stats(id_creators)
+		for region in idQs.keys():
+			debug(f'waiting for idQ for {region} to complete')
+			await idQs[region].join()
+		await stats.gather_stats(api_workers)
+		wg.print()
+		await wg.close()
+	except Exception as err:
+		error(f'{err}')	
+	return stats
+
+
+async def account_idQ_maker(idQ : IterableQueue[Sequence[int]], 
+				 start: int, 
+				 end: int, 
+				 batch: int = 100) -> EventCounter:
+	"""Create account_id queue"""
+	debug('starting')
+	stats	: EventCounter = EventCounter(f'account_ids')
+	last 	: int = start
+	await idQ.add_producer()
+	try:
+		for i in range(start, end, batch):
+			await idQ.put(range(i, i + batch))
+			last = i + batch		
+	except QueueDone:
+		error('queue done')
+	except Exception as err:
+		error(f'{err}')
+	stats.log('queued', last - start)
+	debug(f'closing idQ')
+	await idQ.finish()
+	return stats
+
+
+async def fetch_account_info_worker(wg		: WGApi, 
+									region	: Region, 
+									idQ		: IterableQueue[Sequence[int]], 
+									accountQ: IterableQueue[list[BSAccount]], 
+									null_responses : int = 100) -> EventCounter:
+	"""Fetch account info from WG API accounts/info"""
+	debug('starting')
+	stats	: EventCounter = EventCounter(f'{region}')
+	left 	: int 	= null_responses
+	infos 	: list[WGAccountInfo] | None
+	ids		: Sequence[int]
+	accounts: list[BSAccount]
+
+	try:
+		await accountQ.add_producer()
+		while True:
+			accounts = list()	
+			ids = await idQ.get()
+			N_ids : int = len(ids)
+
+			try:				
+				stats.log('account_ids', N_ids)
+				if N_ids == 0 or N_ids > 100:
+					raise ValueError(f'Incorrect number of account_ids give {N_ids}')
+				
+				if (infos:= await wg.get_account_info(ids, region)) is not None:					
+					stats.log('stats found', len(infos))
+					
+					for info in infos:
+						if (acc := BSAccount.transform(info)) is not None:
+							accounts.append(acc)
+					stats.log('stats valid', len(accounts))
+					stats.log('transformation errors', len(infos) - len(accounts))					
+				else:
+					stats.log('query errors')
+				
+			except ValueError:				
+				stats.log('errors', N_ids)				
+			except Exception as err:
+				stats.log('errors')
+				error(f'{err}')	
+			finally:
+				# debug(f'accounts={len(accounts)}, left={left}')
+				if len(accounts) == 0:
+					left -= 1
+				else:
+					left = null_responses
+					await accountQ.put(accounts)
+				idQ.task_done()	
+				if left <= 0: 				# too many NULL responses, stop					
+					break			
+		
+	except QueueDone:
+		debug('account_id queue is done')
+	except CancelledError:
+		debug('cancelled')
+	except Exception as err:
+		error(f'{err}')
+	finally:
+		debug(f'closing accountQ: {region}')
+		await accountQ.finish()
+		debug(f'closing idQ: {region}')
+		await idQ.shutdown()		
+	return stats
+
+
+# async def accountQ_filter(limit : int,
+# 						  inQ: Queue[list[BSAccount] | None], 
+# 						  outQ : Queue[list[BSAccount]]) -> EventCounter:
+# 	"""Read inputQ and stop after 'limit' consequtive None  has been counted"""
+# 	debug('starting')
+# 	stats : EventCounter = EventCounter('account Q filter')
+# 	try:
+# 		accounts : list[BSAccount] | None
+# 		left : int = limit
+# 		while True:
+# 			accounts = await inQ.get()
+# 			if accounts is None:
+# 				left -= 1
+# 				stats.log('no stats')
+# 			else:
+# 				left = limit
+# 				await outQ.put(accounts)
+# 				stats.log('stats', len(accounts))
+# 			if left == 0:
+# 				debug(f'limit reached: {limit}')
+# 				break
+# 	except Exception as err:
+# 		error(f'{err}')	
+# 	return stats
+
+
+async def cmd_fetch_wi(db: Backend, args : Namespace, accountQ : IterableQueue[list[BSAccount]]) -> EventCounter:
 	"""Fetch account_ids from replays.wotinspector.com replays"""
 	debug('starting')
 	stats		: EventCounter = EventCounter('WoTinspector')
@@ -410,7 +745,7 @@ async def cmd_update_wi(db: Backend, args : Namespace, accountQ : Queue[list[int
 	replay_idQ  : Queue[str] = Queue()
 	# pageQ		: Queue[int] = Queue()
 	wi 			: WoTinspector 	= WoTinspector(rate_limit=rate_limit, auth_token=token)	
-
+	await accountQ.add_producer()
 	try:					
 		step : int = 1
 		if max_pages < 0:
@@ -443,6 +778,7 @@ async def cmd_update_wi(db: Backend, args : Namespace, accountQ : Queue[list[int
 	except Exception as err:
 		error(f'{err}')
 	finally:
+		await accountQ.finish()
 		await wi.close()
 	return stats
 
@@ -541,8 +877,11 @@ async def update_wi_get_replay_ids(db: Backend, wi: WoTinspector, args: Namespac
 	return stats
 
 
-async def update_wi_fetch_replays(db: Backend, wi: WoTinspector, replay_idQ : Queue[str], 
-											accountQ : Queue[list[int]]) -> EventCounter:
+async def update_wi_fetch_replays(db: Backend, 
+									wi: WoTinspector, 
+									replay_idQ : Queue[str], 
+									accountQ : Queue[list[BSAccount]]
+								 ) -> EventCounter:
 	debug('starting')
 	stats : EventCounter = EventCounter('Fetch replays')
 	try:
@@ -554,9 +893,9 @@ async def update_wi_fetch_replays(db: Backend, wi: WoTinspector, replay_idQ : Qu
 				if replay is None:
 					verbose(f'Could not fetch replay id: {replay_id}')
 					continue
-				players : list[int] = replay.get_players()
-				stats.log('players found', len(players))
-				await accountQ.put(players)
+				account_ids : list[int] = replay.get_players()
+				stats.log('players found', len(account_ids))
+				await accountQ.put([ BSAccount(id=account_id) for account_id in account_ids] )
 				if await db.replay_insert(replay):
 					stats.log('replays added')
 				else:
@@ -568,7 +907,7 @@ async def update_wi_fetch_replays(db: Backend, wi: WoTinspector, replay_idQ : Qu
 	return stats
 
 
-async def cmd_update_ys(db: Backend, args : Namespace, accountQ : Queue[list[int]]) -> EventCounter:
+async def cmd_fetch_ys(db: Backend, args : Namespace, accountQ : IterableQueue[list[BSAccount]]) -> EventCounter:
 	"""Fetch account_ids fromy yastati.st"""
 	debug('starting')
 	stats		: EventCounter = EventCounter('Yastati.st')
@@ -577,13 +916,14 @@ async def cmd_update_ys(db: Backend, args : Namespace, accountQ : Queue[list[int
 		client_id 		: str = args.ys_client_id
 		client_secret 	: str = args.ys_client_secret
 		BATCH : int = 100
-		accounts : list[int] = list()
+		accounts : list[BSAccount] = list()
+		await accountQ.add_producer()
 		with alive_bar(None, title='Getting accounts from yastati.st ') as bar:
 			for region in [Region.eu, Region.ru]:
 				async for account in get_accounts_since(region, days= since,
 														client_id = client_id, 
 														secret = client_secret):
-					accounts.append(account.id)
+					accounts.append(account)
 					stats.log('accounts read')
 					if len(accounts) > BATCH:
 						await accountQ.put(accounts)
@@ -595,7 +935,8 @@ async def cmd_update_ys(db: Backend, args : Namespace, accountQ : Queue[list[int
 				bar(len(accounts))
 
 	except Exception as err:
-		error(f'{err}')	
+		error(f'{err}')
+	await accountQ.finish()
 	return stats
 
 
