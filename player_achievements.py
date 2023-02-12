@@ -85,22 +85,36 @@ def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> b
 
 
 def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
-	try:
+	try:		
 		debug('starting')
 		WG_RATE_LIMIT 	: float = 10
-		WORKERS_WGAPI 	: int 	= 10
+		WG_WORKERS 		: int 	= 10
 		WG_APP_ID		: str 	= WGApi.DEFAULT_WG_APP_ID
+		
+		# Lesta / RU
+		LESTA_RATE_LIMIT: float = 10
+		LESTA_WORKERS 	: int 	= 10
+		LESTA_APP_ID 	: str 	= WGApi.DEFAULT_LESTA_APP_ID
+		NULL_RESPONSES 	: int 	= 20
 		
 		if config is not None and 'WG' in config.sections():
 			configWG 		= config['WG']
 			WG_RATE_LIMIT	= configWG.getfloat('rate_limit', WG_RATE_LIMIT)
-			WORKERS_WGAPI	= configWG.getint('api_workers', WORKERS_WGAPI)			
-			WG_APP_ID		= configWG.get('wg_app_id', WGApi.DEFAULT_WG_APP_ID)
+			WG_WORKERS		= configWG.getint('api_workers', WG_WORKERS)			
+			WG_APP_ID		= configWG.get('app_id', WG_APP_ID)
 
-		parser.add_argument('--workers', type=int, default=WORKERS_WGAPI, help='Set number of asynchronous workers')
+		if config is not None and 'LESTA' in config.sections():
+			configRU 		= config['LESTA']
+			LESTA_RATE_LIMIT	= configRU.getfloat('rate_limit', LESTA_RATE_LIMIT)
+			LESTA_WORKERS		= configRU.getint('api_workers', LESTA_WORKERS)			
+			LESTA_APP_ID		= configRU.get('app_id', LESTA_APP_ID)
+
+		parser.add_argument('--workers', type=int, default=WG_WORKERS, help='Set number of asynchronous workers')
 		parser.add_argument('--wg-app-id', type=str, default=WG_APP_ID, help='Set WG APP ID')
 		parser.add_argument('--rate-limit', type=float, default=WG_RATE_LIMIT, metavar='RATE_LIMIT',
 							help='Rate limit for WG API')
+		parser.add_argument('--ru-app-id', type=str, default=LESTA_APP_ID, metavar='APP_ID',
+							help='Set Lesta (RU) APP ID')
 		parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
 							default=[ r.value for r in Region.API_regions() ], help='Filter by region (default: eu + com + asia + ru)')
 		parser.add_argument('--force', action='store_true', default=False, 
@@ -210,7 +224,9 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 	
 	debug('starting')
 	
-	wg 	: WGApi = WGApi(WG_app_id=args.wg_app_id, rate_limit=args.rate_limit)
+	wg 	: WGApi = WGApi(app_id=args.wg_app_id, 
+						ru_app_id= args.ru_app_id,
+						rate_limit=args.rate_limit)
 
 	try:
 		stats 	 	: EventCounter								= EventCounter('player-achievements fetch')
