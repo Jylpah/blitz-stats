@@ -58,6 +58,14 @@ class BSAccount(Account):
 							('id', 		ASCENDING), 
 							('added', 	DESCENDING)
 						])
+		indexes.append([ 	('region', 	ASCENDING),
+							('last_battle_time', DESCENDING), 							
+						])
+		indexes.append([ 	('region', 	ASCENDING),
+							('id', ASCENDING), 							
+						])
+		indexes.append([ 	('nickname', TEXT) 							
+						])
 		# indexes.append([ 	('disabled', ASCENDING), 
 		# 					('inactive', ASCENDING), 
 		# 					('id', 		ASCENDING), 
