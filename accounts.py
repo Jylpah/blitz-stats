@@ -593,22 +593,36 @@ async def update_account_info_worker(wg		: WGApi,
 					raise ValueError(f'Incorrect number of account_ids give {N}')
 
 				ids = [ a.id for a in accounts.values() ]
+				ids_stats : list[int] = list()
 				if (infos:= await wg.get_account_info(ids, region)) is not None:					
 					stats.log('stats found', len(infos))
 					
+					# accounts with stats
 					for info in infos:
 						try:
 							a = accounts[info.account_id]
-							error(f'updating account_id={a.id}: {info}')
+							ids_stats.append(info.account_id)
+							# error(f'updating account_id={a.id}: {info}')
 							if a.update(info):
-								error(f'updated: {a}')
+								# error(f'updated: {a}')
 								await accountQ.put(a)
-								stats.log('stats valid')
+								# stats.log('stats valid')
 							else:
 								# debug(f'BSAccount.update() failed: account_id={a.id}]')
 								stats.log('update failed')
 						except KeyError as err:
-							error(f'{err}')						
+							error(f'{err}')
+					
+					# accounts w/o stats		
+					no_stats : set[int] = set(ids) - set(ids_stats)	
+					for account_id in no_stats:
+						try:
+							a = accounts[account_id]
+							a.disabled = True
+							await accountQ.put(a)
+							stats.log('disabled')
+						except KeyError as err:
+							error(f'account w/o stats: {account_id}: {err}')
 				else:
 					stats.log('query errors')
 				
