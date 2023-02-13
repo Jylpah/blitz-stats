@@ -7,8 +7,7 @@ from pydantic import validator, root_validator, Field, HttpUrl
 
 import logging
 
-
-from blitzutils.models import Region, Account, WGBlitzRelease
+from blitzutils.models import Region, Account, WGBlitzRelease, WGAccountInfo
 from pyutils.utils import JSONExportable, epoch_now, TypeExcludeDict, I, D, Idx, \
 						BackendIndexType, BackendIndex, DESCENDING, ASCENDING, TEXT
 
@@ -19,16 +18,18 @@ message	= logger.warning
 verbose	= logger.info
 debug	= logger.debug
 
-MIN_INACTIVITY_DAYS : int = 60 # days
+MIN_INACTIVITY_DAYS : int = 90 # days
 
 class StatsTypes(StrEnum):
 	tank_stats 			= 'updated_tank_stats'
 	player_achievements = 'updated_player_achievements'
+	account_info 		= 'updated_account_info'
 
 
 class BSAccount(Account):	
 	updated_tank_stats 			: int | None = Field(default=None, alias='ut')
 	updated_player_achievements : int | None = Field(default=None, alias='up')
+	updated_account_info		: int | None = Field(default=None, alias='ui')
 	
 	added 						: int 		= Field(default_factory=epoch_now, alias='a')
 	inactive					: bool 		= Field(default=False, alias='i')
@@ -55,13 +56,15 @@ class BSAccount(Account):
 		indexes.append([ 	('disabled', ASCENDING), 
 							('inactive', ASCENDING), 									 
 							('region', 	ASCENDING), 
-							('id', 		ASCENDING), 
-							('added', 	DESCENDING)
+							('last_battle_time', DESCENDING), 
+							# ('id', 		ASCENDING), 							
 						])
-		indexes.append([ 	('region', 	ASCENDING),
+		indexes.append([ 	('disabled', ASCENDING),
+							('region', 	ASCENDING),
 							('last_battle_time', DESCENDING), 							
 						])
-		indexes.append([ 	('region', 	ASCENDING),
+		indexes.append([ 	('disabled', ASCENDING),
+							('region', 	ASCENDING),
 							('id', ASCENDING), 							
 						])
 		indexes.append([ 	('nickname', TEXT) 							
@@ -142,22 +145,36 @@ class BSAccount(Account):
 			# cannot tell, but assumption is that yes
 			return True
 
+	def update(self, update: WGAccountInfo) -> bool:
+		"""Update BSAccount() from WGACcountInfo i.e. from WG API"""
+		updated : bool = False
+		try:
+			updated = super().update(update)	
+			self.updated_account_info = epoch_now()
+			return True
+		except Exception as err:
+			error(f'{err}')
+		return updated
+
+
 	@classmethod
 	def transform_Account(cls, in_obj: Account) -> Optional['BSAccount']:
 		"""Transform Account object to BSAccount"""
-		try:			
+		try:
 			return BSAccount(id = in_obj.id, 
 							region = in_obj.region, 
 							last_battle_time = in_obj.last_battle_time,
 							created_at = in_obj.created_at,
 							updated_at = in_obj.updated_at,
-							nickname = in_obj.nickname)			
+							nickname = in_obj.nickname, 
+							updated_account_info = epoch_now())			
 		except Exception as err:
 			error(f'{err}')
 		return None
 
 
 BSAccount.register_transformation(Account, BSAccount.transform_Account)
+
 
 class BSBlitzRelease(WGBlitzRelease):
 	cut_off: int 	= Field(default=maxsize)
