@@ -1,6 +1,7 @@
 from argparse import ArgumentParser, Namespace
 from configparser import ConfigParser
 from typing import Optional, cast, Type, Any, TypeVar, Sequence
+from time import time
 import logging
 from asyncio import create_task, gather, wait, Queue, CancelledError, Task, Condition, sleep
 from aiofiles import open
@@ -43,6 +44,8 @@ YS_CLIENT_SECRET 	: str = 'missing'
 YS_DAYS_SINCE 		: int = 30
 
 EXPORT_SUPPORTED_FORMATS : list[str] = ['json', 'txt', 'csv']
+
+ACCOUNT_INFO_CACHE_VALID : int = 7 # days
 
 ###########################################
 # 
@@ -157,16 +160,21 @@ def add_args_update_wg(parser: ArgumentParser, config: Optional[ConfigParser] = 
 							help='filter by region (default: ' + ' + '.join(Region.API_regions()) + ')')
 		parser.add_argument('--disabled', action='store_true', default=False, 
 							help='Check existing disabled accounts')
+		parser.add_argument('--active-since', type=str, default=None, metavar='RELEASE',
+							help='update account info for accounts that have been active since RELEASE')
+		parser.add_argument('--inactive-since', type=str,  default=None, metavar='RELEASE',
+							help='update account info for accounts that have been inactive since RELEASE')		
 		parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
-								default=OptAccountsInactive.no.value, help='Include inactive accounts')
+								default=OptAccountsInactive.auto.value, help='Include inactive accounts')
 		parser.add_argument('--accounts', type=str, default=[], nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
 								help="update accounts for the listed ACCOUNT_ID(s). \
-									ACCOUNT_ID format 'account_id:region' or 'account_id'")
+									ACCOUNT_ID format 'account_id:region' or 'account_id'")		
 		# parser.add_argument('--start', dest='wg_start_id', 
 		# 					metavar='ACCOUNT_ID', type=int, default=0, 
 		# 					help='start fetching account_ids from ACCOUNT_ID (default = 0 \
 		# 						start from highest ACCOUNT_ID in backend)')
-
+		parser.add_argument('--cache-valid', type=int, default=ACCOUNT_INFO_CACHE_VALID, metavar='DAYS',
+							help='Fetch stats only for accounts with stats older than DAYS')
 		parser.add_argument('--sample', type=float, default=0, metavar='SAMPLE',
 							help='update SAMPLE of accounts. If 0 < SAMPLE < 1, SAMPLE defines a %% of users')
 		parser.add_argument('--file', metavar='FILE', type=str, default=None, 
@@ -518,8 +526,7 @@ async def cmd_update_wg(db		: Backend,
 	debug('starting')
 	stats		: EventCounter = EventCounter('WG API')
 	try:		
-		regions			: set[Region] 	= { Region(r) for r in args.region }
-		assert args.file is None or len(regions) == 1, 'if --file is set, choose only one region'
+		regions			: set[Region] 	= { Region(r) for r in args.region }		
 		wg 				: WGApi = WGApi(app_id = args.wg_app_id, 
 										ru_app_id= args.ru_app_id,
 										rate_limit = args.wg_rate_limit)
@@ -532,7 +539,8 @@ async def cmd_update_wg(db		: Backend,
 		for region in regions:
 			workQs[region] = IterableQueue(maxsize=100)
 
-		workQ_creators.append(create_task(create_accountQ(db, args, inQ, None)))
+		workQ_creators.append(create_task(create_accountQ(db, args, inQ, 
+														  stats_type=StatsTypes.account_info)))
 		workQ_creators.append(create_task(batch_accountQ(inQ, workQs)))
 
 		for region in regions:
@@ -751,8 +759,9 @@ async def cmd_fetch_wg(db		: Backend,
 		id_creators	: list[Task]	= list()
 		api_workers : list[Task]	= list()
 		idQs 		: dict[Region, IterableQueue[Sequence[int]]] = dict()
-
+		
 		if start == 0 and not force:				
+			message('finding latest accounts by region')
 			latest : dict[Region, BSAccount] = await db.accounts_latest(regions)
 		for region in regions:
 			try:
@@ -856,10 +865,10 @@ async def fetch_account_info_worker(wg		: WGApi,
 					for info in infos:
 						if (acc := BSAccount.transform(info)) is not None:
 							await accountQ.put(acc)
-							stats.log('stats valid')
+							#stats.log('stats valid')
 							valid_stats = True
 						else:
-							stats.log('transformation errors')
+							stats.log('format errors')
 				else:
 					stats.log('query errors')
 				
@@ -1200,7 +1209,8 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 		except ValueError as err:
 			assert False, f"Incorrect value for argument 'inactive': {args.inactive}"
 		
-		total : int = await db.accounts_count(regions=regions, inactive=inactive, disabled=disabled, sample=sample)
+		total : int = await db.accounts_count(regions=regions, inactive=inactive, 
+												disabled=disabled, sample=sample)
 
 		if args.distributed > 0:
 			for i in range(args.distributed):
@@ -1209,19 +1219,24 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 				await accountQs[Qid].add_producer()
 				distributed = OptAccountsDistributed(i, args.distributed)
 				account_workers.append(create_task(db.accounts_get_worker(accountQs[Qid], regions=regions, 
-														inactive=inactive, disabled=disabled, sample=sample,
-														distributed=distributed)))
+																		inactive=inactive, disabled=disabled, 
+																		sample=sample, distributed=distributed)))
 				export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], 
 															accountQs[Qid]), 
-														format=args.format, filename=f'{filename}.{i}', 
-														force=force, append=args.append)))
+														format=args.format, 
+														filename=f'{filename}.{i}', 
+														force=force, 
+														append=args.append)))
 		elif args.by_region:
 			accountQs['all'] = IterableQueue(maxsize=ACCOUNTS_Q_MAX, count_items=False)
 			
 			# fetch accounts for all the regios
 			await accountQs['all'].add_producer()
-			account_workers.append(create_task(db.accounts_get_worker(accountQs['all'], regions=regions, 
-														inactive=inactive, disabled=disabled, sample=sample)))
+			account_workers.append(create_task(db.accounts_get_worker(accountQs['all'], 
+																		regions=regions, 
+																		inactive=inactive, 
+																		disabled=disabled, 
+																		sample=sample)))
 			# by region
 			for region in regions:
 				accountQs[region.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
@@ -1315,6 +1330,150 @@ async def count_accounts(db: Backend, args : Namespace, stats_type: StatsTypes |
 	except Exception as err:
 		error(f'{err}')
 	return accounts_N
+
+
+###########################################
+# 
+# create_accountQ()  
+#
+###########################################
+
+
+async def create_accountQ(db		: Backend, 
+						  args 		: Namespace, 
+						  accountQ	: IterableQueue[BSAccount], 
+						  stats_type: StatsTypes | None = None) -> EventCounter:
+	"""Helper to make accountQ from arguments"""	
+	stats : EventCounter = EventCounter(f'{db.driver}: accounts')
+	debug('starting')
+	try:
+		## read args --------------------------------------------------------
+		regions	 	: set[Region]	= { Region(r) for r in args.region }
+	
+		accounts 	: list[BSAccount] | None = None
+		try:
+			accounts = read_args_accounts(args.accounts)
+		except:
+			debug('could not read --accounts')
+	
+		inactive 	: OptAccountsInactive 	= OptAccountsInactive.both
+		try:
+			inactive = OptAccountsInactive(args.inactive)
+		except:
+			debug('could not read --inactive')
+
+		disabled : bool | None = None
+		try:
+			disabled = args.disabled
+		except:
+			debug('could not read --disabled')
+		
+		sample : float = 0
+		try:
+			sample = args.sample
+		except:
+			debug('could not read --sample')
+
+		cache_valid : int = 0
+		try:
+			cache_valid = args.cache_valid
+		except:
+			debug('could not read --cache-valid')
+
+		inactive_since : int = 0
+		try:
+			rel : BSBlitzRelease = BSBlitzRelease(release=args.inactive_since)
+			inactive_since = rel.cut_off
+		except Exception as err:
+			debug(f'could not read --inactive-since: {err}')
+
+		active_since : int = 0
+		try:
+			rel = BSBlitzRelease(release=args.active_since)
+			if (prev := await db.release_get_previous(rel)) is not None:
+				active_since = prev.cut_off
+		except Exception as err:
+			debug(f'could not read --active-since: {err}')
+
+		# create queue -----------------------------------------------------------
+		await accountQ.add_producer()
+
+		if accounts is not None:
+
+			for account in accounts:
+				try:
+					await accountQ.put(account)
+					stats.log('read')
+				except Exception as err:
+					error(f'Could not add account ({account.id}) to queue')
+					stats.log('errors')
+
+		elif args.file is not None:
+
+			if args.file.endswith('.txt'):
+				async for account in BSAccount.import_txt(args.file):
+					try:
+						await accountQ.put(account)
+						stats.log('read')
+					except Exception as err:
+						error(f'Could not add account to the queue: {err}')
+						stats.log('errors')
+
+			elif args.file.endswith('.csv'):
+				async for account in BSAccount.import_csv(args.file):
+					try:
+						await accountQ.put(account)
+						stats.log('read')
+					except Exception as err:
+						error(f'Could not add account to the queue: {err}')
+						stats.log('errors')
+
+			elif args.file.endswith('.json'):
+				async for account in BSAccount.import_json(args.file):
+					try:
+						await accountQ.put(account)
+						stats.log('read')
+					except Exception as err:
+						error(f'Could not add account to the queue: {err}')
+						stats.log('errors')
+		
+		else:
+			# message('counting accounts...')
+			# start = time()
+			# total : int = await db.accounts_count(stats_type=stats_type, 
+			# 										regions=regions, 
+			# 										inactive=inactive,
+			# 										disabled=disabled,
+			# 										active_since=active_since,
+			# 										inactive_since=inactive_since,
+			# 										sample=sample, 
+			# 										cache_valid=cache_valid)
+			# end = time()
+			# message(f'{total} accounts, counting took {end - start}')
+
+			async for account in db.accounts_get(stats_type=stats_type, 
+													regions=regions, 
+													inactive=inactive,
+													disabled=disabled,
+													active_since=active_since,
+													inactive_since=inactive_since,
+													sample=sample, 
+													cache_valid=cache_valid):
+				try:
+					await accountQ.put(account)
+					stats.log('read')
+				except Exception as err:
+					error(f'Could not add account ({account.id}) to queue')
+					stats.log('errors')	
+		
+	except CancelledError as err:
+		debug(f'Cancelled')
+	except Exception as err:
+		error(f'{err}')		
+	finally:
+		await accountQ.finish()	
+		
+	return stats
 
 
 async def create_accountQ_active(db: Backend, 
@@ -1428,111 +1587,6 @@ async def batch_accountQ(inQ	: IterableQueue[BSAccount],
 	return stats
 
 
-async def create_accountQ(db		: Backend, 
-						  args 		: Namespace, 
-						  accountQ	: IterableQueue[BSAccount], 
-						  stats_type: StatsTypes | None = None) -> EventCounter:
-	"""Helper to make accountQ from arguments"""	
-	stats : EventCounter = EventCounter(f'{db.driver}: accounts')
-	debug('starting')
-	try:
-		regions	 	: set[Region]	= { Region(r) for r in args.region }
-	
-		accounts 	: list[BSAccount] | None = None
-		try:
-			accounts = read_args_accounts(args.accounts)
-		except:
-			debug('could not read --accounts')
-	
-		inactive 	: OptAccountsInactive 	= OptAccountsInactive.both
-		try:
-			inactive = OptAccountsInactive(args.inactive)
-		except:
-			debug('could not read --inactive')
-
-		disabled : bool | None = None
-		try:
-			disabled = args.disabled
-		except:
-			debug('could not read --disabled')
-		
-		sample : float = 0
-		try:
-			sample = args.sample
-		except:
-			debug('could not read --sample')
-
-		cache_valid : int | None = None
-		try:
-			cache_valid = args.cache_valid
-		except:
-			debug('could not read --cache-valid')
-
-		await accountQ.add_producer()
-
-		if accounts is not None:
-
-			for account in accounts:
-				try:
-					await accountQ.put(account)
-					stats.log('read')
-				except Exception as err:
-					error(f'Could not add account ({account.id}) to queue')
-					stats.log('errors')
-
-		elif args.file is not None:
-
-			if args.file.endswith('.txt'):
-				async for account in BSAccount.import_txt(args.file):
-					try:
-						await accountQ.put(account)
-						stats.log('read')
-					except Exception as err:
-						error(f'Could not add account to the queue: {err}')
-						stats.log('errors')
-
-			elif args.file.endswith('.csv'):
-				async for account in BSAccount.import_csv(args.file):
-					try:
-						await accountQ.put(account)
-						stats.log('read')
-					except Exception as err:
-						error(f'Could not add account to the queue: {err}')
-						stats.log('errors')
-
-			elif args.file.endswith('.json'):
-				async for account in BSAccount.import_json(args.file):
-					try:
-						await accountQ.put(account)
-						stats.log('read')
-					except Exception as err:
-						error(f'Could not add account to the queue: {err}')
-						stats.log('errors')
-		
-		else:
-			async for account in db.accounts_get(stats_type=stats_type, 
-													regions=regions, 
-													inactive=inactive,
-													disabled=disabled,
-													sample=sample, 
-													cache_valid=cache_valid):
-				try:
-					await accountQ.put(account)
-					stats.log('read')
-				except Exception as err:
-					error(f'Could not add account ({account.id}) to queue')
-					stats.log('errors')	
-		
-	except CancelledError as err:
-		debug(f'Cancelled')
-	except Exception as err:
-		error(f'{err}')		
-	finally:
-		await accountQ.finish()	
-		
-	return stats
-
-
 ###########################################
 # 
 # create_accountQ_batch()  
@@ -1540,49 +1594,49 @@ async def create_accountQ(db		: Backend,
 ###########################################
 
 
-async def create_accountQ_batch(db			: Backend, 
-								accountQ 	: IterableQueue[list[BSAccount]],
-								region		: Region,
-								batch 		: int = 100,  
-								stats_type 	: StatsTypes | None = None, 							
-								inactive 	: OptAccountsInactive = OptAccountsInactive.default(), 
-								disabled	: bool = False, 
-								dist 		: OptAccountsDistributed | None = None, 
-								sample 		: float = 0, 
-								cache_valid	: int | None = None) -> EventCounter:
-	"""Create accountQ of batch size lists"""
-	debug('starting')
-	assert batch > 0, "batch must be > 0"
-	stats : EventCounter = EventCounter(f'{db.driver}: accounts')
-	try:
-		await accountQ.add_producer()
-		accounts: list[BSAccount] = list()
-		async for account in db.accounts_get(stats_type=stats_type, 
-											regions={region}, 
-											inactive=inactive,
-											disabled=disabled,
-											dist= dist, 
-											sample=sample, 
-											cache_valid=cache_valid):
-				try:
-					accounts.append(account)
-					if len(accounts) == batch:
-						await accountQ.put(accounts)
-						stats.log('read', len(accounts))
-						accounts = list()					
-				except Exception as err:
-					error(f'Could not add account ({account.id}) to queue')
-					stats.log('errors')	
-		if len(accounts) > 0:
-			await accountQ.put(accounts)
-			stats.log('read', len(accounts))
+# async def create_accountQ_batch(db			: Backend, 
+# 								accountQ 	: IterableQueue[list[BSAccount]],
+## 								region		: Region,
+# 								batch 		: int = 100,  
+# 								stats_type 	: StatsTypes | None = None, 							
+# 								inactive 	: OptAccountsInactive = OptAccountsInactive.default(), 
+# 								disabled	: bool = False, 
+# 								dist 		: OptAccountsDistributed | None = None, 
+# 								sample 		: float = 0, 
+# 								cache_valid	: int | None = None) -> EventCounter:
+# 	"""Create accountQ of batch size lists"""
+# 	debug('starting')
+# 	assert batch > 0, "batch must be > 0"
+# 	stats : EventCounter = EventCounter(f'{db.driver}: accounts')
+# 	try:
+# 		await accountQ.add_producer()
+# 		accounts: list[BSAccount] = list()
+# 		async for account in db.accounts_get(stats_type=stats_type, 
+# 											regions={region}, 
+# 											inactive=inactive,
+# 											disabled=disabled,
+# 											dist= dist, 
+# 											sample=sample, 
+# 											cache_valid=cache_valid):
+# 				try:
+# 					accounts.append(account)
+# 					if len(accounts) == batch:
+# 						await accountQ.put(accounts)
+# 						stats.log('read', len(accounts))
+# 						accounts = list()					
+# 				except Exception as err:
+# 					error(f'Could not add account ({account.id}) to queue')
+# 					stats.log('errors')	
+# 		if len(accounts) > 0:
+# 			await accountQ.put(accounts)
+# 			stats.log('read', len(accounts))
 
-	except QueueDone:
-		debug('accountQ raise QueueDone')
-	except Exception as err:
-		error(f'{err}')
-	await accountQ.finish()
-	return stats
+# 	except QueueDone:
+# 		debug('accountQ raise QueueDone')
+# 	except Exception as err:
+# 		error(f'{err}')
+# 	await accountQ.finish()
+# 	return stats
 
 
 # async def create_accountQ_BAK(db: Backend, args : Namespace, 
