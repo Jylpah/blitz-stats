@@ -143,8 +143,7 @@ async def main(argv: list[str]):
 			raise Exception("Failed to define argument parser for: tank-stats")
 		if not player_achievements.add_args(player_achievements_parser, config):
 			raise Exception("Failed to define argument parser for: player-achievements")
-
-
+		
 		debug('parsing full args')
 		args = parser.parse_args(args=argv)
 		if args.help:
@@ -185,6 +184,7 @@ async def main(argv: list[str]):
 			
 	except Exception as err:
 		error(f'{err}')
+	message(f'program finished: {datetime.now():%Y-%m-%d %H:%M}')
 	
 
 def print_all(stats, out, limit: int | None =None) -> None:
