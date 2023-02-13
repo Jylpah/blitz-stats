@@ -126,7 +126,6 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 		LESTA_RATE_LIMIT: float = 10
 		LESTA_WORKERS 	: int 	= 10
 		LESTA_APP_ID 	: str 	= WGApi.DEFAULT_LESTA_APP_ID
-		NULL_RESPONSES 	: int 	= 20
 		
 		if config is not None and 'WG' in config.sections():
 			configWG 		= config['WG']
@@ -154,7 +153,7 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 							help='Fetch stats for all accounts')
 		parser.add_argument('--sample', type=float, default=0, metavar='SAMPLE',
 							help='Fetch tank stats for SAMPLE of accounts. If 0 < SAMPLE < 1, SAMPLE defines a %% of users')
-		parser.add_argument('--cache-valid', type=int, default=None, metavar='DAYS',
+		parser.add_argument('--cache-valid', type=int, default=0, metavar='DAYS',
 							help='Fetch stats only for accounts with stats older than DAYS')		
 		parser.add_argument('--distributed', '--dist',type=str, dest='distributed', metavar='I:N', 
 							default=None, help='Distributed fetching for accounts: id %% N == I')
@@ -440,8 +439,8 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 														title="Fetching tank stats"))
 		for _ in range(min([args.workers, ceil(accounts/4)])):
 			tasks.append(create_task(fetch_api_worker(db, wg_api=wg, accountQ=accountQ, 
-																	statsQ=statsQ, retryQ=retryQ, 
-																	disabled=args.disabled)))
+														statsQ=statsQ, retryQ=retryQ, 
+														disabled=args.disabled)))
 
 		stats.merge_child(await create_accountQ(db, args, accountQ, StatsTypes.tank_stats))
 		debug(f'AccountQ created. count={accountQ.count}, size={accountQ.qsize()}')
