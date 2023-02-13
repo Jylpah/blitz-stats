@@ -17,7 +17,7 @@ import queue
 from backend import Backend, OptAccountsInactive, BSTableType, \
 	ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL, get_sub_type
 from models import BSAccount, BSBlitzRelease, StatsTypes
-from accounts import split_accountQ, create_accountQ
+from accounts import split_accountQ, create_accountQ, accounts_parse_args
 from releases import release_mapper
 
 from pyutils import BucketMapper, IterableQueue, QueueDone, \
@@ -243,12 +243,12 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 		accounts : int 
 		if len(args.accounts) > 0:
 			accounts = len(args.accounts)
-		else:	
+		else:
+			accounts_args : dict[str, Any] | None
+			if (accounts_args := await accounts_parse_args(db, args)) is None:
+				raise ValueError(f'could not parse account args: {args}')	
 			accounts = await db.accounts_count(StatsTypes.player_achievements, 
-												regions=regions, 
-												inactive=OptAccountsInactive.no,  
-												sample=args.sample, 
-												cache_valid=args.cache_valid)		
+												**accounts_args)		
 		for r in regions:
 			regionQs[r.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)			
 			for _ in range(ceil(min([args.workers, accounts])/len(regions))):

@@ -29,14 +29,16 @@ from pandas.io.json import json_normalize	# type: ignore
 from backend import Backend, OptAccountsInactive, BSTableType, \
 					ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL, get_sub_type
 from models import BSAccount, BSBlitzRelease, StatsTypes
-from accounts import create_accountQ, read_args_accounts, create_accountQ_active
+from accounts import create_accountQ, read_args_accounts, create_accountQ_active, \
+					accounts_parse_args
 from releases import get_releases, release_mapper
 
 from pyutils import alive_bar_monitor, \
 					is_alphanum, JSONExportable, TXTExportable, CSVExportable, export, \
 					BucketMapper, IterableQueue, QueueDone, EventCounter, \
 					AsyncQueue
-from blitzutils.models import Region, WGTankStat, Tank, EnumVehicleTier, EnumNation, EnumVehicleTypeInt
+from blitzutils.models import Region, WGTankStat, Tank, EnumVehicleTier, EnumNation, \
+								EnumVehicleTypeInt
 from blitzutils.wg import WGApi 
 
 logger 	= logging.getLogger()
@@ -153,6 +155,10 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 							help='Fetch stats for all accounts')
 		parser.add_argument('--sample', type=float, default=0, metavar='SAMPLE',
 							help='Fetch tank stats for SAMPLE of accounts. If 0 < SAMPLE < 1, SAMPLE defines a %% of users')
+		parser.add_argument('--active-since', type=str, default=None, metavar='RELEASE',
+							help='update account info for accounts that have been active since RELEASE')
+		parser.add_argument('--inactive-since', type=str,  default=None, metavar='RELEASE',
+							help='update account info for accounts that have been inactive since RELEASE')		
 		parser.add_argument('--cache-valid', type=int, default=0, metavar='DAYS',
 							help='Fetch stats only for accounts with stats older than DAYS')		
 		parser.add_argument('--distributed', '--dist',type=str, dest='distributed', metavar='I:N', 
@@ -430,10 +436,13 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 		accounts : int 
 		if len(args.accounts) > 0:
 			accounts = len(args.accounts)
-		else:	
-			accounts = await db.accounts_count(StatsTypes.tank_stats, regions=regions, 
-												inactive=inactive, disabled=args.disabled, 
-												sample=args.sample, cache_valid=args.cache_valid)
+		else:
+			accounts_args : dict[str, Any] | None
+			if (accounts_args := await accounts_parse_args(db, args)) is None:
+				raise ValueError(f'could not parse account args: {args}')
+
+			accounts = await db.accounts_count(StatsTypes.tank_stats, 
+												**accounts_args)
 		
 		task_bar : Task = create_task(alive_bar_monitor([accountQ], total=accounts, 
 														title="Fetching tank stats"))
@@ -455,8 +464,8 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 													  title="Retrying failed accounts"))
 			for _ in range(min([args.workers, ceil(retry_accounts/4)])):
 				tasks.append(create_task(fetch_api_worker(db, wg_api=wg,  
-																		accountQ=retryQ, 
-																		statsQ=statsQ)))
+														accountQ=retryQ, 
+														statsQ=statsQ)))
 			await retryQ.join()
 			task_bar.cancel()
 		
