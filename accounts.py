@@ -1202,6 +1202,10 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 		account_workers : list[Task] = list()
 		export_workers 	: list[Task] = list()
 
+		accounts_args : dict[str, Any] | None 
+		if (accounts_args := await accounts_parse_args(db, args)) is None:
+			raise ValueError(f'could not parse args: {args}')
+
 		try: 
 			inactive = OptAccountsInactive(args.inactive)
 			if inactive == OptAccountsInactive.auto:		# auto mode requires specication of stats type
@@ -1218,9 +1222,9 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 				accountQs[Qid] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
 				await accountQs[Qid].add_producer()
 				distributed = OptAccountsDistributed(i, args.distributed)
-				account_workers.append(create_task(db.accounts_get_worker(accountQs[Qid], regions=regions, 
-																		inactive=inactive, disabled=disabled, 
-																		sample=sample, distributed=distributed)))
+				account_workers.append(create_task(db.accounts_get_worker(accountQs[Qid], 
+																			distributed=distributed, 
+																			**accounts_args)))
 				export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], 
 															accountQs[Qid]), 
 														format=args.format, 
@@ -1233,10 +1237,7 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 			# fetch accounts for all the regios
 			await accountQs['all'].add_producer()
 			account_workers.append(create_task(db.accounts_get_worker(accountQs['all'], 
-																		regions=regions, 
-																		inactive=inactive, 
-																		disabled=disabled, 
-																		sample=sample)))
+																	 **accounts_args)))
 			# by region
 			for region in regions:
 				accountQs[region.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
@@ -1253,8 +1254,8 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 		else:
 			accountQs['all'] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
 			await accountQs['all'].add_producer()
-			account_workers.append(create_task(db.accounts_get_worker(accountQs['all'], regions=regions, 
-														inactive=inactive, disabled=disabled, sample=sample)))
+			account_workers.append(create_task(db.accounts_get_worker(accountQs['all'], 
+																		**accounts_args)))
 
 			if filename != '-':
 				filename += '.all'
@@ -1347,55 +1348,12 @@ async def create_accountQ(db		: Backend,
 	stats : EventCounter = EventCounter(f'{db.driver}: accounts')
 	debug('starting')
 	try:
-		## read args --------------------------------------------------------
-		regions	 	: set[Region]	= { Region(r) for r in args.region }
-	
 		accounts 	: list[BSAccount] | None = None
 		try:
 			accounts = read_args_accounts(args.accounts)
 		except:
 			debug('could not read --accounts')
-	
-		inactive 	: OptAccountsInactive 	= OptAccountsInactive.both
-		try:
-			inactive = OptAccountsInactive(args.inactive)
-		except:
-			debug('could not read --inactive')
 
-		disabled : bool | None = None
-		try:
-			disabled = args.disabled
-		except:
-			debug('could not read --disabled')
-		
-		sample : float = 0
-		try:
-			sample = args.sample
-		except:
-			debug('could not read --sample')
-
-		cache_valid : int = 0
-		try:
-			cache_valid = args.cache_valid
-		except:
-			debug('could not read --cache-valid')
-
-		inactive_since : int = 0
-		try:
-			rel : BSBlitzRelease = BSBlitzRelease(release=args.inactive_since)
-			inactive_since = rel.cut_off
-		except Exception as err:
-			debug(f'could not read --inactive-since: {err}')
-
-		active_since : int = 0
-		try:
-			rel = BSBlitzRelease(release=args.active_since)
-			if (prev := await db.release_get_previous(rel)) is not None:
-				active_since = prev.cut_off
-		except Exception as err:
-			debug(f'could not read --active-since: {err}')
-
-		# create queue -----------------------------------------------------------
 		await accountQ.add_producer()
 
 		if accounts is not None:
@@ -1451,21 +1409,18 @@ async def create_accountQ(db		: Backend,
 			# end = time()
 			# message(f'{total} accounts, counting took {end - start}')
 
-			async for account in db.accounts_get(stats_type=stats_type, 
-													regions=regions, 
-													inactive=inactive,
-													disabled=disabled,
-													active_since=active_since,
-													inactive_since=inactive_since,
-													sample=sample, 
-													cache_valid=cache_valid):
-				try:
-					await accountQ.put(account)
-					stats.log('read')
-				except Exception as err:
-					error(f'Could not add account ({account.id}) to queue')
-					stats.log('errors')	
-		
+			accounts_args : dict[str, Any] | None
+			if (accounts_args := await accounts_parse_args(db, args)) is not None:
+				async for account in db.accounts_get(stats_type=stats_type, 
+													**accounts_args):
+					try:
+						await accountQ.put(account)
+						stats.log('read')
+					except Exception as err:
+						error(f'Could not add account ({account.id}) to queue')
+						stats.log('errors')
+			else:
+				error(f'could not parse args: {args}')		
 	except CancelledError as err:
 		debug(f'Cancelled')
 	except Exception as err:
@@ -1553,9 +1508,7 @@ async def batch_accountQ(inQ	: IterableQueue[BSAccount],
 		while True:
 			account = await inQ.get()
 			try:
-				region = account.region
-				# if account.region is None:
-				# 	raise ValueError(f'account ({account.id}) does not have region defined')
+				region = account.region				
 				if region in outQs.keys(): 
 					batches[region].append(account)					
 					if len(batches[region]) == batch:
@@ -1587,173 +1540,6 @@ async def batch_accountQ(inQ	: IterableQueue[BSAccount],
 	return stats
 
 
-###########################################
-# 
-# create_accountQ_batch()  
-#
-###########################################
-
-
-# async def create_accountQ_batch(db			: Backend, 
-# 								accountQ 	: IterableQueue[list[BSAccount]],
-## 								region		: Region,
-# 								batch 		: int = 100,  
-# 								stats_type 	: StatsTypes | None = None, 							
-# 								inactive 	: OptAccountsInactive = OptAccountsInactive.default(), 
-# 								disabled	: bool = False, 
-# 								dist 		: OptAccountsDistributed | None = None, 
-# 								sample 		: float = 0, 
-# 								cache_valid	: int | None = None) -> EventCounter:
-# 	"""Create accountQ of batch size lists"""
-# 	debug('starting')
-# 	assert batch > 0, "batch must be > 0"
-# 	stats : EventCounter = EventCounter(f'{db.driver}: accounts')
-# 	try:
-# 		await accountQ.add_producer()
-# 		accounts: list[BSAccount] = list()
-# 		async for account in db.accounts_get(stats_type=stats_type, 
-# 											regions={region}, 
-# 											inactive=inactive,
-# 											disabled=disabled,
-# 											dist= dist, 
-# 											sample=sample, 
-# 											cache_valid=cache_valid):
-# 				try:
-# 					accounts.append(account)
-# 					if len(accounts) == batch:
-# 						await accountQ.put(accounts)
-# 						stats.log('read', len(accounts))
-# 						accounts = list()					
-# 				except Exception as err:
-# 					error(f'Could not add account ({account.id}) to queue')
-# 					stats.log('errors')	
-# 		if len(accounts) > 0:
-# 			await accountQ.put(accounts)
-# 			stats.log('read', len(accounts))
-
-# 	except QueueDone:
-# 		debug('accountQ raise QueueDone')
-# 	except Exception as err:
-# 		error(f'{err}')
-# 	await accountQ.finish()
-# 	return stats
-
-
-# async def create_accountQ_BAK(db: Backend, args : Namespace, 
-# 							accountQ: Queue[BSAccount], 
-# 							stats_type: StatsTypes | None, 
-# 							bar_title : str | None = None) -> None:
-# 	"""Helper to make accountQ from arguments"""	
-# 	raise DeprecationWarning('create_accountQ_BAK is depreciated')
-# 	try:
-# 		regions	 	: set[Region]	= { Region(r) for r in args.region }
-# 		accounts 	: list[BSAccount] | None = read_args_accounts(args.accounts)
-
-# 		accounts_N 		: int = 0
-# 		accounts_added 	: int = 0
-# 		progress		: bool = False 
-
-# 		# count number of accounts
-# 		if bar_title is not None:
-# 			progress = True
-# 			if accounts is not None:
-# 				accounts_N = len(accounts)
-# 			elif args.file is not None:
-# 				message(f'Reading accounts from {args.file}')
-# 				async with open(args.file, mode='r') as f:
-# 					async for accounts_N, _ in enumerate(f):
-# 						pass
-# 				accounts_N += 1
-# 				if args.file.endswith('.csv'):
-# 					accounts_N -= 1
-# 			else:
-# 				if args.sample > 1:
-# 					accounts_N = int(args.sample)
-# 				else:				
-# 					message('Counting accounts to fetch stats...')
-# 					inactive : OptAccountsInactive = OptAccountsInactive.default()
-# 					try: 
-# 						inactive = OptAccountsInactive(args.inactive)
-# 					except ValueError as err:
-# 						assert False, f"Incorrect value for argument 'inactive': {args.inactive}"
-
-# 					accounts_N = await db.accounts_count(stats_type=stats_type, regions=regions, 
-# 														inactive=inactive, sample=args.sample, 
-# 														cache_valid=args.cache_valid)
-		
-# 		if accounts_N == 0:
-# 			raise ValueError('No accounts found')		
-
-# 		with alive_bar(accounts_N, title= bar_title, manual=True, 
-# 						enrich_print=False, disable=not progress) as bar:
-			
-# 			if accounts is not None:
-
-# 				async for accounts_added, account in enumerate(accounts):
-# 					try:
-# 						await accountQ.put(account)
-# 					except Exception as err:
-# 						error(f'Could not add account ({account.id}) to queue')
-# 					finally:
-# 						bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
-
-# 			elif args.file is not None:
-
-# 				if args.file.endswith('.txt'):
-# 					async for accounts_added, account in enumerate(BSAccount.import_txt(args.file)):
-# 						try:
-# 							await accountQ.put(account)
-# 						except Exception as err:
-# 							error(f'Could not add account to the queue: {err}')
-# 						finally:
-# 							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
-
-# 				elif args.file.endswith('.csv'):					
-# 					async for accounts_added, account in enumerate(BSAccount.import_csv(args.file)):
-# 						try:
-# 							await accountQ.put(account)
-# 						except Exception as err:
-# 							error(f'Could not add account to the queue: {err}')
-# 						finally:
-# 							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
-
-# 				elif args.file.endswith('.json'):				
-# 					async for accounts_added, account in enumerate(BSAccount.import_json(args.file)):
-# 						try:
-# 							await accountQ.put(account)
-# 						except Exception as err:
-# 							error(f'Could not add account to the queue: {err}')
-# 						finally:
-# 							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
-			
-# 			else:
-# 				async for accounts_added, account in enumerate(db.accounts_get(stats_type=StatsTypes.player_achievements, 
-# 																			regions=regions, sample=args.sample, 
-# 																			cache_valid=args.cache_valid)):
-# 					try:
-# 						await accountQ.put(account)
-# 					except Exception as err:
-# 						error(f'Could not add account ({account.id}) to queue')
-# 					finally:	
-# 						if progress:
-# 							bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
-
-# 			incomplete : bool = False
-# 			while accountQ.qsize() > 0:
-# 				incomplete = True
-# 				await sleep(1)
-# 				bar((accounts_added + 1 - accountQ.qsize())/accounts_N)
-# 			if incomplete:						# FIX the edge case of queue getting processed before while loop
-# 				bar(1)
-
-# 		await accountQ.join()
-# 	except CancelledError as err:
-# 		debug(f'Cancelled')
-# 	except Exception as err:
-# 		error(f'{err}')
-# 	return None
-
-
 def read_args_accounts(accounts: list[str]) -> list[BSAccount] | None:
 	res : list[BSAccount] = list()
 	for a in accounts:
@@ -1764,3 +1550,58 @@ def read_args_accounts(accounts: list[str]) -> list[BSAccount] | None:
 	if len(res) == 0:
 		return None
 	return res
+
+
+async def accounts_parse_args(db: Backend, args : Namespace,) -> dict[str, Any] | None:
+	"""parse accounts args"""
+	debug('starting')
+	res : dict[str, Any] = dict()
+	
+	try:
+		try:
+			res['regions']	= { Region(r) for r in args.region }		
+		except:
+			debug('could not read --region')
+	
+		try:
+			res['accounts'] = read_args_accounts(args.accounts)
+		except:
+			debug('could not read --accounts')
+	
+		try:
+			res['inactive'] = OptAccountsInactive(args.inactive)
+		except:
+			debug('could not read --inactive')
+
+		try:
+			res['disabled'] = args.disabled
+		except:
+			debug('could not read --disabled')
+		
+		try:
+			res['sample'] = args.sample
+		except:
+			debug('could not read --sample')
+
+		try:
+			res['cache_valid'] = args.cache_valid
+		except:
+			debug('could not read --cache-valid')
+
+		try:
+			rel : BSBlitzRelease = BSBlitzRelease(release=args.inactive_since)
+			res['inactive_since'] = rel.cut_off
+		except Exception as err:
+			debug(f'could not read --inactive-since: {err}')
+		
+		try:
+			rel = BSBlitzRelease(release=args.active_since)
+			if (prev := await db.release_get_previous(rel)) is not None:
+				res['active_since'] = prev.cut_off
+		except Exception as err:
+			debug(f'could not read --active-since: {err}')
+		
+		return res
+	except Exception as err:
+		error(f'{err}')
+	return None
