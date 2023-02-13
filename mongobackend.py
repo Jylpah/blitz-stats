@@ -870,15 +870,23 @@ class MongoBackend(Backend):
 	# 		error(f'Error fetching data from {self.table_uri(table_type)}: {err}')
 
 
-	async def _datas_count(self, table_type: BSTableType,
+	async def _datas_count(self, 
+							table_type: BSTableType,
 							pipeline : list[dict[str, Any]]) -> int:
 		try:
 			debug('starting')
-			pipeline.append({ '$count': 'total' })
 			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
+			pipeline.append({ '$count': 'total' })
 			async for res in dbc.aggregate(pipeline, allowDiskUse=True):
 				# print(f"_data_count(): total={res['total']}")
 				return int(res['total'])
+			
+			# if (query := self._get_query(pipeline)) is not None:
+			# 	error(f'query: {query}')
+			# 	res = await dbc.count_documents(query)
+			# 	error(f'dbc.count_documents()={res}')
+			# 	return cast(int, res)
+			
 		except Exception as err:
 			error(f'Error counting documents in {self.table_uri(table_type)}: {err}')
 		return -1
@@ -984,27 +992,28 @@ class MongoBackend(Backend):
 
 
 	async def _mk_pipeline_accounts(self, stats_type : StatsTypes | None = None,
-							regions	: set[Region] = Region.API_regions(),
-							inactive: OptAccountsInactive = OptAccountsInactive.auto,
-							dist 	: OptAccountsDistributed | None = None,
-							disabled: bool|None = False, 
-							sample	: float = 0,
-							cache_valid: int | None = None
-							) -> list[dict[str, Any]] | None:
+									regions			: set[Region] = Region.API_regions(),
+									inactive		: OptAccountsInactive = OptAccountsInactive.auto,
+									dist 			: OptAccountsDistributed | None = None,
+									disabled		: bool|None = False, 
+									active_since	: int = 0,
+									inactive_since	: int = 0,
+									sample			: float = 0,
+									cache_valid		: int = 0
+									) -> list[dict[str, Any]] | None:
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
 		try:
 			debug('starting')
 			a = AliasMapper(self.model_accounts)
-			alias : Callable = a.alias
-
-			if cache_valid is None:
-				cache_valid = self._cache_valid
-			update_field : str | None = None
-			if stats_type is not None:
-				update_field = alias(stats_type.value)
+			alias 	: Callable = a.alias
 			dbc 	: AsyncIOMotorCollection = self.collection_accounts
 			match 	: list[dict[str, str|int|float|dict|list]] = list()
 			pipeline: list[dict[str, Any]] = list()
+
+			cache_valid *= 24*3600
+			update_field : str | None = None
+			if stats_type is not None:
+				update_field = alias(stats_type.value)
 
 			# Pipeline build based on ESR rule
 			# https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
@@ -1019,14 +1028,21 @@ class MongoBackend(Backend):
 			match.append({ alias('region') : { '$in' : [ r.value for r in regions ]} })
 			# match.append({ alias('id') : {  '$lt' : WG_ACCOUNT_ID_MAX}})  # exclude Chinese account ids
 
+			if active_since > 0:
+				match.append( { alias('last_battle_time') : { '$gte' : active_since } })
+			if inactive_since > 0:
+				match.append( { alias('last_battle_time') : { '$lt' : inactive_since } })
+
 			if dist is not None:
 				match.append({ alias('id') : {  '$mod' :  [ dist.div, dist.mod ]}})
 				
-			if inactive == OptAccountsInactive.auto:
-				assert update_field is not None, "automatic inactivity detection requires stat_type"
-				match.append({ '$or': [ { update_field: None}, 
-										{ update_field: { '$lt': epoch_now() - cache_valid }},											
-										] })				
+			if cache_valid > 0:
+				if update_field is not None:
+					match.append({ '$or': [ { update_field: None}, 
+											{ update_field: { '$lt': epoch_now() - cache_valid }},											
+										] })
+				else: 
+					error("--cache-valid requires stat_type")
 
 			if len(match) > 0:
 				pipeline.append( { '$match' : { '$and' : match } })
@@ -1036,7 +1052,21 @@ class MongoBackend(Backend):
 			elif sample > 0:
 				n : int = cast(int, await dbc.estimated_document_count())
 				pipeline.append({ '$sample' : {'size' : int(n * sample) } })
+			
 			return pipeline
+		except Exception as err:
+			error(f'{err}')
+		return None
+
+
+	def _get_query(self, pipeline: list[dict[str, Any]]) -> Any | None:
+		"""convert aggregation pipeline's $match into a find(query)"""
+		debug('starting')
+		stage : dict[str, Any]
+		try:
+			for stage in pipeline:
+				if '$match' in stage.keys():					
+					return stage['$match']			
 		except Exception as err:
 			error(f'{err}')
 		return None
@@ -1047,18 +1077,26 @@ class MongoBackend(Backend):
 							regions		: set[Region] = Region.API_regions(),
 							inactive 	: OptAccountsInactive = OptAccountsInactive.default(),
 							disabled 	: bool | None = False,
+							active_since	: int = 0,
+							inactive_since	: int = 0,
 							dist 		: OptAccountsDistributed | None = None,
 							sample 		: float = 0,
-							cache_valid: int | None = None ) -> AsyncGenerator[BSAccount, None]:
+							cache_valid: int = 0 ) -> AsyncGenerator[BSAccount, None]:
 		"""Get accounts from Mongo DB
 			inactive: true = only inactive, false = not inactive, none = AUTO"""
 		try:
 			debug('starting')
 			NOW = epoch_now()
 			pipeline : list[dict[str, Any]] | None
-			pipeline = await self._mk_pipeline_accounts(stats_type=stats_type, regions=regions,
-														inactive=inactive, disabled=disabled,
-														dist=dist, sample=sample, cache_valid=cache_valid)
+			pipeline = await self._mk_pipeline_accounts(stats_type=stats_type, 
+														regions=regions,
+														inactive=inactive, 
+														disabled=disabled,
+														active_since=active_since,
+														inactive_since=inactive_since,
+														dist=dist, 
+														sample=sample, 
+														cache_valid=cache_valid)
 
 			update_field : str | None = None
 			if stats_type is not None:
@@ -1066,7 +1104,7 @@ class MongoBackend(Backend):
 
 			if pipeline is None:
 				raise ValueError(f'could not create get-accounts {self.table_uri(BSTableType.Accounts)} cursor')
-
+			message(f'DEBUG accounts_get(): pipeline={pipeline}')
 			async for data in self._datas_get(BSTableType.Accounts, pipeline=pipeline):				
 				try:
 					if (player := BSAccount.transform_obj(data)) is None:
@@ -1086,34 +1124,45 @@ class MongoBackend(Backend):
 			error(f'Error fetching accounts from {self.table_uri(BSTableType.Accounts)}: {err}')
 
 
-	async def accounts_count(self, stats_type : StatsTypes | None = None,
-							regions: set[Region] = Region.API_regions(),
-							inactive : OptAccountsInactive = OptAccountsInactive.auto,
-							disabled: bool = False,
-							dist : OptAccountsDistributed | None = None, sample : float = 0,
-							cache_valid: int | None = None ) -> int:
+	async def accounts_count(self, stats_type 	: StatsTypes | None = None,
+							regions		: set[Region] = Region.API_regions(),
+							inactive 	: OptAccountsInactive = OptAccountsInactive.default(),
+							disabled 	: bool | None = False,
+							active_since	: int = 0,
+							inactive_since	: int = 0,
+							dist 		: OptAccountsDistributed | None = None,
+							sample 		: float = 0,
+							cache_valid: int = 0 ) -> int:
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
 		try:
 			debug('starting')
 			dbc : AsyncIOMotorCollection = self.collection_accounts
+			total : int = -1
 			if stats_type is None and regions == Region.has_stats() and \
-			   inactive == OptAccountsInactive.both and disabled == False:
-				total : int = cast(int, await dbc.estimated_document_count())
-				if sample == 0:
-					return total
-				if sample < 1:
-					return int(total * sample)
-				else:
-					return int(min(total, sample))
+			   inactive == OptAccountsInactive.both and disabled is None:				
+				total = cast(int, await dbc.estimated_document_count())				
 			else:
 				pipeline : list[dict[str, Any]] | None
-				pipeline = await self._mk_pipeline_accounts(stats_type=stats_type, regions=regions,
-															inactive=inactive, disabled=disabled,
-															dist=dist, sample=sample,
+				pipeline = await self._mk_pipeline_accounts(stats_type=stats_type, 
+															regions=regions,
+															inactive=inactive, 
+															disabled=disabled,
+															active_since=active_since,
+															inactive_since=inactive_since,
+															dist=dist, 
+															sample=sample, 
 															cache_valid=cache_valid)
 				if pipeline is None:
 					raise ValueError(f'Could not create pipeline for accounts {self.table_uri(BSTableType.Accounts)}')
-				return await self._datas_count(BSTableType.Accounts, pipeline)
+				total =  await self._datas_count(BSTableType.Accounts, pipeline)
+			
+			if sample == 0:
+				return total
+			if sample < 1:
+				return int(total * sample)
+			else:
+				return int(min(total, sample))
+
 		except Exception as err:
 			error(f'counting accounts failed: {err}')
 		return -1
