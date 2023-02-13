@@ -415,16 +415,9 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 
 	try:
 		stats 	 : EventCounter				= EventCounter('tank-stats fetch')	
-		regions	 : set[Region]				= { Region(r) for r in args.region }
 		accountQ : IterableQueue[BSAccount]	= IterableQueue(maxsize=ACCOUNTS_Q_MAX)
 		retryQ 	 : IterableQueue[BSAccount] | None = None
 		statsQ	 : Queue[list[WGTankStat]]	= Queue(maxsize=TANK_STATS_Q_MAX)
-
-		inactive : OptAccountsInactive      = OptAccountsInactive.default()
-		try: 
-			inactive = OptAccountsInactive(args.inactive)
-		except ValueError as err:
-			assert False, f"Incorrect value for argument 'inactive': {args.inactive}"
 
 		if not args.disabled:
 			retryQ = IterableQueue()		# must not use maxsize
