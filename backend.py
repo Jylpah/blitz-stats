@@ -34,7 +34,7 @@ INACTIVE_THRESHOLD 	: int = 2*30*24*60*60 # 2 months
 WG_ACCOUNT_ID_MAX 	: int = int(31e8)
 MAX_RETRIES 		: int = 3
 MIN_UPDATE_INTERVAL : int = 3   # days
-ACCOUNTS_Q_MAX 		: int = 1000
+ACCOUNTS_Q_MAX 		: int = 5000
 TANK_STATS_BATCH	: int = 1000
 
 
@@ -756,25 +756,31 @@ class Backend(ABC):
 
 	@abstractmethod
 	async def accounts_get(self, 
-							stats_type : StatsTypes | None = None, 
-							regions: set[Region] = Region.API_regions(), 
-							inactive : OptAccountsInactive = OptAccountsInactive.default(), 
-							disabled: bool | None = False, 
-							dist : OptAccountsDistributed | None = None, 
-							sample : float = 0, 
-							cache_valid: int | None = None ) -> AsyncGenerator[BSAccount, None]:
+							stats_type 	: StatsTypes | None = None, 
+							regions		: set[Region] = Region.API_regions(), 
+							inactive 	: OptAccountsInactive = OptAccountsInactive.default(), 
+							disabled	: bool | None = False, 
+							active_since	: int = 0,
+							inactive_since	: int = 0,
+							dist 		: OptAccountsDistributed | None = None, 
+							sample 		: float = 0, 
+							cache_valid	: int = 0) -> AsyncGenerator[BSAccount, None]:
 		"""Get accounts from backend"""
 		raise NotImplementedError
 		yield BSAccount(id=-1)
 	
 
 	@abstractmethod
-	async def accounts_count(self, stats_type : StatsTypes | None = None, 
-							regions: set[Region] = Region.API_regions(), 
-							inactive : OptAccountsInactive = OptAccountsInactive.default(), 	
-							disabled: bool = False, 
-							dist : OptAccountsDistributed | None = None, sample : float = 0, 
-							cache_valid: int | None = None ) -> int:
+	async def accounts_count(self, 
+							stats_type 	: StatsTypes | None = None,
+							regions		: set[Region] = Region.API_regions(),
+							inactive 	: OptAccountsInactive = OptAccountsInactive.default(),
+							disabled 	: bool | None = False,
+							active_since	: int = 0,
+							inactive_since	: int = 0,
+							dist 		: OptAccountsDistributed | None = None,
+							sample 		: float = 0,
+							cache_valid: int = 0 ) -> int:
 		"""Get number of accounts from backend"""
 		raise NotImplementedError
 
