@@ -1072,6 +1072,55 @@ class MongoBackend(Backend):
 		return None
 
 
+	async def accounts_get_batch(self, 
+							stats_type 	: StatsTypes | None = None, 
+							regions		: set[Region] = Region.API_regions(), 
+							inactive 	: OptAccountsInactive = OptAccountsInactive.default(), 
+							disabled	: bool | None = False, 
+							active_since	: int = 0,
+							inactive_since	: int = 0,
+							dist 		: OptAccountsDistributed | None = None, 
+							sample 		: float = 0, 
+							cache_valid	: int = 0,
+							batch 		: int = 100) -> AsyncGenerator[list[BSAccount], None]:
+		"""Get accounts from Mongo DB as batches 
+			inactive: true = only inactive, false = not inactive, none = AUTO"""
+		try:
+			debug('starting')
+			NOW = epoch_now()
+			pipeline : list[dict[str, Any]] | None
+			pipeline = await self._mk_pipeline_accounts(stats_type=stats_type, 
+														regions=regions,
+														inactive=inactive, 
+														disabled=disabled,
+														active_since=active_since,
+														inactive_since=inactive_since,
+														dist=dist, 
+														sample=sample, 
+														cache_valid=cache_valid)
+			model : type[JSONExportable] = self.model_accounts
+			if pipeline is None:
+				raise ValueError(f'could not create get-accounts {self.table_uri(BSTableType.Accounts)} cursor')
+			message(f'DEBUG accounts_get(): pipeline={pipeline}')
+			
+			async for objs in self.objs_export(BSTableType.Accounts, pipeline, batch=batch):			
+				try:
+					players : list[BSAccount] = list()
+					for obj in objs:
+						if (player := BSAccount.transform_obj(obj, in_type=model)) is not None:
+							if not disabled and inactive == OptAccountsInactive.auto \
+								and stats_type is not None and not player.update_needed(stats_type):
+								continue
+							players.append(player)
+					if len(players) > 0:
+						yield players
+				except Exception as err:
+					error(f'{err}')
+		except Exception as err:
+			error(f'Error fetching accounts from {self.table_uri(BSTableType.Accounts)}: {err}')
+
+
+
 	async def accounts_get(self, 
 							stats_type 	: StatsTypes | None = None,
 							regions		: set[Region] = Region.API_regions(),
