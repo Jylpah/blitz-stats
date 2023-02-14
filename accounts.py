@@ -578,7 +578,7 @@ async def cmd_update_wg(db		: Backend,
 async def update_account_info_worker(wg		: WGApi, 
 									region	: Region, 
 									workQ	: IterableQueue[list[BSAccount]], 
-									accountQ	: IterableQueue[BSAccount], 
+									accountQ: IterableQueue[BSAccount], 
 									) -> EventCounter:
 	"""Update accounts with data from WG API accounts/info"""
 	debug('starting')
@@ -610,13 +610,13 @@ async def update_account_info_worker(wg		: WGApi,
 						try:
 							a = accounts[info.account_id]
 							ids_stats.append(info.account_id)
-							# error(f'updating account_id={a.id}: {info}')
+							#error(f'updating account_id={a.id}: {info}')
 							if a.update(info):
-								# error(f'updated: {a}')
+								#error(f'updated: {a}')
 								await accountQ.put(a)
 								# stats.log('stats valid')
 							else:
-								# debug(f'BSAccount.update() failed: account_id={a.id}]')
+								error(f'BSAccount.update() failed: account_id={a.id}]')
 								stats.log('update failed')
 						except KeyError as err:
 							error(f'{err}')
@@ -628,6 +628,7 @@ async def update_account_info_worker(wg		: WGApi,
 							a = accounts[account_id]
 							a.disabled = True
 							await accountQ.put(a)
+							# error(f'disabled account: {a}')
 							stats.log('disabled')
 						except KeyError as err:
 							error(f'account w/o stats: {account_id}: {err}')
@@ -1563,10 +1564,10 @@ async def accounts_parse_args(db: Backend, args : Namespace,) -> dict[str, Any] 
 		except:
 			debug('could not read --region')
 	
-		try:
-			res['accounts'] = read_args_accounts(args.accounts)
-		except:
-			debug('could not read --accounts')
+		# try:
+		# 	res['accounts'] = read_args_accounts(args.accounts)
+		# except:
+		# 	debug('could not read --accounts')
 	
 		try:
 			res['inactive'] = OptAccountsInactive(args.inactive)
@@ -1589,15 +1590,19 @@ async def accounts_parse_args(db: Backend, args : Namespace,) -> dict[str, Any] 
 			debug('could not read --cache-valid')
 
 		try:
-			rel : BSBlitzRelease = BSBlitzRelease(release=args.inactive_since)
-			res['inactive_since'] = rel.cut_off
+			if ( rel := await db.release_get(args.inactive_since)) is not None:
+				res['inactive_since'] = rel.cut_off
+			else:
+				res['inactive_since'] = int(args.inactive_since)
 		except Exception as err:
 			debug(f'could not read --inactive-since: {err}')
 		
 		try:
-			rel = BSBlitzRelease(release=args.active_since)
-			if (prev := await db.release_get_previous(rel)) is not None:
-				res['active_since'] = prev.cut_off
+			if ( rel := await db.release_get(args.active_since)) is not None:
+				if (prev := await db.release_get_previous(rel)) is not None:
+					res['active_since'] = prev.cut_off
+			else:
+				res['active_since'] = int(args.active_since)
 		except Exception as err:
 			debug(f'could not read --active-since: {err}')
 		
