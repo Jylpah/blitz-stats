@@ -4,7 +4,7 @@ import logging
 from abc import ABC, abstractmethod
 from bson import ObjectId
 from os.path import isfile
-from typing import Optional, Any, Iterable, Sequence, AsyncGenerator, TypeVar, cast
+from typing import Optional, Any, Sequence, AsyncGenerator, TypeVar, cast
 from time import time
 from re import compile
 from datetime import date, datetime
@@ -18,8 +18,8 @@ from models import BSAccount, BSBlitzRelease, StatsTypes
 from blitzutils.models import Region, WoTBlitzReplayJSON, WoTBlitzReplayData, WGTankStat, \
 		Account, WGTank, Tank, WGPlayerAchievementsMaxSeries, WGPlayerAchievementsMain, \
 		EnumVehicleTier, EnumNation, EnumVehicleTypeStr, WoTBlitzTankString
-from pyutils import EventCounter, JSONExportable, epoch_now, is_alphanum, Idx, D, O
-# from mongobackend import MongoBackend
+from pyutils import EventCounter, JSONExportable, epoch_now, is_alphanum, Idx, D, O, QueueDone
+
 
 # Setup logging
 logger	= logging.getLogger()
@@ -29,14 +29,16 @@ verbose	= logger.info
 debug	= logger.debug
 
 # Constants
-MAX_UPDATE_INTERVAL : int = 4*30*24*60*60 # 4 months
+MAX_UPDATE_INTERVAL : int = 6*30*24*60*60 # 4 months
 INACTIVE_THRESHOLD 	: int = 2*30*24*60*60 # 2 months
 WG_ACCOUNT_ID_MAX 	: int = int(31e8)
 MAX_RETRIES 		: int = 3
-MIN_UPDATE_INTERVAL 		: int = 3   # days
-ACCOUNTS_Q_MAX 		: int = 10000
+MIN_UPDATE_INTERVAL : int = 3   # days
+ACCOUNTS_Q_MAX 		: int = 5000
 TANK_STATS_BATCH	: int = 1000
 
+
+A = TypeVar('A')
 ##############################################
 #
 ## Utils 
@@ -703,6 +705,7 @@ class Backend(ABC):
 	@abstractmethod
 	async def objs_export(self, 
 						 table_type: BSTableType, 
+						 pipeline : list[dict[str, Any]] = list(),
 						 sample: float = 0, 
 						 batch: int = 0) -> AsyncGenerator[list[Any], None]:
 		"""Export raw objects from backend"""
@@ -743,6 +746,7 @@ class Backend(ABC):
 			if the account was not updated"""
 		raise NotImplementedError
 
+
 	@abstractmethod
 	async def account_delete(self, account_id: int) -> bool:
 		"""Delete account from the backend. Returns False 
@@ -752,25 +756,47 @@ class Backend(ABC):
 
 	@abstractmethod
 	async def accounts_get(self, 
-							stats_type : StatsTypes | None = None, 
-							regions: set[Region] = Region.API_regions(), 
-							inactive : OptAccountsInactive = OptAccountsInactive.default(), 
-							disabled: bool = False, 
-							dist : OptAccountsDistributed | None = None, 
-							sample : float = 0, 
-							cache_valid: int | None = None ) -> AsyncGenerator[BSAccount, None]:
+							stats_type 	: StatsTypes | None = None, 
+							regions		: set[Region] = Region.API_regions(), 
+							inactive 	: OptAccountsInactive = OptAccountsInactive.default(), 
+							disabled	: bool | None = False, 
+							active_since	: int = 0,
+							inactive_since	: int = 0,
+							dist 		: OptAccountsDistributed | None = None, 
+							sample 		: float = 0, 
+							cache_valid	: int = 0) -> AsyncGenerator[BSAccount, None]:
 		"""Get accounts from backend"""
 		raise NotImplementedError
 		yield BSAccount(id=-1)
 	
 
 	@abstractmethod
-	async def accounts_count(self, stats_type : StatsTypes | None = None, 
-							regions: set[Region] = Region.API_regions(), 
-							inactive : OptAccountsInactive = OptAccountsInactive.default(), 	
-							disabled: bool = False, 
-							dist : OptAccountsDistributed | None = None, sample : float = 0, 
-							cache_valid: int | None = None ) -> int:
+	async def accounts_get_batch(self, 
+							stats_type 	: StatsTypes | None = None, 
+							regions		: set[Region] = Region.API_regions(), 
+							inactive 	: OptAccountsInactive = OptAccountsInactive.default(), 
+							disabled	: bool | None = False, 
+							active_since	: int = 0,
+							inactive_since	: int = 0,
+							dist 		: OptAccountsDistributed | None = None, 
+							sample 		: float = 0, 
+							cache_valid	: int = 0,
+							batch 		: int = 100) -> AsyncGenerator[list[BSAccount], None]:
+		"""Get accounts from backend"""
+		raise NotImplementedError
+		yield BSAccount(id=-1)
+
+	@abstractmethod
+	async def accounts_count(self, 
+							stats_type 	: StatsTypes | None = None,
+							regions		: set[Region] = Region.API_regions(),
+							inactive 	: OptAccountsInactive = OptAccountsInactive.default(),
+							disabled 	: bool | None = False,
+							active_since	: int = 0,
+							inactive_since	: int = 0,
+							dist 		: OptAccountsDistributed | None = None,
+							sample 		: float = 0,
+							cache_valid: int = 0 ) -> int:
 		"""Get number of accounts from backend"""
 		raise NotImplementedError
 
@@ -796,28 +822,33 @@ class Backend(ABC):
 
 
 	async def accounts_insert_worker(self, accountQ : Queue[BSAccount], 
-									force: bool = False) -> EventCounter:
+									force: bool | None = None) -> EventCounter:
+		"""insert/replace accounts. force=None: insert, force=True/False: upsert=force"""
 		debug(f'starting, force={force}')
 		stats : EventCounter = EventCounter('accounts insert')
 		try:
 			while True:
 				account = await accountQ.get()
 				try:
-					if force:
-						debug(f'Trying to upsert account_id={account.id} into {self.backend}.{self.table_accounts}')
-						await self.account_replace(account, upsert=True)
-					else:
+					if force is None:
 						debug(f'Trying to insert account_id={account.id} into {self.backend}.{self.table_accounts}')
 						await self.account_insert(account)
-					if force:
-						stats.log('accounts added/updated')
+						stats.log('added')
 					else:
-						stats.log('accounts added')
+						debug(f'Trying to upsert account_id={account.id} into {self.backend}.{self.table_accounts}')
+						await self.account_replace(account, upsert=force)					
+						if force:
+							stats.log('added/updated')
+						else:
+							stats.log('updated')
 				except Exception as err:
 					debug(f'Error: {err}')
-					stats.log('accounts not added')
+					stats.log('not added/updated')
 				finally:
 					accountQ.task_done()
+		except QueueDone:
+			# IterableQueue() support
+			pass		
 		except CancelledError as err:
 			debug(f'Cancelled')
 		except Exception as err:
@@ -830,6 +861,12 @@ class Backend(ABC):
 		"""import accounts"""
 		raise NotImplementedError
 		yield BSAccount()
+
+
+	@abstractmethod
+	async def accounts_latest(self, regions: set[Region]) -> dict[Region, BSAccount]:
+		"""Return the latest accounts (=highest account_id) per region"""
+		raise NotImplementedError
 
 
 	#----------------------------------------
@@ -880,6 +917,18 @@ class Backend(ABC):
 	@abstractmethod
 	async def release_get_current(self) -> BSBlitzRelease | None:
 		"""Get the latest release in the backend"""
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def release_get_next(self, release: BSBlitzRelease) -> BSBlitzRelease | None:
+		"""Get next release"""
+		raise NotImplementedError
+
+
+	@abstractmethod
+	async def release_get_previous(self, release: BSBlitzRelease) -> BSBlitzRelease | None:
+		"""Get previous release"""
 		raise NotImplementedError
 
 
@@ -1025,8 +1074,8 @@ class Backend(ABC):
 
 	@abstractmethod
 	async def tank_stat_update(self, tank_stat: WGTankStat, 
-							 update: dict[str, Any] | None = None, 
-							 fields: list[str] | None = None) -> bool:
+							 	update: dict[str, Any] | None = None, 
+							 	fields: list[str] | None = None) -> bool:
 		"""Update an tank stat in the backend. Returns False 
 			if the tank stat was not updated"""
 		raise NotImplementedError
@@ -1047,23 +1096,33 @@ class Backend(ABC):
 
 	@abstractmethod
 	async def tank_stats_get(self, release: BSBlitzRelease | None = None,
-							regions: set[Region] = Region.API_regions(), 
-							accounts: Iterable[Account] | None = None,
-							tanks: Iterable[Tank] | None = None, 
-							since:  int = 0,
-							sample: float = 0) -> AsyncGenerator[WGTankStat, None]:
+							regions: 	set[Region] = Region.API_regions(), 
+							accounts: 	Sequence[Account] | None = None,
+							tanks: 		Sequence[Tank] | None = None, 
+							since:  	int = 0,
+							sample: 	float = 0) -> AsyncGenerator[WGTankStat, None]:
 		"""Return tank stats from the backend"""
 		raise NotImplementedError
 		yield WGTankStat()
 
 
 	@abstractmethod
+	async def tank_stats_export_career(self, 						
+									account: Account,							
+									release	: BSBlitzRelease,
+									) -> AsyncGenerator[list[WGTankStat], None]:
+		"""Return tank stats from the backend"""
+		raise NotImplementedError
+		yield list()
+
+
+	@abstractmethod
 	async def tank_stats_count(self, release: BSBlitzRelease | None = None,
-							regions: set[Region] = Region.API_regions(), 
-							accounts: Iterable[Account] | None = None,
-							tanks: Iterable[Tank] | None = None, 
-							since:  int = 0,
-							sample : float = 0) -> int:
+							regions: 	set[Region] = Region.API_regions(), 
+							accounts: 	Sequence[Account] | None = None,
+							tanks: 		Sequence[Tank] | None = None, 
+							since:  	int = 0,
+							sample : 	float = 0) -> int:
 		"""Get number of tank-stats from backend"""
 		raise NotImplementedError
 
@@ -1099,6 +1158,34 @@ class Backend(ABC):
 		"""Find duplicate tank stats from the backend"""
 		raise NotImplementedError
 		yield WGTankStat()
+
+
+	@abstractmethod
+	async def tank_stats_unique(self,
+								field	: str,
+								field_type: type[A], 
+								release	: BSBlitzRelease | None = None,
+								regions	: set[Region] = Region.API_regions(),
+								account	: BSAccount | None = None, 
+								tank	: Tank | None = None, 
+								randomize: bool = True
+								) -> AsyncGenerator[A, None]:
+		"""Return unique values of field"""
+		raise NotImplementedError
+		yield 
+
+	
+	@abstractmethod
+	async def tank_stats_unique_count(self,
+								field	: str,
+								field_type: type[A], 
+								release	: BSBlitzRelease | None = None,
+								regions	: set[Region] = Region.API_regions(),
+								account	: BSAccount | None = None, 
+								tank	: Tank | None = None
+								) -> int:
+		"""Return count of unique values of field"""
+		raise NotImplementedError
 
 
 	async def tank_stats_get_worker(self, tank_statsQ : Queue[WGTankStat], **getargs) -> EventCounter:
@@ -1182,7 +1269,7 @@ class Backend(ABC):
 	@abstractmethod
 	async def player_achievements_get(self, release: BSBlitzRelease | None = None,
 							regions: set[Region] = Region.API_regions(), 
-							accounts: Iterable[Account] | None = None,
+							accounts: Sequence[Account] | None = None,
 							since:  int = 0,
 							sample : float = 0) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
 		"""Return player achievements from the backend"""
@@ -1193,7 +1280,7 @@ class Backend(ABC):
 	@abstractmethod
 	async def player_achievements_count(self, release: BSBlitzRelease | None = None,
 							regions: set[Region] = Region.API_regions(), 
-							accounts: Iterable[Account] | None = None,
+							accounts: Sequence[Account] | None = None,
 							sample : float = 0) -> int:
 		"""Get number of player achievements from backend"""
 		raise NotImplementedError

@@ -49,6 +49,9 @@ async def main(argv: list[str]):
 
 	chdir(dirname(sys.argv[0]))
 	
+	## UPDATE after transition
+	message('Reminder: Rename Backend ErrorLog & AccountLog')
+	
 	# Default params
 	WG_APP_ID 	= 'wg-app-id-missing'
 	CONFIG 		= 'blitzstats.ini'	
@@ -97,12 +100,7 @@ async def main(argv: list[str]):
 			if 'GENERAL' in config.sections():
 				debug('Reading config section GENERAL')
 				configDef = config['GENERAL']
-				BACKEND = configDef.get('backend', None)
-			## Is this really needed here? 
-			# if 'WG' in config.sections():
-			# 	configWG 		= config['WG']
-			# 	WG_APP_ID		= configWG.get('wg_app_id', WG_APP_ID)
-			# 	WG_RATE_LIMIT	= configWG.getfloat('rate_limit', WG_RATE_LIMIT)
+				BACKEND = configDef.get('backend', None)			
 		else:
 			debug("No config file found")		
 
@@ -145,8 +143,7 @@ async def main(argv: list[str]):
 			raise Exception("Failed to define argument parser for: tank-stats")
 		if not player_achievements.add_args(player_achievements_parser, config):
 			raise Exception("Failed to define argument parser for: player-achievements")
-
-
+		
 		debug('parsing full args')
 		args = parser.parse_args(args=argv)
 		if args.help:
@@ -187,6 +184,7 @@ async def main(argv: list[str]):
 			
 	except Exception as err:
 		error(f'{err}')
+	message(f'program finished: {datetime.now():%Y-%m-%d %H:%M}')
 	
 
 def print_all(stats, out, limit: int | None =None) -> None:

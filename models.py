@@ -1,14 +1,13 @@
 from enum import StrEnum
 from sys import maxsize
 from time import time
-from typing import Optional, ClassVar
+from typing import Optional, ClassVar, Any
 from math import ceil
-from pydantic import validator, Field, HttpUrl
+from pydantic import validator, root_validator, Field, HttpUrl
 
 import logging
 
-
-from blitzutils.models import Region, Account, WGBlitzRelease
+from blitzutils.models import Region, Account, WGBlitzRelease, WGAccountInfo
 from pyutils.utils import JSONExportable, epoch_now, TypeExcludeDict, I, D, Idx, \
 						BackendIndexType, BackendIndex, DESCENDING, ASCENDING, TEXT
 
@@ -19,16 +18,19 @@ message	= logger.warning
 verbose	= logger.info
 debug	= logger.debug
 
-MIN_INACTIVITY_DAYS : int = 30 # days
+MIN_INACTIVITY_DAYS : int = 90 			# days
+MAX_UPDATE_INTERVAL : int = 365*24*3600 # 1 year
 
 class StatsTypes(StrEnum):
 	tank_stats 			= 'updated_tank_stats'
 	player_achievements = 'updated_player_achievements'
+	account_info 		= 'updated_account_info'
 
 
 class BSAccount(Account):	
 	updated_tank_stats 			: int | None = Field(default=None, alias='ut')
 	updated_player_achievements : int | None = Field(default=None, alias='up')
+	updated_account_info		: int | None = Field(default=None, alias='ui')
 	
 	added 						: int 		= Field(default_factory=epoch_now, alias='a')
 	inactive					: bool 		= Field(default=False, alias='i')
@@ -36,11 +38,11 @@ class BSAccount(Account):
 
 	_min_inactivity_days: int = MIN_INACTIVITY_DAYS
 
-	_exclude_export_DB_fields = None
-	_exclude_export_src_fields = None
-	_include_export_DB_fields = None
-	_include_export_src_fields= None
-	_exclude_defaults 		= False
+	_exclude_export_DB_fields 	= None
+	_exclude_export_src_fields 	= None
+	_include_export_DB_fields 	= None
+	_include_export_src_fields	= None
+	_exclude_defaults 			= False
 	
 	class Config:
 		allow_population_by_field_name = True
@@ -55,8 +57,18 @@ class BSAccount(Account):
 		indexes.append([ 	('disabled', ASCENDING), 
 							('inactive', ASCENDING), 									 
 							('region', 	ASCENDING), 
-							('id', 		ASCENDING), 
-							('added', 	DESCENDING)
+							('last_battle_time', DESCENDING), 
+							# ('id', 		ASCENDING), 							
+						])
+		indexes.append([ 	('disabled', ASCENDING),
+							('region', 	ASCENDING),
+							('last_battle_time', DESCENDING), 							
+						])
+		indexes.append([ 	('disabled', ASCENDING),
+							('region', 	ASCENDING),
+							('id', ASCENDING), 							
+						])
+		indexes.append([ 	('nickname', TEXT) 							
 						])
 		# indexes.append([ 	('disabled', ASCENDING), 
 		# 					('inactive', ASCENDING), 
@@ -106,25 +118,67 @@ class BSAccount(Account):
 			ValueError('time field must be >= 0')
 
 
+	@root_validator()
+	def set_inactive(cls, values: dict[str, Any]) -> dict[str, Any]:
+		lbt : int | None 
+		if (lbt := values.get('last_battle_time')) is not None:
+			inactive : bool = epoch_now() - lbt > cls._min_inactivity_days*24*3600
+			values['inactive'] = inactive
+		return values
+
+
 	def stats_updated(self, stats: StatsTypes) -> None:
 		assert type(stats) is StatsTypes, "'stats' need to be type(StatsTypes)"
 		setattr(self, stats.value, epoch_now())
 
 	
 	def is_inactive(self, stats_type: StatsTypes | None = None) -> bool:
+		"""Check if account is active"""
 		stats_updated : int | None
-		if stats_type is None:
-			stats_updated = epoch_now()
-		else:
-			stats_updated = getattr(self, stats_type.value)
+		if stats_type is None or \
+			(stats_updated := getattr(self, stats_type.value)) is None:
+			stats_updated = epoch_now()		
+		return stats_updated - self.last_battle_time > self._min_inactivity_days*24*3600
 
-		if stats_updated is None:
-			return False
-		elif self.last_battle_time is not None:
-			return stats_updated - self.last_battle_time > self._min_inactivity_days*24*3600
-		else:
-			# cannot tell, but assumption is that yes
+
+	def update_needed(self, stats_type: StatsTypes) -> bool:
+		"""Check whether the account needs an update"""
+		stats_updated : int | None
+		if (stats_updated := getattr(self, stats_type.value)) is None:
+			stats_updated = 0
+		return (epoch_now() - stats_updated) > \
+				min(MAX_UPDATE_INTERVAL, (stats_updated - self.last_battle_time)/3)
+							
+
+	def update(self, update: WGAccountInfo) -> bool:
+		"""Update BSAccount() from WGACcountInfo i.e. from WG API"""
+		updated : bool = False
+		try:
+			updated = super().update(update)	
+			self.updated_account_info = epoch_now()
 			return True
+		except Exception as err:
+			error(f'{err}')
+		return updated
+
+
+	@classmethod
+	def transform_Account(cls, in_obj: Account) -> Optional['BSAccount']:
+		"""Transform Account object to BSAccount"""
+		try:
+			return BSAccount(id = in_obj.id, 
+							region = in_obj.region, 
+							last_battle_time = in_obj.last_battle_time,
+							created_at = in_obj.created_at,
+							updated_at = in_obj.updated_at,
+							nickname = in_obj.nickname, 
+							updated_account_info = epoch_now())			
+		except Exception as err:
+			error(f'{err}')
+		return None
+
+
+BSAccount.register_transformation(Account, BSAccount.transform_Account)
 
 
 class BSBlitzRelease(WGBlitzRelease):
@@ -166,5 +220,3 @@ class BSBlitzRelease(WGBlitzRelease):
 		return super().txt_row(format) + extra
 
 
-class YastatistAccount(JSONExportable):
-	id: int

@@ -17,7 +17,8 @@ import queue
 from backend import Backend, OptAccountsInactive, BSTableType, \
 	ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL, get_sub_type
 from models import BSAccount, BSBlitzRelease, StatsTypes
-from accounts import split_accountQ_by_region, create_accountQ
+from accounts import split_accountQ, split_accountQ_batch, create_accountQ, \
+					create_accountQ_batch, accounts_parse_args
 from releases import release_mapper
 
 from pyutils import BucketMapper, IterableQueue, QueueDone, \
@@ -85,34 +86,57 @@ def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> b
 
 
 def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
-	try:
+	try:		
 		debug('starting')
 		WG_RATE_LIMIT 	: float = 10
-		WORKERS_WGAPI 	: int 	= 10
+		WG_WORKERS 		: int 	= 10
 		WG_APP_ID		: str 	= WGApi.DEFAULT_WG_APP_ID
+		
+		# Lesta / RU
+		LESTA_RATE_LIMIT: float = 10
+		LESTA_WORKERS 	: int 	= 10
+		LESTA_APP_ID 	: str 	= WGApi.DEFAULT_LESTA_APP_ID
+		NULL_RESPONSES 	: int 	= 20
 		
 		if config is not None and 'WG' in config.sections():
 			configWG 		= config['WG']
 			WG_RATE_LIMIT	= configWG.getfloat('rate_limit', WG_RATE_LIMIT)
-			WORKERS_WGAPI	= configWG.getint('api_workers', WORKERS_WGAPI)			
-			WG_APP_ID		= configWG.get('wg_app_id', WGApi.DEFAULT_WG_APP_ID)
+			WG_WORKERS		= configWG.getint('api_workers', WG_WORKERS)			
+			WG_APP_ID		= configWG.get('app_id', WG_APP_ID)
 
-		parser.add_argument('--workers', type=int, default=WORKERS_WGAPI, help='Set number of asynchronous workers')
+		if config is not None and 'LESTA' in config.sections():
+			configRU 		= config['LESTA']
+			LESTA_RATE_LIMIT	= configRU.getfloat('rate_limit', LESTA_RATE_LIMIT)
+			LESTA_WORKERS		= configRU.getint('api_workers', LESTA_WORKERS)			
+			LESTA_APP_ID		= configRU.get('app_id', LESTA_APP_ID)
+
+		parser.add_argument('--workers', type=int, default=WG_WORKERS, help='Set number of asynchronous workers')
 		parser.add_argument('--wg-app-id', type=str, default=WG_APP_ID, help='Set WG APP ID')
 		parser.add_argument('--rate-limit', type=float, default=WG_RATE_LIMIT, metavar='RATE_LIMIT',
 							help='Rate limit for WG API')
+		parser.add_argument('--ru-app-id', type=str, default=LESTA_APP_ID, metavar='APP_ID',
+							help='Set Lesta (RU) APP ID')
 		parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
-							default=[ r.value for r in Region.API_regions() ], help='Filter by region (default: eu + com + asia + ru)')
+							default=[ r.value for r in Region.API_regions() ], 
+							help='Filter by region (default: eu + com + asia + ru)')
+		parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
+								default=OptAccountsInactive.both.value, 
+								help='Include inactive accounts')
+		parser.add_argument('--active-since', type=str, default=None, metavar='RELEASE',
+							help='Fetch stats for accounts that have been active since RELEASE')
+		parser.add_argument('--inactive-since', type=str,  default=None, metavar='RELEASE',
+							help='Fetch stats for accounts that have been inactive since RELEASE')	
+		parser.add_argument('--cache_valid', type=int, default=0, metavar='DAYS',
+							help='Fetch only accounts with stats older than DAYS')		
+		parser.add_argument('--distributed', '--dist',type=str, dest='distributed', metavar='I:N', 
+							default=None, help='Distributed fetching for accounts: id %% N == I')
+		parser.add_argument('--accounts', type=str, default=[], nargs='*', 
+							metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
+							help='Fetch stats for the listed ACCOUNT_ID(s)')
 		parser.add_argument('--force', action='store_true', default=False, 
 							help='Overwrite existing file(s) when exporting')
 		parser.add_argument('--sample', type=float, default=0, metavar='SAMPLE',
 							help='Fetch stats for SAMPLE of accounts. If 0 < SAMPLE < 1, SAMPLE defines a %% of users')
-		parser.add_argument('--cache_valid', type=int, default=None, metavar='DAYS',
-							help='Fetch only accounts with stats older than DAYS')		
-		parser.add_argument('--distributed', '--dist',type=str, dest='distributed', metavar='I:N', 
-							default=None, help='Distributed fetching for accounts: id %% N == I')
-		parser.add_argument('--accounts', type=str, default=[], nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
-							help='Fetch player achievements for the listed ACCOUNT_ID(s)')
 		parser.add_argument('--file',type=str, metavar='FILENAME', default=None, 
 							help='Read account_ids from FILENAME one account_id per line')
 
@@ -210,15 +234,17 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 	
 	debug('starting')
 	
-	wg 	: WGApi = WGApi(WG_app_id=args.wg_app_id, rate_limit=args.rate_limit)
+	wg 	: WGApi = WGApi(app_id=args.wg_app_id, 
+						ru_app_id= args.ru_app_id,
+						rate_limit=args.rate_limit)
 
 	try:
-		stats 	 	: EventCounter								= EventCounter('player-achievements fetch')
-		regions	 	: set[Region]								= { Region(r) for r in args.region }
-		regionQs 	: dict[str, IterableQueue[BSAccount]]		= dict()
-		accountQ	: IterableQueue[BSAccount] 					= IterableQueue(maxsize=ACCOUNTS_Q_MAX)
-		retryQ  	: IterableQueue[BSAccount] 					= IterableQueue() 
-		statsQ	 	: Queue[list[WGPlayerAchievementsMaxSeries]]= Queue(maxsize=PLAYER_ACHIEVEMENTS_Q_MAX)
+		stats 	 	: EventCounter									= EventCounter('player-achievements fetch')
+		regions	 	: set[Region]									= { Region(r) for r in args.region }
+		regionQs 	: dict[str, IterableQueue[list[BSAccount]]]	= dict()
+		# accountQ	: IterableQueue[BSAccount] 						= IterableQueue(maxsize=10000)
+		retryQ  	: IterableQueue[BSAccount] 						= IterableQueue() 
+		statsQ	 	: Queue[list[WGPlayerAchievementsMaxSeries]]	= Queue(maxsize=PLAYER_ACHIEVEMENTS_Q_MAX)
 
 		tasks : list[Task] = list()
 		tasks.append(create_task(fetch_player_achievements_backend_worker(db, statsQ)))
@@ -227,23 +253,28 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 		accounts : int 
 		if len(args.accounts) > 0:
 			accounts = len(args.accounts)
-		else:	
+		else:
+			accounts_args : dict[str, Any] | None
+			if (accounts_args := await accounts_parse_args(db, args)) is None:
+				raise ValueError(f'could not parse account args: {args}')	
 			accounts = await db.accounts_count(StatsTypes.player_achievements, 
-												regions=regions, 
-												inactive=OptAccountsInactive.no,  
-												sample=args.sample, 
-												cache_valid=args.cache_valid)		
+												**accounts_args)		
 		for r in regions:
-			regionQs[r.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)			
+			regionQs[r.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
+			tasks.append(create_task(create_accountQ_batch(db, args, region=r, 
+															accountQ=regionQs[r.name],
+															stats_type=StatsTypes.player_achievements)))			
 			for _ in range(ceil(min([args.workers, accounts])/len(regions))):
 				tasks.append(create_task(fetch_player_achievements_api_region_worker(wg_api=wg, region=r, 
 																					accountQ=regionQs[r.name], 
 																					statsQ=statsQ, 
 																					retryQ=retryQ)))
-		task_bar : Task = create_task(alive_bar_monitor(list(regionQs.values()), total=accounts, 
+		task_bar : Task = create_task(alive_bar_monitor(list(regionQs.values()), 
+														total=accounts, 
+														batch=100,
 														title="Fetching player achievement"))
-		tasks.append(create_task(split_accountQ_by_region(accountQ, regionQs)))
-		stats.merge_child(await create_accountQ(db, args, accountQ, StatsTypes.player_achievements))
+		# tasks.append(create_task(split_accountQ(accountQ, regionQs)))
+		# stats.merge_child(await create_accountQ(db, args, accountQ, StatsTypes.player_achievements))
 		
 		# waiting for region queues to finish
 		for rname, Q in regionQs.items():
@@ -251,7 +282,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 			await Q.join()
 		task_bar.cancel()
 
-		print(f'retryQ: size={retryQ.qsize()},  is_finished={retryQ.is_finished}')
+		print(f'retryQ: size={retryQ.qsize()},  is_filled={retryQ.is_filled}')
 		if not retryQ.empty():
 			regionQs = dict()
 			accounts = retryQ.qsize()
@@ -260,11 +291,11 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 				regionQs[r.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX) 
 				for _ in range(ceil(min([args.workers, accounts])/len(regions))):
 					tasks.append(create_task(fetch_player_achievements_api_region_worker(wg_api=wg, region=r, 
-																					accountQ=regionQs[r.name],																					
-																					statsQ=statsQ)))
+																						accountQ=regionQs[r.name],																					
+																						statsQ=statsQ)))
 			task_bar = create_task(alive_bar_monitor(list(regionQs.values()), total=accounts, 
 														title="Re-trying player achievement"))
-			await split_accountQ_by_region(retryQ, regionQs)
+			await split_accountQ_batch(retryQ, regionQs)
 			for rname, Q in regionQs.items():
 				debug(f'waiting for region re-try queue to finish: {rname} size={Q.qsize()}')
 				await Q.join()
@@ -279,19 +310,14 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 		return True
 	except Exception as err:
 		error(f'{err}')
-	finally:
-	
-		wg_stats : dict[str, str] | None = wg.print_server_stats()
-		if wg_stats is not None and logger.level <= logging.WARNING:
-			message('WG API stats:')
-			for server in wg_stats:
-				message(f'{server.capitalize():7s}: {wg_stats[server]}')
+	finally:	
+		wg.print()
 		await wg.close()
 	return False
 
 
 async def fetch_player_achievements_api_region_worker(wg_api: WGApi, region: Region,  
-														accountQ: IterableQueue[BSAccount], 
+														accountQ: IterableQueue[list[BSAccount]], 
 														statsQ:   Queue[list[WGPlayerAchievementsMaxSeries]],
 														retryQ:   IterableQueue[BSAccount] | None = None) -> EventCounter:
 	"""Fetch stats from a single region"""
@@ -304,25 +330,14 @@ async def fetch_player_achievements_api_region_worker(wg_api: WGApi, region: Reg
 		stats 		= EventCounter(f'fetch {region.name}')
 		await retryQ.add_producer()
 
-	Q_finished 	= False
-	
 	try:
-		while not Q_finished:
+		while True:
 			accounts 	: dict[int, BSAccount]	= dict()
 			account_ids : list[int] 			= list()
-			
+					
+			for account in await accountQ.get():
+				accounts[account.id] = account
 			try:				
-				for _ in range(100):
-					try:
-						account : BSAccount = await accountQ.get()
-						debug(f'read: {account}')
-						accounts[account.id] = account
-					except (QueueDone, CancelledError):
-						Q_finished = True
-						break
-					except Exception as err:
-						error(f'Failed to read account from queue: {err}')
-
 				account_ids = [ a for a in accounts.keys() ]
 				debug(f'account_ids={account_ids}')
 				if len(account_ids) > 0:
@@ -340,13 +355,14 @@ async def fetch_player_achievements_api_region_worker(wg_api: WGApi, region: Reg
 					else:
 						stats.log('re-tries', len(account_ids) - len(res))
 						for a in accounts.values():
-							await retryQ.put(a)
+							await retryQ.put(a)			
 			except Exception as err:
 				error(f'{err}')
 			finally:
-				for _ in range(len(account_ids)):
-					accountQ.task_done()
+				accountQ.task_done()
 
+	except QueueDone:
+		debug('accountQ finished')
 	except Exception as err:
 		error(f'{err}')
 	if retryQ is not None:
@@ -407,11 +423,7 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 		WORKERS 	 	: int 							= args.workers
 		import_db   	: Backend | None 				= None
 		import_backend 	: str 							= args.import_backend
-		import_model 	: type[JSONExportable] | None 	= None
 		map_releases	: bool 							= not args.no_release_map
-
-		# if (import_model := get_sub_type(args.import_model, JSONExportable)) is None:
-		# 	assert False, "--import-model has to be subclass of JSONExportable" 
 
 		release_map : BucketMapper[BSBlitzRelease] = await release_mapper(db)
 		workers : list[Task] = list()
