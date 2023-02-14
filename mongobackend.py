@@ -637,20 +637,26 @@ class MongoBackend(Backend):
 				except Exception as err:
 					error(f'{err}')
 		except Exception as err:
-			error(f'Error getting data from {self.table_uri(table_type)}: {err}')
+			error(f'Failed to get data from {self.table_uri(table_type)}: {err}')
 
-
-	# async def _datas_count(self, dbc : AsyncIOMotorCollection,
-	# 						pipeline : list[dict[str, Any]]) -> int:
-	# 	try:
-	# 		debug('starting')
-	# 		pipeline.append({ '$count': 'total' })
-	# 		async for res in dbc.aggregate(pipeline, allowDiskUse=True):
-	# 			# print(f"_data_count(): total={res['total']}")
-	# 			return int(res['total'])
-	# 	except Exception as err:
-	# 		error(f'Error counting documents in {self.backend}.{dbc.name}: {err}')
-	# 	return -1
+	## NOT NEEDED ?
+	async def _datas_get_batch(self, 
+								table_type: BSTableType,						
+								pipeline : list[dict[str, Any]], 
+								batch: int = 100
+								) -> AsyncGenerator[list[JSONExportable], None]:
+		"""get data in batches"""
+		try:
+			debug('starting')
+			model : type[JSONExportable] = self.get_model(table_type)
+			async for objs in self.objs_export(table_type, pipeline, batch=batch):
+				try:
+					# a failed parse will FAIL the whole batch
+					yield [ model.parse_obj(obj) for obj in objs ]
+				except Exception as err:
+					error(f'model format error: {err}')
+		except Exception as err:
+			error(f'Failed to get data batch from {self.table_uri(table_type)}: {err}')
 
 
 	async def _datas_export(self, table_type: BSTableType,
