@@ -158,7 +158,7 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 							help='Fetch stats for accounts that have been active since RELEASE/DAYS')
 		parser.add_argument('--inactive-since', type=str,  default=None, metavar='RELEASE/DAYS',
 							help='Fetch stats for accounts that have been inactive since RELEASE/DAYS')		
-		parser.add_argument('--cache-valid', type=int, default=0, metavar='DAYS',
+		parser.add_argument('--cache-valid', type=float, default=1, metavar='DAYS',
 							help='Fetch stats only for accounts with stats older than DAYS')		
 		parser.add_argument('--distributed', '--dist',type=str, dest='distributed', metavar='I:N', 
 							default=None, help='Distributed fetching for accounts: id %% N == I')
