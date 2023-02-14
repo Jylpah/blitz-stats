@@ -21,7 +21,7 @@ from models_import import WG_Account
 from pyutils import CounterQueue, EventCounter,  TXTExportable, \
 	CSVExportable, JSONExportable, IterableQueue, QueueDone, \
 		alive_bar_monitor, get_url, get_url_JSON_model, epoch_now, \
-		export, is_alphanum
+		export, is_alphanum, chunker
 from blitzutils.models import WoTBlitzReplayJSON, WoTBlitzReplayData, Region, Account, WGAccountInfo
 from blitzutils import WoTinspector, WGApi
 from yastatist import get_accounts_since
@@ -533,15 +533,15 @@ async def cmd_update_wg(db		: Backend,
 		WORKERS 		: int 	= max( int(args.wg_workers / len(Region.API_regions())), 1)
 		workQ_creators	: list[Task]	= list()
 		api_workers 	: list[Task]	= list()
-		inQ				: IterableQueue[BSAccount] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
+		# inQ				: IterableQueue[BSAccount] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
 		workQs 			: dict[Region, IterableQueue[list[BSAccount]]] = dict()		
 
 		for region in regions:
 			workQs[region] = IterableQueue(maxsize=100)
-
-		workQ_creators.append(create_task(create_accountQ(db, args, inQ, 
-														  stats_type=StatsTypes.account_info)))
-		workQ_creators.append(create_task(batch_accountQ(inQ, workQs)))
+			workQ_creators.append(create_task(create_accountQ_batch(db, args, region=region, 
+																	accountQ=workQs[region], 
+														  			stats_type=StatsTypes.account_info)))
+		#workQ_creators.append(create_task(split_accountQ_batch(inQ, workQs)))
 
 		for region in regions:
 			for _ in range(WORKERS):
@@ -1199,7 +1199,8 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 		force		: bool 					= args.force
 		export_stdout : bool 				= filename == '-'
 		sample 		: float = args.sample
-		accountQs 	: dict[str, IterableQueue[BSAccount]] = dict()
+		accountQs 	: dict[str, IterableQueue[BSAccount]]	 = dict()
+		# regionQs 	: dict[Region, IterableQueue[BSAccount]] = dict()
 		account_workers : list[Task] = list()
 		export_workers 	: list[Task] = list()
 
@@ -1251,7 +1252,7 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 														force=force, append=args.append)))			
 			# split by region
 			export_workers.append(create_task(split_accountQ(inQ=accountQs['all'], 
-																	regionQs=accountQs)))
+																regionQs=accountQs)))
 		else:
 			accountQs['all'] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
 			await accountQs['all'].add_producer()
@@ -1432,6 +1433,114 @@ async def create_accountQ(db		: Backend,
 	return stats
 
 
+async def create_accountQ_batch(db			: Backend, 
+								args 		: Namespace, 
+								region 		: Region,
+								accountQ	: IterableQueue[list[BSAccount]], 
+								stats_type	: StatsTypes | None = None, 
+								batch 		: int = 100) -> EventCounter:
+	"""Helper to make accountQ from arguments"""	
+	stats : EventCounter = EventCounter(f'{db.driver}: accounts')
+	debug('starting')
+	try:
+		accounts 	: list[BSAccount] | None = None
+		try:
+			accounts = read_args_accounts(args.accounts)
+		except:
+			debug('could not read --accounts')
+
+		await accountQ.add_producer()
+
+		if accounts is not None:
+
+			accounts = [ account for account in accounts if account.region == region ]
+			for account_batch in chunker(accounts, batch):
+				try:
+					await accountQ.put(account_batch)
+					stats.log('read', len(account_batch))
+				except Exception as err:
+					error(f'{err}')
+					stats.log('errors', len(accounts))
+
+		elif args.file is not None:
+			accounts = list()
+			if args.file.endswith('.txt'):
+
+				async for account in BSAccount.import_txt(args.file):
+					try:
+						accounts.append(account)
+						if len(accounts) == batch:
+							await accountQ.put(accounts)
+							stats.log('read', batch)
+							accounts = list()
+					except Exception as err:
+						error(f'Could not add account to the queue: {err}')
+						stats.log('errors')
+
+			elif args.file.endswith('.csv'):
+				async for account in BSAccount.import_csv(args.file):
+					try:
+						accounts.append(account)
+						if len(accounts) == batch:
+							await accountQ.put(accounts)
+							stats.log('read', batch)
+							accounts = list()
+					except Exception as err:
+						error(f'Could not add account to the queue: {err}')
+						stats.log('errors')
+
+			elif args.file.endswith('.json'):
+				async for account in BSAccount.import_json(args.file):
+					try:
+						accounts.append(account)
+						if len(accounts) == batch:
+							await accountQ.put(accounts)
+							stats.log('read', batch)
+							accounts = list()
+					except Exception as err:
+						error(f'Could not add account to the queue: {err}')
+						stats.log('errors')
+		
+			if len(accounts) > 0:
+				await accountQ.put(accounts)
+				stats.log('read', len(accounts))
+		else:
+			# message('counting accounts...')
+			# start = time()
+			# total : int = await db.accounts_count(stats_type=stats_type, 
+			# 										regions=regions, 
+			# 										inactive=inactive,
+			# 										disabled=disabled,
+			# 										active_since=active_since,
+			# 										inactive_since=inactive_since,
+			# 										sample=sample, 
+			# 										cache_valid=cache_valid)
+			# end = time()
+			# message(f'{total} accounts, counting took {end - start}')
+
+			accounts_args : dict[str, Any] | None
+			if (accounts_args := await accounts_parse_args(db, args)) is not None:
+				accounts_args['regions'] = { region }
+				async for accounts in db.accounts_get_batch(stats_type=stats_type, batch=batch, 
+															**accounts_args):
+					try:
+						await accountQ.put(accounts)
+						stats.log('read', len(accounts))
+					except Exception as err:
+						error(f'Could not add accounts to queue: {err}')
+						stats.log('errors')
+			else:
+				error(f'could not parse args: {args}')		
+	except CancelledError as err:
+		debug(f'Cancelled')
+	except Exception as err:
+		error(f'{err}')		
+	finally:
+		await accountQ.finish()	
+		
+	return stats
+
+
 async def create_accountQ_active(db: Backend, 
 							accountQ: Queue[BSAccount], 
 							release: BSBlitzRelease, 
@@ -1474,7 +1583,7 @@ async def split_accountQ(inQ : IterableQueue[BSAccount],
 					await regionQs[account.region.name].put(account)
 					stats.log(account.region.name)
 				else:
-					stats.log(f'excluded region: {account.region.name}')
+					stats.log(f'excluded region: {account.region}')
 			except CancelledError:
 				raise CancelledError from None
 			except Exception as err:
@@ -1494,15 +1603,15 @@ async def split_accountQ(inQ : IterableQueue[BSAccount],
 	return stats
 
 
-async def batch_accountQ(inQ	: IterableQueue[BSAccount],
-						outQs   : dict[Region, IterableQueue[list[BSAccount]]],						
-						batch 	: int = 100) -> EventCounter:
+async def split_accountQ_batch(inQ			: IterableQueue[BSAccount],
+								regionQs  	: dict[str, IterableQueue[list[BSAccount]]],						
+								batch 		: int = 100) -> EventCounter:
 	"""Make accountQ batches by region"""
-	stats : EventCounter = EventCounter('batch maker')
-	batches : dict[Region, list[BSAccount]] = dict()
-	region : Region
+	stats 	: EventCounter = EventCounter('batch maker')
+	batches : dict[str, list[BSAccount]] = dict()
+	region 	: str
 	try:		
-		for region, Q in outQs.items():
+		for region, Q in regionQs.items():
 			batches[region] = list()
 			await Q.add_producer()
 
@@ -1510,10 +1619,10 @@ async def batch_accountQ(inQ	: IterableQueue[BSAccount],
 			account = await inQ.get()
 			try:
 				region = account.region				
-				if region in outQs.keys(): 
+				if region in regionQs.keys(): 
 					batches[region].append(account)					
 					if len(batches[region]) == batch:
-						await outQs[region].put(batches[region])
+						await regionQs[region].put(batches[region])
 						stats.log(f'{region} accounts', len(batches[region]))
 						batches[region] = list()
 				else:
@@ -1530,13 +1639,13 @@ async def batch_accountQ(inQ	: IterableQueue[BSAccount],
 		debug('inQ done')
 		for region in batches.keys():
 			if len(batches[region]) > 0:
-				await outQs[region].put(batches[region])
+				await regionQs[region].put(batches[region])
 				stats.log(f'{region} accounts', len(batches[region]))	
 	except CancelledError as err:
 		debug(f'Cancelled')
 	except Exception as err:
 		error(f'{err}')
-	for Q in outQs.values():
+	for Q in regionQs.values():
 		await Q.finish()
 	return stats
 
