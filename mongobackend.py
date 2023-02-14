@@ -1240,7 +1240,7 @@ class MongoBackend(Backend):
 			if (obj := await self._data_get(BSTableType.Releases, idx = release)) is not None:
 				return BSBlitzRelease.transform_obj(obj, self.model_releases)
 		except Exception as err:
-			error(f'{err}')
+			debug(f'{err}')
 		return None
 
 
