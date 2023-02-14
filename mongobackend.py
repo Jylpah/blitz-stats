@@ -745,7 +745,7 @@ class MongoBackend(Backend):
 									active_since	: int = 0,
 									inactive_since	: int = 0,
 									sample			: float = 0,
-									cache_valid		: int = 0
+									cache_valid		: float = 0
 									) -> list[dict[str, Any]] | None:
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
 		try:
@@ -785,7 +785,7 @@ class MongoBackend(Backend):
 			if cache_valid > 0:
 				if update_field is not None:
 					match.append({ '$or': [ { update_field: None}, 
-											{ update_field: { '$lt': epoch_now() - cache_valid }},											
+											{ update_field: { '$lt': epoch_now() - int(cache_valid) }},											
 										] })
 				else: 
 					error("--cache-valid requires stat_type")
@@ -827,7 +827,7 @@ class MongoBackend(Backend):
 							inactive_since	: int = 0,
 							dist 		: OptAccountsDistributed | None = None, 
 							sample 		: float = 0, 
-							cache_valid	: int = 0,
+							cache_valid	: float = 0,
 							batch 		: int = 100) -> AsyncGenerator[list[BSAccount], None]:
 		"""Get accounts from Mongo DB as batches 
 			inactive: true = only inactive, false = not inactive, none = AUTO"""
@@ -876,7 +876,7 @@ class MongoBackend(Backend):
 							inactive_since	: int = 0,
 							dist 		: OptAccountsDistributed | None = None,
 							sample 		: float = 0,
-							cache_valid: int = 0 ) -> AsyncGenerator[BSAccount, None]:
+							cache_valid	: float = 0 ) -> AsyncGenerator[BSAccount, None]:
 		"""Get accounts from Mongo DB
 			inactive: true = only inactive, false = not inactive, none = AUTO"""
 		try:
@@ -919,7 +919,7 @@ class MongoBackend(Backend):
 							inactive_since	: int = 0,
 							dist 		: OptAccountsDistributed | None = None,
 							sample 		: float = 0,
-							cache_valid: int = 0 ) -> int:
+							cache_valid	: float = 0 ) -> int:
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
 		try:
 			debug('starting')
