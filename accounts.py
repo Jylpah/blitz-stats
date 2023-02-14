@@ -1345,8 +1345,10 @@ async def count_accounts(db: Backend, args : Namespace, stats_type: StatsTypes |
 
 async def create_accountQ(db		: Backend, 
 						  args 		: Namespace, 
-						  accountQ	: IterableQueue[BSAccount], 
-						  stats_type: StatsTypes | None = None) -> EventCounter:
+						  accountQ	: IterableQueue[BSAccount],
+						  region	: Region | None = None,
+						  stats_type: StatsTypes | None = None, 
+						  ) -> EventCounter:
 	"""Helper to make accountQ from arguments"""	
 	stats : EventCounter = EventCounter(f'{db.driver}: accounts')
 	debug('starting')
@@ -1361,6 +1363,8 @@ async def create_accountQ(db		: Backend,
 
 		if accounts is not None:
 
+			if region is not None:
+				accounts = [ account for account in accounts if account.region == region ]
 			for account in accounts:
 				try:
 					await accountQ.put(account)
@@ -1372,10 +1376,11 @@ async def create_accountQ(db		: Backend,
 		elif args.file is not None:
 
 			if args.file.endswith('.txt'):
-				async for account in BSAccount.import_txt(args.file):
+				async for account in BSAccount.import_txt(args.file):					
 					try:
-						await accountQ.put(account)
-						stats.log('read')
+						if region is None or account.region == region:
+							await accountQ.put(account)
+							stats.log('read')
 					except Exception as err:
 						error(f'Could not add account to the queue: {err}')
 						stats.log('errors')
@@ -1383,8 +1388,9 @@ async def create_accountQ(db		: Backend,
 			elif args.file.endswith('.csv'):
 				async for account in BSAccount.import_csv(args.file):
 					try:
-						await accountQ.put(account)
-						stats.log('read')
+						if region is None or account.region == region:
+							await accountQ.put(account)
+							stats.log('read')
 					except Exception as err:
 						error(f'Could not add account to the queue: {err}')
 						stats.log('errors')
@@ -1392,8 +1398,9 @@ async def create_accountQ(db		: Backend,
 			elif args.file.endswith('.json'):
 				async for account in BSAccount.import_json(args.file):
 					try:
-						await accountQ.put(account)
-						stats.log('read')
+						if region is None or account.region == region:
+							await accountQ.put(account)
+							stats.log('read')
 					except Exception as err:
 						error(f'Could not add account to the queue: {err}')
 						stats.log('errors')
@@ -1414,6 +1421,8 @@ async def create_accountQ(db		: Backend,
 
 			accounts_args : dict[str, Any] | None
 			if (accounts_args := await accounts_parse_args(db, args)) is not None:
+				if region is not None:
+					accounts_args['regions'] = { region }
 				async for account in db.accounts_get(stats_type=stats_type, 
 													**accounts_args):
 					try:
@@ -1436,8 +1445,8 @@ async def create_accountQ(db		: Backend,
 
 async def create_accountQ_batch(db			: Backend, 
 								args 		: Namespace, 
-								region 		: Region,
 								accountQ	: IterableQueue[list[BSAccount]], 
+								region 		: Region,
 								stats_type	: StatsTypes | None = None, 
 								batch 		: int = 100) -> EventCounter:
 	"""Helper to make accountQ from arguments"""	
@@ -1469,11 +1478,12 @@ async def create_accountQ_batch(db			: Backend,
 
 				async for account in BSAccount.import_txt(args.file):
 					try:
-						accounts.append(account)
-						if len(accounts) == batch:
-							await accountQ.put(accounts)
-							stats.log('read', batch)
-							accounts = list()
+						if account.region == region:
+							accounts.append(account)
+							if len(accounts) == batch:
+								await accountQ.put(accounts)
+								stats.log('read', batch)
+								accounts = list()
 					except Exception as err:
 						error(f'Could not add account to the queue: {err}')
 						stats.log('errors')
@@ -1481,11 +1491,12 @@ async def create_accountQ_batch(db			: Backend,
 			elif args.file.endswith('.csv'):
 				async for account in BSAccount.import_csv(args.file):
 					try:
-						accounts.append(account)
-						if len(accounts) == batch:
-							await accountQ.put(accounts)
-							stats.log('read', batch)
-							accounts = list()
+						if account.region == region:
+							accounts.append(account)
+							if len(accounts) == batch:
+								await accountQ.put(accounts)
+								stats.log('read', batch)
+								accounts = list()
 					except Exception as err:
 						error(f'Could not add account to the queue: {err}')
 						stats.log('errors')
@@ -1493,11 +1504,12 @@ async def create_accountQ_batch(db			: Backend,
 			elif args.file.endswith('.json'):
 				async for account in BSAccount.import_json(args.file):
 					try:
-						accounts.append(account)
-						if len(accounts) == batch:
-							await accountQ.put(accounts)
-							stats.log('read', batch)
-							accounts = list()
+						if account.region == region:
+							accounts.append(account)
+							if len(accounts) == batch:
+								await accountQ.put(accounts)
+								stats.log('read', batch)
+								accounts = list()
 					except Exception as err:
 						error(f'Could not add account to the queue: {err}')
 						stats.log('errors')

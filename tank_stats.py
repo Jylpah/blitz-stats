@@ -141,7 +141,8 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 			LESTA_WORKERS		= configRU.getint('api_workers', LESTA_WORKERS)			
 			LESTA_APP_ID		= configRU.get('app_id', LESTA_APP_ID)
 
-		parser.add_argument('--workers', type=int, default=WG_WORKERS, help='Set number of asynchronous workers')
+		parser.add_argument('--workers', type=int, dest='wg_workers', default=WG_WORKERS, 
+							help='Set number of asynchronous workers')
 		parser.add_argument('--wg-app-id', type=str, default=WG_APP_ID, metavar='APP_ID',
 							help='Set WG APP ID')
 		parser.add_argument('--ru-app-id', type=str, default=LESTA_APP_ID, metavar='APP_ID',
@@ -407,8 +408,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 	assert 'wg_app_id' in args and type(args.wg_app_id) is str, "'wg_app_id' must be set and string"
 	assert 'rate_limit' in args and (type(args.rate_limit) is float or \
 			type(args.rate_limit) is int), "'rate_limit' must set and a number"	
-	assert 'region' in args and type(args.region) is list, "'region' must be set and a list"
-	
+		
 	debug('starting')
 	wg 	: WGApi = WGApi(app_id=args.wg_app_id, 
 						ru_app_id= args.ru_app_id, 
@@ -416,15 +416,16 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 
 	try:
 		stats 	 : EventCounter				= EventCounter('tank-stats fetch')	
-		accountQ : IterableQueue[BSAccount]	= IterableQueue(maxsize=ACCOUNTS_Q_MAX)
+		regions	 : set[Region] 				= { Region(r) for r in args.region }
+		accountQs: dict[Region, IterableQueue[BSAccount]]	= dict()
 		retryQ 	 : IterableQueue[BSAccount] | None = None
 		statsQ	 : Queue[list[WGTankStat]]	= Queue(maxsize=TANK_STATS_Q_MAX)
 
 		if not args.disabled:
 			retryQ = IterableQueue()		# must not use maxsize
 		
-		tasks : list[Task] = list()
-		tasks.append(create_task(fetch_backend_worker(db, statsQ)))
+		workers : list[Task] = list()
+		workers.append(create_task(fetch_backend_worker(db, statsQ)))
 
 		# Process accountQ
 		accounts : int 
@@ -438,16 +439,28 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 			accounts = await db.accounts_count(StatsTypes.tank_stats, 
 												**accounts_args)
 		
-		task_bar : Task = create_task(alive_bar_monitor([accountQ], total=accounts, 
-														title="Fetching tank stats"))
-		for _ in range(min([args.workers, ceil(accounts/4)])):
-			tasks.append(create_task(fetch_api_worker(db, wg_api=wg, accountQ=accountQ, 
-														statsQ=statsQ, retryQ=retryQ, 
-														disabled=args.disabled)))
+		WORKERS	: int 	= max( int(args.wg_workers / len(Region.API_regions())), 1)
+		WORKERS = min( [ WORKERS, ceil(accounts/4) ])
+		for r in regions:
+			accountQs[r] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
+			workers.append(create_task(create_accountQ(db, args, accountQs[r], 
+														region=r,
+														stats_type=StatsTypes.tank_stats)))
+			for _ in range(WORKERS):
+				workers.append(create_task(fetch_api_worker(db, wg_api=wg, accountQ=accountQs[r], 
+															statsQ=statsQ, retryQ=retryQ, 
+															disabled=args.disabled)))
 
-		stats.merge_child(await create_accountQ(db, args, accountQ, StatsTypes.tank_stats))
-		debug(f'AccountQ created. count={accountQ.count}, size={accountQ.qsize()}')
-		await accountQ.join()
+		task_bar : Task = create_task(alive_bar_monitor([Q for Q in accountQs.values() ], 
+														total=accounts, 
+														title="Fetching tank stats"))
+		
+
+		# stats.merge_child(await create_accountQ(db, args, accountQ, StatsTypes.tank_stats))
+		# debug(f'AccountQ created. count={accountQ.count}, size={accountQ.qsize()}')
+		for r, Q in accountQs.items():
+			debug(f'waiting for account queue to finish: {r}')
+			await accountQs[r].join()
 		task_bar.cancel()
 
 		# Process retryQ
@@ -456,8 +469,8 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 			debug(f'retryQ: size={retry_accounts} is_filled={retryQ.is_filled}')
 			task_bar = create_task(alive_bar_monitor([retryQ], total=retry_accounts, 
 													  title="Retrying failed accounts"))
-			for _ in range(min([args.workers, ceil(retry_accounts/4)])):
-				tasks.append(create_task(fetch_api_worker(db, wg_api=wg,  
+			for _ in range(min([args.wg_workers, ceil(retry_accounts/4)])):
+				workers.append(create_task(fetch_api_worker(db, wg_api=wg,  
 														accountQ=retryQ, 
 														statsQ=statsQ)))
 			await retryQ.join()
@@ -465,10 +478,10 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 		
 		await statsQ.join()
 
-		for task in tasks:
+		for task in workers:
 			task.cancel()
 		
-		for ec in await gather(*tasks, return_exceptions=True):
+		for ec in await gather(*workers, return_exceptions=True):
 			if isinstance(ec, EventCounter):
 				stats.merge_child(ec)
 		message(stats.print(do_print=False, clean=True))
