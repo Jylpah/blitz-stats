@@ -1704,7 +1704,8 @@ async def accounts_parse_args(db: Backend, args : Namespace,) -> dict[str, Any] 
 		start : datetime
 		try:
 			if ( rel := await db.release_get(args.inactive_since)) is not None:
-				res['inactive_since'] = rel.cut_off
+				if (prev := await db.release_get_previous(rel)) is not None:
+					res['inactive_since'] = prev.cut_off				
 			else:
 				days = int(args.inactive_since)
 				start = today - timedelta(days=days)
