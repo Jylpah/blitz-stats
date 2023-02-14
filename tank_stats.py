@@ -63,13 +63,16 @@ DEFAULT_EXPORT_DATA_FORMAT 	: str 		= EXPORT_DATA_FORMATS[0]
 
 # export_total_rows : int = 0
 db 			: Backend
+mp_wg 		: WGApi
 readQ 		: AsyncQueue[list[Any] | None]
 progressQ   : AsyncQueue[int | None]
 workQ_t   	: AsyncQueue[int | None]
 workQ_a     : AsyncQueue[BSAccount | None]
+tank_statQ  : AsyncQueue[list[WGTankStat]]
 writeQ 		: AsyncQueue[pd.DataFrame]
 in_model	: type[JSONExportable]
 mp_options	: dict[str, Any] = dict()
+mp_args 	: Namespace
 
 ########################################################
 # 
@@ -168,6 +171,8 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 							metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
 							help="Fetch stats for the listed ACCOUNT_ID(s). \
 									ACCOUNT_ID format 'account_id:region' or 'account_id'")
+		parser.add_argument('--mp', action='store_true', default=False, 
+							help='Multiprocess fetch')		
 		parser.add_argument('--force', action='store_true', default=False, 
 							help='Fetch stats for all accounts')
 		parser.add_argument('--sample', type=float, default=0, metavar='SAMPLE',
@@ -372,7 +377,10 @@ async def cmd(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		if args.tank_stats_cmd == 'fetch':
-			return await cmd_fetch(db, args)
+			if args.mp:
+				return await cmd_fetchMP(db, args)
+			else:	
+				return await cmd_fetch(db, args)
 
 		elif args.tank_stats_cmd == 'edit':
 			return await cmd_edit(db, args)
@@ -399,9 +407,148 @@ async def cmd(db: Backend, args : Namespace) -> bool:
 
 ########################################################
 # 
+# cmd_fetchMP()
+#
+########################################################
+
+async def cmd_fetchMP(db: Backend, args : Namespace) -> bool:
+	"""fetch tank stats"""
+	assert 'wg_app_id' in args and type(args.wg_app_id) is str, "'wg_app_id' must be set and string"
+	assert 'rate_limit' in args and (type(args.rate_limit) is float or \
+			type(args.rate_limit) is int), "'rate_limit' must set and a number"	
+		
+	debug('starting')
+	
+	try:
+		stats 	: EventCounter				= EventCounter('tank-stats fetch')	
+		regions	: set[Region] 				= { Region(r) for r in args.region }
+		worker 	: Task
+
+		with Manager() as manager:
+			writeQ 	: queue.Queue[list[WGTankStat]]	= manager.Queue(TANK_STATS_Q_MAX)
+			statsQ	: AsyncQueue[list[WGTankStat]]	= AsyncQueue.from_queue(writeQ)
+			WORKERS : int = len(regions)
+
+			with Pool(processes=WORKERS, initializer=fetch_mp_init, 
+					  initargs=[ db.config, args, writeQ ]) as pool:
+				
+				accounts_args : dict[str, Any] | None
+				if (accounts_args := await accounts_parse_args(db, args)) is None:
+					raise ValueError(f'could not parse account args: {args}')
+				
+				worker = create_task(fetch_backend_worker(db, statsQ))
+				accounts : int = await db.accounts_count(StatsTypes.tank_stats, 
+												 		**accounts_args)
+				debug(f'starting {WORKERS} workers')
+				results : AsyncResult = pool.map_async(fetch_mp_worker_start, 
+														regions)
+				pool.close()
+
+				done : int
+				prev : int = 0
+				with alive_bar(accounts, title='Fetching tank stats ') as bar:
+					while not results.ready():
+						done = statsQ.done
+						if done -prev > 0:
+							bar(done - prev)
+						prev = done
+						await sleep(1) 
+				
+				await statsQ.join()
+				await stats.gather_stats([worker])
+		
+		message(stats.print(do_print=False, clean=True))
+		return True
+	except Exception as err:
+		error(f'{err}')
+
+	return False
+
+
+def fetch_mp_init(backend_config: dict[str, Any],
+				  args 			: Namespace, 
+				  writeQ 		: queue.Queue[list[WGTankStat]], 
+				  ):
+	"""Initialize static/global backend into a forked process"""
+	global db, tank_statQ, mp_args
+	debug(f'starting (PID={getpid()})')
+
+	if (tmp_db := Backend.create(**backend_config)) is None:
+		raise ValueError('could not create backend')	
+	db 			= tmp_db
+	mp_args 	= args	
+	tank_statQ 	= AsyncQueue.from_queue(writeQ)	
+	debug('finished')
+
+
+def fetch_mp_worker_start(region: Region) -> EventCounter:
+	"""Forkable tank stats fetch worker for tank stats"""
+	debug(f'starting fetch worker {region}')
+	return run(fetch_mp_worker(region), debug=False)
+
+
+async def  fetch_mp_worker(region: Region) -> EventCounter:
+	"""Forkable tank stats import worker for latest (career) stats"""
+	global db, tank_statQ, mp_args
+
+	debug(f'fetch worker starting: {region}')
+	stats 		: EventCounter 	= EventCounter(f'fetch {region}')
+	accountQ	: IterableQueue[BSAccount] = IterableQueue(maxsize=TANK_STATS_Q_MAX)
+	retryQ 		: IterableQueue[BSAccount] | None = None
+	THREADS 	: int 			= 20		
+	args 		: Namespace 	= mp_args
+	
+	try:
+		args.regions = { region }
+		wg 	: WGApi = WGApi(app_id=args.wg_app_id, 
+							ru_app_id= args.ru_app_id, 
+							rate_limit=args.rate_limit)
+
+		if not args.disabled:
+			retryQ = IterableQueue()	# must not use maxsize
+		
+		workers : list[Task] = list()
+			
+		for _ in range(THREADS):
+			workers.append(create_task(fetch_api_worker(db, wg_api=wg, 
+														accountQ=accountQ, 
+														statsQ=tank_statQ, 
+														retryQ=retryQ, 
+														disabled=args.disabled)))	
+		stats.merge(await create_accountQ(db, args, accountQ, 
+								region=region,
+								stats_type=StatsTypes.tank_stats))
+
+		debug(f'waiting for account queue to finish: {region}')
+		await accountQ.join()
+		
+		# Process retryQ
+		if retryQ is not None and not retryQ.empty():
+			retry_accounts : int = retryQ.qsize()
+			debug(f'retryQ: size={retry_accounts} is_filled={retryQ.is_filled}')			
+			for _ in range(THREADS):
+				workers.append(create_task(fetch_api_worker(db, wg_api=wg,  
+															accountQ=retryQ, 
+															statsQ=tank_statQ)))
+			await retryQ.join()
+
+		await stats.gather_stats(workers)
+		
+	except Exception as err:
+		error(f'{err}')
+	finally:
+		wg.print()
+		await wg.close()
+		
+	return stats
+
+
+########################################################
+# 
 # cmd_fetch()
 #
 ########################################################
+
 
 async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 	"""fetch tank stats"""
