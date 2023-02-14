@@ -1102,7 +1102,7 @@ class MongoBackend(Backend):
 			if pipeline is None:
 				raise ValueError(f'could not create get-accounts {self.table_uri(BSTableType.Accounts)} cursor')
 			message(f'DEBUG accounts_get(): pipeline={pipeline}')
-			
+
 			async for objs in self.objs_export(BSTableType.Accounts, pipeline, batch=batch):			
 				try:
 					players : list[BSAccount] = list()
@@ -1135,7 +1135,6 @@ class MongoBackend(Backend):
 			inactive: true = only inactive, false = not inactive, none = AUTO"""
 		try:
 			debug('starting')
-			NOW = epoch_now()
 			pipeline : list[dict[str, Any]] | None
 			pipeline = await self._mk_pipeline_accounts(stats_type=stats_type, 
 														regions=regions,
@@ -1147,10 +1146,6 @@ class MongoBackend(Backend):
 														sample=sample, 
 														cache_valid=cache_valid)
 
-			update_field : str | None = None
-			if stats_type is not None:
-				update_field = stats_type.value
-
 			if pipeline is None:
 				raise ValueError(f'could not create get-accounts {self.table_uri(BSTableType.Accounts)} cursor')
 			message(f'DEBUG accounts_get(): pipeline={pipeline}')
@@ -1159,12 +1154,9 @@ class MongoBackend(Backend):
 					if (player := BSAccount.transform_obj(data)) is None:
 						continue
 					# if not force and not disabled and inactive is None and player.inactive:
-					if not disabled and inactive == OptAccountsInactive.auto and player.inactive:
-						assert update_field is not None, "automatic inactivity detection requires stat_type"
-						updated = getattr(player, update_field)
-						if (player.last_battle_time is not None) and \
-							(updated is not None) and \
-							(NOW - updated) < min(MAX_UPDATE_INTERVAL, (updated - player.last_battle_time)/2):
+					if not disabled and inactive == OptAccountsInactive.auto \
+						and stats_type is not None:						
+						if not player.update_needed(stats_type):
 							continue
 					yield player
 				except Exception as err:
