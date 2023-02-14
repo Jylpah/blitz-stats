@@ -20,5 +20,7 @@ pyarrow
 pydantic
 tomli
 types-aiofiles
+types-requests
+ujson
 xmltodict
 yappi
