@@ -771,6 +771,22 @@ class Backend(ABC):
 	
 
 	@abstractmethod
+	async def accounts_get_batch(self, 
+							stats_type 	: StatsTypes | None = None, 
+							regions		: set[Region] = Region.API_regions(), 
+							inactive 	: OptAccountsInactive = OptAccountsInactive.default(), 
+							disabled	: bool | None = False, 
+							active_since	: int = 0,
+							inactive_since	: int = 0,
+							dist 		: OptAccountsDistributed | None = None, 
+							sample 		: float = 0, 
+							cache_valid	: int = 0,
+							batch 		: int = 100) -> AsyncGenerator[list[BSAccount], None]:
+		"""Get accounts from backend"""
+		raise NotImplementedError
+		yield BSAccount(id=-1)
+
+	@abstractmethod
 	async def accounts_count(self, 
 							stats_type 	: StatsTypes | None = None,
 							regions		: set[Region] = Region.API_regions(),
