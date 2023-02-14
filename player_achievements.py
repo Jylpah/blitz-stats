@@ -17,7 +17,8 @@ import queue
 from backend import Backend, OptAccountsInactive, BSTableType, \
 	ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL, get_sub_type
 from models import BSAccount, BSBlitzRelease, StatsTypes
-from accounts import split_accountQ, create_accountQ, accounts_parse_args
+from accounts import split_accountQ, split_accountQ_batch, create_accountQ, \
+					create_accountQ_batch, accounts_parse_args
 from releases import release_mapper
 
 from pyutils import BucketMapper, IterableQueue, QueueDone, \
@@ -116,17 +117,26 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 		parser.add_argument('--ru-app-id', type=str, default=LESTA_APP_ID, metavar='APP_ID',
 							help='Set Lesta (RU) APP ID')
 		parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
-							default=[ r.value for r in Region.API_regions() ], help='Filter by region (default: eu + com + asia + ru)')
-		parser.add_argument('--force', action='store_true', default=False, 
-							help='Overwrite existing file(s) when exporting')
-		parser.add_argument('--sample', type=float, default=0, metavar='SAMPLE',
-							help='Fetch stats for SAMPLE of accounts. If 0 < SAMPLE < 1, SAMPLE defines a %% of users')
+							default=[ r.value for r in Region.API_regions() ], 
+							help='Filter by region (default: eu + com + asia + ru)')
+		parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
+								default=OptAccountsInactive.both.value, 
+								help='Include inactive accounts')
+		parser.add_argument('--active-since', type=str, default=None, metavar='RELEASE',
+							help='Fetch stats for accounts that have been active since RELEASE')
+		parser.add_argument('--inactive-since', type=str,  default=None, metavar='RELEASE',
+							help='Fetch stats for accounts that have been inactive since RELEASE')	
 		parser.add_argument('--cache_valid', type=int, default=0, metavar='DAYS',
 							help='Fetch only accounts with stats older than DAYS')		
 		parser.add_argument('--distributed', '--dist',type=str, dest='distributed', metavar='I:N', 
 							default=None, help='Distributed fetching for accounts: id %% N == I')
-		parser.add_argument('--accounts', type=str, default=[], nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
-							help='Fetch player achievements for the listed ACCOUNT_ID(s)')
+		parser.add_argument('--accounts', type=str, default=[], nargs='*', 
+							metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
+							help='Fetch stats for the listed ACCOUNT_ID(s)')
+		parser.add_argument('--force', action='store_true', default=False, 
+							help='Overwrite existing file(s) when exporting')
+		parser.add_argument('--sample', type=float, default=0, metavar='SAMPLE',
+							help='Fetch stats for SAMPLE of accounts. If 0 < SAMPLE < 1, SAMPLE defines a %% of users')
 		parser.add_argument('--file',type=str, metavar='FILENAME', default=None, 
 							help='Read account_ids from FILENAME one account_id per line')
 
@@ -229,12 +239,12 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 						rate_limit=args.rate_limit)
 
 	try:
-		stats 	 	: EventCounter								= EventCounter('player-achievements fetch')
-		regions	 	: set[Region]								= { Region(r) for r in args.region }
-		regionQs 	: dict[str, IterableQueue[BSAccount]]		= dict()
-		accountQ	: IterableQueue[BSAccount] 					= IterableQueue(maxsize=10000)
-		retryQ  	: IterableQueue[BSAccount] 					= IterableQueue() 
-		statsQ	 	: Queue[list[WGPlayerAchievementsMaxSeries]]= Queue(maxsize=PLAYER_ACHIEVEMENTS_Q_MAX)
+		stats 	 	: EventCounter									= EventCounter('player-achievements fetch')
+		regions	 	: set[Region]									= { Region(r) for r in args.region }
+		regionQs 	: dict[str, IterableQueue[list[BSAccount]]]	= dict()
+		# accountQ	: IterableQueue[BSAccount] 						= IterableQueue(maxsize=10000)
+		retryQ  	: IterableQueue[BSAccount] 						= IterableQueue() 
+		statsQ	 	: Queue[list[WGPlayerAchievementsMaxSeries]]	= Queue(maxsize=PLAYER_ACHIEVEMENTS_Q_MAX)
 
 		tasks : list[Task] = list()
 		tasks.append(create_task(fetch_player_achievements_backend_worker(db, statsQ)))
@@ -250,16 +260,21 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 			accounts = await db.accounts_count(StatsTypes.player_achievements, 
 												**accounts_args)		
 		for r in regions:
-			regionQs[r.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)			
+			regionQs[r.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
+			tasks.append(create_task(create_accountQ_batch(db, args, region=r, 
+															accountQ=regionQs[r.name],
+															stats_type=StatsTypes.player_achievements)))			
 			for _ in range(ceil(min([args.workers, accounts])/len(regions))):
 				tasks.append(create_task(fetch_player_achievements_api_region_worker(wg_api=wg, region=r, 
 																					accountQ=regionQs[r.name], 
 																					statsQ=statsQ, 
 																					retryQ=retryQ)))
-		task_bar : Task = create_task(alive_bar_monitor(list(regionQs.values()), total=accounts, 
+		task_bar : Task = create_task(alive_bar_monitor(list(regionQs.values()), 
+														total=accounts, 
+														batch=100,
 														title="Fetching player achievement"))
-		tasks.append(create_task(split_accountQ(accountQ, regionQs)))
-		stats.merge_child(await create_accountQ(db, args, accountQ, StatsTypes.player_achievements))
+		# tasks.append(create_task(split_accountQ(accountQ, regionQs)))
+		# stats.merge_child(await create_accountQ(db, args, accountQ, StatsTypes.player_achievements))
 		
 		# waiting for region queues to finish
 		for rname, Q in regionQs.items():
@@ -276,11 +291,11 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 				regionQs[r.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX) 
 				for _ in range(ceil(min([args.workers, accounts])/len(regions))):
 					tasks.append(create_task(fetch_player_achievements_api_region_worker(wg_api=wg, region=r, 
-																					accountQ=regionQs[r.name],																					
-																					statsQ=statsQ)))
+																						accountQ=regionQs[r.name],																					
+																						statsQ=statsQ)))
 			task_bar = create_task(alive_bar_monitor(list(regionQs.values()), total=accounts, 
 														title="Re-trying player achievement"))
-			await split_accountQ(retryQ, regionQs)
+			await split_accountQ_batch(retryQ, regionQs)
 			for rname, Q in regionQs.items():
 				debug(f'waiting for region re-try queue to finish: {rname} size={Q.qsize()}')
 				await Q.join()
@@ -302,7 +317,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 
 
 async def fetch_player_achievements_api_region_worker(wg_api: WGApi, region: Region,  
-														accountQ: IterableQueue[BSAccount], 
+														accountQ: IterableQueue[list[BSAccount]], 
 														statsQ:   Queue[list[WGPlayerAchievementsMaxSeries]],
 														retryQ:   IterableQueue[BSAccount] | None = None) -> EventCounter:
 	"""Fetch stats from a single region"""
@@ -315,25 +330,14 @@ async def fetch_player_achievements_api_region_worker(wg_api: WGApi, region: Reg
 		stats 		= EventCounter(f'fetch {region.name}')
 		await retryQ.add_producer()
 
-	Q_finished 	= False
-	
 	try:
-		while not Q_finished:
+		while True:
 			accounts 	: dict[int, BSAccount]	= dict()
 			account_ids : list[int] 			= list()
-			
+					
+			for account in await accountQ.get():
+				accounts[account.id] = account
 			try:				
-				for _ in range(100):
-					try:
-						account : BSAccount = await accountQ.get()
-						debug(f'read: {account}')
-						accounts[account.id] = account
-					except (QueueDone, CancelledError):
-						Q_finished = True
-						break
-					except Exception as err:
-						error(f'Failed to read account from queue: {err}')
-
 				account_ids = [ a for a in accounts.keys() ]
 				debug(f'account_ids={account_ids}')
 				if len(account_ids) > 0:
@@ -351,13 +355,14 @@ async def fetch_player_achievements_api_region_worker(wg_api: WGApi, region: Reg
 					else:
 						stats.log('re-tries', len(account_ids) - len(res))
 						for a in accounts.values():
-							await retryQ.put(a)
+							await retryQ.put(a)			
 			except Exception as err:
 				error(f'{err}')
 			finally:
-				for _ in range(len(account_ids)):
-					accountQ.task_done()
+				accountQ.task_done()
 
+	except QueueDone:
+		debug('accountQ finished')
 	except Exception as err:
 		error(f'{err}')
 	if retryQ is not None:
