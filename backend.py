@@ -764,7 +764,7 @@ class Backend(ABC):
 							inactive_since	: int = 0,
 							dist 		: OptAccountsDistributed | None = None, 
 							sample 		: float = 0, 
-							cache_valid	: int = 0) -> AsyncGenerator[BSAccount, None]:
+							cache_valid	: float = 0) -> AsyncGenerator[BSAccount, None]:
 		"""Get accounts from backend"""
 		raise NotImplementedError
 		yield BSAccount(id=-1)
@@ -780,7 +780,7 @@ class Backend(ABC):
 							inactive_since	: int = 0,
 							dist 		: OptAccountsDistributed | None = None, 
 							sample 		: float = 0, 
-							cache_valid	: int = 0,
+							cache_valid	: float = 0,
 							batch 		: int = 100) -> AsyncGenerator[list[BSAccount], None]:
 		"""Get accounts from backend"""
 		raise NotImplementedError
@@ -796,7 +796,7 @@ class Backend(ABC):
 							inactive_since	: int = 0,
 							dist 		: OptAccountsDistributed | None = None,
 							sample 		: float = 0,
-							cache_valid: int = 0 ) -> int:
+							cache_valid	: float = 0 ) -> int:
 		"""Get number of accounts from backend"""
 		raise NotImplementedError
 

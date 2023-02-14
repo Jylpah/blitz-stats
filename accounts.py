@@ -166,7 +166,7 @@ def add_args_update_wg(parser: ArgumentParser, config: Optional[ConfigParser] = 
 		parser.add_argument('--inactive-since', type=str,  default=None, metavar='RELEASE/DAYS',
 							help='update account info for accounts that have been inactive since RELEASE/DAYS')		
 		parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
-								default=OptAccountsInactive.auto.value, help='Include inactive accounts')
+								default=OptAccountsInactive.both.value, help='Include inactive accounts')
 		parser.add_argument('--accounts', type=str, default=[], nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
 								help="update accounts for the listed ACCOUNT_ID(s). \
 									ACCOUNT_ID format 'account_id:region' or 'account_id'")		
@@ -174,7 +174,7 @@ def add_args_update_wg(parser: ArgumentParser, config: Optional[ConfigParser] = 
 		# 					metavar='ACCOUNT_ID', type=int, default=0, 
 		# 					help='start fetching account_ids from ACCOUNT_ID (default = 0 \
 		# 						start from highest ACCOUNT_ID in backend)')
-		parser.add_argument('--cache-valid', type=int, default=ACCOUNT_INFO_CACHE_VALID, metavar='DAYS',
+		parser.add_argument('--cache-valid', type=float, default=ACCOUNT_INFO_CACHE_VALID, metavar='DAYS',
 							help='Fetch stats only for accounts with stats older than DAYS')
 		parser.add_argument('--sample', type=float, default=0, metavar='SAMPLE',
 							help='update SAMPLE of accounts. If 0 < SAMPLE < 1, SAMPLE defines a %% of users')
