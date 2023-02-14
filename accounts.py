@@ -955,13 +955,13 @@ async def cmd_fetch_wi(db: Backend,
 		
 		pages : range = range(start_page,(start_page + max_pages), step)
 
-		stats.merge_child(await update_wi_get_replay_ids(db, wi, args, replay_idQ, pages))
+		stats.merge_child(await fetch_wi_get_replay_ids(db, wi, args, replay_idQ, pages))
 
 		replays 	: int = replay_idQ.qsize()
 		replays_left: int = replays
 		with alive_bar(replays, title="Fetching replays ", manual=True, enrich_print=False) as bar:
 			for _ in range(workersN):
-				workers.append(create_task(update_wi_fetch_replays(db, wi, replay_idQ, accountQ)))
+				workers.append(create_task(fetch_wi_fetch_replays(db, wi, replay_idQ, accountQ)))
 			while True:
 				await sleep(1)
 				replays_left = replay_idQ.qsize()
@@ -982,59 +982,59 @@ async def cmd_fetch_wi(db: Backend,
 	return stats
 
 
-async def update_wi_spider_replays(db: Backend, wi: WoTinspector, args: Namespace,
-											replay_idQ: Queue[str], pages: range) -> EventCounter:
-	"""Spider replays.WoTinspector.com and feed found replay IDs into replayQ. Return stats"""
-	debug('starting')
-	stats			: EventCounter = EventCounter('Crawler')
-	max_old_replays	: int 	= args.wi_max_old_replays
-	force			: bool 	= args.force
-	old_replays		: int 	= 0
+# async def update_wi_spider_replays(db: Backend, wi: WoTinspector, args: Namespace,
+# 											replay_idQ: Queue[str], pages: range) -> EventCounter:
+# 	"""Spider replays.WoTinspector.com and feed found replay IDs into replayQ. Return stats"""
+# 	debug('starting')
+# 	stats			: EventCounter = EventCounter('Crawler')
+# 	max_old_replays	: int 	= args.wi_max_old_replays
+# 	force			: bool 	= args.force
+# 	old_replays		: int 	= 0
 
-	try:
-		debug(f'Starting ({len(pages)} pages)')
-		with alive_bar(len(pages), title= "Spidering replays", enrich_print=False) as bar:
-			for page in pages:			
-				try:
-					if old_replays > max_old_replays:						
-						raise CancelledError
-						#  break
-					debug(f'spidering page {page}')
-					url: str = wi.get_url_replay_listing(page)
-					resp: str | None = await get_url(wi.session, url)
-					if resp is None:
-						error('could not spider replays.WoTinspector.com page {page}')
-						stats.log('errors')
-						continue
-					debug(f'HTTP request OK')
-					replay_ids: set[str] = wi.parse_replay_ids(resp)
-					debug(f'Page {page}: {len(replay_ids)} found')
-					if len(replay_ids) == 0:
-						break
-					for replay_id in replay_ids:
-						res: WoTBlitzReplayData | None = await db.replay_get(replay_id=replay_id)
-						if res is not None:
-							debug(f'Replay already in the {db.backend}: {replay_id}')
-							stats.log('old replays found')
-							if not force:
-								old_replays += 1
-							continue
-						else:
-							await replay_idQ.put(replay_id)
-							stats.log('new replays')
-				except Exception as err:
-					error(f'{err}')
-				finally:
-					bar()
-	except CancelledError as err:
-		# debug(f'Cancelled')
-		message(f'{max_old_replays} found. Stopping spidering for more')
-	except Exception as err:
-		error(f'{err}')
-	return stats
+# 	try:
+# 		debug(f'Starting ({len(pages)} pages)')
+# 		with alive_bar(len(pages), title= "Spidering replays", enrich_print=False) as bar:
+# 			for page in pages:			
+# 				try:
+# 					if old_replays > max_old_replays:						
+# 						raise CancelledError
+# 						#  break
+# 					debug(f'spidering page {page}')
+# 					url: str = wi.get_url_replay_listing(page)
+# 					resp: str | None = await get_url(wi.session, url)
+# 					if resp is None:
+# 						error('could not spider replays.WoTinspector.com page {page}')
+# 						stats.log('errors')
+# 						continue
+# 					debug(f'HTTP request OK')
+# 					replay_ids: set[str] = wi.parse_replay_ids(resp)
+# 					debug(f'Page {page}: {len(replay_ids)} found')
+# 					if len(replay_ids) == 0:
+# 						break
+# 					for replay_id in replay_ids:
+# 						res: WoTBlitzReplayData | None = await db.replay_get(replay_id=replay_id)
+# 						if res is not None:
+# 							debug(f'Replay already in the {db.backend}: {replay_id}')
+# 							stats.log('old replays found')
+# 							if not force:
+# 								old_replays += 1
+# 							continue
+# 						else:
+# 							await replay_idQ.put(replay_id)
+# 							stats.log('new replays')
+# 				except Exception as err:
+# 					error(f'{err}')
+# 				finally:
+# 					bar()
+# 	except CancelledError as err:
+# 		# debug(f'Cancelled')
+# 		message(f'{max_old_replays} found. Stopping spidering for more')
+# 	except Exception as err:
+# 		error(f'{err}')
+# 	return stats
 
 
-async def update_wi_get_replay_ids(db: Backend, wi: WoTinspector, args: Namespace,
+async def fetch_wi_get_replay_ids(db: Backend, wi: WoTinspector, args: Namespace,
 									replay_idQ: Queue[str], pages: range) -> EventCounter:
 	"""Spider replays.WoTinspector.com and feed found replay IDs into replayQ. Return stats"""
 	debug('starting')
@@ -1076,7 +1076,7 @@ async def update_wi_get_replay_ids(db: Backend, wi: WoTinspector, args: Namespac
 	return stats
 
 
-async def update_wi_fetch_replays(db			: Backend, 
+async def fetch_wi_fetch_replays(db			: Backend, 
 								  wi			: WoTinspector, 
 								  replay_idQ 	: Queue[str], 
 								  accountQ 		: Queue[BSAccount]
