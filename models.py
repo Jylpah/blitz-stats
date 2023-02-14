@@ -18,7 +18,8 @@ message	= logger.warning
 verbose	= logger.info
 debug	= logger.debug
 
-MIN_INACTIVITY_DAYS : int = 90 # days
+MIN_INACTIVITY_DAYS : int = 90 			# days
+MAX_UPDATE_INTERVAL : int = 365*24*3600 # 1 year
 
 class StatsTypes(StrEnum):
 	tank_stats 			= 'updated_tank_stats'
@@ -116,6 +117,7 @@ class BSAccount(Account):
 		else:
 			ValueError('time field must be >= 0')
 
+
 	@root_validator()
 	def set_inactive(cls, values: dict[str, Any]) -> dict[str, Any]:
 		lbt : int | None 
@@ -131,19 +133,22 @@ class BSAccount(Account):
 
 	
 	def is_inactive(self, stats_type: StatsTypes | None = None) -> bool:
+		"""Check if account is active"""
 		stats_updated : int | None
-		if stats_type is None:
-			stats_updated = epoch_now()
-		else:
-			stats_updated = getattr(self, stats_type.value)
+		if stats_type is None or \
+			(stats_updated := getattr(self, stats_type.value)) is None:
+			stats_updated = epoch_now()		
+		return stats_updated - self.last_battle_time > self._min_inactivity_days*24*3600
 
-		if stats_updated is None:
-			return False
-		elif self.last_battle_time is not None:
-			return stats_updated - self.last_battle_time > self._min_inactivity_days*24*3600
-		else:
-			# cannot tell, but assumption is that yes
-			return True
+
+	def update_needed(self, stats_type: StatsTypes) -> bool:
+		"""Check whether the account needs an update"""
+		stats_updated : int | None
+		if (stats_updated := getattr(self, stats_type.value)) is None:
+			stats_updated = 0
+		return (epoch_now() - stats_updated) > \
+				min(MAX_UPDATE_INTERVAL, (stats_updated - self.last_battle_time)/3)
+							
 
 	def update(self, update: WGAccountInfo) -> bool:
 		"""Update BSAccount() from WGACcountInfo i.e. from WG API"""
