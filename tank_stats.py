@@ -150,26 +150,27 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 							help='Rate limit for WG API')
 		parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
 							default=[ r.value for r in Region.API_regions() ], 
-							help='Filter by region (default: eu + com + asia + ru)')
-		parser.add_argument('--force', action='store_true', default=False, 
-							help='Fetch stats for all accounts')
-		parser.add_argument('--sample', type=float, default=0, metavar='SAMPLE',
-							help='Fetch tank stats for SAMPLE of accounts. If 0 < SAMPLE < 1, SAMPLE defines a %% of users')
+							help='Filter by region (default: eu + com + asia + ru)')		
+		parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
+								default=OptAccountsInactive.both.value, help='Include inactive accounts')
 		parser.add_argument('--active-since', type=str, default=None, metavar='RELEASE',
-							help='update account info for accounts that have been active since RELEASE')
+							help='Fetch stats for accounts that have been active since RELEASE')
 		parser.add_argument('--inactive-since', type=str,  default=None, metavar='RELEASE',
-							help='update account info for accounts that have been inactive since RELEASE')		
+							help='Fetch stats for accounts that have been inactive since RELEASE')		
 		parser.add_argument('--cache-valid', type=int, default=0, metavar='DAYS',
 							help='Fetch stats only for accounts with stats older than DAYS')		
 		parser.add_argument('--distributed', '--dist',type=str, dest='distributed', metavar='I:N', 
 							default=None, help='Distributed fetching for accounts: id %% N == I')
 		parser.add_argument('--check-disabled',  dest='disabled', action='store_true', default=False, 
 							help='Check disabled accounts')
-		parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
-								default=OptAccountsInactive.default().value, help='Include inactive accounts')
-		parser.add_argument('--accounts', type=str, default=[], nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
-								help="Exports tank stats for the listed ACCOUNT_ID(s). \
+		parser.add_argument('--accounts', type=str, default=[], nargs='*', 
+							metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
+							help="Fetch stats for the listed ACCOUNT_ID(s). \
 									ACCOUNT_ID format 'account_id:region' or 'account_id'")
+		parser.add_argument('--force', action='store_true', default=False, 
+							help='Fetch stats for all accounts')
+		parser.add_argument('--sample', type=float, default=0, metavar='SAMPLE',
+							help='Fetch tank stats for SAMPLE of accounts. If 0 < SAMPLE < 1, SAMPLE defines a %% of users')
 		parser.add_argument('--file',type=str, metavar='FILENAME', default=None, 
 							help='Read account_ids from FILENAME one account_id per line')
 		parser.add_argument('--last', action='store_true', default=False, help=SUPPRESS)
