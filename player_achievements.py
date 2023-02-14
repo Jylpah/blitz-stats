@@ -122,10 +122,10 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 		parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
 								default=OptAccountsInactive.both.value, 
 								help='Include inactive accounts')
-		parser.add_argument('--active-since', type=str, default=None, metavar='RELEASE',
-							help='Fetch stats for accounts that have been active since RELEASE')
+		parser.add_argument('--active-since', type=str, default=None, metavar='RELEASE/DAYS',
+							help='Fetch stats for accounts that have been active since RELEASE/DAYS')
 		parser.add_argument('--inactive-since', type=str,  default=None, metavar='RELEASE',
-							help='Fetch stats for accounts that have been inactive since RELEASE')	
+							help='Fetch stats for accounts that have been inactive since RELEASE/DAYS')	
 		parser.add_argument('--cache_valid', type=int, default=0, metavar='DAYS',
 							help='Fetch only accounts with stats older than DAYS')		
 		parser.add_argument('--distributed', '--dist',type=str, dest='distributed', metavar='I:N', 

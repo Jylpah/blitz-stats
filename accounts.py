@@ -1,6 +1,7 @@
 from argparse import ArgumentParser, Namespace
 from configparser import ConfigParser
 from typing import Optional, cast, Type, Any, TypeVar, Sequence
+from datetime import datetime, timedelta
 from time import time
 import logging
 from asyncio import create_task, gather, wait, Queue, CancelledError, Task, Condition, sleep
@@ -160,10 +161,10 @@ def add_args_update_wg(parser: ArgumentParser, config: Optional[ConfigParser] = 
 							help='filter by region (default: ' + ' + '.join(Region.API_regions()) + ')')
 		parser.add_argument('--disabled', action='store_true', default=False, 
 							help='Check existing disabled accounts')
-		parser.add_argument('--active-since', type=str, default=None, metavar='RELEASE',
-							help='update account info for accounts that have been active since RELEASE')
-		parser.add_argument('--inactive-since', type=str,  default=None, metavar='RELEASE',
-							help='update account info for accounts that have been inactive since RELEASE')		
+		parser.add_argument('--active-since', type=str, default=None, metavar='RELEASE/DAYS',
+							help='update account info for accounts that have been active since RELEASE/DAYS')
+		parser.add_argument('--inactive-since', type=str,  default=None, metavar='RELEASE/DAYS',
+							help='update account info for accounts that have been inactive since RELEASE/DAYS')		
 		parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
 								default=OptAccountsInactive.auto.value, help='Include inactive accounts')
 		parser.add_argument('--accounts', type=str, default=[], nargs='*', metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
@@ -1697,12 +1698,17 @@ async def accounts_parse_args(db: Backend, args : Namespace,) -> dict[str, Any] 
 			res['cache_valid'] = args.cache_valid
 		except:
 			debug('could not read --cache-valid')
-
+		
+		days : int
+		today : datetime = datetime.today()
+		start : datetime
 		try:
 			if ( rel := await db.release_get(args.inactive_since)) is not None:
 				res['inactive_since'] = rel.cut_off
 			else:
-				res['inactive_since'] = int(args.inactive_since)
+				days = int(args.inactive_since)
+				start = today - timedelta(days=days)
+				res['inactive_since'] = int(start.timestamp())
 		except Exception as err:
 			debug(f'could not read --inactive-since: {err}')
 		
@@ -1711,7 +1717,9 @@ async def accounts_parse_args(db: Backend, args : Namespace,) -> dict[str, Any] 
 				if (prev := await db.release_get_previous(rel)) is not None:
 					res['active_since'] = prev.cut_off
 			else:
-				res['active_since'] = int(args.active_since)
+				days = int(args.active_since)
+				start = today - timedelta(days=days)
+				res['active_since'] = int(start.timestamp())
 		except Exception as err:
 			debug(f'could not read --active-since: {err}')
 		
