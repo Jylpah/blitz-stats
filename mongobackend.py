@@ -364,122 +364,12 @@ class MongoBackend(Backend):
 		"""Init MongoDB backend: create tables and set indexes"""
 		try:
 			debug('starting')
-			DBC 	: str = 'NOT SET'
-			indexes : list[list[MongoIndex]]
-
 			for table in tables:
 				try:
 					table_type : BSTableType = BSTableType(table)
 					await self.init_collection(table_type)
 				except Exception as err:
 					error(f'{self.backend}: Could not init collection for table: {err}')
-
-			# # Accounts
-			# if BSTableType.Accounts.name in tables:
-			# 	try:
-			# 		DBC 	= self.table_accounts
-			# 		# indexes = list()
-			# 		# indexes.append([ 	('disabled', ASCENDING),
-			# 		# 					('inactive', ASCENDING),
-			# 		# 					('region', 	ASCENDING),
-			# 		# 					('id', 		ASCENDING)
-			# 		# 				])
-			# 		# indexes.append([ 	('disabled', ASCENDING),
-			# 		# 					('inactive', ASCENDING),
-			# 		# 					('id', 		ASCENDING),
-			# 		# 					('updated_tank_stats', ASCENDING)
-			# 		# 				])
-			# 		await self.init_collection(BSTableType.Accounts)
-
-			# 	except Exception as err:
-			# 		error(f'{self.backend}: Could not init collection {DBC} for accounts: {err}')
-
-			# # Releases
-			# if BSTableType.Releases.name in tables:
-			# 	try:
-			# 		DBC = self.table_releases
-			# 		# indexes = list()
-			# 		# indexes.append([ 	('name', ASCENDING),
-			# 		# 					('launch_date', DESCENDING)
-			# 		# 				])
-			# 		await self.init_collection(BSTableType.Releases)
-
-			# 	except Exception as err:
-			# 		error(f'{self.backend}: Could not init collection {DBC} for releases: {err}')
-
-			# # Tankopedia
-			# if BSTableType.Tankopedia.name in tables:
-			# 	try:
-			# 		DBC = self.table_tankopedia
-			# 		# indexes = list()
-			# 		# indexes.append([ 	('tier', ASCENDING),
-			# 		# 					('type', ASCENDING)
-			# 		# 				])
-			# 		# indexes.append([ 	('tier', ASCENDING),
-			# 		# 					('nation', ASCENDING)
-			# 		# 				])
-			# 		# indexes.append([ 	('name', TEXT)
-			# 		# 				])
-			# 		await self.init_collection(BSTableType.Tankopedia)
-
-			# 	except Exception as err:
-			# 		error(f'{self.backend}: Could not init collection {DBC} for releases: {err}')
-
-			# # Replays
-			# if BSTableType.Replays.name in tables:
-			# 	try:
-			# 		DBC = self.table_replays
-			# 		# indexes = list()
-			# 		# indexes.append([('data.summary.protagonist', ASCENDING),
-			# 		# 				('data.summary.room_type', ASCENDING),
-			# 		# 				('data.summary.vehicle_tier', ASCENDING),
-			# 		# 				('data.summary.battle_start_timestamp', DESCENDING)
-			# 		# 			])
-			# 		# indexes.append([('data.summary.room_type', ASCENDING),
-			# 		# 				('data.summary.vehicle_tier', ASCENDING),
-			# 		# 				('data.summary.battle_start_timestamp', DESCENDING)
-			# 		# 			])
-
-			# 		await self.init_collection(BSTableType.Replays)
-
-			# 	except Exception as err:
-			# 		error(f'{self.backend}: Could not init collection {DBC} for replays: {err}')
-
-			# # Tank stats
-			# if BSTableType.TankStats.name in tables:
-			# 	try:
-			# 		DBC = self.table_tank_stats
-			# 		# indexes.append([ 	('region', ASCENDING),
-			# 		# 					('account_id', ASCENDING),
-			# 		# 					('tank_id', ASCENDING),
-			# 		# 					('last_battle_time', DESCENDING)
-			# 		# 				])
-			# 		# indexes.append([ 	('region', ASCENDING),
-			# 		# 					('release', DESCENDING),
-			# 		# 					('tank_id', ASCENDING),
-			# 		# 					('account_id', ASCENDING),
-			# 		# 				])
-			# 		await self.init_collection(BSTableType.TankStats)
-
-			# 	except Exception as err:
-			# 		error(f'{self.backend}: Could not init collection {DBC} for tank_stats: {err}')
-
-			# # Player Achievements
-			# if BSTableType.PlayerAchievements.name in tables:
-			# 	try:
-			# 		DBC = self.table_player_achievements
-			# 		# indexes = list()
-			# 		# indexes.append([ 	('account_id', ASCENDING),
-			# 		# 					('added', DESCENDING)
-			# 		# 				])
-			# 		# indexes.append([ 	('release', DESCENDING),
-			# 		# 					('account_id', ASCENDING),
-			# 		# 					('added', DESCENDING)
-			# 		# 				])
-			# 		await self.init_collection(BSTableType.PlayerAchievements)
-
-			# 	except Exception as err:
-			# 		error(f'{self.backend}: Could not init collection {DBC} for player_achievements: {err}')
 
 		except Exception as err:
 			error(f'Error initializing {self.backend}: {err}')
@@ -488,138 +378,9 @@ class MongoBackend(Backend):
 
 ########################################################
 #
-# MongoBackend(): generic data_funcs
+# MongoBackend(): generic datas_funcs
 #
 ########################################################
-
-
-	# async def _data_insert(self, dbc : AsyncIOMotorCollection, data: D) -> bool:  		# type: ignore
-	# 	"""Generic method to get one object of data_type"""
-	# 	try:
-	# 		# debug('starting')
-	# 		res : InsertOneResult = await dbc.insert_one(data.obj_db())
-	# 		# debug(f'Inserted {type(data)} (_id={res.inserted_id}) into {self.backend}.{dbc.name}: {data}')
-	# 		return True
-	# 	except Exception as err:
-	# 		debug(f'Failed to insert {type(data)}={data} into {self.backend}.{dbc.name}: {err}')
-	# 	return False
-
-
-	# async def _data_get(self, dbc : AsyncIOMotorCollection,
-	# 					data_type: type[D],
-	# 					id: Idx) -> Optional[D]:
-	# 	"""Generic method to get one object of data_type"""
-	# 	try:
-	# 		# debug('starting')
-	# 		res : Any = await dbc.find_one({ '_id': id})
-	# 		if res is not None:
-	# 			return data_type.parse_obj(res)
-	# 		else:
-	# 			return None
-	# 	except ValidationError as err:
-	# 		error(f'Could not validate {type(data_type)} _id={id} from {self.backend}.{dbc.name}: {err}')
-	# 		await self.error_log(MongoErrorLog(table=dbc.name, doc_id=id, type=ErrorLogType.ValidationError))
-	# 	except Exception as err:
-	# 		error(f'Error getting {type(data_type)} _id={id} from {self.backend}.{dbc.name}: {err}')
-	# 	return None
-
-
-	# async def _data_update(self, dbc : AsyncIOMotorCollection, id: Idx,
-	# 						obj : BaseModel | None = None,
-	# 						update: dict | None = None,
-	# 						fields : list[str] | None = None) -> bool:
-	# 	"""Generic method to update an object of data_type"""
-	# 	try:
-	# 		debug('starting')
-	# 		model = self.get_model(dbc.name)
-	# 		if update is not None:
-	# 			pass
-	# 		elif fields is not None and obj is not None:
-	# 			update = obj.dict(include=set(fields))
-	# 		else:
-	# 			raise ValueError("'update', 'obj' and 'fields' cannot be all None")
-	# 		alias_fields : dict[str, Any] = AliasMapper(model).map(update.items())
-	# 		if (res := await dbc.find_one_and_update({ '_id': id}, { '$set': alias_fields})) is None:
-	# 			# debug(f'Failed to update _id={id} into {self.backend}.{dbc.name}')
-	# 			return False
-	# 		#debug(f'Updated (_id={id}) into {self.backend}.{dbc.name}')
-	# 		return True
-	# 	except Exception as err:
-	# 		error(f'Could not update _id={id} in {self.backend}.{dbc.name}: {err}')
-	# 	return False
-
-
-	# async def _data_replace(self, dbc : AsyncIOMotorCollection, data: D, 	# type: ignore
-	# 						id: Idx, upsert : bool = False) -> bool:
-	# 	"""Generic method to update an object of data_type"""
-	# 	try:
-	# 		debug('starting')
-	# 		if (res := await dbc.find_one_and_replace({ '_id': id}, data.obj_db(), upsert=upsert)) is None:
-	# 			debug(f'Failed to replace _id={id} into {self.backend}.{dbc.name}')
-	# 			return False
-	# 		debug(f'Replaced (_id={id}) into {self.backend}.{dbc.name}')
-	# 		return True
-	# 	except Exception as err:
-	# 		debug(f'Error while replacing _id={id} in {self.backend}.{dbc.name}: {err}')
-	# 	return False
-
-
-	# async def _data_delete(self, dbc : AsyncIOMotorCollection, id: Idx) -> bool:
-	# 	"""Generic method to delete an object of data_type"""
-	# 	try:
-	# 		debug('starting')
-	# 		res : DeleteResult = await dbc.delete_one({ '_id': id})
-	# 		if res.deleted_count == 1:
-	# 			# debug(f'Delete (_id={id}) from {self.backend}.{dbc.name}')
-	# 			return True
-	# 		else:
-	# 			pass
-	# 			# debug(f'Failed to delete _id={id} from {self.backend}.{dbc.name}')
-	# 	except Exception as err:
-	# 		debug(f'Error while deleting _id={id} from {self.backend}.{dbc.name}: {err}')
-	# 	return False
-
-
-	# async def _datas_insert(self, dbc : AsyncIOMotorCollection, datas: Sequence[D]) -> tuple[int, int]:
-	# 	"""Store data to the backend. Returns the number of added and not added"""
-	# 	debug('starting')
-	# 	added		: int = 0
-	# 	not_added 	: int = 0
-	# 	try:
-	# 		debug(f'inserting to {self.backend}.{dbc.name}')
-	# 		if len(datas) == 0:
-	# 			raise ValueError('No data to insert')
-	# 		res : InsertManyResult = await dbc.insert_many( (data.obj_db() for data in datas),
-	# 														ordered=False)
-	# 		added = len(res.inserted_ids)
-	# 	except BulkWriteError as err:
-	# 		if err.details is not None:
-	# 			added = err.details['nInserted']
-	# 			not_added = len(err.details["writeErrors"])
-	# 			debug(f'Added {added}, could not add {not_added} entries to {self.backend}.{dbc.name}')
-	# 		else:
-	# 			error('BulkWriteError.details is None')
-	# 	except Exception as err:
-	# 		error(f'Unknown error when adding entries to {self.backend}.{dbc.name}: {err}')
-	# 	debug(f'added={added}, not_added={not_added}')
-	# 	return added, not_added
-
-
-	# async def _datas_update(self, dbc : AsyncIOMotorCollection,
-	# 						datas: list[D], upsert: bool = False) -> tuple[int, int]:
-	# 	"""Store data to the backend. Returns number of documents inserted and not inserted"""
-	# 	debug('starting')
-	# 	updated			: int = 0
-	# 	not_updated 	: int = len(datas)
-	# 	try:
-	# 		res : UpdateResult
-	# 		res = await dbc.update_many( (d.obj_db() for d in datas),
-	# 									  upsert=upsert, ordered=False)
-	# 		updated = res.modified_count
-	# 		not_updated -= updated
-	# 	except Exception as err:
-	# 		error(f'Unknown error when updating tank stats: {err}')
-	# 	return updated, not_updated
 
 
 	async def _datas_get(self, table_type: BSTableType,						
@@ -855,27 +616,6 @@ class MongoBackend(Backend):
 		return updated, not_updated
 
 
-	# async def _datas_get(self, table_type: BSTableType,
-	# 					out_type: type[D],
-	# 					pipeline : list[dict[str, Any]]) -> AsyncGenerator[D, None]:
-	# 	try:
-	# 		debug('starting')
-	# 		dbc : AsyncIOMotorCollection = self.get_collection(table_type)
-	# 		model : type[JSONExportable] = self.get_model(table_type)
-
-	# 		async for obj in dbc.aggregate(pipeline, allowDiskUse=True):
-	# 			try:
-	# 				debug(f'{obj}')
-	# 				if (data := out_type.transform_obj(obj, model)) is not None:
-	# 					yield data
-	# 			except ValidationError as err:
-	# 				error(f'Could not validate {out_type} ob={obj} from {self.table_uri(table_type)}: {err}')
-	# 			except Exception as err:
-	# 				error(f'{err}')
-	# 	except Exception as err:
-	# 		error(f'Error fetching data from {self.table_uri(table_type)}: {err}')
-
-
 	async def _datas_count(self, 
 							table_type: BSTableType,
 							pipeline : list[dict[str, Any]]) -> int:
@@ -921,10 +661,10 @@ class MongoBackend(Backend):
 
 
 	async def objs_export(self, 
-						table_type: BSTableType,
-						pipeline : list[dict[str, Any]] = list(),
-						sample: float = 0,
-						batch: int = 0) -> AsyncGenerator[list[Any], None]:
+							table_type: BSTableType,
+							pipeline : list[dict[str, Any]] = list(),
+							sample: float = 0,
+							batch: int = 0) -> AsyncGenerator[list[Any], None]:
 		"""Export raw documents as a list from Mongo DB"""
 		try:
 			debug(f'starting')
