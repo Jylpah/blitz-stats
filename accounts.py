@@ -9,6 +9,7 @@ from aiofiles import open
 from asyncstdlib import enumerate
 from os.path import isfile
 from sys import stdout
+import copy
 
 from alive_progress import alive_bar		# type: ignore
 from bson import ObjectId
@@ -174,6 +175,8 @@ def add_args_update_wg(parser: ArgumentParser, config: Optional[ConfigParser] = 
 		# 					metavar='ACCOUNT_ID', type=int, default=0, 
 		# 					help='start fetching account_ids from ACCOUNT_ID (default = 0 \
 		# 						start from highest ACCOUNT_ID in backend)')
+		parser.add_argument('--distributed', '--dist',type=str, dest='distributed', metavar='I:N', 
+							default=None, help='Distributed stats fetching for accounts: id %% N == I')
 		parser.add_argument('--cache-valid', type=float, default=ACCOUNT_INFO_CACHE_VALID, metavar='DAYS',
 							help='Fetch stats only for accounts with stats older than DAYS')
 		parser.add_argument('--sample', type=float, default=0, metavar='SAMPLE',
@@ -199,8 +202,7 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 		fetch_parsers.required = True
 		fetch_wg_parser = fetch_parsers.add_parser('wg', help='accounts fetch wg help')
 		if not add_args_fetch_wg(fetch_wg_parser, config=config):
-			raise Exception("Failed to define argument parser for: accounts fetch wg")
-		
+			raise Exception("Failed to define argument parser for: accounts fetch wg")		
 
 		fetch_wi_parser = fetch_parsers.add_parser('wi', help='accounts fetch wi help')
 		if not add_args_fetch_wi(fetch_wi_parser, config=config):
@@ -387,11 +389,15 @@ def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 		parser.add_argument('--disabled', action='store_true', default=False, help='Disabled accounts')
 		parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
 								default=OptAccountsInactive.no.value, help='Include inactive accounts')
+		parser.add_argument('--active-since', type=str, default=None, metavar='RELEASE/DAYS',
+							help='Fetch stats for accounts that have been active since RELEASE/DAYS')
+		parser.add_argument('--inactive-since', type=str,  default=None, metavar='RELEASE/DAYS',
+							help='Fetch stats for accounts that have been inactive since RELEASE/DAYS')		
 		parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
 								default=[ r.value for r in Region.API_regions() ], help='Filter by region (default is API = eu + com + asia)')
 		parser.add_argument('--by-region', action='store_true', default=False, help='Export accounts by region')
-		parser.add_argument('--distributed', '--dist',type=int, dest='distributed', metavar='N', 
-							default=0, help='Split accounts into N files distributed stats fetching')
+		parser.add_argument('--distributed', '--dist',type=str, dest='distributed', metavar='I:N', 
+							default=None, help='Distributed stats fetching for accounts: id %% N == I')
 		parser.add_argument('--sample', type=float, default=0, help='Sample accounts')
 
 		return True	
@@ -539,7 +545,9 @@ async def cmd_update_wg(db		: Backend,
 
 		for region in regions:
 			workQs[region] = IterableQueue(maxsize=100)
-			workQ_creators.append(create_task(create_accountQ_batch(db, args, region=region, 
+			r_args = copy.copy(args)
+			r_args.region = {region}
+			workQ_creators.append(create_task(create_accountQ_batch(db, r_args,
 																	accountQ=workQs[region], 
 														  			stats_type=StatsTypes.account_info)))
 		#workQ_creators.append(create_task(split_accountQ_batch(inQ, workQs)))
@@ -1185,10 +1193,8 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 
 async def cmd_export(db: Backend, args : Namespace) -> bool:
 	try:
-		debug('starting')
-		assert type(args.distributed) is int, 'param "distributed" has to be integer'
-		assert type(args.sample) in [int, float], 'param "sample" has to be a number'
-
+		debug('starting')		
+		
 		## not implemented...
 		# query_args : dict[str, str | int | float | bool ] = dict()
 		stats 		: EventCounter 			= EventCounter('accounts export')
@@ -1216,24 +1222,22 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 		except ValueError as err:
 			assert False, f"Incorrect value for argument 'inactive': {args.inactive}"
 		
-		total : int = await db.accounts_count(regions=regions, inactive=inactive, 
-												disabled=disabled, sample=sample)
+		total : int = await db.accounts_count(**accounts_args)
 
-		if args.distributed > 0:
-			for i in range(args.distributed):
-				Qid : str = str(i)
-				accountQs[Qid] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
-				await accountQs[Qid].add_producer()
-				distributed = OptAccountsDistributed(i, args.distributed)
-				account_workers.append(create_task(db.accounts_get_worker(accountQs[Qid], 
-																			distributed=distributed, 
-																			**accounts_args)))
-				export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], 
-															accountQs[Qid]), 
-														format=args.format, 
-														filename=f'{filename}.{i}', 
-														force=force, 
-														append=args.append)))
+		if 'dist' in accounts_args:
+			distributed = accounts_args['dist']
+			i : int = distributed.mod			
+			Qid : str = str(i)
+			accountQs[Qid] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
+			await accountQs[Qid].add_producer()
+			account_workers.append(create_task(db.accounts_get_worker(accountQs[Qid], 																		
+																		**accounts_args)))
+			export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], 
+														accountQs[Qid]), 
+													format=args.format, 
+													filename=f'{filename}.{i}', 
+													force=force, 
+													append=args.append)))
 		elif args.by_region:
 			accountQs['all'] = IterableQueue(maxsize=ACCOUNTS_Q_MAX, count_items=False)
 			
@@ -1345,8 +1349,7 @@ async def count_accounts(db: Backend, args : Namespace, stats_type: StatsTypes |
 
 async def create_accountQ(db		: Backend, 
 						  args 		: Namespace, 
-						  accountQ	: IterableQueue[BSAccount],
-						  region	: Region | None = None,
+						  accountQ	: IterableQueue[BSAccount],						  
 						  stats_type: StatsTypes | None = None, 
 						  ) -> EventCounter:
 	"""Helper to make accountQ from arguments"""	
@@ -1362,9 +1365,7 @@ async def create_accountQ(db		: Backend,
 		await accountQ.add_producer()
 
 		if accounts is not None:
-
-			if region is not None:
-				accounts = [ account for account in accounts if account.region == region ]
+			
 			for account in accounts:
 				try:
 					await accountQ.put(account)
@@ -1378,9 +1379,8 @@ async def create_accountQ(db		: Backend,
 			if args.file.endswith('.txt'):
 				async for account in BSAccount.import_txt(args.file):					
 					try:
-						if region is None or account.region == region:
-							await accountQ.put(account)
-							stats.log('read')
+						await accountQ.put(account)
+						stats.log('read')
 					except Exception as err:
 						error(f'Could not add account to the queue: {err}')
 						stats.log('errors')
@@ -1388,9 +1388,8 @@ async def create_accountQ(db		: Backend,
 			elif args.file.endswith('.csv'):
 				async for account in BSAccount.import_csv(args.file):
 					try:
-						if region is None or account.region == region:
-							await accountQ.put(account)
-							stats.log('read')
+						await accountQ.put(account)
+						stats.log('read')
 					except Exception as err:
 						error(f'Could not add account to the queue: {err}')
 						stats.log('errors')
@@ -1398,9 +1397,8 @@ async def create_accountQ(db		: Backend,
 			elif args.file.endswith('.json'):
 				async for account in BSAccount.import_json(args.file):
 					try:
-						if region is None or account.region == region:
-							await accountQ.put(account)
-							stats.log('read')
+						await accountQ.put(account)
+						stats.log('read')
 					except Exception as err:
 						error(f'Could not add account to the queue: {err}')
 						stats.log('errors')
@@ -1421,8 +1419,6 @@ async def create_accountQ(db		: Backend,
 
 			accounts_args : dict[str, Any] | None
 			if (accounts_args := await accounts_parse_args(db, args)) is not None:
-				if region is not None:
-					accounts_args['regions'] = { region }
 				async for account in db.accounts_get(stats_type=stats_type, 
 													**accounts_args):
 					try:
@@ -1445,13 +1441,14 @@ async def create_accountQ(db		: Backend,
 
 async def create_accountQ_batch(db			: Backend, 
 								args 		: Namespace, 
-								accountQ	: IterableQueue[list[BSAccount]], 
-								region 		: Region,
+								accountQ	: IterableQueue[list[BSAccount]], 								
 								stats_type	: StatsTypes | None = None, 
 								batch 		: int = 100) -> EventCounter:
 	"""Helper to make accountQ from arguments"""	
 	stats : EventCounter = EventCounter(f'{db.driver}: accounts')
+	assert len(args.region) == 1, "account batch queue supports only a single region"
 	debug('starting')
+	region : Region = [ Region(r) for r in args.region ][0]
 	try:
 		accounts 	: list[BSAccount] | None = None
 		try:
@@ -1533,7 +1530,6 @@ async def create_accountQ_batch(db			: Backend,
 
 			accounts_args : dict[str, Any] | None
 			if (accounts_args := await accounts_parse_args(db, args)) is not None:
-				accounts_args['regions'] = { region }
 				async for accounts in db.accounts_get_batch(stats_type=stats_type, batch=batch, 
 															**accounts_args):
 					try:
@@ -1710,6 +1706,12 @@ async def accounts_parse_args(db: Backend, args : Namespace,) -> dict[str, Any] 
 			res['cache_valid'] = args.cache_valid
 		except:
 			debug('could not read --cache-valid')
+
+		try:
+			if (dist := OptAccountsDistributed.parse(args.distributed)) is not None:
+				res['dist'] = dist
+		except:
+			debug('could not read --distributed')
 		
 		days : int
 		today : datetime = datetime.today()

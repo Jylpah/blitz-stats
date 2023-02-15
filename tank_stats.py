@@ -5,6 +5,7 @@ from typing import Optional, Literal, Any, cast
 import logging
 from asyncio import run, create_task, gather, sleep, wait, Queue, CancelledError, Task
 
+import copy
 from os import getpid, makedirs
 from aiofiles import open
 from os.path import isfile, dirname
@@ -519,7 +520,6 @@ async def  fetch_mp_worker(region: Region) -> EventCounter:
 														retryQ=retryQ, 
 														disabled=args.disabled)))	
 		stats.merge(await create_accountQ(db, args, accountQ, 
-											region=region,
 											stats_type=StatsTypes.tank_stats))
 
 		debug(f'waiting for account queue to finish: {region}')
@@ -593,13 +593,14 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 		WORKERS = min( [ WORKERS, ceil(accounts/4) ])
 		for r in regions:
 			accountQs[r] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
-			workers.append(create_task(create_accountQ(db, args, accountQs[r], 
-														region=r,
-														stats_type=StatsTypes.tank_stats)))
+			r_args = copy.copy(args)
+			r_args.region = { r }
+			workers.append(create_task(create_accountQ(db, r_args, accountQs[r],
+					      								stats_type=StatsTypes.tank_stats)))
 			for _ in range(WORKERS):
 				workers.append(create_task(fetch_api_worker(db, wg_api=wg, accountQ=accountQs[r], 
 															statsQ=statsQ, retryQ=retryQ, 
-															disabled=args.disabled)))
+															disabled=r_args.disabled)))
 
 		task_bar : Task = create_task(alive_bar_monitor([Q for Q in accountQs.values() ], 
 														total=accounts, 

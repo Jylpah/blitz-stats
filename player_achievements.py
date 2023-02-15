@@ -7,6 +7,8 @@ from aiofiles import open
 from os.path import isfile
 from os import getpid
 from math import ceil
+import copy
+
 from asyncstdlib import enumerate
 from alive_progress import alive_bar		# type: ignore
 
@@ -129,7 +131,7 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 		parser.add_argument('--cache_valid', type=float, default=1	, metavar='DAYS',
 							help='Fetch only accounts with stats older than DAYS')		
 		parser.add_argument('--distributed', '--dist',type=str, dest='distributed', metavar='I:N', 
-							default=None, help='Distributed fetching for accounts: id %% N == I')
+							default=None, help='Distributed stats fetching for accounts: id %% N == I')
 		parser.add_argument('--accounts', type=str, default=[], nargs='*', 
 							metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
 							help='Fetch stats for the listed ACCOUNT_ID(s)')
@@ -261,10 +263,12 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 												**accounts_args)		
 		for r in regions:
 			regionQs[r.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
-			tasks.append(create_task(create_accountQ_batch(db, args, region=r, 
+			r_args = copy.copy(args)
+			r_args.region = {r}
+			tasks.append(create_task(create_accountQ_batch(db, r_args,  
 															accountQ=regionQs[r.name],
 															stats_type=StatsTypes.player_achievements)))			
-			for _ in range(ceil(min([args.workers, accounts])/len(regions))):
+			for _ in range(ceil(min([r_args.workers, accounts])/len(regions))):
 				tasks.append(create_task(fetch_player_achievements_api_region_worker(wg_api=wg, region=r, 
 																					accountQ=regionQs[r.name], 
 																					statsQ=statsQ, 
