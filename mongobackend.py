@@ -1931,29 +1931,28 @@ class MongoBackend(Backend):
 								regions	: set[Region] = Region.API_regions(),
 								account	: BSAccount | None = None, 
 								tank	: Tank | None = None, 
-								randomize: bool = True
 								) -> AsyncGenerator[A, None]:
 		"""Return unique values of field"""
 		debug('starting')
-		try:
-			a 		: AliasMapper 	= AliasMapper(self.model_tank_stats)
-			alias 	: Callable 		= a.alias
-			db_field: str = alias(field)
-			dbc 	: AsyncIOMotorCollection = self.collection_tank_stats
-			query 	: dict[str, Any] = dict()
+		try:			
+			pipeline 	: list[dict[str, Any]] | None
+			accounts 	: Sequence[BSAccount] | None = None
+			tanks 		: Sequence[Tank] | None 	 = None
 
-			if release is not None:
-				query[alias('release')] = release.release
-			query[alias('region')] = { '$in': list(regions)}
-			if tank is not None:
-				query[alias('tank_id')] = tank.tank_id
 			if account is not None:
-				query[alias('account_id')] = account.id
-			values : list[A] = await dbc.distinct(key = db_field, filter=query)
-			if randomize:
-				random.shuffle(values)
-			for item in values:		# type: ignore
-				yield item
+				accounts = [account]
+			if tank is not None:
+				tanks = [ tank ]
+
+			if (pipeline:= await self._mk_pipeline_tank_stats(release=release, 
+						     									regions=regions, 
+						     									accounts=accounts, 
+																tanks=tanks)) is None:
+				raise ValueError('could not build filtering pipeline')
+			
+			async for value in self._datas_unique(BSTableType.TankStats, field, field_type, pipeline):
+				yield value			
+			
 		except Exception as err:
 			error(f'{err}')
 		
