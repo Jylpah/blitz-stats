@@ -399,8 +399,8 @@ async def fetch_player_achievements_backend_worker(db: Backend,
 			except Exception as err:
 				error(f'{err}')
 			finally:
-				stats.log('added', added)
-				stats.log('not found', not_added)
+				stats.log('stats added', added)
+				stats.log('old stats', not_added)
 				debug(f'{added} player achievements added, {not_added} old player achievements found')
 				statsQ.task_done()	
 	except CancelledError as err:
@@ -707,7 +707,8 @@ async def cmd_prune(db: Backend, args : Namespace) -> bool:
 					stats.log('duplicates found')
 					if commit:
 						# verbose(f'deleting duplicate: {dup}')
-						if await db.player_achievement_delete(account=BSAccount(id=dup.account_id), 
+						if await db.player_achievement_delete(account=BSAccount(id=dup.account_id, 
+							      													region=region), 
 															  added=dup.added):
 							verbose(f'deleted duplicate: {dup}')
 							stats.log('duplicates deleted')

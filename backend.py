@@ -37,8 +37,8 @@ MIN_UPDATE_INTERVAL : int = 3   # days
 ACCOUNTS_Q_MAX 		: int = 5000
 TANK_STATS_BATCH	: int = 1000
 
-
 A = TypeVar('A')
+
 ##############################################
 #
 ## Utils 
@@ -96,12 +96,14 @@ class OptAccountsDistributed():
 		assert type(mod) is int and mod >=0 , 'Modulus has to be integer >= 0'
 		assert type(div) is int and div > 0, 'Divisor has to be positive integer'
 		self.mod : int = mod
-		self.div : int = div
+		self.div : int = div % mod
 
 
 	@classmethod
 	def parse(cls, input: str) -> Optional['OptAccountsDistributed']:
 		try:
+			if input is None:
+				return None	
 			res : list[str] = input.split(':')
 			if len(res) != 2:
 				raise ValueError(f'Input ({input} does not match format "I:N")')
@@ -1168,8 +1170,7 @@ class Backend(ABC):
 								release	: BSBlitzRelease | None = None,
 								regions	: set[Region] = Region.API_regions(),
 								account	: BSAccount | None = None, 
-								tank	: Tank | None = None, 
-								randomize: bool = True
+								tank	: Tank | None = None, 								
 								) -> AsyncGenerator[A, None]:
 		"""Return unique values of field"""
 		raise NotImplementedError
@@ -1177,15 +1178,14 @@ class Backend(ABC):
 
 	
 	@abstractmethod
-	async def tank_stats_unique_count(self,
-								field	: str,
-								field_type: type[A], 
-								release	: BSBlitzRelease | None = None,
-								regions	: set[Region] = Region.API_regions(),
-								account	: BSAccount | None = None, 
-								tank	: Tank | None = None
-								) -> int:
-		"""Return count of unique values of field"""
+	async def tank_stats_unique_count(self, 
+				   						field		: str,										
+										release	: BSBlitzRelease | None = None,
+										regions	: set[Region] = Region.API_regions(),
+										account	: BSAccount | None = None, 
+										tank	: Tank | None = None
+										) -> int:
+		"""Return count of unique values of field. **args see tank_stats_unique()"""
 		raise NotImplementedError
 
 

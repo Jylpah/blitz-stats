@@ -8,6 +8,7 @@ import random
 import logging
 import re
 
+from asyncio import Task, create_task, gather
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCursor, AsyncIOMotorCollection  # type: ignore
 from pymongo.results import InsertManyResult, InsertOneResult, UpdateResult, DeleteResult
@@ -649,7 +650,80 @@ class MongoBackend(Backend):
 		except Exception as err:
 			error(f'Error counting documents in {self.table_uri(table_type)}: {err}')
 		return -1
+	
 
+	def _mk_pipeline_unique(self, 
+							table_type	: BSTableType,
+							field		: str, 
+							pipeline 	: list[dict[str, Any]]
+							) -> list[dict[str, Any]] | None:
+		"""Create pipeline to return unique values of 'field' in 
+			documents { 'field': unique_value }"""
+		try:
+			debug('starting')			
+			model 	: type[JSONExportable] 	= self.get_model(table_type)
+			a 		: AliasMapper 			= AliasMapper(model)
+			alias 	: Callable 				= a.alias
+
+			pipeline.append({ '$project': { '_id': 0, alias(field): 1 }})
+			pipeline.append({ '$group': {'_id': None, field: { '$addToSet': '$' + alias(field)}} })
+			pipeline.append({ '$unwind': { 'path': '$' + field }})
+			pipeline.append({ '$project': { '_id': 0}})
+
+			return pipeline
+		
+		except Exception as err:
+			error(f'Error counting documents in {self.table_uri(table_type)}: {err}')
+		return None
+	
+
+	async def _datas_unique(self, 
+							table_type	: BSTableType,
+							field		: str, 
+							field_type	: type[A],
+							pipeline 	: list[dict[str, Any]]) -> AsyncGenerator[A, None]:
+		"""Return unique values of 'field' in documents { 'field': unique_value }"""
+		try:
+			debug('starting')
+			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
+			if (pl := self._mk_pipeline_unique(table_type, field, 
+					    						pipeline)) is None:
+				raise ValueError(f'could not build aggregation pipeline for unique values: field={field}')
+			else: 
+				pipeline = pl
+
+			async for doc in dbc.aggregate(pipeline, allowDiskUse=True):
+				try:
+					yield cast(A, doc[field])
+				except Exception as err:
+					error(f'{doc} yielded an error: {err}')
+
+		except Exception as err:
+			error(f'Error counting documents in {self.table_uri(table_type)}: {err}')
+
+
+	async def _datas_unique_count(self, 
+									table_type	: BSTableType,
+									field		: str, 							
+									pipeline 	: list[dict[str, Any]]) -> int:
+		"""Return unique values of 'field' in documents { 'field': unique_value }"""
+		try:
+			debug('starting')
+			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
+			if (pl := self._mk_pipeline_unique(table_type, field, 
+					    						pipeline)) is None:
+				raise ValueError(f'could not build aggregation pipeline for unique values: field={field}')
+			else: 
+				pipeline = pl
+			pipeline.append({ '$count': 'total'})
+
+			async for doc in dbc.aggregate(pipeline, allowDiskUse=True):
+				return cast(int, doc['total'])
+
+		except Exception as err:
+			error(f'Error counting documents in {self.table_uri(table_type)}: {err}')
+		return -1
+	
 
 	async def obj_export(self, table_type: BSTableType,
 		      			 pipeline : list[dict[str, Any]] = list(),
@@ -859,7 +933,7 @@ class MongoBackend(Backend):
 			model : type[JSONExportable] = self.model_accounts
 			if pipeline is None:
 				raise ValueError(f'could not create get-accounts {self.table_uri(BSTableType.Accounts)} cursor')
-			message(f'DEBUG accounts_get(): pipeline={pipeline}')
+			message(f'accounts_get(): pipeline={pipeline}')
 
 			async for datas in self._datas_get_batch(BSTableType.Accounts, pipeline, 
 					    							batch=batch, batchSize=10000):			
@@ -907,7 +981,7 @@ class MongoBackend(Backend):
 
 			if pipeline is None:
 				raise ValueError(f'could not create get-accounts {self.table_uri(BSTableType.Accounts)} cursor')
-			message(f'DEBUG accounts_get(): pipeline={pipeline}')
+			message(f'accounts_get(): pipeline={pipeline}')
 
 			# 'batchSize' is required for keeping cursor alive		
 			async for data in self._datas_get(BSTableType.Accounts, 
@@ -1858,64 +1932,71 @@ class MongoBackend(Backend):
 								regions	: set[Region] = Region.API_regions(),
 								account	: BSAccount | None = None, 
 								tank	: Tank | None = None, 
-								randomize: bool = True
 								) -> AsyncGenerator[A, None]:
 		"""Return unique values of field"""
 		debug('starting')
-		try:
-			a 		: AliasMapper 	= AliasMapper(self.model_tank_stats)
-			alias 	: Callable 		= a.alias
-			db_field: str = alias(field)
-			dbc 	: AsyncIOMotorCollection = self.collection_tank_stats
-			query 	: dict[str, Any] = dict()
+		try:			
+			pipeline 	: list[dict[str, Any]] | None
+			accounts 	: Sequence[BSAccount] | None = None
+			tanks 		: Sequence[Tank] | None 	 = None
 
-			if release is not None:
-				query[alias('release')] = release.release
-			query[alias('region')] = { '$in': list(regions)}
-			if tank is not None:
-				query[alias('tank_id')] = tank.tank_id
 			if account is not None:
-				query[alias('account_id')] = account.id
-			values : list[A] = await dbc.distinct(key = db_field, filter=query)
-			if randomize:
-				random.shuffle(values)
-			for item in values:		# type: ignore
-				yield item
+				accounts = [account]
+			if tank is not None:
+				tanks = [ tank ]
+
+			if (pipeline:= await self._mk_pipeline_tank_stats(release=release, 
+						     									regions=regions, 
+						     									accounts=accounts, 
+																tanks=tanks)) is None:
+				raise ValueError('could not build filtering pipeline')
+			
+			async for value in self._datas_unique(BSTableType.TankStats, field, field_type, pipeline):
+				yield value			
+			
 		except Exception as err:
 			error(f'{err}')
 		
 		
-	async def tank_stats_unique_count(self,
-								field	: str,
-								field_type: type[A], 
-								release	: BSBlitzRelease | None = None,
-								regions	: set[Region] = Region.API_regions(),
-								account	: BSAccount | None = None, 
-								tank	: Tank | None = None
-								) -> int:
+	async def tank_stats_unique_count(self, 
+				   						field		: str,										
+										release	: BSBlitzRelease | None = None,
+										regions	: set[Region] = Region.API_regions(),
+										account	: BSAccount | None = None, 
+										tank	: Tank | None = None
+										) -> int:
 		"""Return count of unique values of field"""
 		debug('starting')
-		count : int = 0
+		
 		try:
-			a 		: AliasMapper 	= AliasMapper(self.model_tank_stats)
-			alias 	: Callable 		= a.alias
-			db_field: str = alias(field)
-			dbc 	: AsyncIOMotorCollection = self.collection_tank_stats
-			query 	: dict[str, Any] = dict()
+			pipeline 	: list[dict[str, Any]] | None
+			accounts 	: Sequence[BSAccount] | None = None
+			tanks 		: Sequence[Tank] | None 	 = None
 
-			if release is not None:
-				query[alias('release')] = release.release
-			query[alias('region')] = { '$in': list(regions)}
-			if tank is not None:
-				query[alias('tank_id')] = tank.tank_id
 			if account is not None:
-				query[alias('account_id')] = account.id
-			
-			return len(await dbc.distinct(key = db_field, filter=query))		# type: ignore
+				accounts = [account]
+			if tank is not None:
+				tanks = [ tank ]
+			count : int = 0
+			# loop is faster since the collection has too much data
+			workers : list[Task] = list()
+			for r in regions:
+				if (pipeline:= await self._mk_pipeline_tank_stats(release=release, 
+						     									regions={r}, 
+						     									accounts=accounts, 
+																tanks=tanks)) is None:
+						raise ValueError('could not build filtering pipeline')
 				
+				workers.append(create_task(self._datas_unique_count(BSTableType.TankStats, field, pipeline)))
+			
+			for N in await gather(*workers, return_exceptions=False):
+				count += int(N)
+			
+			return count
+					
 		except Exception as err:
 			error(f'{err}')
-		return 0
+		return -1
 
 
 	########################################################
