@@ -102,6 +102,8 @@ class OptAccountsDistributed():
 	@classmethod
 	def parse(cls, input: str) -> Optional['OptAccountsDistributed']:
 		try:
+			if input is None:
+				return None	
 			res : list[str] = input.split(':')
 			if len(res) != 2:
 				raise ValueError(f'Input ({input} does not match format "I:N")')
