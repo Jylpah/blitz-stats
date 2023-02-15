@@ -519,8 +519,8 @@ async def  fetch_mp_worker(region: Region) -> EventCounter:
 														retryQ=retryQ, 
 														disabled=args.disabled)))	
 		stats.merge(await create_accountQ(db, args, accountQ, 
-								region=region,
-								stats_type=StatsTypes.tank_stats))
+											region=region,
+											stats_type=StatsTypes.tank_stats))
 
 		debug(f'waiting for account queue to finish: {region}')
 		await accountQ.join()
