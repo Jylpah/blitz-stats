@@ -8,6 +8,7 @@ import random
 import logging
 import re
 
+from asyncio import Task, create_task, gather
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCursor, AsyncIOMotorCollection  # type: ignore
 from pymongo.results import InsertManyResult, InsertOneResult, UpdateResult, DeleteResult
@@ -1957,37 +1958,45 @@ class MongoBackend(Backend):
 			error(f'{err}')
 		
 		
-	async def tank_stats_unique_count(self,
-								field	: str,
-								field_type: type[A], 
-								release	: BSBlitzRelease | None = None,
-								regions	: set[Region] = Region.API_regions(),
-								account	: BSAccount | None = None, 
-								tank	: Tank | None = None
-								) -> int:
+	async def tank_stats_unique_count(self, 
+				   						field		: str,										
+										release	: BSBlitzRelease | None = None,
+										regions	: set[Region] = Region.API_regions(),
+										account	: BSAccount | None = None, 
+										tank	: Tank | None = None
+										) -> int:
 		"""Return count of unique values of field"""
 		debug('starting')
-		count : int = 0
+		
 		try:
-			a 		: AliasMapper 	= AliasMapper(self.model_tank_stats)
-			alias 	: Callable 		= a.alias
-			db_field: str = alias(field)
-			dbc 	: AsyncIOMotorCollection = self.collection_tank_stats
-			query 	: dict[str, Any] = dict()
+			pipeline 	: list[dict[str, Any]] | None
+			accounts 	: Sequence[BSAccount] | None = None
+			tanks 		: Sequence[Tank] | None 	 = None
 
-			if release is not None:
-				query[alias('release')] = release.release
-			query[alias('region')] = { '$in': list(regions)}
-			if tank is not None:
-				query[alias('tank_id')] = tank.tank_id
 			if account is not None:
-				query[alias('account_id')] = account.id
-			
-			return len(await dbc.distinct(key = db_field, filter=query))		# type: ignore
+				accounts = [account]
+			if tank is not None:
+				tanks = [ tank ]
+			count : int = 0
+			# loop is faster since the collection has too much data
+			workers : list[Task] = list()
+			for r in regions:
+				if (pipeline:= await self._mk_pipeline_tank_stats(release=release, 
+						     									regions={r}, 
+						     									accounts=accounts, 
+																tanks=tanks)) is None:
+						raise ValueError('could not build filtering pipeline')
 				
+				workers.append(create_task(self._datas_unique_count(BSTableType.TankStats, field, pipeline)))
+			
+			for N in await gather(*workers, return_exceptions=False):
+				count += int(N)
+			
+			return count
+					
 		except Exception as err:
 			error(f'{err}')
-		return 0
+		return -1
 
 
 	########################################################
