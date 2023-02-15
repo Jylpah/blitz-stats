@@ -172,8 +172,8 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 							metavar='ACCOUNT_ID [ACCOUNT_ID1 ...]',
 							help="Fetch stats for the listed ACCOUNT_ID(s). \
 									ACCOUNT_ID format 'account_id:region' or 'account_id'")
-		parser.add_argument('--mp', action='store_true', default=False, 
-							help='Multiprocess fetch')		
+		# parser.add_argument('--mp', action='store_true', default=False, 
+		# 					help='Multiprocess fetch')		
 		parser.add_argument('--force', action='store_true', default=False, 
 							help='Fetch stats for all accounts')
 		parser.add_argument('--sample', type=float, default=0, metavar='SAMPLE',
@@ -378,10 +378,10 @@ async def cmd(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		if args.tank_stats_cmd == 'fetch':
-			if args.mp:
-				return await cmd_fetchMP(db, args)
-			else:	
+			if len(args.accounts) > 0:
 				return await cmd_fetch(db, args)
+			else:	
+				return await cmd_fetchMP(db, args)
 
 		elif args.tank_stats_cmd == 'edit':
 			return await cmd_edit(db, args)
