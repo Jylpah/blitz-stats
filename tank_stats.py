@@ -56,7 +56,7 @@ WORKERS_PRUNE 		: int = 5
 TANK_STATS_Q_MAX 	: int = 1000
 TANK_STATS_BATCH 	: int = 50000
 
-EXPORT_WRITE_BATCH 			: int = int(5e8)
+EXPORT_WRITE_BATCH 			: int = int(50e6)
 EXPORT_DATA_FORMATS 		: list[str] = [ 'parquet', 'arrow' ]
 DEFAULT_EXPORT_DATA_FORMAT 	: str 		= EXPORT_DATA_FORMATS[0]
 
