@@ -37,8 +37,8 @@ MIN_UPDATE_INTERVAL : int = 3   # days
 ACCOUNTS_Q_MAX 		: int = 5000
 TANK_STATS_BATCH	: int = 1000
 
-
 A = TypeVar('A')
+
 ##############################################
 #
 ## Utils 
@@ -1178,15 +1178,14 @@ class Backend(ABC):
 
 	
 	@abstractmethod
-	async def tank_stats_unique_count(self,
-								field	: str,
-								field_type: type[A], 
-								release	: BSBlitzRelease | None = None,
-								regions	: set[Region] = Region.API_regions(),
-								account	: BSAccount | None = None, 
-								tank	: Tank | None = None
-								) -> int:
-		"""Return count of unique values of field"""
+	async def tank_stats_unique_count(self, 
+				   						field		: str,										
+										release	: BSBlitzRelease | None = None,
+										regions	: set[Region] = Region.API_regions(),
+										account	: BSAccount | None = None, 
+										tank	: Tank | None = None
+										) -> int:
+		"""Return count of unique values of field. **args see tank_stats_unique()"""
 		raise NotImplementedError
 
 
