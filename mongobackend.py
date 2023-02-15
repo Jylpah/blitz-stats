@@ -639,14 +639,14 @@ class MongoBackend(Backend):
 
 
 	async def obj_export(self, table_type: BSTableType,
+		      			 pipeline : list[dict[str, Any]] = list(),
 						 sample: float = 0) -> AsyncGenerator[Any, None]:
 		"""Export raw documents from Mongo DB"""
 		try:
 			debug(f'starting')
 			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
 			debug(f'export from: {self.table_uri(table_type)}')
-			pipeline : list[dict[str, Any]] = list()
-
+			
 			if sample > 0 and sample < 1:
 				N : int = await dbc.estimated_document_count()
 				pipeline.append({ '$sample' : { 'size' : int(N * sample) }})

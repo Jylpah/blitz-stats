@@ -696,6 +696,7 @@ class Backend(ABC):
 	@abstractmethod
 	async def obj_export(self, 
 						 table_type: BSTableType, 
+						 pipeline : list[dict[str, Any]] = list(),
 						 sample: float = 0) -> AsyncGenerator[Any, None]:
 		"""Export raw object from backend"""
 		raise NotImplementedError
