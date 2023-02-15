@@ -403,26 +403,33 @@ class MongoBackend(Backend):
 		except Exception as err:
 			error(f'Failed to get data from {self.table_uri(table_type)}: {err}')
 
-	## NOT NEEDED ?
-	# async def _datas_get_batch(self, 
-	# 							table_type: BSTableType,						
-	# 							pipeline : list[dict[str, Any]], 
-	# 							batch: int = 100,
-	# 							**options
-	# 							) -> AsyncGenerator[list[JSONExportable], None]:
-	# 	"""get data in batches"""
-	# 	try:
-	# 		debug('starting')
-	# 		model : type[JSONExportable] = self.get_model(table_type)
-
-	# 		async for objs in self.objs_export(table_type, pipeline, batch=batch, **options):
-	# 			try:
-	# 				# a failed parse will FAIL the whole batch
-	# 				yield [ model.parse_obj(obj) for obj in objs ]
-	# 			except Exception as err:
-	# 				error(f'model format error: {err}')
-	# 	except Exception as err:
-	# 		error(f'Failed to get data batch from {self.table_uri(table_type)}: {err}')
+	
+	async def _datas_get_batch(self, 
+								table_type: BSTableType,						
+								pipeline : list[dict[str, Any]], 
+								batch: int = 100,
+								**options
+								) -> AsyncGenerator[list[JSONExportable], None]:
+		"""get data in batches"""
+		try:
+			debug('starting')
+			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
+			model : type[JSONExportable] = self.get_model(table_type)
+			datas : list[JSONExportable] = list()
+			async for obj in dbc.aggregate(pipeline, allowDiskUse=True, **options):
+				try:
+					datas.append(model.parse_obj(obj))
+					if len(datas) == batch:
+						yield datas
+						datas = list()
+				except ValidationError as err:
+					error(f'Could not validate {model} ob={obj} from {self.table_uri(table_type)}: {err}')
+				except Exception as err:
+					error(f'{err}')
+			if len(datas) > 0:
+				yield datas
+		except Exception as err:
+			error(f'Failed to get data batch from {self.table_uri(table_type)}: {err}')
 
 
 	async def _datas_export(self, table_type: BSTableType,
