@@ -649,8 +649,32 @@ class MongoBackend(Backend):
 		except Exception as err:
 			error(f'Error counting documents in {self.table_uri(table_type)}: {err}')
 		return -1
+	
 
+	def _mk_pipeline_unique(self, 
+							table_type	: BSTableType,
+							field		: str, 
+							pipeline 	: list[dict[str, Any]]
+							) -> list[dict[str, Any]] | None:
+		"""Create pipeline to return unique values of 'field' in 
+			documents { 'field': unique_value }"""
+		try:
+			debug('starting')			
+			model 	: type[JSONExportable] 	= self.get_model(table_type)
+			a 		: AliasMapper 			= AliasMapper(model)
+			alias 	: Callable 				= a.alias
 
+			pipeline.append({ '$project': { '_id': 0, alias(field): 1 }})
+			pipeline.append({ '$group': {'_id': None, field: { '$addToSet': '$' + alias(field)}} })
+			pipeline.append({ '$unwind': { 'path': '$' + field }})
+			pipeline.append({ '$project': { '_id': 0}})
+
+			return pipeline
+		
+		except Exception as err:
+			error(f'Error counting documents in {self.table_uri(table_type)}: {err}')
+		return None
+	
 	async def obj_export(self, table_type: BSTableType,
 		      			 pipeline : list[dict[str, Any]] = list(),
 						 sample: float = 0) -> AsyncGenerator[Any, None]:
