@@ -846,7 +846,6 @@ class MongoBackend(Backend):
 			inactive: true = only inactive, false = not inactive, none = AUTO"""
 		try:
 			debug('starting')
-			NOW = epoch_now()
 			pipeline : list[dict[str, Any]] | None
 			pipeline = await self._mk_pipeline_accounts(stats_type=stats_type, 
 														regions=regions,
@@ -862,10 +861,11 @@ class MongoBackend(Backend):
 				raise ValueError(f'could not create get-accounts {self.table_uri(BSTableType.Accounts)} cursor')
 			message(f'DEBUG accounts_get(): pipeline={pipeline}')
 
-			async for objs in self.objs_export(BSTableType.Accounts, pipeline, batch=batch):			
+			async for datas in self._datas_get_batch(BSTableType.Accounts, pipeline, 
+					    							batch=batch, batchSize=10000):			
 				try:
 					players : list[BSAccount] = list()
-					for obj in objs:
+					for obj in datas:
 						if (player := BSAccount.transform_obj(obj, in_type=model)) is not None:
 							if not disabled and inactive == OptAccountsInactive.auto \
 								and stats_type is not None and not player.update_needed(stats_type):
@@ -908,7 +908,7 @@ class MongoBackend(Backend):
 			if pipeline is None:
 				raise ValueError(f'could not create get-accounts {self.table_uri(BSTableType.Accounts)} cursor')
 			message(f'DEBUG accounts_get(): pipeline={pipeline}')
-			
+
 			# 'batchSize' is required for keeping cursor alive		
 			async for data in self._datas_get(BSTableType.Accounts, 
 				     							pipeline=pipeline, 
