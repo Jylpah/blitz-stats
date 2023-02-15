@@ -1170,8 +1170,7 @@ class Backend(ABC):
 								release	: BSBlitzRelease | None = None,
 								regions	: set[Region] = Region.API_regions(),
 								account	: BSAccount | None = None, 
-								tank	: Tank | None = None, 
-								randomize: bool = True
+								tank	: Tank | None = None, 								
 								) -> AsyncGenerator[A, None]:
 		"""Return unique values of field"""
 		raise NotImplementedError
