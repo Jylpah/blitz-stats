@@ -346,8 +346,8 @@ def add_args_export_data(parser: ArgumentParser, config: Optional[ConfigParser] 
 							help="export latest stats or stats for the update")
 		parser.add_argument('RELEASE', type=str, 
 							help='export stats for a RELEASE')
-		parser.add_argument('--before', action='store_true', default=False, 
-								help='exports stats before release, default is False')
+		parser.add_argument('--after', action='store_true', default=False, 
+								help='exports stats at the end of release, default is False')
 		parser.add_argument('--format', type=str, nargs='?', choices=EXPORT_DATA_FORMATS, 
 		 					 default=EXPORT_FORMAT, help='export file format')
 		# parser.add_argument('--filename', metavar='FILE', type=str, nargs='?', default=None, 
@@ -1304,10 +1304,10 @@ async def cmd_export_career(db: Backend, args : Namespace) -> bool:
 		force 		: bool			= args.force
 		format		: str			= args.format
 		basedir 	: str			= os.path.join(args.basedir, release.release, \
-													'career_' + ('before' if args.before else 'after') ) 
+													'career_' + ('after' if args.after else 'before') ) 
 		options 		: dict[str, Any]= dict()
 		options['release']				= release
-		options['before']				= args.before
+		options['after']				= args.after
 
 		if WORKERS > 0:
 			WORKERS = min( [cpu_count() - 1, WORKERS ])
@@ -1323,13 +1323,13 @@ async def cmd_export_career(db: Backend, args : Namespace) -> bool:
 
 			with Pool(processes=WORKERS, initializer=export_career_mp_init, 
 					  initargs=[ db.config, workQ, dataQ, options ]) as pool:
-				
-				N : int = await db.tank_stats_unique_count('account_id', int, 
+				message('Counting tank stats...')
+				N : int = await db.tank_stats_unique_count('account_id',
 															release=release, 
 															regions=regions)
 				Qcreator : Task = create_task(create_accountQ_active(db, aworkQ, release, 
 																	regions, 
-																	randomize=True ))
+																	randomize=True))
 				debug(f'starting {WORKERS} workers')
 				results : AsyncResult = pool.map_async(export_career_stats_mp_worker_start, 
 														range(WORKERS))
@@ -1397,9 +1397,9 @@ async def  export_career_stats_mp_worker(worker: int = 0) -> EventCounter:
 
 	try:		
 		release : BSBlitzRelease 	= mp_options['release']
-		before	: bool 				= mp_options['before']
+		after	: bool 				= mp_options['after']
 		workers : list[Task]		= list()
-		if before:			
+		if not after:			
 			if (rel := await db.release_get_previous(release)) is None:
 				raise ValueError(f'could not find previous release: {release}')
 			else:
@@ -1430,15 +1430,7 @@ async def export_career_fetcher(db: Backend,
 	tank_stats 	: list[WGTankStat]
 	try:		
 		while (account := await accountQ.get()) is not None:
-
-			# async for tank_stats in db.tank_stats_export_career(account=account, release=release, before=before):
-			# 	tank_stats.append(tank_stat.obj_src())
-			# 	if len(tank_stats) == TANK_STATS_BATCH:
-			# 		# error('putting DF to dataQ')
-			# 		await dataQ.put(pd.json_normalize(tank_stats).drop('id', axis=1))
-			# 		stats.log('tank stats read', len(tank_stats))
-			# 		tank_stats = list()
-			
+		
 			async for tank_stats in db.tank_stats_export_career(account=account, release=release):
 				datas.extend([ ts.obj_src() for ts in tank_stats ])
 				if len(datas) >= TANK_STATS_BATCH:
