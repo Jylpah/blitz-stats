@@ -184,7 +184,8 @@ async def main(argv: list[str]):
 			
 	except Exception as err:
 		error(f'{err}')
-	message(f'program finished: {datetime.now():%Y-%m-%d %H:%M}')
+	if args.main_cmd in [ 'accounts', 'tank-stats', 'player-achievements', 'replays', 'setup' ]:
+		message(f'program finished: {datetime.now():%Y-%m-%d %H:%M}')
 	
 
 def print_all(stats, out, limit: int | None =None) -> None:
