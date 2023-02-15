@@ -675,6 +675,32 @@ class MongoBackend(Backend):
 			error(f'Error counting documents in {self.table_uri(table_type)}: {err}')
 		return None
 	
+
+	async def _datas_unique(self, 
+							table_type	: BSTableType,
+							field		: str, 
+							field_type	: type[A],
+							pipeline 	: list[dict[str, Any]]) -> AsyncGenerator[A, None]:
+		"""Return unique values of 'field' in documents { 'field': unique_value }"""
+		try:
+			debug('starting')
+			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
+			if (pl := self._mk_pipeline_unique(table_type, field, 
+					    						pipeline)) is None:
+				raise ValueError(f'could not build aggregation pipeline for unique values: field={field}')
+			else: 
+				pipeline = pl
+
+			async for doc in dbc.aggregate(pipeline, allowDiskUse=True):
+				try:
+					yield cast(A, doc[field])
+				except Exception as err:
+					error(f'{doc} yielded an error: {err}')
+
+		except Exception as err:
+			error(f'Error counting documents in {self.table_uri(table_type)}: {err}')
+
+
 	async def obj_export(self, table_type: BSTableType,
 		      			 pipeline : list[dict[str, Any]] = list(),
 						 sample: float = 0) -> AsyncGenerator[Any, None]:
