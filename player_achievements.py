@@ -707,7 +707,8 @@ async def cmd_prune(db: Backend, args : Namespace) -> bool:
 					stats.log('duplicates found')
 					if commit:
 						# verbose(f'deleting duplicate: {dup}')
-						if await db.player_achievement_delete(account=BSAccount(id=dup.account_id), 
+						if await db.player_achievement_delete(account=BSAccount(id=dup.account_id, 
+							      													region=region), 
 															  added=dup.added):
 							verbose(f'deleted duplicate: {dup}')
 							stats.log('duplicates deleted')
