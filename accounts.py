@@ -1559,16 +1559,24 @@ async def create_accountQ_active(db: Backend,
 	debug('starting')
 	stats : EventCounter = EventCounter(f'accounts')
 	try:
-		async for account_id in db.tank_stats_unique('account_id', int, 
-													release=release, 
-													regions=regions, 
-													randomize=randomize):
-			try:
-				await accountQ.put(BSAccount(id=account_id))
-				stats.log('added')
-			except Exception as err:
-				error(f'{err}')
-				stats.log('errors')
+		if randomize:
+			workers : list[Task] = list()
+			for r in regions:
+				workers.append(create_task(create_accountQ_active(db, accountQ, 
+						      										release, 
+																	regions={r}, 
+																	randomize=False)))
+			await stats.gather_stats(workers, merge_child=False, cancel=False)
+		else:
+			async for account_id in db.tank_stats_unique('account_id', int, 
+														release=release, 
+														regions=regions):
+				try:
+					await accountQ.put(BSAccount(id=account_id))
+					stats.log('added')
+				except Exception as err:
+					error(f'{err}')
+					stats.log('errors')
 	except Exception as err:
 		error(f'{err}')
 	return stats
