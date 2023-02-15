@@ -35,7 +35,7 @@ def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> b
 												title='releases commands',
 												description='valid commands',
 												help='releases help',
-												metavar='add | edit | remove | list')
+												metavar='add | edit | remove | export | list')
 		releases_parsers.required = True
 		add_parser = releases_parsers.add_parser('add', help="releases add help")
 		if not add_args_add(add_parser, config=config):
@@ -53,7 +53,8 @@ def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> b
 		if not add_args_import(import_parser, config=config):
 			raise Exception("Failed to define argument parser for: releases import")
 
-		export_parser = releases_parsers.add_parser('export', help="releases export help")
+		export_parser = releases_parsers.add_parser('export', aliases=['list'], 
+					      							help="releases export help")
 		if not add_args_export(export_parser, config=config):
 			raise Exception("Failed to define argument parser for: releases export")
 				
