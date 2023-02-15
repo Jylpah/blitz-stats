@@ -456,6 +456,9 @@ async def cmd_fetchMP(db: Backend, args : Namespace) -> bool:
 				
 				await statsQ.join()
 				await stats.gather_stats([worker])
+				for res in results.get():
+					stats.merge_child(res)
+				pool.join()
 		
 		message(stats.print(do_print=False, clean=True))
 		return True
@@ -493,7 +496,7 @@ async def  fetch_mp_worker(region: Region) -> EventCounter:
 
 	debug(f'fetch worker starting: {region}')
 	stats 		: EventCounter 	= EventCounter(f'fetch {region}')
-	accountQ	: IterableQueue[BSAccount] = IterableQueue(maxsize=TANK_STATS_Q_MAX)
+	accountQ	: IterableQueue[BSAccount] = IterableQueue(maxsize=100)
 	retryQ 		: IterableQueue[BSAccount] | None = None
 	THREADS 	: int 			= 20		
 	args 		: Namespace 	= mp_args
@@ -649,7 +652,8 @@ async def fetch_api_worker(db: Backend,
 							disabled : bool = False) -> EventCounter:
 	"""Async worker to fetch tank stats from WG API"""
 	debug('starting')
-	stats : EventCounter
+	stats 		: EventCounter
+	tank_stats 	: list[WGTankStat] | None
 	if retryQ is None:
 		stats = EventCounter('re-try')
 	else:
@@ -667,9 +671,8 @@ async def fetch_api_worker(db: Backend,
 
 				if account.region is None:
 					raise ValueError(f'account_id={account.id} does not have region set')
-				tank_stats : list[WGTankStat] | None = await wg_api.get_tank_stats(account.id, account.region)
-
-				if tank_stats is None:
+				
+				if (tank_stats := await wg_api.get_tank_stats(account.id, account.region)) is None:
 					
 					debug(f'Could not fetch account: {account.id}')
 					if retryQ is not None:
@@ -717,6 +720,7 @@ async def fetch_backend_worker(db: Backend, statsQ: Queue[list[WGTankStat]]) -> 
 	account 	: BSAccount | None
 	account_id	: int
 	last_battle_time : int
+	rel : BSBlitzRelease | None
 
 	try:
 		releases : BucketMapper[BSBlitzRelease] = await release_mapper(db)
@@ -730,11 +734,12 @@ async def fetch_backend_worker(db: Backend, statsQ: Queue[list[WGTankStat]]) -> 
 			try:
 				if len(tank_stats) > 0:
 					debug(f'Read {len(tank_stats)} from queue')
+					
 					last_battle_time = max( [ ts.last_battle_time for ts in tank_stats] )
-					for ts in tank_stats:
-						rel : BSBlitzRelease | None = releases.get(ts.last_battle_time)
-						if rel is not None:
+					for ts in tank_stats:						 
+						if (rel := releases.get(ts.last_battle_time)) is not None:
 							ts.release = rel.release
+
 					added, not_added = await db.tank_stats_insert(tank_stats)	
 					account_id = tank_stats[0].account_id
 					if (account := await db.account_get(account_id=account_id)) is None:
@@ -748,10 +753,10 @@ async def fetch_backend_worker(db: Backend, statsQ: Queue[list[WGTankStat]]) -> 
 						account.inactive = False
 					else:
 						stats.log('accounts w/o new stats')
-						if account.is_inactive(): 
-							if not account.inactive:
-								stats.log('accounts marked inactive')
-							account.inactive = True
+						# if account.is_inactive(): 
+						# 	if not account.inactive:
+						# 		stats.log('accounts marked inactive')
+						# 	account.inactive = True
 						
 					await db.account_replace(account=account, upsert=True)
 			except Exception as err:
