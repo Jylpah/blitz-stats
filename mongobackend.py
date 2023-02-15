@@ -383,14 +383,17 @@ class MongoBackend(Backend):
 ########################################################
 
 
-	async def _datas_get(self, table_type: BSTableType,						
-						pipeline : list[dict[str, Any]]) -> AsyncGenerator[JSONExportable, None]:
+	async def _datas_get(self, 
+		      			table_type: BSTableType,						
+						pipeline : list[dict[str, Any]],
+						**options) -> AsyncGenerator[JSONExportable, None]:
 		try:
 			debug('starting')
 			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
 			model : type[JSONExportable] = self.get_model(table_type)
+
 			debug(f'collection={dbc.name}, model={model}, pipeline={pipeline}')
-			async for obj in dbc.aggregate(pipeline, allowDiskUse=True):
+			async for obj in dbc.aggregate(pipeline, allowDiskUse=True, **options):
 				try:
 					yield model.parse_obj(obj)
 				except ValidationError as err:
@@ -400,22 +403,31 @@ class MongoBackend(Backend):
 		except Exception as err:
 			error(f'Failed to get data from {self.table_uri(table_type)}: {err}')
 
-	## NOT NEEDED ?
+	
 	async def _datas_get_batch(self, 
 								table_type: BSTableType,						
 								pipeline : list[dict[str, Any]], 
-								batch: int = 100
+								batch: int = 100,
+								**options
 								) -> AsyncGenerator[list[JSONExportable], None]:
 		"""get data in batches"""
 		try:
 			debug('starting')
+			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
 			model : type[JSONExportable] = self.get_model(table_type)
-			async for objs in self.objs_export(table_type, pipeline, batch=batch):
+			datas : list[JSONExportable] = list()
+			async for obj in dbc.aggregate(pipeline, allowDiskUse=True, **options):
 				try:
-					# a failed parse will FAIL the whole batch
-					yield [ model.parse_obj(obj) for obj in objs ]
+					datas.append(model.parse_obj(obj))
+					if len(datas) == batch:
+						yield datas
+						datas = list()
+				except ValidationError as err:
+					error(f'Could not validate {model} ob={obj} from {self.table_uri(table_type)}: {err}')
 				except Exception as err:
-					error(f'model format error: {err}')
+					error(f'{err}')
+			if len(datas) > 0:
+				yield datas
 		except Exception as err:
 			error(f'Failed to get data batch from {self.table_uri(table_type)}: {err}')
 
@@ -423,7 +435,8 @@ class MongoBackend(Backend):
 	async def _datas_export(self, table_type: BSTableType,
 							in_type: type[D],
 							out_type: type[O],
-							sample : float = 0) -> AsyncGenerator[O, None]:
+							sample : float = 0,
+							**options) -> AsyncGenerator[O, None]:
 		"""Export data from Mongo DB"""
 		try:
 			debug(f'starting export from: {self.table_uri(table_type)}')
@@ -436,7 +449,7 @@ class MongoBackend(Backend):
 			elif sample >= 1:
 				pipeline.append({ '$sample' : { 'size' : int(sample) }})
 
-			async for obj in dbc.aggregate(pipeline, allowDiskUse=True):
+			async for obj in dbc.aggregate(pipeline, allowDiskUse=True, **options):
 				try:
 					if (res:= out_type.transform_obj(obj, in_type)) is not None:
 						yield res
@@ -639,14 +652,14 @@ class MongoBackend(Backend):
 
 
 	async def obj_export(self, table_type: BSTableType,
+		      			 pipeline : list[dict[str, Any]] = list(),
 						 sample: float = 0) -> AsyncGenerator[Any, None]:
 		"""Export raw documents from Mongo DB"""
 		try:
 			debug(f'starting')
 			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
 			debug(f'export from: {self.table_uri(table_type)}')
-			pipeline : list[dict[str, Any]] = list()
-
+			
 			if sample > 0 and sample < 1:
 				N : int = await dbc.estimated_document_count()
 				pipeline.append({ '$sample' : { 'size' : int(N * sample) }})
@@ -833,7 +846,6 @@ class MongoBackend(Backend):
 			inactive: true = only inactive, false = not inactive, none = AUTO"""
 		try:
 			debug('starting')
-			NOW = epoch_now()
 			pipeline : list[dict[str, Any]] | None
 			pipeline = await self._mk_pipeline_accounts(stats_type=stats_type, 
 														regions=regions,
@@ -849,10 +861,11 @@ class MongoBackend(Backend):
 				raise ValueError(f'could not create get-accounts {self.table_uri(BSTableType.Accounts)} cursor')
 			message(f'DEBUG accounts_get(): pipeline={pipeline}')
 
-			async for objs in self.objs_export(BSTableType.Accounts, pipeline, batch=batch):			
+			async for datas in self._datas_get_batch(BSTableType.Accounts, pipeline, 
+					    							batch=batch, batchSize=10000):			
 				try:
 					players : list[BSAccount] = list()
-					for obj in objs:
+					for obj in datas:
 						if (player := BSAccount.transform_obj(obj, in_type=model)) is not None:
 							if not disabled and inactive == OptAccountsInactive.auto \
 								and stats_type is not None and not player.update_needed(stats_type):
@@ -895,7 +908,11 @@ class MongoBackend(Backend):
 			if pipeline is None:
 				raise ValueError(f'could not create get-accounts {self.table_uri(BSTableType.Accounts)} cursor')
 			message(f'DEBUG accounts_get(): pipeline={pipeline}')
-			async for data in self._datas_get(BSTableType.Accounts, pipeline=pipeline):				
+
+			# 'batchSize' is required for keeping cursor alive		
+			async for data in self._datas_get(BSTableType.Accounts, 
+				     							pipeline=pipeline, 
+												batchSize = 10000):	
 				try:
 					if (player := BSAccount.transform_obj(data)) is None:
 						continue
