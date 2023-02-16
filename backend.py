@@ -95,8 +95,9 @@ class OptAccountsDistributed():
 	def __init__(self, mod: int, div: int):
 		assert type(mod) is int and mod >=0 , 'Modulus has to be integer >= 0'
 		assert type(div) is int and div > 0, 'Divisor has to be positive integer'
-		self.mod : int = mod
-		self.div : int = div % mod
+		self.div : int = div
+		self.mod : int = mod % div
+		
 
 
 	@classmethod
