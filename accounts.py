@@ -158,7 +158,7 @@ def add_args_update_wg(parser: ArgumentParser, config: Optional[ConfigParser] = 
 							help='Set Lesta (RU) APP ID')
 		parser.add_argument('--ru-rate-limit', type=float, default=LESTA_RATE_LIMIT, 
 		      				metavar='RATE_LIMIT', help='Rate limit for Lesta (RU) API')
-		parser.add_argument('--region', '--regions', type=str, nargs='*', 
+		parser.add_argument('--regions', '--region', type=str, nargs='*', 
 							choices=[ r.value for r in Region.API_regions() ], 
 							default=[ r.value for r in Region.API_regions() ], 
 							help='filter by region (default: ' + ' + '.join(Region.API_regions()) + ')')
@@ -264,7 +264,7 @@ def add_args_fetch_wg(parser: ArgumentParser, config: Optional[ConfigParser] = N
 							help='Set Lesta (RU) APP ID')
 		parser.add_argument('--ru-rate-limit', type=float, default=LESTA_RATE_LIMIT, 
 		      				metavar='RATE_LIMIT', help='Rate limit for Lesta (RU) API')
-		parser.add_argument('--region', '--regions', type=str, nargs='*', 
+		parser.add_argument('--regions', '--region', type=str, nargs='*', 
 							choices=[ r.value for r in Region.API_regions() ], 
 							default=[ r.value for r in Region.API_regions() ], 
 							help='filter by region (default: ' + ' + '.join(Region.API_regions()) + ')')
@@ -397,7 +397,7 @@ def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 							help='Fetch stats for accounts that have been active since RELEASE/DAYS')
 		parser.add_argument('--inactive-since', type=str,  default=None, metavar='RELEASE/DAYS',
 							help='Fetch stats for accounts that have been inactive since RELEASE/DAYS')		
-		parser.add_argument('--region', '--regions', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
+		parser.add_argument('--regions', '--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
 								default=[ r.value for r in Region.API_regions() ], help='Filter by region (default is API = eu + com + asia)')
 		parser.add_argument('--by-region', action='store_true', default=False, help='Export accounts by region')
 		parser.add_argument('--distributed', '--dist',type=str, dest='distributed', metavar='I:N', 
@@ -429,7 +429,7 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 		parser.add_argument('--import-model', metavar='IMPORT-TYPE', type=str, required=True,
 							choices=['BSAccount', 'WG_Account'], 
 							help='Data format to import. Default is blitz-stats native format.')
-		parser.add_argument('--region', '--regions', type=str, nargs='*', 
+		parser.add_argument('--regions', '--region', type=str, nargs='*', 
 								choices=[ r.value for r in Region.has_stats() ], 
 								default=[ r.value for r in Region.has_stats() ], 
 								help='Filter by region (default is API = eu + com + asia)')
@@ -537,7 +537,7 @@ async def cmd_update_wg(db		: Backend,
 	debug('starting')
 	stats		: EventCounter = EventCounter('WG API')
 	try:		
-		regions			: set[Region] 	= { Region(r) for r in args.region }		
+		regions			: set[Region] 	= { Region(r) for r in args.regions }		
 		wg 				: WGApi = WGApi(app_id = args.wg_app_id, 
 										ru_app_id= args.ru_app_id,
 										rate_limit = args.wg_rate_limit, 
@@ -760,7 +760,7 @@ async def cmd_fetch_wg(db		: Backend,
 	debug('starting')
 	stats		: EventCounter = EventCounter('WG API')
 	try:		
-		regions		: set[Region] 	= { Region(r) for r in args.region }
+		regions		: set[Region] 	= { Region(r) for r in args.regions }
 		start 		: int 			= args.wg_start_id
 		if start > 0 and len(regions) > 1:
 			raise ValueError('if --start > 0, only one region can be chosen')
@@ -1154,7 +1154,7 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 	try:
 		stats 			: EventCounter 			= EventCounter('accounts import')
 		accountQ 		: Queue[BSAccount]		= Queue(ACCOUNTS_Q_MAX)
-		regions 		: set[Region]			= { Region(r) for r in args.region }
+		regions 		: set[Region]			= { Region(r) for r in args.regions }
 		import_db   	: Backend | None 		= None		
 		import_backend 	: str 					= args.import_backend
 		force 			: bool | None 			= None
@@ -1206,7 +1206,7 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 		stats 		: EventCounter 			= EventCounter('accounts export')
 		disabled 	: bool 					= args.disabled
 		inactive 	: OptAccountsInactive 	= OptAccountsInactive.default()
-		regions		: set[Region] 			= { Region(r) for r in args.region }
+		regions		: set[Region] 			= { Region(r) for r in args.regions }
 		distributed : OptAccountsDistributed 
 		filename	: str					= args.filename
 		force		: bool 					= args.force
@@ -1314,7 +1314,7 @@ async def count_accounts(db: Backend, args : Namespace, stats_type: StatsTypes |
 	debug('starting')
 	accounts_N : int = 0
 	try:
-		regions	 	: set[Region]	= { Region(r) for r in args.region }
+		regions	 	: set[Region]	= { Region(r) for r in args.regions }
 		accounts 	: list[BSAccount] | None = read_args_accounts(args.accounts)
 
 		if accounts is not None:
@@ -1452,9 +1452,9 @@ async def create_accountQ_batch(db			: Backend,
 								batch 		: int = 100) -> EventCounter:
 	"""Helper to make accountQ from arguments"""	
 	stats : EventCounter = EventCounter(f'{db.driver}: accounts')
-	assert len(args.region) == 1, "account batch queue supports only a single region"
+	assert len(args.regions) == 1, "account batch queue supports only a single region"
 	debug('starting')
-	region : Region = [ Region(r) for r in args.region ][0]
+	region : Region = [ Region(r) for r in args.regions ][0]
 	try:
 		accounts 	: list[BSAccount] | None = None
 		try:
@@ -1692,9 +1692,9 @@ async def accounts_parse_args(db: Backend, args : Namespace,) -> dict[str, Any] 
 	
 	try:
 		try:
-			res['regions']	= { Region(r) for r in args.region }		
+			res['regions']	= { Region(r) for r in args.regions }		
 		except:
-			debug('could not read --region')
+			debug('could not read --regions')
 	
 		# try:
 		# 	res['accounts'] = read_args_accounts(args.accounts)
