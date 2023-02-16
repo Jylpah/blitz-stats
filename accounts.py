@@ -152,10 +152,12 @@ def add_args_update_wg(parser: ArgumentParser, config: Optional[ConfigParser] = 
 							help='number of async workers')
 		parser.add_argument('--wg-app-id', type=str, default=WG_APP_ID, metavar='APP_ID',
 							help='Set WG APP ID')
-		parser.add_argument('--wg-rate-limit', type=float, default=WG_RATE_LIMIT, metavar='RATE_LIMIT',
-							help='rate limit for WG API per server')
+		parser.add_argument('--wg-rate-limit', type=float, default=WG_RATE_LIMIT, 
+		      				metavar='RATE_LIMIT', help='rate limit for WG API per server')
 		parser.add_argument('--ru-app-id', type=str, default=LESTA_APP_ID, metavar='APP_ID',
 							help='Set Lesta (RU) APP ID')
+		parser.add_argument('--ru-rate-limit', type=float, default=LESTA_RATE_LIMIT, 
+		      				metavar='RATE_LIMIT', help='Rate limit for Lesta (RU) API')
 		parser.add_argument('--region', '--regions', type=str, nargs='*', 
 							choices=[ r.value for r in Region.API_regions() ], 
 							default=[ r.value for r in Region.API_regions() ], 
@@ -256,10 +258,12 @@ def add_args_fetch_wg(parser: ArgumentParser, config: Optional[ConfigParser] = N
 							help='number of async workers')
 		parser.add_argument('--wg-app-id', type=str, default=WG_APP_ID, metavar='APP_ID',
 							help='Set WG APP ID')
-		parser.add_argument('--wg-rate-limit', type=float, default=WG_RATE_LIMIT, metavar='RATE_LIMIT',
-							help='rate limit for WG API per server')
+		parser.add_argument('--wg-rate-limit', type=float, default=WG_RATE_LIMIT, 
+		      				metavar='RATE_LIMIT', help='rate limit for WG API per server')
 		parser.add_argument('--ru-app-id', type=str, default=LESTA_APP_ID, metavar='APP_ID',
 							help='Set Lesta (RU) APP ID')
+		parser.add_argument('--ru-rate-limit', type=float, default=LESTA_RATE_LIMIT, 
+		      				metavar='RATE_LIMIT', help='Rate limit for Lesta (RU) API')
 		parser.add_argument('--region', '--regions', type=str, nargs='*', 
 							choices=[ r.value for r in Region.API_regions() ], 
 							default=[ r.value for r in Region.API_regions() ], 
@@ -536,7 +540,8 @@ async def cmd_update_wg(db		: Backend,
 		regions			: set[Region] 	= { Region(r) for r in args.region }		
 		wg 				: WGApi = WGApi(app_id = args.wg_app_id, 
 										ru_app_id= args.ru_app_id,
-										rate_limit = args.wg_rate_limit)
+										rate_limit = args.wg_rate_limit, 
+										ru_rate_limit = args.ru_rate_limit,)
 		WORKERS 		: int 	= max( int(args.wg_workers / len(Region.API_regions())), 1)
 		workQ_creators	: list[Task]	= list()
 		api_workers 	: list[Task]	= list()
@@ -764,7 +769,8 @@ async def cmd_fetch_wg(db		: Backend,
 		max_accounts: int 			= args.max_accounts
 		wg 			: WGApi 		= WGApi(app_id = args.wg_app_id, 
 											ru_app_id= args.ru_app_id,
-											rate_limit = args.wg_rate_limit)
+											rate_limit = args.wg_rate_limit,
+											ru_rate_limit = args.ru_rate_limit,)
 		WORKERS 	: int 			= max( int(args.wg_workers / len(Region.API_regions())), 1)
 		id_creators	: list[Task]	= list()
 		api_workers : list[Task]	= list()

@@ -114,10 +114,12 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 
 		parser.add_argument('--workers', type=int, default=WG_WORKERS, help='Set number of asynchronous workers')
 		parser.add_argument('--wg-app-id', type=str, default=WG_APP_ID, help='Set WG APP ID')
-		parser.add_argument('--rate-limit', type=float, default=WG_RATE_LIMIT, metavar='RATE_LIMIT',
-							help='Rate limit for WG API')
+		parser.add_argument('--rate-limit', type=float, default=WG_RATE_LIMIT, dest='wg_rate_limit', 
+		      				metavar='RATE_LIMIT', help='Rate limit for WG API')
 		parser.add_argument('--ru-app-id', type=str, default=LESTA_APP_ID, metavar='APP_ID',
 							help='Set Lesta (RU) APP ID')
+		parser.add_argument('--ru-rate-limit', type=float, default=LESTA_RATE_LIMIT, metavar='RATE_LIMIT',
+							help='Rate limit for Lesta (RU) API')
 		parser.add_argument('--region', '--regions', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
 							default=[ r.value for r in Region.API_regions() ], 
 							help='Filter by region (default: eu + com + asia + ru)')
@@ -229,16 +231,14 @@ async def cmd(db: Backend, args : Namespace) -> bool:
 
 async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 	"""Fetch player achievements"""
-	assert 'wg_app_id' in args and type(args.wg_app_id) is str, "'wg_app_id' must be set and string"
-	assert 'rate_limit' in args and (type(args.rate_limit) is float or \
-			type(args.rate_limit) is int), "'rate_limit' must set and a number"	
 	assert 'region' in args and type(args.region) is list, "'region' must be set and a list"
 	
 	debug('starting')
 	
 	wg 	: WGApi = WGApi(app_id=args.wg_app_id, 
 						ru_app_id= args.ru_app_id,
-						rate_limit=args.rate_limit)
+						rate_limit=args.wg_rate_limit, 
+						ru_rate_limit = args.ru_rate_limit,)
 
 	try:
 		stats 	 	: EventCounter									= EventCounter('player-achievements fetch')
