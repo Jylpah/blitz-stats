@@ -156,7 +156,7 @@ def add_args_update_wg(parser: ArgumentParser, config: Optional[ConfigParser] = 
 							help='rate limit for WG API per server')
 		parser.add_argument('--ru-app-id', type=str, default=LESTA_APP_ID, metavar='APP_ID',
 							help='Set Lesta (RU) APP ID')
-		parser.add_argument('--region', type=str, nargs='*', 
+		parser.add_argument('--region', '--regions', type=str, nargs='*', 
 							choices=[ r.value for r in Region.API_regions() ], 
 							default=[ r.value for r in Region.API_regions() ], 
 							help='filter by region (default: ' + ' + '.join(Region.API_regions()) + ')')
@@ -260,7 +260,7 @@ def add_args_fetch_wg(parser: ArgumentParser, config: Optional[ConfigParser] = N
 							help='rate limit for WG API per server')
 		parser.add_argument('--ru-app-id', type=str, default=LESTA_APP_ID, metavar='APP_ID',
 							help='Set Lesta (RU) APP ID')
-		parser.add_argument('--region', type=str, nargs='*', 
+		parser.add_argument('--region', '--regions', type=str, nargs='*', 
 							choices=[ r.value for r in Region.API_regions() ], 
 							default=[ r.value for r in Region.API_regions() ], 
 							help='filter by region (default: ' + ' + '.join(Region.API_regions()) + ')')
@@ -393,7 +393,7 @@ def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 							help='Fetch stats for accounts that have been active since RELEASE/DAYS')
 		parser.add_argument('--inactive-since', type=str,  default=None, metavar='RELEASE/DAYS',
 							help='Fetch stats for accounts that have been inactive since RELEASE/DAYS')		
-		parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
+		parser.add_argument('--region', '--regions', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
 								default=[ r.value for r in Region.API_regions() ], help='Filter by region (default is API = eu + com + asia)')
 		parser.add_argument('--by-region', action='store_true', default=False, help='Export accounts by region')
 		parser.add_argument('--distributed', '--dist',type=str, dest='distributed', metavar='I:N', 
@@ -425,7 +425,7 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 		parser.add_argument('--import-model', metavar='IMPORT-TYPE', type=str, required=True,
 							choices=['BSAccount', 'WG_Account'], 
 							help='Data format to import. Default is blitz-stats native format.')
-		parser.add_argument('--region', type=str, nargs='*', 
+		parser.add_argument('--region', '--regions', type=str, nargs='*', 
 								choices=[ r.value for r in Region.has_stats() ], 
 								default=[ r.value for r in Region.has_stats() ], 
 								help='Filter by region (default is API = eu + com + asia)')
