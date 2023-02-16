@@ -120,7 +120,7 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 							help='Set Lesta (RU) APP ID')
 		parser.add_argument('--ru-rate-limit', type=float, default=LESTA_RATE_LIMIT, metavar='RATE_LIMIT',
 							help='Rate limit for Lesta (RU) API')
-		parser.add_argument('--region', '--regions', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
+		parser.add_argument('--regions', '--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
 							default=[ r.value for r in Region.API_regions() ], 
 							help='Filter by region (default: eu + com + asia + ru)')
 		parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
@@ -154,7 +154,7 @@ def add_args_prune(parser: ArgumentParser, config: Optional[ConfigParser] = None
 	debug('starting')
 	parser.add_argument('release', type=str, metavar='RELEASE',  
 						help='prune player achievements for a RELEASE')
-	parser.add_argument('--region', '--regions', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
+	parser.add_argument('--regions', '--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
 							default=[ r.value for r in Region.API_regions() ], 
 							help='filter by region (default: eu + com + asia + ru)')
 	parser.add_argument('--commit', action='store_true', default=False, 
@@ -231,7 +231,7 @@ async def cmd(db: Backend, args : Namespace) -> bool:
 
 async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 	"""Fetch player achievements"""
-	assert 'region' in args and type(args.region) is list, "'region' must be set and a list"
+	assert 'region' in args and type(args.regions) is list, "'region' must be set and a list"
 	
 	debug('starting')
 	
@@ -242,7 +242,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 
 	try:
 		stats 	 	: EventCounter									= EventCounter('player-achievements fetch')
-		regions	 	: set[Region]									= { Region(r) for r in args.region }
+		regions	 	: set[Region]									= { Region(r) for r in args.regions }
 		regionQs 	: dict[str, IterableQueue[list[BSAccount]]]	= dict()
 		# accountQ	: IterableQueue[BSAccount] 						= IterableQueue(maxsize=10000)
 		retryQ  	: IterableQueue[BSAccount] 						= IterableQueue() 
@@ -689,7 +689,7 @@ async def cmd_prune(db: Backend, args : Namespace) -> bool:
 	debug('starting')
 	try:
 		stats 		: EventCounter 		= EventCounter(' player-achievements prune')
-		regions		: set[Region] 		= { Region(r) for r in args.region }
+		regions		: set[Region] 		= { Region(r) for r in args.regions }
 		sample 		: int 				= args.sample
 		release 	: BSBlitzRelease  	= BSBlitzRelease(release=args.release)
 		commit 		: bool 				= args.commit

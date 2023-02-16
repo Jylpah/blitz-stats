@@ -52,15 +52,12 @@ async def main(argv: list[str]):
 	## UPDATE after transition
 	message('Reminder: Rename Backend ErrorLog & AccountLog')
 	
-	# Default params
-	WG_APP_ID 	= 'wg-app-id-missing'
+	# Default params	
 	CONFIG 		= 'blitzstats.ini'	
 	LOG 		= 'blitzstats.log'
 	# THREADS 	= 20    # make it module specific?
 	BACKEND 	: Optional[str] = None
-	WG_RATE_LIMIT : float = 10
-
-	config : Optional[ConfigParser] = None
+	config 		: Optional[ConfigParser] = None
 
 	parser = ArgumentParser(description='Fetch and manage WoT Blitz stats', add_help=False)
 	arggroup_verbosity = parser.add_mutually_exclusive_group()

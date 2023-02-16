@@ -155,7 +155,7 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 							help='Set Lesta (RU) APP ID')
 		parser.add_argument('--ru-rate-limit', type=float, default=LESTA_RATE_LIMIT, 
 		      				metavar='RATE_LIMIT', help='Rate limit for Lesta (RU) API')
-		parser.add_argument('--region', '--regions', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
+		parser.add_argument('--regions', '--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
 							default=[ r.value for r in Region.API_regions() ], 
 							help='Filter by region (default: eu + com + asia + ru)')		
 		parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
@@ -217,7 +217,7 @@ def add_args_edit_common(parser: ArgumentParser, config: Optional[ConfigParser] 
 	parser.add_argument('--sample', type=float, default=0, metavar='SAMPLE',
 						help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
 	# filters
-	parser.add_argument('--region', '--regions', type=str, nargs='*', 
+	parser.add_argument('--regions', '--region', type=str, nargs='*', 
 							choices=[ r.value for r in Region.has_stats() ], 
 							default=[ r.value for r in Region.has_stats() ], 
 							help=f"Filter by region (default is API = {' + '.join([r.value for r in Region.API_regions()])})")
@@ -241,7 +241,7 @@ def add_args_prune(parser: ArgumentParser, config: Optional[ConfigParser] = None
 	debug('starting')
 	parser.add_argument('release', type=str, metavar='RELEASE',  
 						help='prune tank stats for a RELEASE')
-	parser.add_argument('--region', '--regions', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
+	parser.add_argument('--regions', '--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
 							default=[ r.value for r in Region.API_regions() ], 
 							help='filter by region (default: eu + com + asia + ru)')
 	parser.add_argument('--commit', action='store_true', default=False, 
@@ -314,7 +314,7 @@ def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 		# parser.add_argument('--disabled', action='store_true', default=False, help='Disabled accounts')
 		# parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
 								# default=OptAccountsInactive.no.value, help='Include inactive accounts')
-		parser.add_argument('--region', '--regions', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
+		parser.add_argument('--regions', '--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
 								default=[ r.value for r in Region.API_regions() ], 
 								help='filter by region (default is API = eu + com + asia)')
 		parser.add_argument('--by-region', action='store_true', default=False, help='Export tank-stats by region')
@@ -356,7 +356,7 @@ def add_args_export_data(parser: ArgumentParser, config: Optional[ConfigParser] 
 		# 					help='file to export tank-stats to')
 		parser.add_argument('--basedir', metavar='FILE', type=str, nargs='?', default=EXPORT_DIR, 
 							help='base dir to export data')
-		parser.add_argument('--region', '--regions', type=str, nargs='*', 
+		parser.add_argument('--regions', '--region', type=str, nargs='*', 
 							choices=[ r.value for r in Region.API_regions() ], 
 							default=[ r.value for r in Region.API_regions() ], 
 							help='filter by region (default: ' + ' + '.join(Region.API_regions()) + ')')
@@ -420,7 +420,7 @@ async def cmd_fetchMP(db: Backend, args : Namespace) -> bool:
 	
 	try:
 		stats 	: EventCounter				= EventCounter('tank-stats fetch')	
-		regions	: set[Region] 				= { Region(r) for r in args.region }
+		regions	: set[Region] 				= { Region(r) for r in args.regions }
 		worker 	: Task
 
 		with Manager() as manager:
@@ -562,7 +562,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 
 	try:
 		stats 	 : EventCounter				= EventCounter('tank-stats fetch')	
-		regions	 : set[Region] 				= { Region(r) for r in args.region }
+		regions	 : set[Region] 				= { Region(r) for r in args.regions }
 		accountQs: dict[Region, IterableQueue[BSAccount]]	= dict()
 		retryQ 	 : IterableQueue[BSAccount] | None = None
 		statsQ	 : Queue[list[WGTankStat]]	= Queue(maxsize=TANK_STATS_Q_MAX)
@@ -783,7 +783,7 @@ async def cmd_edit(db: Backend, args : Namespace) -> bool:
 		if args.release is not None:
 			release = BSBlitzRelease(release=args.release)
 		stats 		: EventCounter 			= EventCounter('tank-stats edit')
-		regions		: set[Region] 			= { Region(r) for r in args.region }
+		regions		: set[Region] 			= { Region(r) for r in args.regions }
 		since		: int = 0
 		if args.since is not None:
 			since = int(datetime.fromisoformat(args.since).timestamp())
@@ -880,7 +880,7 @@ async def cmd_prune(db: Backend, args : Namespace) -> bool:
 	debug('starting')
 	try:
 		stats 		: EventCounter 		= EventCounter('tank-stats prune')
-		regions		: set[Region] 		= { Region(r) for r in args.region }
+		regions		: set[Region] 		= { Region(r) for r in args.regions }
 		sample 		: int 				= args.sample
 		release 	: BSBlitzRelease  	= BSBlitzRelease(release=args.release)
 		commit 		: bool 				= args.commit
@@ -997,7 +997,7 @@ async def cmd_export_text(db: Backend, args : Namespace) -> bool:
 		assert type(args.sample) in [int, float], 'param "sample" has to be a number'
 		
 		stats 		: EventCounter 			= EventCounter('tank-stats export')
-		regions		: set[Region] 			= { Region(r) for r in args.region }
+		regions		: set[Region] 			= { Region(r) for r in args.regions }
 		filename	: str					= args.filename
 		force		: bool 					= args.force
 		export_stdout : bool 				= filename == '-'
@@ -1087,7 +1087,7 @@ async def cmd_export_text(db: Backend, args : Namespace) -> bool:
 # 	try:
 		
 		
-# 		regions		: set[Region] 			= { Region(r) for r in args.region }
+# 		regions		: set[Region] 			= { Region(r) for r in args.regions }
 # 		release 	: BSBlitzRelease		= BSBlitzRelease(release=args.RELEASE)
 
 # 		# sample 		: float 				= args.sample
@@ -1295,7 +1295,7 @@ async def cmd_export_career(db: Backend, args : Namespace) -> bool:
 	WORKERS : int 			= args.workers  
 	stats 	: EventCounter 	= EventCounter('tank-stats export')	
 	try:		
-		regions		: set[Region] 	= { Region(r) for r in args.region }
+		regions		: set[Region] 	= { Region(r) for r in args.regions }
 		release 	: BSBlitzRelease= BSBlitzRelease(release=args.RELEASE)
 		force 		: bool			= args.force
 		format		: str			= args.format
@@ -1466,7 +1466,7 @@ async def cmd_export_update(db: Backend, args : Namespace) -> bool:
 	MAX_WORKERS : int 			= 16
 	stats 		: EventCounter 	= EventCounter('tank-stats export')	
 	try:		
-		regions			: set[Region] 	= { Region(r) for r in args.region }
+		regions			: set[Region] 	= { Region(r) for r in args.regions }
 		release 		: BSBlitzRelease= BSBlitzRelease(release=args.RELEASE)
 		force 			: bool			= args.force
 		export_format 	: str			= args.format
