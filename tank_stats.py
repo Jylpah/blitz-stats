@@ -153,7 +153,7 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 							help='Set Lesta (RU) APP ID')
 		parser.add_argument('--rate-limit', type=float, default=WG_RATE_LIMIT, metavar='RATE_LIMIT',
 							help='Rate limit for WG API')
-		parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
+		parser.add_argument('--region', '--regions', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
 							default=[ r.value for r in Region.API_regions() ], 
 							help='Filter by region (default: eu + com + asia + ru)')		
 		parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
@@ -215,7 +215,7 @@ def add_args_edit_common(parser: ArgumentParser, config: Optional[ConfigParser] 
 	parser.add_argument('--sample', type=float, default=0, metavar='SAMPLE',
 						help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
 	# filters
-	parser.add_argument('--region', type=str, nargs='*', 
+	parser.add_argument('--region', '--regions', type=str, nargs='*', 
 							choices=[ r.value for r in Region.has_stats() ], 
 							default=[ r.value for r in Region.has_stats() ], 
 							help=f"Filter by region (default is API = {' + '.join([r.value for r in Region.API_regions()])})")
@@ -239,7 +239,7 @@ def add_args_prune(parser: ArgumentParser, config: Optional[ConfigParser] = None
 	debug('starting')
 	parser.add_argument('release', type=str, metavar='RELEASE',  
 						help='prune tank stats for a RELEASE')
-	parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
+	parser.add_argument('--region', '--regions', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
 							default=[ r.value for r in Region.API_regions() ], 
 							help='filter by region (default: eu + com + asia + ru)')
 	parser.add_argument('--commit', action='store_true', default=False, 
@@ -312,7 +312,7 @@ def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 		# parser.add_argument('--disabled', action='store_true', default=False, help='Disabled accounts')
 		# parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
 								# default=OptAccountsInactive.no.value, help='Include inactive accounts')
-		parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
+		parser.add_argument('--region', '--regions', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
 								default=[ r.value for r in Region.API_regions() ], 
 								help='filter by region (default is API = eu + com + asia)')
 		parser.add_argument('--by-region', action='store_true', default=False, help='Export tank-stats by region')
@@ -354,7 +354,7 @@ def add_args_export_data(parser: ArgumentParser, config: Optional[ConfigParser] 
 		# 					help='file to export tank-stats to')
 		parser.add_argument('--basedir', metavar='FILE', type=str, nargs='?', default=EXPORT_DIR, 
 							help='base dir to export data')
-		parser.add_argument('--region', type=str, nargs='*', 
+		parser.add_argument('--region', '--regions', type=str, nargs='*', 
 							choices=[ r.value for r in Region.API_regions() ], 
 							default=[ r.value for r in Region.API_regions() ], 
 							help='filter by region (default: ' + ' + '.join(Region.API_regions()) + ')')

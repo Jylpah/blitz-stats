@@ -118,7 +118,7 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 							help='Rate limit for WG API')
 		parser.add_argument('--ru-app-id', type=str, default=LESTA_APP_ID, metavar='APP_ID',
 							help='Set Lesta (RU) APP ID')
-		parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
+		parser.add_argument('--region', '--regions', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
 							default=[ r.value for r in Region.API_regions() ], 
 							help='Filter by region (default: eu + com + asia + ru)')
 		parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
@@ -152,7 +152,7 @@ def add_args_prune(parser: ArgumentParser, config: Optional[ConfigParser] = None
 	debug('starting')
 	parser.add_argument('release', type=str, metavar='RELEASE',  
 						help='prune player achievements for a RELEASE')
-	parser.add_argument('--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
+	parser.add_argument('--region', '--regions', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
 							default=[ r.value for r in Region.API_regions() ], 
 							help='filter by region (default: eu + com + asia + ru)')
 	parser.add_argument('--commit', action='store_true', default=False, 
