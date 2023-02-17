@@ -1016,9 +1016,12 @@ class MongoBackend(Backend):
 			debug('starting')
 			dbc : AsyncIOMotorCollection = self.collection_accounts
 			total : int = -1
-			if stats_type is None and regions == Region.has_stats() and \
-			   inactive == OptAccountsInactive.both and disabled is None:				
-				total = cast(int, await dbc.estimated_document_count())				
+			if sample > 1:
+				return int(sample)
+			elif stats_type is None and regions == Region.has_stats() and \
+			   		inactive == OptAccountsInactive.both and disabled is None and \
+					active_since == 0 and inactive_since == 0:				
+				total = cast(int, await dbc.estimated_document_count())	
 			else:
 				pipeline : list[dict[str, Any]] | None
 				pipeline = await self._mk_pipeline_accounts(stats_type=stats_type, 
