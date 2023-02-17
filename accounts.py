@@ -280,6 +280,8 @@ def add_args_fetch_wg(parser: ArgumentParser, config: Optional[ConfigParser] = N
 		parser.add_argument('--end', dest='null_responses', 
 							type=int, default=NULL_RESPONSES, metavar='N',
 							help='end fetching accounts after N consequtive empty responses')
+		parser.add_argument('--file',type=str, metavar='FILENAME', default=None, 
+							help='Read account_ids from FILENAME one account_id per line')
 							
 		return True	
 	except Exception as err:
@@ -782,16 +784,27 @@ async def cmd_fetch_wg(db		: Backend,
 		for region in regions:
 			try:
 				idQs[region] = IterableQueue(maxsize=100)
-				id_range : range = region.id_range()
-				if start == 0 and not force:
-					id_range = range(latest[region].id + 1, id_range.stop)
-				else:
-					id_range = range(start, id_range.stop)
-				if max_accounts > 0:
-					id_range = range(id_range.start, min([ id_range.start + max_accounts,  id_range.stop]))
+
+				if args.file is None:
+					id_range : range = region.id_range()
+					if start == 0 and not force:
+						id_range = range(latest[region].id + 1, id_range.stop)
+					else:
+						id_range = range(start, id_range.stop)
+					if max_accounts > 0:
+						id_range = range(id_range.start, min([ id_range.start + max_accounts,  id_range.stop]))
 	
-				message(f'fetching accounts for {region}: start={id_range.start}, stop={id_range.stop}')
-				id_creators.append(create_task(account_idQ_maker(idQs[region], id_range.start, id_range.stop)))
+					message(f'fetching accounts for {region}: start={id_range.start}, stop={id_range.stop}')
+					id_creators.append(create_task(account_idQ_maker(idQs[region], id_range.start, id_range.stop)))
+				else:
+					ids : list[int] = list()
+					async for account in await BSAccount.import_file(args.file):
+						ids.append(account.id)
+						if len(ids) == 100:
+							await idQs[region].put(ids)
+							ids = list()
+					if len(ids) > 0:
+						await idQs[region].put(ids)
 				for _ in range(WORKERS):
 					api_workers.append(create_task(fetch_account_info_worker(wg, region, 
 																			idQs[region], accountQ, 
