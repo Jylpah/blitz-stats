@@ -1383,7 +1383,7 @@ async def create_accountQ(db		: Backend,
 		elif args.file is not None:
 
 			if args.file.endswith('.txt'):
-				async for account in BSAccount.import_txt(args.file):					
+				async for account in await BSAccount.import_txt(args.file):					
 					try:
 						await accountQ.put(account)
 						stats.log('read')
@@ -1392,7 +1392,7 @@ async def create_accountQ(db		: Backend,
 						stats.log('errors')
 
 			elif args.file.endswith('.csv'):
-				async for account in BSAccount.import_csv(args.file):
+				async for account in await BSAccount.import_csv(args.file):
 					try:
 						await accountQ.put(account)
 						stats.log('read')
@@ -1401,7 +1401,7 @@ async def create_accountQ(db		: Backend,
 						stats.log('errors')
 
 			elif args.file.endswith('.json'):
-				async for account in BSAccount.import_json(args.file):
+				async for account in await BSAccount.import_json(args.file):
 					try:
 						await accountQ.put(account)
 						stats.log('read')
@@ -1479,7 +1479,7 @@ async def create_accountQ_batch(db			: Backend,
 			accounts = list()
 			if args.file.endswith('.txt'):
 
-				async for account in BSAccount.import_txt(args.file):
+				async for account in await BSAccount.import_txt(args.file):
 					try:
 						if account.region == region:
 							accounts.append(account)
@@ -1492,7 +1492,7 @@ async def create_accountQ_batch(db			: Backend,
 						stats.log('errors')
 
 			elif args.file.endswith('.csv'):
-				async for account in BSAccount.import_csv(args.file):
+				async for account in await BSAccount.import_csv(args.file):
 					try:
 						if account.region == region:
 							accounts.append(account)
@@ -1505,7 +1505,7 @@ async def create_accountQ_batch(db			: Backend,
 						stats.log('errors')
 
 			elif args.file.endswith('.json'):
-				async for account in BSAccount.import_json(args.file):
+				async for account in await BSAccount.import_json(args.file):
 					try:
 						if account.region == region:
 							accounts.append(account)

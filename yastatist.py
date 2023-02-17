@@ -4,7 +4,7 @@ from datetime import timedelta, datetime, timezone
 from typing import AsyncGenerator 
 from http import HTTPStatus
 
-from pyutils.utils import JSONExportable
+from pyutils import JSONExportable
 from blitzutils.models import Region
 from models import BSAccount
 

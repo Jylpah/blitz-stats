@@ -2015,7 +2015,8 @@ async def  import_mp_worker(id: int = 0) -> EventCounter:
 		tank_statsQ	: Queue[list[WGTankStat]] 				= Queue(100)
 		force 		: bool 									= mp_options['force']
 		rel_map		: bool									= mp_options['map_releases']
-
+		tank_stats  : list[WGTankStat]
+		
 		if rel_map:
 			rel_mapper = await release_mapper(db)
 
