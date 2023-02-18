@@ -114,13 +114,14 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 
 		parser.add_argument('--workers', type=int, default=WG_WORKERS, help='Set number of asynchronous workers')
 		parser.add_argument('--wg-app-id', type=str, default=WG_APP_ID, help='Set WG APP ID')
-		parser.add_argument('--rate-limit', type=float, default=WG_RATE_LIMIT, dest='wg_rate_limit', 
+		parser.add_argument('--wg-rate-limit', type=float, default=WG_RATE_LIMIT, 
 		      				metavar='RATE_LIMIT', help='Rate limit for WG API')
 		parser.add_argument('--ru-app-id', type=str, default=LESTA_APP_ID, metavar='APP_ID',
 							help='Set Lesta (RU) APP ID')
 		parser.add_argument('--ru-rate-limit', type=float, default=LESTA_RATE_LIMIT, metavar='RATE_LIMIT',
 							help='Rate limit for Lesta (RU) API')
-		parser.add_argument('--regions', '--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ], 
+		parser.add_argument('--regions', '--region', type=str, nargs='*', 
+		      				choices=[ r.value for r in Region.API_regions() ], 
 							default=[ r.value for r in Region.API_regions() ], 
 							help='Filter by region (default: eu + com + asia + ru)')
 		parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ], 
@@ -231,10 +232,7 @@ async def cmd(db: Backend, args : Namespace) -> bool:
 
 async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 	"""Fetch player achievements"""
-	assert 'region' in args and type(args.regions) is list, "'region' must be set and a list"
-	
 	debug('starting')
-	
 	wg 	: WGApi = WGApi(app_id=args.wg_app_id, 
 						ru_app_id= args.ru_app_id,
 						rate_limit=args.wg_rate_limit, 
@@ -243,7 +241,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 	try:
 		stats 	 	: EventCounter									= EventCounter('player-achievements fetch')
 		regions	 	: set[Region]									= { Region(r) for r in args.regions }
-		regionQs 	: dict[str, IterableQueue[list[BSAccount]]]	= dict()
+		regionQs 	: dict[str, IterableQueue[list[BSAccount]]]		= dict()
 		# accountQ	: IterableQueue[BSAccount] 						= IterableQueue(maxsize=10000)
 		retryQ  	: IterableQueue[BSAccount] 						= IterableQueue() 
 		statsQ	 	: Queue[list[WGPlayerAchievementsMaxSeries]]	= Queue(maxsize=PLAYER_ACHIEVEMENTS_Q_MAX)
@@ -261,10 +259,14 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 				raise ValueError(f'could not parse account args: {args}')	
 			accounts = await db.accounts_count(StatsTypes.player_achievements, 
 												**accounts_args)		
+		
+		if args.sample > 1:
+			args.sample = int(args.sample / len(regions))
+
 		for r in regions:
 			regionQs[r.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
 			r_args = copy.copy(args)
-			r_args.region = {r}
+			r_args.regions = {r}
 			tasks.append(create_task(create_accountQ_batch(db, r_args,  
 															accountQ=regionQs[r.name],
 															stats_type=StatsTypes.player_achievements)))			
