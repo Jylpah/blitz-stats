@@ -10,7 +10,7 @@ from pyutils import MultilevelFormatter
 from configparser import ConfigParser
 import logging
 from argparse import ArgumentParser
-import sys
+from sys import argv, stdout
 from os import chdir, linesep
 from os.path import isfile, dirname
 from asyncio import run
@@ -47,7 +47,7 @@ async def main(argv: list[str]):
 	# set the directory for the script
 	global logger, error, debug, verbose, message, db, wi, bs, MAX_PAGES
 
-	chdir(dirname(sys.argv[0]))
+	# chdir(dirname(argv[0]))
 	
 	## UPDATE after transition
 	message('Reminder: Rename Backend ErrorLog & AccountLog')
@@ -177,7 +177,7 @@ async def main(argv: list[str]):
 			print('Stopping profiling')
 			stop()
 			stats = get_func_stats().sort(sort_type='ttot', sort_order='desc')			
-			print_all(stats, sys.stdout, args.profile)
+			print_all(stats, stdout, args.profile)
 			
 	except Exception as err:
 		error(f'{err}')
@@ -205,5 +205,5 @@ def print_all(stats, out, limit: int | None =None) -> None:
 
 if __name__ == "__main__":
 	#asyncio.run(main(sys.argv[1:]), debug=True)
-	run(main(sys.argv[1:]))
+	run(main(argv[1:]))
 
