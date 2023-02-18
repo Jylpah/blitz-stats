@@ -590,7 +590,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 		for r in regions:
 			accountQs[r] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
 			r_args = copy.copy(args)
-			r_args.region = { r }
+			r_args.regions = { r }
 			workers.append(create_task(create_accountQ(db, r_args, accountQs[r],
 					      								stats_type=StatsTypes.tank_stats)))
 			for _ in range(WORKERS):
