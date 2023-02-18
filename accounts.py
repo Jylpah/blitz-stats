@@ -553,7 +553,7 @@ async def cmd_update_wg(db		: Backend,
 		for region in regions:
 			workQs[region] = IterableQueue(maxsize=100)
 			r_args = copy.copy(args)
-			r_args.region = {region}
+			r_args.regions = {region}
 			workQ_creators.append(create_task(create_accountQ_batch(db, r_args,
 																	accountQ=workQs[region], 
 														  			stats_type=StatsTypes.account_info)))
@@ -766,6 +766,8 @@ async def cmd_fetch_wg(db		: Backend,
 		start 		: int 			= args.wg_start_id
 		if start > 0 and len(regions) > 1:
 			raise ValueError('if --start > 0, only one region can be chosen')
+		if args.file is not None and len(regions) > 1:
+			raise ValueError('if --file set, only one region can be chosen')
 		force 		: bool 			= args.force		
 		null_responses: int 		= args.null_responses
 		max_accounts: int 			= args.max_accounts
@@ -778,12 +780,16 @@ async def cmd_fetch_wg(db		: Backend,
 		api_workers : list[Task]	= list()
 		idQs 		: dict[Region, IterableQueue[Sequence[int]]] = dict()
 		
-		if start == 0 and not force:				
+		if start == 0 and not force and args.file is None:				
 			message('finding latest accounts by region')
 			latest : dict[Region, BSAccount] = await db.accounts_latest(regions)
 		for region in regions:
 			try:
 				idQs[region] = IterableQueue(maxsize=100)
+				for _ in range(WORKERS):
+					api_workers.append(create_task(fetch_account_info_worker(wg, region, 
+																			idQs[region], accountQ, 
+																			null_responses=null_responses)))
 
 				if args.file is None:
 					id_range : range = region.id_range()
@@ -798,21 +804,20 @@ async def cmd_fetch_wg(db		: Backend,
 					id_creators.append(create_task(account_idQ_maker(idQs[region], id_range.start, id_range.stop)))
 				else:
 					ids : list[int] = list()
-					async for account in await BSAccount.import_file(args.file):
+					await idQs[region].add_producer()
+					async for account in BSAccount.import_file(args.file):
 						ids.append(account.id)
 						if len(ids) == 100:
 							await idQs[region].put(ids)
 							ids = list()
 					if len(ids) > 0:
 						await idQs[region].put(ids)
-				for _ in range(WORKERS):
-					api_workers.append(create_task(fetch_account_info_worker(wg, region, 
-																			idQs[region], accountQ, 
-																			null_responses=null_responses)))
+					await idQs[region].finish()
+				
 
 			except Exception as err:
-				error(f"could not create account Q maker for '{region}': {err}")
-				
+				error(f"could not create account queue for '{region}': {err}")
+				raise Exception()				
 		
 		with alive_bar(None, title='Getting accounts from WG API ') as bar:
 			try:
@@ -833,11 +838,13 @@ async def cmd_fetch_wg(db		: Backend,
 		for region in idQs.keys():
 			debug(f'waiting for idQ for {region} to complete')
 			await idQs[region].join()
+		
+	except Exception as err:
+		error(f'{err}')
+	finally:
 		await stats.gather_stats(api_workers)
 		wg.print()
 		await wg.close()
-	except Exception as err:
-		error(f'{err}')	
 	return stats
 
 
@@ -1396,7 +1403,7 @@ async def create_accountQ(db		: Backend,
 		elif args.file is not None:
 
 			if args.file.endswith('.txt'):
-				async for account in await BSAccount.import_txt(args.file):					
+				async for account in BSAccount.import_txt(args.file):					
 					try:
 						await accountQ.put(account)
 						stats.log('read')
@@ -1405,7 +1412,7 @@ async def create_accountQ(db		: Backend,
 						stats.log('errors')
 
 			elif args.file.endswith('.csv'):
-				async for account in await BSAccount.import_csv(args.file):
+				async for account in BSAccount.import_csv(args.file):
 					try:
 						await accountQ.put(account)
 						stats.log('read')
@@ -1414,7 +1421,7 @@ async def create_accountQ(db		: Backend,
 						stats.log('errors')
 
 			elif args.file.endswith('.json'):
-				async for account in await BSAccount.import_json(args.file):
+				async for account in BSAccount.import_json(args.file):
 					try:
 						await accountQ.put(account)
 						stats.log('read')
@@ -1492,7 +1499,7 @@ async def create_accountQ_batch(db			: Backend,
 			accounts = list()
 			if args.file.endswith('.txt'):
 
-				async for account in await BSAccount.import_txt(args.file):
+				async for account in BSAccount.import_txt(args.file):
 					try:
 						if account.region == region:
 							accounts.append(account)
@@ -1505,7 +1512,7 @@ async def create_accountQ_batch(db			: Backend,
 						stats.log('errors')
 
 			elif args.file.endswith('.csv'):
-				async for account in await BSAccount.import_csv(args.file):
+				async for account in BSAccount.import_csv(args.file):
 					try:
 						if account.region == region:
 							accounts.append(account)
@@ -1518,7 +1525,7 @@ async def create_accountQ_batch(db			: Backend,
 						stats.log('errors')
 
 			elif args.file.endswith('.json'):
-				async for account in await BSAccount.import_json(args.file):
+				async for account in BSAccount.import_json(args.file):
 					try:
 						if account.region == region:
 							accounts.append(account)
@@ -1690,7 +1697,8 @@ def read_args_accounts(accounts: list[str]) -> list[BSAccount] | None:
 	res : list[BSAccount] = list()
 	for a in accounts:
 		try:
-			res.append(BSAccount.from_str(a))
+			if (acc := BSAccount.from_str(a) ) is not None:
+				res.append(acc)
 		except Exception as err:
 			error(f'{err}')
 	if len(res) == 0:
@@ -1698,7 +1706,9 @@ def read_args_accounts(accounts: list[str]) -> list[BSAccount] | None:
 	return res
 
 
-async def accounts_parse_args(db: Backend, args : Namespace,) -> dict[str, Any] | None:
+async def accounts_parse_args(db: Backend, 
+			      				args : Namespace,
+							 ) -> dict[str, Any] | None:
 	"""parse accounts args"""
 	debug('starting')
 	res : dict[str, Any] = dict()
