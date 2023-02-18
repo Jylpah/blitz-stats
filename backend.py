@@ -825,8 +825,10 @@ class Backend(ABC):
 		raise NotImplementedError
 
 
-	async def accounts_insert_worker(self, accountQ : Queue[BSAccount], 
-									force: bool | None = None) -> EventCounter:
+	async def accounts_insert_worker(self, 
+				  					accountQ : Queue[BSAccount], 
+									force: bool | None = None
+									) -> EventCounter:
 		"""insert/replace accounts. force=None: insert, force=True/False: upsert=force"""
 		debug(f'starting, force={force}')
 		stats : EventCounter = EventCounter('accounts insert')
@@ -839,7 +841,7 @@ class Backend(ABC):
 						await self.account_insert(account)
 						stats.log('added')
 					else:
-						debug(f'Trying to upsert account_id={account.id} into {self.backend}.{self.table_accounts}')
+						#debug(f'Trying to upsert account_id={account.id} into {self.backend}.{self.table_accounts}')
 						await self.account_replace(account, upsert=force)					
 						if force:
 							stats.log('added/updated')
