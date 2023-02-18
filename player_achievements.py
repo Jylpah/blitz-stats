@@ -263,16 +263,14 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 		if args.sample > 1:
 			args.sample = int(args.sample / len(regions))
 
-		for r in regions:
-			regionQs[r.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
-			r_args = copy.copy(args)
-			r_args.regions = {r}
-			tasks.append(create_task(create_accountQ_batch(db, r_args,  
-															accountQ=regionQs[r.name],
+		for region in regions:
+			regionQs[region.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)			
+			tasks.append(create_task(create_accountQ_batch(db, args, region, 
+															accountQ=regionQs[region.name],
 															stats_type=StatsTypes.player_achievements)))			
-			for _ in range(ceil(min([r_args.workers, accounts])/len(regions))):
-				tasks.append(create_task(fetch_player_achievements_api_region_worker(wg_api=wg, region=r, 
-																					accountQ=regionQs[r.name], 
+			for _ in range(ceil(min([args.workers, accounts])/len(regions))):
+				tasks.append(create_task(fetch_player_achievements_api_region_worker(wg_api=wg, region=region, 
+																					accountQ=regionQs[region.name], 
 																					statsQ=statsQ, 
 																					retryQ=retryQ)))
 		task_bar : Task = create_task(alive_bar_monitor(list(regionQs.values()), 
@@ -292,12 +290,12 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 		if not retryQ.empty():
 			regionQs = dict()
 			accounts = retryQ.qsize()
-			for r in regions:
+			for region in regions:
 				# do not fill the old queues or it will never complete				
-				regionQs[r.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX) 
+				regionQs[region.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX) 
 				for _ in range(ceil(min([args.workers, accounts])/len(regions))):
-					tasks.append(create_task(fetch_player_achievements_api_region_worker(wg_api=wg, region=r, 
-																						accountQ=regionQs[r.name],																					
+					tasks.append(create_task(fetch_player_achievements_api_region_worker(wg_api=wg, region=region, 
+																						accountQ=regionQs[region.name],																					
 																						statsQ=statsQ)))
 			task_bar = create_task(alive_bar_monitor(list(regionQs.values()), total=accounts, 
 														title="Re-trying player achievement"))

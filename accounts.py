@@ -551,10 +551,8 @@ async def cmd_update_wg(db		: Backend,
 		workQs 			: dict[Region, IterableQueue[list[BSAccount]]] = dict()		
 
 		for region in regions:
-			workQs[region] = IterableQueue(maxsize=100)
-			r_args = copy.copy(args)
-			r_args.regions = {region}
-			workQ_creators.append(create_task(create_accountQ_batch(db, r_args,
+			workQs[region] = IterableQueue(maxsize=100)			
+			workQ_creators.append(create_task(create_accountQ_batch(db, args, region, 
 																	accountQ=workQs[region], 
 														  			stats_type=StatsTypes.account_info)))
 		#workQ_creators.append(create_task(split_accountQ_batch(inQ, workQs)))
@@ -790,7 +788,6 @@ async def cmd_fetch_wg(db		: Backend,
 					api_workers.append(create_task(fetch_account_info_worker(wg, region, 
 																			idQs[region], accountQ, 
 																			null_responses=null_responses)))
-
 				if args.file is None:
 					id_range : range = region.id_range()
 					if start == 0 and not force:
@@ -1467,14 +1464,15 @@ async def create_accountQ(db		: Backend,
 
 async def create_accountQ_batch(db			: Backend, 
 								args 		: Namespace, 
+								region 		: Region,
 								accountQ	: IterableQueue[list[BSAccount]], 								
 								stats_type	: StatsTypes | None = None, 
 								batch 		: int = 100) -> EventCounter:
 	"""Helper to make accountQ from arguments"""	
 	stats : EventCounter = EventCounter(f'{db.driver}: accounts')
-	assert len(args.regions) == 1, "account batch queue supports only a single region"
-	debug('starting')
-	region : Region = [ Region(r) for r in args.regions ][0]
+	# assert len(args.regions) == 1, "account batch queue supports only a single region"
+	debug(f'starting: {region}')
+	##  region : Region = [ Region(r) for r in args.regions ][0]
 	try:
 		accounts 	: list[BSAccount] | None = None
 		try:
@@ -1556,7 +1554,9 @@ async def create_accountQ_batch(db			: Backend,
 
 			accounts_args : dict[str, Any] | None
 			if (accounts_args := await accounts_parse_args(db, args)) is not None:
-				async for accounts in db.accounts_get_batch(stats_type=stats_type, batch=batch, 
+				accounts_args['regions'] = {region}
+				async for accounts in db.accounts_get_batch(stats_type=stats_type, 
+															batch=batch, 
 															**accounts_args):
 					try:
 						await accountQ.put(accounts)
