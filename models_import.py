@@ -57,11 +57,3 @@ class WG_Release(BSBlitzRelease):
 		if 'release' in values:
 			del values['id']
 		return values
-
-	# @validator('launch_date', pre=True)
-	# def to_date(cls, v) -> date | None:
-	# 	print(f'DEBUG: {v}')
-	# 	if v is None:
-	# 		return None
-	# 	return datetime.fromisoformat(v).date()
-
