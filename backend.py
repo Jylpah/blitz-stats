@@ -1206,8 +1206,10 @@ class Backend(ABC):
 		return stats
 
 
-	async def tank_stats_insert_worker(self, tank_statsQ : Queue[list[WGTankStat]], 
-										force: bool = False) -> EventCounter:
+	async def tank_stats_insert_worker(self, 
+				    					tank_statsQ : Queue[list[WGTankStat]], 
+										force: bool = False
+										) -> EventCounter:
 		debug(f'starting, force={force}')
 		stats : EventCounter = EventCounter('tank-stats insert')
 		try:
@@ -1222,9 +1224,12 @@ class Backend(ABC):
 				stats.log('read', read)
 				try:
 					if force:
-						debug(f'Trying to upsert {read} tank stats into {self.backend}.{self.table_tank_stats}')
-						added, not_added = await self.tank_stats_update(tank_stats, upsert=True)
-						stats.log('tank stats added/updated', added)
+						# debug(f'Trying to upsert {read} tank stats into {self.backend}.{self.table_tank_stats}')
+						for tank_stat in tank_stats:
+							if await self.tank_stat_replace(tank_stat, upsert=True):
+								stats.log('tank stats added/updated')
+							else:
+								stats.log('tank stats added')						
 					else:
 						debug(f'Trying to insert {read} tank stats into {self.backend}.{self.table_tank_stats}')
 						added, not_added = await self.tank_stats_insert(tank_stats)
