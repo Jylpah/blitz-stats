@@ -508,7 +508,7 @@ class MongoBackend(Backend):
 			model : type[JSONExportable] = self.get_model(table_type)
 			debug(f'obj={obj} type={type(obj)} model={model}')
 			if (data := model.transform_obj(obj)) is not None:
-				if (res := await dbc.find_one_and_replace({ '_id': data.index}, data.obj_db(), upsert=upsert)) is None:
+				if (res := await dbc.replace_one({ '_id': data.index}, data.obj_db(), upsert=upsert)) is None:
 					debug(f'Failed to replace _id={data.index} into {self.backend}.{dbc.name}')
 					return False
 				debug(f'Replaced (_id={data.index}) into {self.table_uri(table_type)}')
