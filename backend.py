@@ -1133,10 +1133,10 @@ class Backend(ABC):
 		raise NotImplementedError
 
 
-	@abstractmethod
-	async def tank_stats_update(self, tank_stats: list[WGTankStat], upsert: bool = False) -> tuple[int, int]:
-		"""Update or upsert tank stats to the backend. Returns number of stats updated and not updated"""
-		raise NotImplementedError
+	# @abstractmethod
+	# async def tank_stats_update(self, tank_stats: list[WGTankStat], upsert: bool = False) -> tuple[int, int]:
+	# 	"""Update or upsert tank stats to the backend. Returns number of stats updated and not updated"""
+	# 	raise NotImplementedError
 
 
 	@abstractmethod
