@@ -1088,6 +1088,14 @@ class Backend(ABC):
 
 
 	@abstractmethod
+	async def tank_stat_replace(self, tank_stat: WGTankStat,
+								upsert: bool = False) -> bool:
+		"""Replace a tank stat in the backend. Returns False 
+			if the account was not updated"""
+		raise NotImplementedError
+
+
+	@abstractmethod
 	async def tank_stat_delete(self, account_id: int, tank_id: int, 
 								last_battle_time: int) -> bool:
 		"""Delete a tank stat from the backend. Returns True if successful"""
