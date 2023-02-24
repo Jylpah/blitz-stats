@@ -1634,8 +1634,8 @@ class MongoBackend(Backend):
 
 
 	async def tank_stat_update(self, tank_stat: WGTankStat,
-							 update: dict[str, Any] | None = None,
-							 fields: list[str] | None = None) -> bool:
+								update: dict[str, Any] | None = None,
+								fields: list[str] | None = None) -> bool:
 		"""Update an tank stat in the backend. Returns False
 			if the tank stat was not updated"""
 		try:
@@ -1647,6 +1647,13 @@ class MongoBackend(Backend):
 			debug(f'Error while updating tank stat (id={tank_stat.id}) into {self.table_uri(BSTableType.TankStats)}: {err}')
 		return False
 
+		
+	async def tank_stat_replace(self, tank_stat: WGTankStat,
+								upsert: bool = False) -> bool:
+		"""Replace a tank stat in the backend. Returns False 
+			if the account was not updated"""
+		return await self._data_replace(BSTableType.TankStats, obj=tank_stat, upsert=upsert)
+		
 
 	async def tank_stat_delete(self, 
 								account_id: int, 
