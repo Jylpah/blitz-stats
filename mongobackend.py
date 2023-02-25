@@ -511,8 +511,9 @@ class MongoBackend(Backend):
 				if (res := await dbc.replace_one({ '_id': data.index}, data.obj_db(), upsert=upsert)) is None:
 					debug(f'Failed to replace _id={data.index} into {self.backend}.{dbc.name}')
 					return False
-				debug(f'Replaced (_id={data.index}) into {self.table_uri(table_type)}')
-				return True
+				elif res.modified_count > 0:
+					debug(f'Replaced (_id={data.index}) into {self.table_uri(table_type)}')
+					return True
 		except Exception as err:
 			error(f'Could not replace obj in {self.table_uri(table_type)}: {err}')
 			error(f'obj: {obj}')
