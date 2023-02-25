@@ -36,8 +36,7 @@ from releases import get_releases, release_mapper
 
 from pyutils import alive_bar_monitor, \
 					is_alphanum, JSONExportable, TXTExportable, CSVExportable, export, \
-					BucketMapper, IterableQueue, QueueDone, EventCounter, \
-					AsyncQueue
+					BucketMapper, IterableQueue, QueueDone, EventCounter, AsyncQueue
 from blitzutils.models import Region, WGTankStat, Tank, EnumVehicleTier, EnumNation, \
 								EnumVehicleTypeInt
 from blitzutils.wg import WGApi 
@@ -52,7 +51,7 @@ debug	= logger.debug
 
 WORKERS_WGAPI 		: int = 75
 WORKERS_IMPORTERS	: int = 5
-WORKERS_PRUNE 		: int = 5
+WORKERS_PRUNE 		: int = 10
 TANK_STATS_Q_MAX 	: int = 1000
 TANK_STATS_BATCH 	: int = 50000
 
@@ -250,7 +249,6 @@ def add_args_prune(parser: ArgumentParser, config: Optional[ConfigParser] = None
 							help=f'set number of worker processes (default={WORKERS_PRUNE})')
 	parser.add_argument('--sample', type=int, default=0, metavar='SAMPLE',
 						help='sample size')
-
 	return True
 
 
@@ -886,6 +884,9 @@ async def cmd_prune(db: Backend, args : Namespace) -> bool:
 		commit 		: bool 				= args.commit
 		tankQ 		: Queue[Tank]		= Queue()
 		workers 	: list[Task]		= list()
+		WORKERS 	: int 				= args.workers
+		if sample > 0:
+			WORKERS = 1
 		progress_str : str 				= 'Finding duplicates ' 
 		if commit:
 			message(f'Pruning tank stats from {db.table_uri(BSTableType.TankStats)}')
@@ -901,9 +902,9 @@ async def cmd_prune(db: Backend, args : Namespace) -> bool:
 		# N : int = await db.tankopedia_count()
 		N : int = tankQ.qsize()
 
-		for _ in range(args.workers):
+		for _ in range(WORKERS):
 			workers.append(create_task(prune_worker(db, tankQ=tankQ, release=release, 
-													regions=regions, commit=commit)))
+													regions=regions, commit=commit, sample=sample)))
 		prev : int = 0
 		done : int
 		left : int
@@ -914,29 +915,7 @@ async def cmd_prune(db: Backend, args : Namespace) -> bool:
 					bar(done - prev)
 				prev = done
 				await sleep(1)
-			#async for tank in db.tankopedia_get_many():   # could use tank_stats_unique()
 			
-				# async for dup in db.tank_stats_duplicates(tank, release, regions, sample=sample):
-				# 	stats.log('duplicates found')
-				# 	if commit:
-				# 		# verbose(f'deleting duplicate: {dup}')
-				# 		if await db.tank_stat_delete(account_id=dup.account_id, 
-				# 									last_battle_time=dup.last_battle_time, 
-				# 									tank_id=tank_id):
-				# 			verbose(f'deleted duplicate: {dup}')
-				# 			stats.log('duplicates deleted')
-				# 		else:
-				# 			error(f'failed to delete duplicate: {dup}')
-				# 			stats.log('deletion errors')
-				# 	else:
-				# 		verbose(f'duplicate:  {dup}')
-				# 		async for newer in db.tank_stats_get(release=release, 
-				# 												regions=regions, 
-				# 												accounts=[BSAccount(id=dup.account_id)], 
-				# 												tanks=[tank], 
-				# 												since=dup.last_battle_time + 1):
-				# 			verbose(f'newer stat: {newer}')
-				# bar()
 		await tankQ.join()
 		await stats.gather_stats(workers)
 		stats.print()
@@ -951,7 +930,8 @@ async def prune_worker(db : Backend,
 						# tank: Tank, 
 						release: BSBlitzRelease, 
 						regions : set[Region], 
-						commit: bool = False) -> EventCounter:
+						commit: bool = False, 
+						sample : int = 0) -> EventCounter:
 	"""Worker to delete duplicates"""
 	debug(f'starting')
 	stats 	: EventCounter 	= EventCounter('duplicates')
@@ -977,6 +957,11 @@ async def prune_worker(db : Backend,
 														tanks=[tank], 
 														since=dup.last_battle_time + 1):
 						verbose(f'newer stat: {newer}')
+				if sample == 1:
+					tankQ.task_done()
+					raise CancelledError
+				elif sample > 1:
+					sample -= 1
 			tankQ.task_done()
 	except CancelledError:
 		debug('cancelled')		
