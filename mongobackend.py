@@ -608,27 +608,27 @@ class MongoBackend(Backend):
 		return added, not_added
 
 
-	async def _datas_update(self, table_type: BSTableType,
-							objs	: Sequence[JSONExportable],
-							upsert	: bool = False) -> tuple[int, int]:
-		"""Store data to the backend. Returns number of documents inserted and not inserted"""
-		debug('starting')
-		updated		: int = 0
-		not_updated : int = len(objs)
-		dbc 		: AsyncIOMotorCollection= self.get_collection(table_type)
-		model 		: type[JSONExportable]	= self.get_model(table_type)
-		try:
-			datas : list[JSONExportable] = model.transform_objs(objs=objs, in_type=type(objs[0]))
-			res : UpdateResult
-			res = await dbc.update_many( (d.obj_db() for d in datas),
-										  upsert=upsert, ordered=False)
-			updated = res.modified_count
-			not_updated -= updated
-		except IndexError:
-			pass
-		except Exception as err:
-			error(f'Unknown error when updating tank stats: {err}')
-		return updated, not_updated
+	# async def _datas_update(self, table_type: BSTableType,
+	# 						objs	: Sequence[JSONExportable],
+	# 						upsert	: bool = False) -> tuple[int, int]:
+	# 	"""Store data to the backend. Returns number of documents inserted and not inserted"""
+	# 	debug('starting')
+	# 	updated		: int = 0
+	# 	not_updated : int = len(objs)
+	# 	dbc 		: AsyncIOMotorCollection= self.get_collection(table_type)
+	# 	model 		: type[JSONExportable]	= self.get_model(table_type)
+	# 	try:
+	# 		datas : list[JSONExportable] = model.transform_objs(objs=objs, in_type=type(objs[0]))
+	# 		res : UpdateResult
+	# 		res = await dbc.replace_many( (d.obj_db() for d in datas),
+	# 									  upsert=upsert, ordered=False)
+	# 		updated = res.modified_count
+	# 		not_updated -= updated
+	# 	except IndexError:
+	# 		pass
+	# 	except Exception as err:
+	# 		error(f'Unknown error when updating tank stats: {err}')
+	# 	return updated, not_updated
 
 
 	async def _datas_count(self, 
@@ -1136,7 +1136,7 @@ class MongoBackend(Backend):
 
 
 	async def player_achievement_delete(self, account: BSAccount, added: int) -> bool:
-		"""Delete a player achievements from the backend"""
+		"""Delete a player achievement from the backend"""
 		try:
 			debug('starting')
 			debug(f'account={account}, added={added}')
@@ -1261,12 +1261,12 @@ class MongoBackend(Backend):
 		return -1
 
 
-	async def player_achievements_update(self, player_achievements: list[WGPlayerAchievementsMaxSeries], upsert: bool = False) -> tuple[int, int]:
-		"""Update or upsert player achievements to the backend. Returns number of stats updated and not updated"""
-		debug('starting')
-		return await self._datas_update(BSTableType.PlayerAchievements,
-										objs=player_achievements,
-										upsert=upsert)
+	# async def player_achievements_update(self, player_achievements: list[WGPlayerAchievementsMaxSeries], upsert: bool = False) -> tuple[int, int]:
+	# 	"""Update or upsert player achievements to the backend. Returns number of stats updated and not updated"""
+	# 	debug('starting')
+	# 	return await self._datas_update(BSTableType.PlayerAchievements,
+	# 									objs=player_achievements,
+	# 									upsert=upsert)
 
 
 	async def player_achievement_export(self, sample: float = 0
@@ -1874,12 +1874,14 @@ class MongoBackend(Backend):
 		return -1
 
 
-	async def tank_stats_update(self, tank_stats: list[WGTankStat],
-								upsert: bool = False) -> tuple[int, int]:
-		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
-		debug('starting')
-		return await self._datas_update(BSTableType.TankStats,
-										objs=tank_stats, upsert=upsert)
+	# async def tank_stats_update(self, 
+	# 		     				tank_stats: list[WGTankStat],
+	# 							upsert: bool = False
+	# 							) -> tuple[int, int]:
+	# 	"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
+	# 	debug('starting')
+	# 	return await self._datas_update(BSTableType.TankStats,
+	# 									objs=tank_stats, upsert=upsert)
 
 
 	async def tank_stat_export(self, 
