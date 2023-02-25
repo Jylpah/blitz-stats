@@ -1358,8 +1358,11 @@ class Backend(ABC):
 				try:
 					if force:
 						debug(f'Trying to upsert {read} player achievements into {self.backend}.{self.table_player_achievements}')
-						added, not_added = await self.player_achievements_update(player_achievements, upsert=True)
-						stats.log('player achievements added/updated', added)
+						for pa in player_achievements:
+							if await self.player_achievement_replace(pa, upsert=True):
+								stats.log('stats added/updated')
+							else:
+								stats.log('stats not updated')
 					else:
 						debug(f'Trying to insert {read} player achievements into {self.backend}.{self.table_player_achievements}')
 						added, not_added = await self.player_achievements_insert(player_achievements)
