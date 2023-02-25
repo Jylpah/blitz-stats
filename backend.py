@@ -18,7 +18,7 @@ from models import BSAccount, BSBlitzRelease, StatsTypes
 from blitzutils.models import Region, WoTBlitzReplayJSON, WoTBlitzReplayData, WGTankStat, \
 		Account, WGTank, Tank, WGPlayerAchievementsMaxSeries, WGPlayerAchievementsMain, \
 		EnumVehicleTier, EnumNation, EnumVehicleTypeStr, WoTBlitzTankString
-from pyutils import EventCounter, JSONExportable, epoch_now, is_alphanum, Idx, D, O, QueueDone
+from pyutils import EventCounter, IterableQueue, JSONExportable, epoch_now, is_alphanum, Idx, D, O, QueueDone
 
 
 # Setup logging
@@ -1203,11 +1203,20 @@ class Backend(ABC):
 
 	async def tank_stats_get_worker(self, tank_statsQ : Queue[WGTankStat], **getargs) -> EventCounter:
 		debug('starting')
-		stats : EventCounter = EventCounter('tank_stats')
+		stats : EventCounter = EventCounter('tank stats')
 		try:
+			if type(tank_statsQ) is IterableQueue:
+				debug('tank_stats_get_worker(): producer added')
+				await tank_statsQ.add_producer()
+
 			async for ts in self.tank_stats_get(**getargs):
 				await tank_statsQ.put(ts)
 				stats.log('queued')
+		
+			if type(tank_statsQ) is IterableQueue:				
+				await tank_statsQ.finish()
+				debug('tank_stats_get_worker(): finished')
+
 		except CancelledError as err:
 			debug(f'Cancelled')
 		except Exception as err:
