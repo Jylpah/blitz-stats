@@ -799,7 +799,7 @@ async def cmd_fetch_wg(db		: Backend,
 	
 					message(f'fetching accounts for {region}: start={id_range.start}, stop={id_range.stop}')
 					id_creators.append(create_task(account_idQ_maker(idQs[region], id_range.start, id_range.stop)))
-				else:
+				else:					
 					ids : list[int] = list()
 					await idQs[region].add_producer()
 					async for account in BSAccount.import_file(args.file):
@@ -811,7 +811,6 @@ async def cmd_fetch_wg(db		: Backend,
 						await idQs[region].put(ids)
 					await idQs[region].finish()
 				
-
 			except Exception as err:
 				error(f"could not create account queue for '{region}': {err}")
 				raise Exception()				
