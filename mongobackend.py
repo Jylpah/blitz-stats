@@ -1689,6 +1689,7 @@ class MongoBackend(Backend):
 										regions: 	set[Region] = Region.API_regions(),
 										accounts: 	Sequence[Account] | None = None,
 										tanks: 		Sequence[Tank] | None = None,
+										missing: 	str | None = None, 
 										since:  	int = 0,
 										sample: 	float = 0) -> list[dict[str, Any]] | None:
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
@@ -1728,6 +1729,8 @@ class MongoBackend(Backend):
 				match.append({ alias('tank_id'): { '$in': [ t.tank_id for t in tanks ]}})
 			if since > 0:
 				match.append({ alias('last_battle_time'): { '$gte': since } })
+			if missing is not None:
+				match.append({ alias(missing): { '$exists': False } })
 
 			pipeline.append( { '$match' : { '$and' : match } })
 
@@ -1737,7 +1740,7 @@ class MongoBackend(Backend):
 				n : int = cast(int, await dbc.estimated_document_count())
 				pipeline.append({ '$sample' : {'size' : int(n * sample) } })
 			
-			#debug(f'pipeline={pipeline}')
+			# message(f'pipeline={pipeline}')
 			return pipeline
 		except Exception as err:
 			error(f'{err}')
