@@ -21,7 +21,7 @@ from backend import Backend, OptAccountsInactive, OptAccountsDistributed, \
 from models import BSAccount, StatsTypes, BSBlitzRelease
 from models_import import WG_Account
 from pyutils import CounterQueue, EventCounter,  TXTExportable, \
-	CSVExportable, JSONExportable, IterableQueue, QueueDone, \
+	CSVExportable, JSONExportable, Importable, IterableQueue, QueueDone, \
 		alive_bar_monitor, get_url, get_url_JSON_model, epoch_now, \
 		export, is_alphanum, chunker
 from blitzutils.models import WoTBlitzReplayJSON, WoTBlitzReplayData, Region, Account, WGAccountInfo
@@ -1398,33 +1398,9 @@ async def create_accountQ(db		: Backend,
 					stats.log('errors')
 
 		elif args.file is not None:
-
-			if args.file.endswith('.txt'):
-				async for account in BSAccount.import_txt(args.file):					
-					try:
-						await accountQ.put(account)
-						stats.log('read')
-					except Exception as err:
-						error(f'Could not add account to the queue: {err}')
-						stats.log('errors')
-
-			elif args.file.endswith('.csv'):
-				async for account in BSAccount.import_csv(args.file):
-					try:
-						await accountQ.put(account)
-						stats.log('read')
-					except Exception as err:
-						error(f'Could not add account to the queue: {err}')
-						stats.log('errors')
-
-			elif args.file.endswith('.json'):
-				async for account in BSAccount.import_json(args.file):
-					try:
-						await accountQ.put(account)
-						stats.log('read')
-					except Exception as err:
-						error(f'Could not add account to the queue: {err}')
-						stats.log('errors')
+			async for account in BSAccount.import_file(args.file):
+				await accountQ.put(account)
+				stats.log('read')		
 		
 		else:
 			# message('counting accounts...')
@@ -1458,7 +1434,7 @@ async def create_accountQ(db		: Backend,
 		error(f'{err}')		
 	finally:
 		await accountQ.finish()	
-		
+	
 	return stats
 
 
