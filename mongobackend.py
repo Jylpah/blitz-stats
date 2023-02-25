@@ -1123,6 +1123,16 @@ class MongoBackend(Backend):
 		except Exception as err:
 			error(f'Unknown error: {err}')
 		return None
+	
+
+	async def player_achievement_replace(self, 
+				      					player_achievement: WGPlayerAchievementsMaxSeries,
+										upsert: bool = False) -> bool:
+		"""Replace a player achievement in the backend. Returns False 
+			if the player achievement was not replaced"""
+		return await self._data_replace(BSTableType.PlayerAchievements, 
+				  						obj=player_achievement, 
+				  						upsert=upsert)
 
 
 	async def player_achievement_delete(self, account: BSAccount, added: int) -> bool:

@@ -1304,8 +1304,11 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def player_achievements_update(self, player_achievements: list[WGPlayerAchievementsMaxSeries], upsert: bool = False) -> tuple[int, int]:
-		"""Update or upsert player achievements to the backend. Returns number of stats updated and not updated"""
+	async def player_achievement_replace(self, 
+				      					player_achievement: WGPlayerAchievementsMaxSeries,
+										upsert: bool = False) -> bool:
+		"""Replace a player achievement in the backend. Returns False 
+			if the player achievement was not replaced"""
 		raise NotImplementedError
 
 
