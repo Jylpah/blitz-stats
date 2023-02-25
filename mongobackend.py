@@ -1475,7 +1475,7 @@ class MongoBackend(Backend):
 			if len(match) > 0:
 				pipeline.append( { '$match' : { '$and' : match } })
 
-			pipeline.append( { '$sort': { alias('release'): ASCENDING } })
+			pipeline.append( { '$sort': { alias('cut_off'): ASCENDING } })
 			debug(f'pipeline: {pipeline}')
 			return pipeline
 		except Exception as err:
@@ -1808,6 +1808,7 @@ class MongoBackend(Backend):
 			pipeline : list[dict[str, Any]] | None
 			pipeline = await self._mk_pipeline_tank_stats(release=release, regions=regions,
 															tanks=tanks, accounts=accounts,
+															missing=missing,
 															since=since, sample=sample)
 			if pipeline is None:
 				raise ValueError(f'could not create pipeline for get tank stats {self.backend}')
