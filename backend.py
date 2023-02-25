@@ -1113,6 +1113,7 @@ class Backend(ABC):
 							regions: 	set[Region] = Region.API_regions(), 
 							accounts: 	Sequence[Account] | None = None,
 							tanks: 		Sequence[Tank] | None = None, 
+							missing: 	str | None = None,
 							since:  	int = 0,
 							sample: 	float = 0) -> AsyncGenerator[WGTankStat, None]:
 		"""Return tank stats from the backend"""
