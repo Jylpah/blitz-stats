@@ -10,6 +10,7 @@ ssl/
 tmp/
 .gitattributes
 !requirements.txt
+*.log*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -147,3 +148,4 @@ dmypy.json
 
 # export dir
 export
+typescript*
