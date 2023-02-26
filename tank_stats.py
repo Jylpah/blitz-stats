@@ -828,22 +828,22 @@ async def cmd_edit(db: Backend, args : Namespace) -> bool:
 							   										batch=BATCH)
 			for _ in range(args.workers): 
 				edit_tasks.append(create_task(cmd_edit_fix_missing(db, tank_statQ, 
-						       								writeQ=writeQ,
-															missing=args.field, 
-															commit=commit, 
-															batch = BATCH)))
-			edit_tasks.append(create_task(db.tank_stats_insert_worker(writeQ, force=commit)))
+																	writeQ=writeQ,															
+																	commit=commit, 
+																	batch = BATCH)))
+			if commit:
+				edit_tasks.append(create_task(db.tank_stats_insert_worker(writeQ, force=True)))
 			edit_tasks.append(create_task(alive_bar_monitor([writeQ], 
 						   									title=f'Fixing {args.field}', 
 															total=None)))
 			for r in regions:
 				edit_tasks.append(create_task(db.tank_stats_get_worker(tank_statQ,
-						    								release=release, 
-															regions={r}, 
-															accounts=accounts,
-															missing=args.field,
-															since=since, 
-															sample=sample)))
+																		release=release, 
+																		regions={r}, 
+																		accounts=accounts,
+																		missing=args.field,
+																		since=since, 
+																		sample=sample)))
 
 			await tank_statQ.join()
 			await writeQ.join()
@@ -861,24 +861,23 @@ async def cmd_edit(db: Backend, args : Namespace) -> bool:
 
 async def cmd_edit_fix_missing(db: Backend, 
 								tank_statQ : IterableQueue[WGTankStat], 
-								writeQ: Queue[list[WGTankStat]],
-								missing: str,
+								writeQ: Queue[list[WGTankStat]],										
 								commit: bool = False, 
 								batch : int = 1000
 								) -> EventCounter:
-	"""Fix missing fields by estimating those from later stats"""
+	"""Fix: move all.shots -> all.spots & missing all.spots fields by estimating 
+		those from later stats"""
 	debug('starting')
 	stats : EventCounter = EventCounter('fix missing')
 	tank_stats : list[WGTankStat] = list()
 	try:		
-		missing = missing.split('.')[1]
 		while True:
 			ts : WGTankStat = await tank_statQ.get()
 			try:
 				fixed : bool = False
 				tsa: WGTankStatAll = ts.all
 				if (region := ts.region) is None: 
-					stats.log('errors')
+					stats.log('missing region')
 					continue
 
 				async for later in db.tank_stats_get(accounts=[BSAccount(id=ts.account_id, region=ts.region)], 
@@ -887,11 +886,24 @@ async def cmd_edit_fix_missing(db: Backend,
 													since=ts.last_battle_time + 1):
 					try:
 						ltsa = later.all
-						lvalue = getattr(ltsa, missing)
-						value = int(lvalue * tsa.battles / ltsa.battles)
-						setattr(tsa, missing, value)
+						if ltsa.battles <= 0:
+							stats.log('bad stats: 0 battles')
+							continue
+						
+						# Fix shots
+						if tsa.spotted >= tsa.hits:
+							tsa.shots = tsa.spotted
+							stats.log('all.shots = all.spots')
+						else:
+							tsa.shots = int(ltsa.shots * tsa.battles / ltsa.battles)
+							stats.log('all.shots estimated')
+						
+						# Fix spotted
+						tsa.spotted = int(ltsa.spotted * tsa.battles / ltsa.battles)
+						stats.log('all.spotted estimated')
+						
 						ts.all = tsa
-						debug(f'updating {ts}: all.{missing}={getattr(ts.all, missing)}')
+						debug(f'updating {ts}: all.spotted, all.shots')
 						if commit:
 							tank_stats.append(ts)
 							if len(tank_stats) == batch:
@@ -899,13 +911,14 @@ async def cmd_edit_fix_missing(db: Backend,
 								stats.log('fixed', batch)
 								tank_stats = list()
 						else:
-							message(f"Would fix all.{missing}: account={ts.account_id} tank={ts.tank_id} lbt={ts.last_battle_time}: {value} (battles={tsa.battles}) [{lvalue} (battles={ltsa.battles})]")
+							message(f"Would fix: account={ts.account_id} tank={ts.tank_id} lbt={ts.last_battle_time}: spotted={ts.all.spotted}, shots={ts.all.shots} (btls={tsa.battles}) [{ltsa.spotted}, {ltsa.shots} (btls={ltsa.battles})]")
 							stats.log('would fix')
 						fixed = True
 						break					
 					
 					except Exception as err:
 						verbose(f'Failed to update {ts}: {err}')
+						stats.log('errors')
 				if not fixed:
 					stats.log('could not fix')
 					verbose(f'could not fix: {ts}')
@@ -924,7 +937,6 @@ async def cmd_edit_fix_missing(db: Backend,
 	except Exception as err:
 		error(f'{err}')	
 	return stats
-
 
 
 async def cmd_edit_rel_remap(db: Backend, 
