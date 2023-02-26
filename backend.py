@@ -1245,14 +1245,14 @@ class Backend(ABC):
 						# debug(f'Trying to upsert {read} tank stats into {self.backend}.{self.table_tank_stats}')
 						for tank_stat in tank_stats:
 							if await self.tank_stat_replace(tank_stat, upsert=True):
-								stats.log('tank stats added/updated')
+								stats.log('added/updated')
 							else:
-								stats.log('tank stats added')						
+								stats.log('not added')						
 					else:
 						debug(f'Trying to insert {read} tank stats into {self.backend}.{self.table_tank_stats}')
 						added, not_added = await self.tank_stats_insert(tank_stats)
-						stats.log('tank stats added', added)
-					stats.log('tank stats not added', not_added)
+						stats.log('added', added)
+					stats.log('not added', not_added)
 				except Exception as err:
 					debug(f'Error: {err}')
 					stats.log('errors', read)
