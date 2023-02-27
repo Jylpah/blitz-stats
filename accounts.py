@@ -1399,22 +1399,10 @@ async def create_accountQ(db		: Backend,
 		elif args.file is not None:
 			async for account in BSAccount.import_file(args.file):
 				await accountQ.put(account)
+				debug(f'account put to queue: id={account.id}')
 				stats.log('read')		
 		
-		else:
-			# message('counting accounts...')
-			# start = time()
-			# total : int = await db.accounts_count(stats_type=stats_type, 
-			# 										regions=regions, 
-			# 										inactive=inactive,
-			# 										disabled=disabled,
-			# 										active_since=active_since,
-			# 										inactive_since=inactive_since,
-			# 										sample=sample, 
-			# 										cache_valid=cache_valid)
-			# end = time()
-			# message(f'{total} accounts, counting took {end - start}')
-
+		else:			
 			accounts_args : dict[str, Any] | None
 			if (accounts_args := await accounts_parse_args(db, args)) is not None:
 				async for account in db.accounts_get(stats_type=stats_type, 
@@ -1433,7 +1421,7 @@ async def create_accountQ(db		: Backend,
 		error(f'{err}')		
 	finally:
 		await accountQ.finish()	
-	
+	debug('finished')
 	return stats
 
 
