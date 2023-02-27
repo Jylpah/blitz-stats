@@ -1437,7 +1437,7 @@ async def cmd_export_career(db: Backend, args : Namespace) -> bool:
 
 			with Pool(processes=WORKERS, initializer=export_career_mp_init, 
 					  initargs=[ db.config, workQ, dataQ, options ]) as pool:
-				message('Counting tank stats...')
+				message('Counting accounts played during release...')
 				N : int = await db.tank_stats_unique_count('account_id',
 															release=release, 
 															regions=regions)
@@ -1544,17 +1544,19 @@ async def export_career_fetcher(db: Backend,
 	tank_stats 	: list[WGTankStat]
 	try:		
 		while (account := await accountQ.get()) is not None:
-		
-			async for tank_stats in db.tank_stats_export_career(account=account, release=release):
-				datas.extend([ ts.obj_src() for ts in tank_stats ])
-				if len(datas) >= TANK_STATS_BATCH:
-					# error(f'putting DF to dataQ: {len(tank_stats)} rows')
-					await dataQ.put(pd.json_normalize(datas))
-					stats.log('tank stats read', len(datas))
-					datas = list()
-	
-			stats.log('accounts')
-			accountQ.task_done()
+			try:
+				async for tank_stats in db.tank_stats_export_career(account=account, release=release):
+					datas.extend([ ts.obj_src() for ts in tank_stats ])
+					if len(datas) >= TANK_STATS_BATCH:
+						# error(f'putting DF to dataQ: {len(tank_stats)} rows')
+						await dataQ.put(pd.json_normalize(datas))
+						stats.log('tank stats read', len(datas))
+						datas = list()
+			except Exception as err:
+				error(f'{err}')
+			finally:	
+				stats.log('accounts')
+				accountQ.task_done()
 	
 		if len(datas) > 0:
 			await dataQ.put(pd.json_normalize(datas))
