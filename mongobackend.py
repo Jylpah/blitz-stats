@@ -721,7 +721,7 @@ class MongoBackend(Backend):
 				pipeline = pl
 			pipeline.append({ '$count': 'total'})
 
-			async for doc in dbc.aggregate(pipeline, allowDiskUse=True):
+			async for doc in dbc.aggregate(pipeline, allowDiskUse=True, batchSize = 10000):
 				return cast(int, doc['total'])
 
 		except Exception as err:
