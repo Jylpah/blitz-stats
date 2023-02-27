@@ -450,7 +450,7 @@ async def cmd_fetchMP(db: Backend, args : Namespace) -> bool:
 				if (accounts_args := await accounts_parse_args(db, args)) is None:
 					raise ValueError(f'could not parse account args: {args}')
 				
-				worker = create_task(fetch_backend_worker(db, statsQ))
+				worker = create_task(fetch_backend_worker(db, statsQ, force=args.force))
 				accounts : int = await db.accounts_count(StatsTypes.tank_stats, 
 												 		**accounts_args)
 				debug(f'starting {WORKERS} workers')
@@ -586,7 +586,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 			retryQ = IterableQueue()		# must not use maxsize
 		
 		workers : list[Task] = list()
-		workers.append(create_task(fetch_backend_worker(db, statsQ)))
+		workers.append(create_task(fetch_backend_worker(db, statsQ, force=args.force)))
 
 		# Process accountQ
 		accounts : int 
@@ -725,7 +725,9 @@ async def fetch_api_worker(db: Backend,
 	return stats
 
 
-async def fetch_backend_worker(db: Backend, statsQ: Queue[list[WGTankStat]]) -> EventCounter:
+async def fetch_backend_worker(db: Backend, 
+			       				statsQ: Queue[list[WGTankStat]], 
+			       				force: bool = False) -> EventCounter:
 	"""Async worker to add tank stats to backend. Assumes batch is for the same account"""
 	debug('starting')
 	stats 		: EventCounter = EventCounter(f'db: {db.driver}')
@@ -754,7 +756,7 @@ async def fetch_backend_worker(db: Backend, statsQ: Queue[list[WGTankStat]]) -> 
 						if (rel := releases.get(ts.last_battle_time)) is not None:
 							ts.release = rel.release
 
-					added, not_added = await db.tank_stats_insert(tank_stats)	
+					added, not_added = await db.tank_stats_insert(tank_stats, force=force)	
 					account_id = tank_stats[0].account_id
 					if (account := await db.account_get(account_id=account_id)) is None:
 						account = BSAccount(id=account_id)
@@ -826,6 +828,7 @@ async def cmd_edit(db: Backend, args : Namespace) -> bool:
 			await tank_statQ.join()
 		if args.tank_stats_edit_cmd == 'fix-missing':
 			BATCH: int = 100
+			message(f'Fixing {args.field} for release {release}')
 			writeQ : CounterQueue[list[WGTankStat]]  = CounterQueue(maxsize=TANK_STATS_Q_MAX, 
 							   										batch=BATCH)
 			for _ in range(args.workers): 
@@ -835,8 +838,12 @@ async def cmd_edit(db: Backend, args : Namespace) -> bool:
 																	batch = BATCH)))
 			if commit:
 				edit_tasks.append(create_task(db.tank_stats_insert_worker(writeQ, force=True)))
-			edit_tasks.append(create_task(alive_bar_monitor([writeQ], 
+				edit_tasks.append(create_task(alive_bar_monitor([writeQ], 
 						   									title=f'Fixing {args.field}', 
+															total=None)))
+			else:
+				edit_tasks.append(create_task(alive_bar_monitor([writeQ], 
+						   									title=f'Analyzing {args.field}', 
 															total=None)))
 			for r in regions:
 				edit_tasks.append(create_task(db.tank_stats_get_worker(tank_statQ,
@@ -881,11 +888,12 @@ async def cmd_edit_fix_missing(db: Backend,
 				if (region := ts.region) is None: 
 					stats.log('missing region')
 					continue
-
+				later_found : bool = False
 				async for later in db.tank_stats_get(accounts=[BSAccount(id=ts.account_id, region=ts.region)], 
 													regions={region}, 
 													tanks=[Tank(tank_id=ts.tank_id)], 
 													since=ts.last_battle_time + 1):
+					later_found = True
 					try:
 						ltsa = later.all
 						if ltsa.battles <= 0:
@@ -923,6 +931,8 @@ async def cmd_edit_fix_missing(db: Backend,
 						stats.log('errors')
 				if not fixed:
 					stats.log('could not fix')
+					if not later_found:
+						stats.log('no later stats found')
 					verbose(f'could not fix: {ts}')
 			except Exception as err:
 				error(f'failed to fix {ts}')
@@ -1539,7 +1549,7 @@ async def export_career_fetcher(db: Backend,
 				datas.extend([ ts.obj_src() for ts in tank_stats ])
 				if len(datas) >= TANK_STATS_BATCH:
 					# error(f'putting DF to dataQ: {len(tank_stats)} rows')
-					await dataQ.put(pd.json_normalize(datas   ))
+					await dataQ.put(pd.json_normalize(datas))
 					stats.log('tank stats read', len(datas))
 					datas = list()
 	
