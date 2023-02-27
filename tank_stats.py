@@ -395,7 +395,7 @@ async def cmd(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		if args.tank_stats_cmd == 'fetch':
-			if len(args.accounts) > 0:
+			if len(args.accounts) > 0 or args.file is not None:
 				return await cmd_fetch(db, args)
 			else:	
 				return await cmd_fetchMP(db, args)
