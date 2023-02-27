@@ -23,7 +23,7 @@ from models import BSAccount, BSBlitzRelease, StatsTypes
 from pyutils import epoch_now, JSONExportable, AliasMapper, I, D, O, Idx, \
 	BackendIndexType, BackendIndex, DESCENDING, ASCENDING, TEXT
 # from pyutils.utils import transform_objs
-from blitzutils.models import Region, Account, Tank, WoTBlitzReplayJSON, WoTBlitzReplayData, \
+from blitzutils.models import Region, Tank, WoTBlitzReplayJSON, WoTBlitzReplayData, \
 								WoTBlitzReplaySummary, WGTankStat, WGBlitzRelease, \
 								WGPlayerAchievementsMaxSeries, WoTBlitzTankString,\
 								EnumNation, EnumVehicleTier, EnumVehicleTypeStr
@@ -1162,7 +1162,7 @@ class MongoBackend(Backend):
 
 	async def _mk_pipeline_player_achievements(self, release: BSBlitzRelease|None = None,
 										regions: set[Region] = Region.API_regions(),
-										accounts: Iterable[Account] | None = None,
+										accounts: Iterable[BSAccount] | None = None,
 										since:  int = 0,
 										sample: float = 0) -> list[dict[str, Any]] | None:
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
@@ -1212,7 +1212,7 @@ class MongoBackend(Backend):
 
 	async def player_achievements_get(self, release: BSBlitzRelease | None = None,
 							regions: set[Region] = Region.API_regions(),
-							accounts: Iterable[Account] | None = None,
+							accounts: Iterable[BSAccount] | None = None,
 							since:  int = 0,
 							sample : float = 0) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
 		"""Return player achievements from the backend"""
@@ -1237,7 +1237,7 @@ class MongoBackend(Backend):
 
 	async def player_achievements_count(self, release: BSBlitzRelease | None = None,
 							regions: set[Region] = Region.API_regions(),
-							accounts: Iterable[Account] | None = None,
+							accounts: Iterable[BSAccount] | None = None,
 							sample : float = 0) -> int:
 		"""Get number of player achievements from backend"""
 		assert sample >= 0, f"'sample' must be >= 0, was {sample}"
@@ -1702,7 +1702,7 @@ class MongoBackend(Backend):
 
 	async def _mk_pipeline_tank_stats(self, release: BSBlitzRelease | None = None,
 										regions: 	set[Region] = Region.API_regions(),
-										accounts: 	Sequence[Account] | None = None,
+										accounts: 	Sequence[BSAccount] | None = None,
 										tanks: 		Sequence[Tank] | None = None,
 										missing: 	str | None = None, 
 										since:  	int = 0,
@@ -1763,7 +1763,7 @@ class MongoBackend(Backend):
 
 
 	async def _mk_pipeline_tank_stats_latest(self, 
-											account: 	Account, 
+											account: 	BSAccount, 
 											release: 	BSBlitzRelease,
 											# tanks: 		Sequence[Tank] | None = None,
 											) -> list[dict[str, Any]] | None:		
@@ -1812,7 +1812,7 @@ class MongoBackend(Backend):
 
 	async def tank_stats_get(self, release: BSBlitzRelease | None = None,
 							regions : set[Region] = Region.API_regions(),
-							accounts: Sequence[Account] | None = None,
+							accounts: Sequence[BSAccount] | None = None,
 							tanks 	: Sequence[Tank] | None = None,
 							missing : str | None = None,
 							since	: int = 0,
@@ -1838,7 +1838,7 @@ class MongoBackend(Backend):
 
 
 	async def tank_stats_export_career(self, 						
-										account: Account,							
+										account: BSAccount,							
 										release	: BSBlitzRelease,							
 										) -> AsyncGenerator[list[WGTankStat], None]:
 		"""Return tank stats from the backend"""
@@ -1863,7 +1863,7 @@ class MongoBackend(Backend):
 
 	async def tank_stats_count(self, release: BSBlitzRelease | None = None,
 								regions: 	set[Region] = Region.API_regions(),
-								accounts: 	Sequence[Account] | None = None,
+								accounts: 	Sequence[BSAccount] | None = None,
 								tanks: 		Sequence[Tank] | None = None,
 								since:  	int = 0,
 								sample : 	float = 0) -> int:

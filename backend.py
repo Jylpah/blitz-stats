@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from models import BSAccount, BSBlitzRelease, StatsTypes
 from blitzutils.models import Region, WoTBlitzReplayJSON, WoTBlitzReplayData, WGTankStat, \
-		Account, WGTank, Tank, WGPlayerAchievementsMaxSeries, WGPlayerAchievementsMain, \
+		WGTank, Tank, WGPlayerAchievementsMaxSeries, WGPlayerAchievementsMain, \
 		EnumVehicleTier, EnumNation, EnumVehicleTypeStr, WoTBlitzTankString
 from pyutils import EventCounter, IterableQueue, JSONExportable, epoch_now, is_alphanum, Idx, D, O, QueueDone
 
@@ -1114,7 +1114,7 @@ class Backend(ABC):
 	@abstractmethod
 	async def tank_stats_get(self, release: BSBlitzRelease | None = None,
 							regions: 	set[Region] = Region.API_regions(), 
-							accounts: 	Sequence[Account] | None = None,
+							accounts: 	Sequence[BSAccount] | None = None,
 							tanks: 		Sequence[Tank] | None = None, 
 							missing: 	str | None = None,
 							since:  	int = 0,
@@ -1126,7 +1126,7 @@ class Backend(ABC):
 
 	@abstractmethod
 	async def tank_stats_export_career(self, 						
-									account: Account,							
+									account: BSAccount,							
 									release	: BSBlitzRelease,
 									) -> AsyncGenerator[list[WGTankStat], None]:
 		"""Return tank stats from the backend"""
@@ -1137,7 +1137,7 @@ class Backend(ABC):
 	@abstractmethod
 	async def tank_stats_count(self, release: BSBlitzRelease | None = None,
 							regions: 	set[Region] = Region.API_regions(), 
-							accounts: 	Sequence[Account] | None = None,
+							accounts: 	Sequence[BSAccount] | None = None,
 							tanks: 		Sequence[Tank] | None = None, 
 							since:  	int = 0,
 							sample : 	float = 0) -> int:
@@ -1299,7 +1299,7 @@ class Backend(ABC):
 	@abstractmethod
 	async def player_achievements_get(self, release: BSBlitzRelease | None = None,
 							regions: set[Region] = Region.API_regions(), 
-							accounts: Sequence[Account] | None = None,
+							accounts: Sequence[BSAccount] | None = None,
 							since:  int = 0,
 							sample : float = 0) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
 		"""Return player achievements from the backend"""
@@ -1310,7 +1310,7 @@ class Backend(ABC):
 	@abstractmethod
 	async def player_achievements_count(self, release: BSBlitzRelease | None = None,
 							regions: set[Region] = Region.API_regions(), 
-							accounts: Sequence[Account] | None = None,
+							accounts: Sequence[BSAccount] | None = None,
 							sample : float = 0) -> int:
 		"""Get number of player achievements from backend"""
 		raise NotImplementedError
