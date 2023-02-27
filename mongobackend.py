@@ -808,8 +808,10 @@ class MongoBackend(Backend):
 			if the account was not updated"""
 		try:
 			debug('starting')
-			return await self._data_update(BSTableType.Accounts, obj=account,
-											update=update, fields=fields)
+			return await self._data_update(BSTableType.Accounts, 
+				  							obj=account,
+											update=update, 
+											fields=fields)
 		except Exception as err:
 			debug(f'Error while updating account (id={account.id}) into {self.table_uri(BSTableType.Accounts)}: {err}')
 		return False
