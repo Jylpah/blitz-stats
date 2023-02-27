@@ -1072,13 +1072,13 @@ async def prune_worker(db : Backend,
 					else:
 						error(f'failed to delete duplicate: {dup}')
 						stats.log('deletion errors')
-				else:
-					verbose(f'duplicate:  {dup}')
+				else:					
 					async for newer in db.tank_stats_get(release=release, 
 														regions=regions, 
 														accounts=[BSAccount(id=dup.account_id)], 
 														tanks=[tank], 
 														since=dup.last_battle_time + 1):
+						verbose(f'duplicate:  {dup}')
 						verbose(f'newer stat: {newer}')
 				if sample == 1:
 					tankQ.task_done()
