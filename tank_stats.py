@@ -592,6 +592,8 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 		accounts : int 
 		if len(args.accounts) > 0:
 			accounts = len(args.accounts)
+		elif args.file is not None:
+			accounts = await BSAccount.count_file(args.file)
 		else:
 			accounts_args : dict[str, Any] | None
 			if (accounts_args := await accounts_parse_args(db, args)) is None:
