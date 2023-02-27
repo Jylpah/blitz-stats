@@ -1457,46 +1457,18 @@ async def create_accountQ_batch(db			: Backend,
 					stats.log('errors', len(accounts))
 
 		elif args.file is not None:
-			accounts = list()
-			if args.file.endswith('.txt'):
-
-				async for account in BSAccount.import_txt(args.file):
-					try:
-						if account.region == region:
-							accounts.append(account)
-							if len(accounts) == batch:
-								await accountQ.put(accounts)
-								stats.log('read', batch)
-								accounts = list()
-					except Exception as err:
-						error(f'Could not add account to the queue: {err}')
-						stats.log('errors')
-
-			elif args.file.endswith('.csv'):
-				async for account in BSAccount.import_csv(args.file):
-					try:
-						if account.region == region:
-							accounts.append(account)
-							if len(accounts) == batch:
-								await accountQ.put(accounts)
-								stats.log('read', batch)
-								accounts = list()
-					except Exception as err:
-						error(f'Could not add account to the queue: {err}')
-						stats.log('errors')
-
-			elif args.file.endswith('.json'):
-				async for account in BSAccount.import_json(args.file):
-					try:
-						if account.region == region:
-							accounts.append(account)
-							if len(accounts) == batch:
-								await accountQ.put(accounts)
-								stats.log('read', batch)
-								accounts = list()
-					except Exception as err:
-						error(f'Could not add account to the queue: {err}')
-						stats.log('errors')
+			accounts = list()			
+			async for account in BSAccount.import_file(args.file):
+				try:
+					if account.region == region:
+						accounts.append(account)
+						if len(accounts) == batch:
+							await accountQ.put(accounts)
+							stats.log('read', batch)
+							accounts = list()
+				except Exception as err:
+					error(f'Could not add account to the queue: {err}')
+					stats.log('errors')				
 		
 			if len(accounts) > 0:
 				await accountQ.put(accounts)
@@ -1540,10 +1512,10 @@ async def create_accountQ_batch(db			: Backend,
 
 
 async def create_accountQ_active(db: Backend, 
-							accountQ: Queue[BSAccount], 
-							release: BSBlitzRelease, 
-							regions: set[Region], 
-							randomize: bool = True) -> EventCounter:
+								accountQ: Queue[BSAccount], 
+								release: BSBlitzRelease, 
+								regions: set[Region], 
+								randomize: bool = True) -> EventCounter:
 	"""Add accounts active during a release to accountQ"""
 	debug('starting')
 	stats : EventCounter = EventCounter(f'accounts')
