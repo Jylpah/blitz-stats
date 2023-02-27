@@ -1684,10 +1684,20 @@ class MongoBackend(Backend):
 		return False
 
 
-	async def tank_stats_insert(self, tank_stats: Sequence[WGTankStat]) -> tuple[int, int]:
+	async def tank_stats_insert(self, 
+			     				tank_stats: Sequence[WGTankStat], 
+			     				force: bool = False) -> tuple[int, int]:
 		"""Store tank stats to the backend. Returns the number of added and not added"""
 		debug('starting')
-		return await self._datas_insert(BSTableType.TankStats, tank_stats)
+		if force:
+			added		: int = 0
+			not_added	: int = len(tank_stats)
+			for ts in tank_stats:
+				if await self.tank_stat_replace(ts, upsert=True):
+					added += 1
+			return added, not_added - added
+		else:	
+			return await self._datas_insert(BSTableType.TankStats, tank_stats)
 
 
 	async def _mk_pipeline_tank_stats(self, release: BSBlitzRelease | None = None,

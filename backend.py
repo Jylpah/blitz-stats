@@ -1103,7 +1103,10 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def tank_stats_insert(self, tank_stats: Sequence[WGTankStat]) -> tuple[int, int]:
+	async def tank_stats_insert(self, 
+			     				tank_stats: Sequence[WGTankStat], 
+								force: bool = False
+								) -> tuple[int, int]:
 		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
 		raise NotImplementedError
 
