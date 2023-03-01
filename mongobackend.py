@@ -987,7 +987,7 @@ class MongoBackend(Backend):
 
 			if pipeline is None:
 				raise ValueError(f'could not create get-accounts {self.table_uri(BSTableType.Accounts)} cursor')
-			message(f'accounts_get(): pipeline={pipeline}')
+			# message(f'accounts_get(): pipeline={pipeline}')
 
 			# 'batchSize' is required for keeping cursor alive		
 			async for data in self._datas_get(BSTableType.Accounts, 
