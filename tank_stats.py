@@ -36,9 +36,9 @@ from releases import get_releases, release_mapper
 
 from pyutils import alive_bar_monitor, \
 					is_alphanum, JSONExportable, TXTExportable, CSVExportable, export, \
-					BucketMapper, IterableQueue, QueueDone, EventCounter, \
-					AsyncQueue
-from blitzutils.models import Region, WGTankStat, Tank, EnumVehicleTier, EnumNation, \
+					BucketMapper, IterableQueue, QueueDone, EventCounter, AsyncQueue, CounterQueue
+from blitzutils.models import Region, WGTankStat, WGTankStatAll, Tank, \
+								EnumVehicleTier, EnumNation, \
 								EnumVehicleTypeInt
 from blitzutils.wg import WGApi 
 
@@ -52,7 +52,8 @@ debug	= logger.debug
 
 WORKERS_WGAPI 		: int = 75
 WORKERS_IMPORTERS	: int = 5
-WORKERS_PRUNE 		: int = 5
+WORKERS_PRUNE 		: int = 10
+WORKERS_EDIT 		: int = 10
 TANK_STATS_Q_MAX 	: int = 1000
 TANK_STATS_BATCH 	: int = 50000
 
@@ -201,7 +202,11 @@ def add_args_edit(parser: ArgumentParser, config: Optional[ConfigParser] = None)
 		
 		remap_parser = edit_parsers.add_parser('remap-release', help="tank-stats edit remap-release help")
 		if not add_args_edit_remap_release(remap_parser, config=config):
-			raise Exception("Failed to define argument parser for: tank-stats edit remap-release")		
+			raise Exception("Failed to define argument parser for: tank-stats edit remap-release")
+		
+		missing_parser = edit_parsers.add_parser('fix-missing', help="tank-stats edit fix-missing help")
+		if not add_args_edit_fix_missing(missing_parser, config=config):
+			raise Exception("Failed to define argument parser for: tank-stats edit fix-missing")	
 
 		return True
 	except Exception as err:
@@ -229,12 +234,23 @@ def add_args_edit_common(parser: ArgumentParser, config: Optional[ConfigParser] 
 							help="Edit tank stats for the listed ACCOUNT_ID(s) ('account_id:region' or 'account_id')")
 	parser.add_argument('--tank_ids', type=int, default=None, nargs='*', metavar='TANK_ID [TANK_ID1 ...]',
 							help="Edit tank stats for the listed TANK_ID(S).")
+	parser.add_argument('--workers', type=int, dest='workers', default=WORKERS_EDIT, 
+							help='Set number of asynchronous workers')
 	return True
 
 
 def add_args_edit_remap_release(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	debug('starting')
 	return add_args_edit_common(parser, config)
+
+
+def add_args_edit_fix_missing(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+	debug('starting')
+	if not add_args_edit_common(parser, config):
+		return False
+	parser.add_argument('field', type=str, metavar='FIELD',  
+						help='Fix stats with missing FIELD')
+	return True
 
 
 def add_args_prune(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
@@ -250,7 +266,6 @@ def add_args_prune(parser: ArgumentParser, config: Optional[ConfigParser] = None
 							help=f'set number of worker processes (default={WORKERS_PRUNE})')
 	parser.add_argument('--sample', type=int, default=0, metavar='SAMPLE',
 						help='sample size')
-
 	return True
 
 
@@ -380,7 +395,7 @@ async def cmd(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		if args.tank_stats_cmd == 'fetch':
-			if len(args.accounts) > 0:
+			if len(args.accounts) > 0 or args.file is not None:
 				return await cmd_fetch(db, args)
 			else:	
 				return await cmd_fetchMP(db, args)
@@ -435,7 +450,7 @@ async def cmd_fetchMP(db: Backend, args : Namespace) -> bool:
 				if (accounts_args := await accounts_parse_args(db, args)) is None:
 					raise ValueError(f'could not parse account args: {args}')
 				
-				worker = create_task(fetch_backend_worker(db, statsQ))
+				worker = create_task(fetch_backend_worker(db, statsQ, force=args.force))
 				accounts : int = await db.accounts_count(StatsTypes.tank_stats, 
 												 		**accounts_args)
 				debug(f'starting {WORKERS} workers')
@@ -571,12 +586,14 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 			retryQ = IterableQueue()		# must not use maxsize
 		
 		workers : list[Task] = list()
-		workers.append(create_task(fetch_backend_worker(db, statsQ)))
+		workers.append(create_task(fetch_backend_worker(db, statsQ, force=args.force)))
 
 		# Process accountQ
 		accounts : int 
 		if len(args.accounts) > 0:
 			accounts = len(args.accounts)
+		elif args.file is not None:
+			accounts = await BSAccount.count_file(args.file)
 		else:
 			accounts_args : dict[str, Any] | None
 			if (accounts_args := await accounts_parse_args(db, args)) is None:
@@ -590,7 +607,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 		for r in regions:
 			accountQs[r] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
 			r_args = copy.copy(args)
-			r_args.region = { r }
+			r_args.regions = { r }
 			workers.append(create_task(create_accountQ(db, r_args, accountQs[r],
 					      								stats_type=StatsTypes.tank_stats)))
 			for _ in range(WORKERS):
@@ -708,7 +725,9 @@ async def fetch_api_worker(db: Backend,
 	return stats
 
 
-async def fetch_backend_worker(db: Backend, statsQ: Queue[list[WGTankStat]]) -> EventCounter:
+async def fetch_backend_worker(db: Backend, 
+			       				statsQ: Queue[list[WGTankStat]], 
+			       				force: bool = False) -> EventCounter:
 	"""Async worker to add tank stats to backend. Assumes batch is for the same account"""
 	debug('starting')
 	stats 		: EventCounter = EventCounter(f'db: {db.driver}')
@@ -737,7 +756,7 @@ async def fetch_backend_worker(db: Backend, statsQ: Queue[list[WGTankStat]]) -> 
 						if (rel := releases.get(ts.last_battle_time)) is not None:
 							ts.release = rel.release
 
-					added, not_added = await db.tank_stats_insert(tank_stats)	
+					added, not_added = await db.tank_stats_insert(tank_stats, force=force)	
 					account_id = tank_stats[0].account_id
 					if (account := await db.account_get(account_id=account_id)) is None:
 						account = BSAccount(id=account_id)
@@ -790,34 +809,146 @@ async def cmd_edit(db: Backend, args : Namespace) -> bool:
 		accounts 	: list[BSAccount] | None= read_args_accounts(args.accounts)
 		sample 		: float 				= args.sample
 		commit 		: bool  				= args.commit
-
-		tank_statQ : Queue[WGTankStat] 		= Queue(maxsize=TANK_STATS_Q_MAX)
-		edit_task : Task
+		tank_statQ 	: IterableQueue[WGTankStat] = IterableQueue(maxsize=TANK_STATS_Q_MAX)
+		edit_tasks 	: list[Task] 			= list()
 		message('Counting tank-stats to scan for edits')
-		N : int = await db.tank_stats_count(release=release, regions=regions, 
-											accounts=accounts,since=since, sample=sample)
-		if args.tank_stats_edit_cmd == 'remap-release':
-			edit_task = create_task(cmd_edit_rel_remap(db, tank_statQ, commit, N))
-		else:
-			raise NotImplementedError		
 		
-		stats.merge_child(await db.tank_stats_get_worker(tank_statQ, release=release, 
-														regions=regions, accounts=accounts,
-														since=since, sample=sample))
-		await tank_statQ.join()
-		edit_task.cancel()
+		if args.tank_stats_edit_cmd == 'remap-release':
+			N : int = await db.tank_stats_count(release=release, regions=regions,
+											accounts=accounts, since=since, sample=sample)
+			edit_tasks.append(create_task(cmd_edit_rel_remap(db, tank_statQ, commit, N)))
+			
+			stats.merge_child(await db.tank_stats_get_worker(tank_statQ, 
+						    								release=release, 
+															regions=regions, 
+															accounts=accounts,
+															since=since, 
+															sample=sample))
+			
+			await tank_statQ.join()
+		if args.tank_stats_edit_cmd == 'fix-missing':
+			BATCH: int = 100
+			message(f'Fixing {args.field} for release {release}')
+			writeQ : CounterQueue[list[WGTankStat]]  = CounterQueue(maxsize=TANK_STATS_Q_MAX, 
+							   										batch=BATCH)
+			for _ in range(args.workers): 
+				edit_tasks.append(create_task(cmd_edit_fix_missing(db, tank_statQ, 
+																	writeQ=writeQ,															
+																	commit=commit, 
+																	batch = BATCH)))
+			if commit:
+				edit_tasks.append(create_task(db.tank_stats_insert_worker(writeQ, force=True)))
+				edit_tasks.append(create_task(alive_bar_monitor([writeQ], 
+						   									title=f'Fixing {args.field}', 
+															total=None)))
+			else:
+				edit_tasks.append(create_task(alive_bar_monitor([writeQ], 
+						   									title=f'Analyzing {args.field}', 
+															total=None)))
+			for r in regions:
+				edit_tasks.append(create_task(db.tank_stats_get_worker(tank_statQ,
+																		release=release, 
+																		regions={r}, 
+																		accounts=accounts,
+																		missing=args.field,
+																		since=since, 
+																		sample=sample)))
 
-		res : EventCounter | BaseException
-		for res in await gather(edit_task):
-			if isinstance(res, EventCounter):
-				stats.merge_child(res)
-			elif type(res) is BaseException:
-				error(f'{db.backend}: tank-stats edit remap-release returned error: {res}')
+			await tank_statQ.join()
+			await writeQ.join()
+		else:
+			raise NotImplementedError			
+		
+		await stats.gather_stats(edit_tasks)
+		
 		message(stats.print(do_print=False, clean=True))
 
 	except Exception as err:
 		error(f'{err}')
 	return False
+
+
+async def cmd_edit_fix_missing(db: Backend, 
+								tank_statQ : IterableQueue[WGTankStat], 
+								writeQ: Queue[list[WGTankStat]],										
+								commit: bool = False, 
+								batch : int = 1000
+								) -> EventCounter:
+	"""Fix: move all.shots -> all.spots & missing all.spots fields by estimating 
+		those from later stats"""
+	debug('starting')
+	stats : EventCounter = EventCounter('fix missing')
+	tank_stats : list[WGTankStat] = list()
+	try:		
+		while True:
+			ts : WGTankStat = await tank_statQ.get()
+			try:
+				fixed : bool = False
+				tsa: WGTankStatAll = ts.all
+				if (region := ts.region) is None: 
+					stats.log('missing region')
+					continue
+				later_found : bool = False
+				async for later in db.tank_stats_get(accounts=[BSAccount(id=ts.account_id, region=ts.region)], 
+													regions={region}, 
+													tanks=[Tank(tank_id=ts.tank_id)], 
+													since=ts.last_battle_time + 1):
+					later_found = True
+					try:
+						ltsa = later.all
+						if ltsa.battles <= 0:
+							stats.log('bad stats: 0 battles')
+							continue
+						
+						# Fix shots
+						if tsa.spotted >= tsa.hits:
+							tsa.shots = tsa.spotted
+							stats.log('all.shots = all.spots')
+						else:
+							tsa.shots = int(ltsa.shots * tsa.battles / ltsa.battles)
+							stats.log('all.shots estimated')
+						
+						# Fix spotted
+						tsa.spotted = int(ltsa.spotted * tsa.battles / ltsa.battles)
+						stats.log('all.spotted estimated')
+						
+						ts.all = tsa
+						debug(f'updating {ts}: all.spotted, all.shots')
+						if commit:
+							tank_stats.append(ts)
+							if len(tank_stats) == batch:
+								await writeQ.put(tank_stats)
+								stats.log('fixed', batch)
+								tank_stats = list()
+						else:
+							message(f"Would fix: account={ts.account_id} tank={ts.tank_id} lbt={ts.last_battle_time}: spotted={ts.all.spotted}, shots={ts.all.shots} (btls={tsa.battles}) [{ltsa.spotted}, {ltsa.shots} (btls={ltsa.battles})]")
+							stats.log('would fix')
+						fixed = True
+						break					
+					
+					except Exception as err:
+						verbose(f'Failed to update {ts}: {err}')
+						stats.log('errors')
+				if not fixed:
+					stats.log('could not fix')
+					if not later_found:
+						stats.log('no later stats found')
+					verbose(f'could not fix: {ts}')
+			except Exception as err:
+				error(f'failed to fix {ts}')
+			finally:
+				tank_statQ.task_done()
+	
+	except QueueDone:
+		debug('Queue done')
+		if len(tank_stats) > 0:
+			await writeQ.put(tank_stats)
+			stats.log('fixed', len(tank_stats))
+	except CancelledError:
+		debug('cancelled')		
+	except Exception as err:
+		error(f'{err}')	
+	return stats
 
 
 async def cmd_edit_rel_remap(db: Backend, 
@@ -879,16 +1010,19 @@ async def cmd_prune(db: Backend, args : Namespace) -> bool:
 	# performance can be increased 5-10x with multiprocessing
 	debug('starting')
 	try:
-		stats 		: EventCounter 		= EventCounter('tank-stats prune')
 		regions		: set[Region] 		= { Region(r) for r in args.regions }
 		sample 		: int 				= args.sample
 		release 	: BSBlitzRelease  	= BSBlitzRelease(release=args.release)
+		stats 		: EventCounter 		= EventCounter(f'tank-stats prune {release}')
 		commit 		: bool 				= args.commit
 		tankQ 		: Queue[Tank]		= Queue()
 		workers 	: list[Task]		= list()
+		WORKERS 	: int 				= args.workers
+		if sample > 0:
+			WORKERS = 1
 		progress_str : str 				= 'Finding duplicates ' 
 		if commit:
-			message(f'Pruning tank stats from {db.table_uri(BSTableType.TankStats)}')
+			message(f'Pruning tank stats of release {release} from {db.table_uri(BSTableType.TankStats)}')
 			message('Press CTRL+C to cancel in 3 secs...')
 			await sleep(3)
 			progress_str = 'Pruning duplicates '
@@ -901,9 +1035,9 @@ async def cmd_prune(db: Backend, args : Namespace) -> bool:
 		# N : int = await db.tankopedia_count()
 		N : int = tankQ.qsize()
 
-		for _ in range(args.workers):
+		for _ in range(WORKERS):
 			workers.append(create_task(prune_worker(db, tankQ=tankQ, release=release, 
-													regions=regions, commit=commit)))
+													regions=regions, commit=commit, sample=sample)))
 		prev : int = 0
 		done : int
 		left : int
@@ -914,29 +1048,7 @@ async def cmd_prune(db: Backend, args : Namespace) -> bool:
 					bar(done - prev)
 				prev = done
 				await sleep(1)
-			#async for tank in db.tankopedia_get_many():   # could use tank_stats_unique()
 			
-				# async for dup in db.tank_stats_duplicates(tank, release, regions, sample=sample):
-				# 	stats.log('duplicates found')
-				# 	if commit:
-				# 		# verbose(f'deleting duplicate: {dup}')
-				# 		if await db.tank_stat_delete(account_id=dup.account_id, 
-				# 									last_battle_time=dup.last_battle_time, 
-				# 									tank_id=tank_id):
-				# 			verbose(f'deleted duplicate: {dup}')
-				# 			stats.log('duplicates deleted')
-				# 		else:
-				# 			error(f'failed to delete duplicate: {dup}')
-				# 			stats.log('deletion errors')
-				# 	else:
-				# 		verbose(f'duplicate:  {dup}')
-				# 		async for newer in db.tank_stats_get(release=release, 
-				# 												regions=regions, 
-				# 												accounts=[BSAccount(id=dup.account_id)], 
-				# 												tanks=[tank], 
-				# 												since=dup.last_battle_time + 1):
-				# 			verbose(f'newer stat: {newer}')
-				# bar()
 		await tankQ.join()
 		await stats.gather_stats(workers)
 		stats.print()
@@ -951,7 +1063,8 @@ async def prune_worker(db : Backend,
 						# tank: Tank, 
 						release: BSBlitzRelease, 
 						regions : set[Region], 
-						commit: bool = False) -> EventCounter:
+						commit: bool = False, 
+						sample : int = 0) -> EventCounter:
 	"""Worker to delete duplicates"""
 	debug(f'starting')
 	stats 	: EventCounter 	= EventCounter('duplicates')
@@ -969,14 +1082,19 @@ async def prune_worker(db : Backend,
 					else:
 						error(f'failed to delete duplicate: {dup}')
 						stats.log('deletion errors')
-				else:
-					verbose(f'duplicate:  {dup}')
+				else:					
 					async for newer in db.tank_stats_get(release=release, 
 														regions=regions, 
 														accounts=[BSAccount(id=dup.account_id)], 
 														tanks=[tank], 
 														since=dup.last_battle_time + 1):
+						verbose(f'duplicate:  {dup}')
 						verbose(f'newer stat: {newer}')
+				if sample == 1:
+					tankQ.task_done()
+					raise CancelledError
+				elif sample > 1:
+					sample -= 1
 			tankQ.task_done()
 	except CancelledError:
 		debug('cancelled')		
@@ -1319,7 +1437,7 @@ async def cmd_export_career(db: Backend, args : Namespace) -> bool:
 
 			with Pool(processes=WORKERS, initializer=export_career_mp_init, 
 					  initargs=[ db.config, workQ, dataQ, options ]) as pool:
-				message('Counting tank stats...')
+				message('Counting accounts played during release...')
 				N : int = await db.tank_stats_unique_count('account_id',
 															release=release, 
 															regions=regions)
@@ -1426,17 +1544,19 @@ async def export_career_fetcher(db: Backend,
 	tank_stats 	: list[WGTankStat]
 	try:		
 		while (account := await accountQ.get()) is not None:
-		
-			async for tank_stats in db.tank_stats_export_career(account=account, release=release):
-				datas.extend([ ts.obj_src() for ts in tank_stats ])
-				if len(datas) >= TANK_STATS_BATCH:
-					# error(f'putting DF to dataQ: {len(tank_stats)} rows')
-					await dataQ.put(pd.json_normalize(datas   ))
-					stats.log('tank stats read', len(datas))
-					datas = list()
-	
-			stats.log('accounts')
-			accountQ.task_done()
+			try:
+				async for tank_stats in db.tank_stats_export_career(account=account, release=release):
+					datas.extend([ ts.obj_src() for ts in tank_stats ])
+					if len(datas) >= TANK_STATS_BATCH:
+						# error(f'putting DF to dataQ: {len(tank_stats)} rows')
+						await dataQ.put(pd.json_normalize(datas))
+						stats.log('tank stats read', len(datas))
+						datas = list()
+			except Exception as err:
+				error(f'{err}')
+			finally:	
+				stats.log('accounts')
+				accountQ.task_done()
 	
 		if len(datas) > 0:
 			await dataQ.put(pd.json_normalize(datas))
@@ -2015,7 +2135,8 @@ async def  import_mp_worker(id: int = 0) -> EventCounter:
 		tank_statsQ	: Queue[list[WGTankStat]] 				= Queue(100)
 		force 		: bool 									= mp_options['force']
 		rel_map		: bool									= mp_options['map_releases']
-
+		tank_stats  : list[WGTankStat]
+		
 		if rel_map:
 			rel_mapper = await release_mapper(db)
 

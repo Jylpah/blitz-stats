@@ -16,9 +16,9 @@ from pydantic import BaseModel, Field
 
 from models import BSAccount, BSBlitzRelease, StatsTypes
 from blitzutils.models import Region, WoTBlitzReplayJSON, WoTBlitzReplayData, WGTankStat, \
-		Account, WGTank, Tank, WGPlayerAchievementsMaxSeries, WGPlayerAchievementsMain, \
+		WGTank, Tank, WGPlayerAchievementsMaxSeries, WGPlayerAchievementsMain, \
 		EnumVehicleTier, EnumNation, EnumVehicleTypeStr, WoTBlitzTankString
-from pyutils import EventCounter, JSONExportable, epoch_now, is_alphanum, Idx, D, O, QueueDone
+from pyutils import EventCounter, IterableQueue, JSONExportable, epoch_now, is_alphanum, Idx, D, O, QueueDone
 
 
 # Setup logging
@@ -825,8 +825,10 @@ class Backend(ABC):
 		raise NotImplementedError
 
 
-	async def accounts_insert_worker(self, accountQ : Queue[BSAccount], 
-									force: bool | None = None) -> EventCounter:
+	async def accounts_insert_worker(self, 
+				  					accountQ : Queue[BSAccount], 
+									force: bool | None = None
+									) -> EventCounter:
 		"""insert/replace accounts. force=None: insert, force=True/False: upsert=force"""
 		debug(f'starting, force={force}')
 		stats : EventCounter = EventCounter('accounts insert')
@@ -839,7 +841,7 @@ class Backend(ABC):
 						await self.account_insert(account)
 						stats.log('added')
 					else:
-						debug(f'Trying to upsert account_id={account.id} into {self.backend}.{self.table_accounts}')
+						#debug(f'Trying to upsert account_id={account.id} into {self.backend}.{self.table_accounts}')
 						await self.account_replace(account, upsert=force)					
 						if force:
 							stats.log('added/updated')
@@ -1086,6 +1088,14 @@ class Backend(ABC):
 
 
 	@abstractmethod
+	async def tank_stat_replace(self, tank_stat: WGTankStat,
+								upsert: bool = False) -> bool:
+		"""Replace a tank stat in the backend. Returns False 
+			if the account was not updated"""
+		raise NotImplementedError
+
+
+	@abstractmethod
 	async def tank_stat_delete(self, account_id: int, tank_id: int, 
 								last_battle_time: int) -> bool:
 		"""Delete a tank stat from the backend. Returns True if successful"""
@@ -1093,7 +1103,10 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def tank_stats_insert(self, tank_stats: Sequence[WGTankStat]) -> tuple[int, int]:
+	async def tank_stats_insert(self, 
+			     				tank_stats: Sequence[WGTankStat], 
+								force: bool = False
+								) -> tuple[int, int]:
 		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
 		raise NotImplementedError
 
@@ -1101,8 +1114,9 @@ class Backend(ABC):
 	@abstractmethod
 	async def tank_stats_get(self, release: BSBlitzRelease | None = None,
 							regions: 	set[Region] = Region.API_regions(), 
-							accounts: 	Sequence[Account] | None = None,
+							accounts: 	Sequence[BSAccount] | None = None,
 							tanks: 		Sequence[Tank] | None = None, 
+							missing: 	str | None = None,
 							since:  	int = 0,
 							sample: 	float = 0) -> AsyncGenerator[WGTankStat, None]:
 		"""Return tank stats from the backend"""
@@ -1112,7 +1126,7 @@ class Backend(ABC):
 
 	@abstractmethod
 	async def tank_stats_export_career(self, 						
-									account: Account,							
+									account: BSAccount,							
 									release	: BSBlitzRelease,
 									) -> AsyncGenerator[list[WGTankStat], None]:
 		"""Return tank stats from the backend"""
@@ -1123,7 +1137,7 @@ class Backend(ABC):
 	@abstractmethod
 	async def tank_stats_count(self, release: BSBlitzRelease | None = None,
 							regions: 	set[Region] = Region.API_regions(), 
-							accounts: 	Sequence[Account] | None = None,
+							accounts: 	Sequence[BSAccount] | None = None,
 							tanks: 		Sequence[Tank] | None = None, 
 							since:  	int = 0,
 							sample : 	float = 0) -> int:
@@ -1131,10 +1145,10 @@ class Backend(ABC):
 		raise NotImplementedError
 
 
-	@abstractmethod
-	async def tank_stats_update(self, tank_stats: list[WGTankStat], upsert: bool = False) -> tuple[int, int]:
-		"""Update or upsert tank stats to the backend. Returns number of stats updated and not updated"""
-		raise NotImplementedError
+	# @abstractmethod
+	# async def tank_stats_update(self, tank_stats: list[WGTankStat], upsert: bool = False) -> tuple[int, int]:
+	# 	"""Update or upsert tank stats to the backend. Returns number of stats updated and not updated"""
+	# 	raise NotImplementedError
 
 
 	@abstractmethod
@@ -1192,11 +1206,20 @@ class Backend(ABC):
 
 	async def tank_stats_get_worker(self, tank_statsQ : Queue[WGTankStat], **getargs) -> EventCounter:
 		debug('starting')
-		stats : EventCounter = EventCounter('tank_stats')
+		stats : EventCounter = EventCounter('tank stats')
 		try:
+			if type(tank_statsQ) is IterableQueue:
+				debug('tank_stats_get_worker(): producer added')
+				await tank_statsQ.add_producer()
+
 			async for ts in self.tank_stats_get(**getargs):
 				await tank_statsQ.put(ts)
 				stats.log('queued')
+		
+			if type(tank_statsQ) is IterableQueue:				
+				await tank_statsQ.finish()
+				debug('tank_stats_get_worker(): finished')
+
 		except CancelledError as err:
 			debug(f'Cancelled')
 		except Exception as err:
@@ -1204,8 +1227,10 @@ class Backend(ABC):
 		return stats
 
 
-	async def tank_stats_insert_worker(self, tank_statsQ : Queue[list[WGTankStat]], 
-										force: bool = False) -> EventCounter:
+	async def tank_stats_insert_worker(self, 
+				    					tank_statsQ : Queue[list[WGTankStat]], 
+										force: bool = False
+										) -> EventCounter:
 		debug(f'starting, force={force}')
 		stats : EventCounter = EventCounter('tank-stats insert')
 		try:
@@ -1220,14 +1245,17 @@ class Backend(ABC):
 				stats.log('read', read)
 				try:
 					if force:
-						debug(f'Trying to upsert {read} tank stats into {self.backend}.{self.table_tank_stats}')
-						added, not_added = await self.tank_stats_update(tank_stats, upsert=True)
-						stats.log('tank stats added/updated', added)
+						# debug(f'Trying to upsert {read} tank stats into {self.backend}.{self.table_tank_stats}')
+						for tank_stat in tank_stats:
+							if await self.tank_stat_replace(tank_stat, upsert=True):
+								stats.log('added/updated')
+							else:
+								stats.log('not added')						
 					else:
 						debug(f'Trying to insert {read} tank stats into {self.backend}.{self.table_tank_stats}')
 						added, not_added = await self.tank_stats_insert(tank_stats)
-						stats.log('tank stats added', added)
-					stats.log('tank stats not added', not_added)
+						stats.log('added', added)
+					stats.log('not added', not_added)
 				except Exception as err:
 					debug(f'Error: {err}')
 					stats.log('errors', read)
@@ -1271,7 +1299,7 @@ class Backend(ABC):
 	@abstractmethod
 	async def player_achievements_get(self, release: BSBlitzRelease | None = None,
 							regions: set[Region] = Region.API_regions(), 
-							accounts: Sequence[Account] | None = None,
+							accounts: Sequence[BSAccount] | None = None,
 							since:  int = 0,
 							sample : float = 0) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
 		"""Return player achievements from the backend"""
@@ -1282,16 +1310,25 @@ class Backend(ABC):
 	@abstractmethod
 	async def player_achievements_count(self, release: BSBlitzRelease | None = None,
 							regions: set[Region] = Region.API_regions(), 
-							accounts: Sequence[Account] | None = None,
+							accounts: Sequence[BSAccount] | None = None,
 							sample : float = 0) -> int:
 		"""Get number of player achievements from backend"""
 		raise NotImplementedError
 
 
 	@abstractmethod
-	async def player_achievements_update(self, player_achievements: list[WGPlayerAchievementsMaxSeries], upsert: bool = False) -> tuple[int, int]:
-		"""Update or upsert player achievements to the backend. Returns number of stats updated and not updated"""
+	async def player_achievement_replace(self, 
+				      					player_achievement: WGPlayerAchievementsMaxSeries,
+										upsert: bool = False) -> bool:
+		"""Replace a player achievement in the backend. Returns False 
+			if the player achievement was not replaced"""
 		raise NotImplementedError
+	
+
+	# @abstractmethod
+	# async def player_achievements_update(self, player_achievements: list[WGPlayerAchievementsMaxSeries], upsert: bool = False) -> tuple[int, int]:
+	# 	"""Update or upsert player achievements to the backend. Returns number of stats updated and not updated"""
+	# 	raise NotImplementedError
 
 
 	@abstractmethod
@@ -1340,8 +1377,11 @@ class Backend(ABC):
 				try:
 					if force:
 						debug(f'Trying to upsert {read} player achievements into {self.backend}.{self.table_player_achievements}')
-						added, not_added = await self.player_achievements_update(player_achievements, upsert=True)
-						stats.log('player achievements added/updated', added)
+						for pa in player_achievements:
+							if await self.player_achievement_replace(pa, upsert=True):
+								stats.log('stats added/updated')
+							else:
+								stats.log('stats not updated')
 					else:
 						debug(f'Trying to insert {read} player achievements into {self.backend}.{self.table_player_achievements}')
 						added, not_added = await self.player_achievements_insert(player_achievements)

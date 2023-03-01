@@ -19,11 +19,6 @@ class WG_Account(Account):
 	updated_WGplayerachievements : int | None = Field(default=None, alias='up')
 	inactive					: bool 		 = Field(default=False, alias='i')
 	invalid						: bool		 = Field(default=False, alias='d')
-
-	_exclude_export_DB_fields = None
-	_exclude_export_src_fields = None
-	_include_export_DB_fields = None
-	_include_export_src_fields= None
 	
 	class Config:
 		allow_population_by_field_name = True
@@ -62,11 +57,3 @@ class WG_Release(BSBlitzRelease):
 		if 'release' in values:
 			del values['id']
 		return values
-
-	# @validator('launch_date', pre=True)
-	# def to_date(cls, v) -> date | None:
-	# 	print(f'DEBUG: {v}')
-	# 	if v is None:
-	# 		return None
-	# 	return datetime.fromisoformat(v).date()
-

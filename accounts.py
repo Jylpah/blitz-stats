@@ -21,7 +21,7 @@ from backend import Backend, OptAccountsInactive, OptAccountsDistributed, \
 from models import BSAccount, StatsTypes, BSBlitzRelease
 from models_import import WG_Account
 from pyutils import CounterQueue, EventCounter,  TXTExportable, \
-	CSVExportable, JSONExportable, IterableQueue, QueueDone, \
+	CSVExportable, JSONExportable, Importable, IterableQueue, QueueDone, \
 		alive_bar_monitor, get_url, get_url_JSON_model, epoch_now, \
 		export, is_alphanum, chunker
 from blitzutils.models import WoTBlitzReplayJSON, WoTBlitzReplayData, Region, Account, WGAccountInfo
@@ -280,6 +280,8 @@ def add_args_fetch_wg(parser: ArgumentParser, config: Optional[ConfigParser] = N
 		parser.add_argument('--end', dest='null_responses', 
 							type=int, default=NULL_RESPONSES, metavar='N',
 							help='end fetching accounts after N consequtive empty responses')
+		parser.add_argument('--file',type=str, metavar='FILENAME', default=None, 
+							help='Read account_ids from FILENAME one account_id per line')
 							
 		return True	
 	except Exception as err:
@@ -549,10 +551,8 @@ async def cmd_update_wg(db		: Backend,
 		workQs 			: dict[Region, IterableQueue[list[BSAccount]]] = dict()		
 
 		for region in regions:
-			workQs[region] = IterableQueue(maxsize=100)
-			r_args = copy.copy(args)
-			r_args.region = {region}
-			workQ_creators.append(create_task(create_accountQ_batch(db, r_args,
+			workQs[region] = IterableQueue(maxsize=100)			
+			workQ_creators.append(create_task(create_accountQ_batch(db, args, region, 
 																	accountQ=workQs[region], 
 														  			stats_type=StatsTypes.account_info)))
 		#workQ_creators.append(create_task(split_accountQ_batch(inQ, workQs)))
@@ -764,6 +764,8 @@ async def cmd_fetch_wg(db		: Backend,
 		start 		: int 			= args.wg_start_id
 		if start > 0 and len(regions) > 1:
 			raise ValueError('if --start > 0, only one region can be chosen')
+		if args.file is not None and len(regions) > 1:
+			raise ValueError('if --file set, only one region can be chosen')
 		force 		: bool 			= args.force		
 		null_responses: int 		= args.null_responses
 		max_accounts: int 			= args.max_accounts
@@ -776,30 +778,42 @@ async def cmd_fetch_wg(db		: Backend,
 		api_workers : list[Task]	= list()
 		idQs 		: dict[Region, IterableQueue[Sequence[int]]] = dict()
 		
-		if start == 0 and not force:				
+		if start == 0 and not force and args.file is None:				
 			message('finding latest accounts by region')
 			latest : dict[Region, BSAccount] = await db.accounts_latest(regions)
 		for region in regions:
 			try:
 				idQs[region] = IterableQueue(maxsize=100)
-				id_range : range = region.id_range()
-				if start == 0 and not force:
-					id_range = range(latest[region].id + 1, id_range.stop)
-				else:
-					id_range = range(start, id_range.stop)
-				if max_accounts > 0:
-					id_range = range(id_range.start, min([ id_range.start + max_accounts,  id_range.stop]))
-	
-				message(f'fetching accounts for {region}: start={id_range.start}, stop={id_range.stop}')
-				id_creators.append(create_task(account_idQ_maker(idQs[region], id_range.start, id_range.stop)))
 				for _ in range(WORKERS):
 					api_workers.append(create_task(fetch_account_info_worker(wg, region, 
 																			idQs[region], accountQ, 
 																			null_responses=null_responses)))
-
-			except Exception as err:
-				error(f"could not create account Q maker for '{region}': {err}")
+				if args.file is None:
+					id_range : range = region.id_range()
+					if start == 0 and not force:
+						id_range = range(latest[region].id + 1, id_range.stop)
+					else:
+						id_range = range(start, id_range.stop)
+					if max_accounts > 0:
+						id_range = range(id_range.start, min([ id_range.start + max_accounts,  id_range.stop]))
+	
+					message(f'fetching accounts for {region}: start={id_range.start}, stop={id_range.stop}')
+					id_creators.append(create_task(account_idQ_maker(idQs[region], id_range.start, id_range.stop)))
+				else:					
+					ids : list[int] = list()
+					await idQs[region].add_producer()
+					async for account in BSAccount.import_file(args.file):
+						ids.append(account.id)
+						if len(ids) == 100:
+							await idQs[region].put(ids)
+							ids = list()
+					if len(ids) > 0:
+						await idQs[region].put(ids)
+					await idQs[region].finish()
 				
+			except Exception as err:
+				error(f"could not create account queue for '{region}': {err}")
+				raise Exception()				
 		
 		with alive_bar(None, title='Getting accounts from WG API ') as bar:
 			try:
@@ -820,11 +834,13 @@ async def cmd_fetch_wg(db		: Backend,
 		for region in idQs.keys():
 			debug(f'waiting for idQ for {region} to complete')
 			await idQs[region].join()
+		
+	except Exception as err:
+		error(f'{err}')
+	finally:
 		await stats.gather_stats(api_workers)
 		wg.print()
 		await wg.close()
-	except Exception as err:
-		error(f'{err}')	
 	return stats
 
 
@@ -1381,48 +1397,12 @@ async def create_accountQ(db		: Backend,
 					stats.log('errors')
 
 		elif args.file is not None:
-
-			if args.file.endswith('.txt'):
-				async for account in BSAccount.import_txt(args.file):					
-					try:
-						await accountQ.put(account)
-						stats.log('read')
-					except Exception as err:
-						error(f'Could not add account to the queue: {err}')
-						stats.log('errors')
-
-			elif args.file.endswith('.csv'):
-				async for account in BSAccount.import_csv(args.file):
-					try:
-						await accountQ.put(account)
-						stats.log('read')
-					except Exception as err:
-						error(f'Could not add account to the queue: {err}')
-						stats.log('errors')
-
-			elif args.file.endswith('.json'):
-				async for account in BSAccount.import_json(args.file):
-					try:
-						await accountQ.put(account)
-						stats.log('read')
-					except Exception as err:
-						error(f'Could not add account to the queue: {err}')
-						stats.log('errors')
+			async for account in BSAccount.import_file(args.file):
+				await accountQ.put(account)
+				debug(f'account put to queue: id={account.id}')
+				stats.log('read')		
 		
-		else:
-			# message('counting accounts...')
-			# start = time()
-			# total : int = await db.accounts_count(stats_type=stats_type, 
-			# 										regions=regions, 
-			# 										inactive=inactive,
-			# 										disabled=disabled,
-			# 										active_since=active_since,
-			# 										inactive_since=inactive_since,
-			# 										sample=sample, 
-			# 										cache_valid=cache_valid)
-			# end = time()
-			# message(f'{total} accounts, counting took {end - start}')
-
+		else:			
 			accounts_args : dict[str, Any] | None
 			if (accounts_args := await accounts_parse_args(db, args)) is not None:
 				async for account in db.accounts_get(stats_type=stats_type, 
@@ -1441,20 +1421,21 @@ async def create_accountQ(db		: Backend,
 		error(f'{err}')		
 	finally:
 		await accountQ.finish()	
-		
+	debug('finished')
 	return stats
 
 
 async def create_accountQ_batch(db			: Backend, 
 								args 		: Namespace, 
+								region 		: Region,
 								accountQ	: IterableQueue[list[BSAccount]], 								
 								stats_type	: StatsTypes | None = None, 
 								batch 		: int = 100) -> EventCounter:
 	"""Helper to make accountQ from arguments"""	
 	stats : EventCounter = EventCounter(f'{db.driver}: accounts')
-	assert len(args.regions) == 1, "account batch queue supports only a single region"
-	debug('starting')
-	region : Region = [ Region(r) for r in args.regions ][0]
+	# assert len(args.regions) == 1, "account batch queue supports only a single region"
+	debug(f'starting: {region}')
+	##  region : Region = [ Region(r) for r in args.regions ][0]
 	try:
 		accounts 	: list[BSAccount] | None = None
 		try:
@@ -1476,46 +1457,18 @@ async def create_accountQ_batch(db			: Backend,
 					stats.log('errors', len(accounts))
 
 		elif args.file is not None:
-			accounts = list()
-			if args.file.endswith('.txt'):
-
-				async for account in BSAccount.import_txt(args.file):
-					try:
-						if account.region == region:
-							accounts.append(account)
-							if len(accounts) == batch:
-								await accountQ.put(accounts)
-								stats.log('read', batch)
-								accounts = list()
-					except Exception as err:
-						error(f'Could not add account to the queue: {err}')
-						stats.log('errors')
-
-			elif args.file.endswith('.csv'):
-				async for account in BSAccount.import_csv(args.file):
-					try:
-						if account.region == region:
-							accounts.append(account)
-							if len(accounts) == batch:
-								await accountQ.put(accounts)
-								stats.log('read', batch)
-								accounts = list()
-					except Exception as err:
-						error(f'Could not add account to the queue: {err}')
-						stats.log('errors')
-
-			elif args.file.endswith('.json'):
-				async for account in BSAccount.import_json(args.file):
-					try:
-						if account.region == region:
-							accounts.append(account)
-							if len(accounts) == batch:
-								await accountQ.put(accounts)
-								stats.log('read', batch)
-								accounts = list()
-					except Exception as err:
-						error(f'Could not add account to the queue: {err}')
-						stats.log('errors')
+			accounts = list()			
+			async for account in BSAccount.import_file(args.file):
+				try:
+					if account.region == region:
+						accounts.append(account)
+						if len(accounts) == batch:
+							await accountQ.put(accounts)
+							stats.log('read', batch)
+							accounts = list()
+				except Exception as err:
+					error(f'Could not add account to the queue: {err}')
+					stats.log('errors')				
 		
 			if len(accounts) > 0:
 				await accountQ.put(accounts)
@@ -1536,7 +1489,9 @@ async def create_accountQ_batch(db			: Backend,
 
 			accounts_args : dict[str, Any] | None
 			if (accounts_args := await accounts_parse_args(db, args)) is not None:
-				async for accounts in db.accounts_get_batch(stats_type=stats_type, batch=batch, 
+				accounts_args['regions'] = {region}
+				async for accounts in db.accounts_get_batch(stats_type=stats_type, 
+															batch=batch, 
 															**accounts_args):
 					try:
 						await accountQ.put(accounts)
@@ -1557,10 +1512,10 @@ async def create_accountQ_batch(db			: Backend,
 
 
 async def create_accountQ_active(db: Backend, 
-							accountQ: Queue[BSAccount], 
-							release: BSBlitzRelease, 
-							regions: set[Region], 
-							randomize: bool = True) -> EventCounter:
+								accountQ: Queue[BSAccount], 
+								release: BSBlitzRelease, 
+								regions: set[Region], 
+								randomize: bool = True) -> EventCounter:
 	"""Add accounts active during a release to accountQ"""
 	debug('starting')
 	stats : EventCounter = EventCounter(f'accounts')
@@ -1677,7 +1632,8 @@ def read_args_accounts(accounts: list[str]) -> list[BSAccount] | None:
 	res : list[BSAccount] = list()
 	for a in accounts:
 		try:
-			res.append(BSAccount.from_str(a))
+			if (acc := BSAccount.from_str(a) ) is not None:
+				res.append(acc)
 		except Exception as err:
 			error(f'{err}')
 	if len(res) == 0:
@@ -1685,7 +1641,9 @@ def read_args_accounts(accounts: list[str]) -> list[BSAccount] | None:
 	return res
 
 
-async def accounts_parse_args(db: Backend, args : Namespace,) -> dict[str, Any] | None:
+async def accounts_parse_args(db: Backend, 
+			      				args : Namespace,
+							 ) -> dict[str, Any] | None:
 	"""parse accounts args"""
 	debug('starting')
 	res : dict[str, Any] = dict()

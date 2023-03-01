@@ -8,7 +8,7 @@ from pydantic import validator, root_validator, Field, HttpUrl
 import logging
 
 from blitzutils.models import Region, Account, WGBlitzRelease, WGAccountInfo
-from pyutils.utils import JSONExportable, epoch_now, TypeExcludeDict, I, D, Idx, \
+from pyutils import JSONExportable, epoch_now, TypeExcludeDict, I, D, Idx, \
 						BackendIndexType, BackendIndex, DESCENDING, ASCENDING, TEXT
 
 TYPE_CHECKING = True
@@ -37,11 +37,6 @@ class BSAccount(Account):
 	disabled					: bool		= Field(default=False, alias='d')
 
 	_min_inactivity_days: int = MIN_INACTIVITY_DAYS
-
-	_exclude_export_DB_fields 	= None
-	_exclude_export_src_fields 	= None
-	_include_export_DB_fields 	= None
-	_include_export_src_fields	= None
 	_exclude_defaults 			= False
 	
 	class Config:
