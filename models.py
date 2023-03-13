@@ -151,10 +151,10 @@ class BSAccount(Account):
 		try:
 			updated = super().update(update)	
 			self.updated_account_info = epoch_now()
-			return True
+			return updated
 		except Exception as err:
 			error(f'{err}')
-		return updated
+		return False
 
 
 	@classmethod
