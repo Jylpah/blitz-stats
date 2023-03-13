@@ -602,7 +602,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 			accounts = await db.accounts_count(StatsTypes.tank_stats, 
 												**accounts_args)
 		
-		WORKERS	: int 	= max( int(args.wg_workers / len(Region.API_regions())), 1)
+		WORKERS	: int 	= max( [int(args.wg_workers ), 1] )
 		WORKERS = min( [ WORKERS, ceil(accounts/4) ])
 		for r in regions:
 			accountQs[r] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
