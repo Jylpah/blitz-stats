@@ -939,7 +939,7 @@ class MongoBackend(Backend):
 			model : type[JSONExportable] = self.model_accounts
 			if pipeline is None:
 				raise ValueError(f'could not create get-accounts {self.table_uri(BSTableType.Accounts)} cursor')
-			message(f'accounts_get(): pipeline={pipeline}')
+			# message(f'accounts_get_batch(): pipeline={pipeline}')
 
 			async for datas in self._datas_get_batch(BSTableType.Accounts, pipeline, 
 					    							batch=batch, batchSize=10000):			
