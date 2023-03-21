@@ -147,7 +147,7 @@ def add_args_update_wg(parser: ArgumentParser, config: Optional[ConfigParser] = 
 			LESTA_WORKERS		= configRU.getint('api_workers', LESTA_WORKERS)			
 			LESTA_APP_ID		= configRU.get('app_id', LESTA_APP_ID)		
 
-		parser.add_argument('--workers', dest='wg_workers', 
+		parser.add_argument('--wg-workers', dest='wg_workers', 
 							type=int, default=WG_WORKERS, metavar='WORKERS',
 							help='number of async workers')
 		parser.add_argument('--wg-app-id', type=str, default=WG_APP_ID, metavar='APP_ID',
@@ -253,7 +253,7 @@ def add_args_fetch_wg(parser: ArgumentParser, config: Optional[ConfigParser] = N
 			LESTA_WORKERS		= configRU.getint('api_workers', LESTA_WORKERS)			
 			LESTA_APP_ID		= configRU.get('app_id', LESTA_APP_ID)
 
-		parser.add_argument('--workers', dest='wg_workers', 
+		parser.add_argument('--wg-workers', dest='wg_workers', 
 							type=int, default=WG_WORKERS, metavar='WORKERS',
 							help='number of async workers')
 		parser.add_argument('--wg-app-id', type=str, default=WG_APP_ID, metavar='APP_ID',
@@ -537,14 +537,14 @@ async def cmd_update_wg(db		: Backend,
 						accountQ 	: IterableQueue[BSAccount]) -> EventCounter:
 	"""Update accounts from WG API"""
 	debug('starting')
-	stats		: EventCounter = EventCounter('WG API')
+	stats		: EventCounter = EventCounter('WG API', totals='Total')
 	try:		
 		regions			: set[Region] 	= { Region(r) for r in args.regions }		
 		wg 				: WGApi = WGApi(app_id = args.wg_app_id, 
 										ru_app_id= args.ru_app_id,
 										rate_limit = args.wg_rate_limit, 
 										ru_rate_limit = args.ru_rate_limit,)
-		WORKERS 		: int 	= max( int(args.wg_workers / len(Region.API_regions())), 1)
+		WORKERS 		: int 	= max( [ args.wg_workers, 1 ])
 		workQ_creators	: list[Task]	= list()
 		api_workers 	: list[Task]	= list()
 		# inQ				: IterableQueue[BSAccount] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
@@ -628,10 +628,10 @@ async def update_account_info_worker(wg		: WGApi,
 							if a.update(info):
 								#error(f'updated: {a}')
 								await accountQ.put(a)
-								# stats.log('stats valid')
+								stats.log('updated')
 							else:
-								error(f'BSAccount.update() failed: account_id={a.id}]')
-								stats.log('update failed')
+								debug(f'Could not update: account_id={a.id} region={a.region}')
+								stats.log('not updated')
 						except KeyError as err:
 							error(f'{err}')
 					
@@ -773,7 +773,7 @@ async def cmd_fetch_wg(db		: Backend,
 											ru_app_id= args.ru_app_id,
 											rate_limit = args.wg_rate_limit,
 											ru_rate_limit = args.ru_rate_limit,)
-		WORKERS 	: int 			= max( int(args.wg_workers / len(Region.API_regions())), 1)
+		WORKERS 	: int 			= max( [int(args.wg_workers), 1])
 		id_creators	: list[Task]	= list()
 		api_workers : list[Task]	= list()
 		idQs 		: dict[Region, IterableQueue[Sequence[int]]] = dict()
@@ -1095,6 +1095,9 @@ async def fetch_wi_get_replay_ids(db: Backend, wi: WoTinspector, args: Namespace
 						else:
 							await replay_idQ.put(replay_id)
 							stats.log('new replays')
+				except KeyboardInterrupt:
+					debug('CTRL+C pressed, stopping...')
+					raise CancelledError
 				except Exception as err:
 					error(f'{err}')
 				finally:

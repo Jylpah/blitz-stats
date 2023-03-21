@@ -112,7 +112,7 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 			LESTA_WORKERS		= configRU.getint('api_workers', LESTA_WORKERS)			
 			LESTA_APP_ID		= configRU.get('app_id', LESTA_APP_ID)
 
-		parser.add_argument('--workers', type=int, default=WG_WORKERS, help='Set number of asynchronous workers')
+		parser.add_argument('--wg-workers', type=int, default=WG_WORKERS, help='Set number of asynchronous workers')
 		parser.add_argument('--wg-app-id', type=str, default=WG_APP_ID, help='Set WG APP ID')
 		parser.add_argument('--wg-rate-limit', type=float, default=WG_RATE_LIMIT, 
 		      				metavar='RATE_LIMIT', help='Rate limit for WG API')
@@ -268,7 +268,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 			tasks.append(create_task(create_accountQ_batch(db, args, region, 
 															accountQ=regionQs[region.name],
 															stats_type=StatsTypes.player_achievements)))			
-			for _ in range(ceil(min([args.workers, accounts])/len(regions))):
+			for _ in range(ceil(min([args.wg_workers, accounts]))):
 				tasks.append(create_task(fetch_player_achievements_api_region_worker(wg_api=wg, region=region, 
 																					accountQ=regionQs[region.name], 
 																					statsQ=statsQ, 
@@ -293,7 +293,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 			for region in regions:
 				# do not fill the old queues or it will never complete				
 				regionQs[region.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX) 
-				for _ in range(ceil(min([args.workers, accounts])/len(regions))):
+				for _ in range(ceil(min([args.wg_workers, accounts]))):
 					tasks.append(create_task(fetch_player_achievements_api_region_worker(wg_api=wg, region=region, 
 																						accountQ=regionQs[region.name],																					
 																						statsQ=statsQ)))
