@@ -385,7 +385,7 @@ class MongoBackend(Backend):
 
 
 	async def _datas_get(self, 
-		      			table_type: BSTableType,						
+			  			table_type: BSTableType,						
 						pipeline : list[dict[str, Any]],
 						**options) -> AsyncGenerator[JSONExportable, None]:
 		try:
@@ -691,7 +691,7 @@ class MongoBackend(Backend):
 			debug('starting')
 			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
 			if (pl := self._mk_pipeline_unique(table_type, field, 
-					    						pipeline)) is None:
+												pipeline)) is None:
 				raise ValueError(f'could not build aggregation pipeline for unique values: field={field}')
 			else: 
 				pipeline = pl
@@ -715,7 +715,7 @@ class MongoBackend(Backend):
 			debug('starting')
 			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
 			if (pl := self._mk_pipeline_unique(table_type, field, 
-					    						pipeline)) is None:
+												pipeline)) is None:
 				raise ValueError(f'could not build aggregation pipeline for unique values: field={field}')
 			else: 
 				pipeline = pl
@@ -730,7 +730,7 @@ class MongoBackend(Backend):
 	
 
 	async def obj_export(self, table_type: BSTableType,
-		      			 pipeline : list[dict[str, Any]] = list(),
+			  			 pipeline : list[dict[str, Any]] = list(),
 						 sample: float = 0) -> AsyncGenerator[Any, None]:
 		"""Export raw documents from Mongo DB"""
 		try:
@@ -832,6 +832,7 @@ class MongoBackend(Backend):
 
 	async def _mk_pipeline_accounts(self, stats_type : StatsTypes | None = None,
 									regions			: set[Region] = Region.API_regions(),
+									id_range 		: range | None = None, 
 									inactive		: OptAccountsInactive = OptAccountsInactive.auto,
 									dist 			: OptAccountsDistributed | None = None,
 									disabled		: bool|None = False, 
@@ -866,6 +867,10 @@ class MongoBackend(Backend):
 
 			match.append({ alias('region') : { '$in' : [ r.value for r in regions ]} })
 			# match.append({ alias('id') : {  '$lt' : WG_ACCOUNT_ID_MAX}})  # exclude Chinese account ids
+
+			if id_range is not None:
+				match.append({ alias('id'): { '$gte': id_range.start }})
+				match.append({ alias('id'): { '$lte': id_range.stop }})
 
 			if active_since > 0:
 				match.append( { alias('last_battle_time') : { '$gte' : active_since } })
@@ -942,7 +947,7 @@ class MongoBackend(Backend):
 			# message(f'accounts_get_batch(): pipeline={pipeline}')
 
 			async for datas in self._datas_get_batch(BSTableType.Accounts, pipeline, 
-					    							batch=batch, batchSize=10000):			
+													batch=batch, batchSize=10000):			
 				try:
 					players : list[BSAccount] = list()
 					for obj in datas:
@@ -991,8 +996,8 @@ class MongoBackend(Backend):
 
 			# 'batchSize' is required for keeping cursor alive		
 			async for data in self._datas_get(BSTableType.Accounts, 
-				     							pipeline=pipeline, 
-												batchSize = 10000):	
+					 							pipeline=pipeline, 
+												batchSize = 5000):	
 				try:
 					if (player := BSAccount.transform_obj(data)) is None:
 						continue
@@ -1080,23 +1085,36 @@ class MongoBackend(Backend):
 			alias : Callable = a.alias
 			pipeline: list[dict[str, Any]] | None 
 			
-			if (pipeline := await self._mk_pipeline_accounts(regions=regions, 
-												  inactive=OptAccountsInactive.both, 
-												  disabled=None)) is None:
-				raise ValueError('could not create pipeline')
+			# if (pipeline := await self._mk_pipeline_accounts(regions=regions, 
+			# 												inactive=OptAccountsInactive.both, 
+			# 												disabled=None)) is None:
+			# 	raise ValueError('could not create pipeline')
 
-			pipeline.append({ '$sort': { alias('id'): DESCENDING }} )
-			pipeline.append({ '$group' : {
-								'_id' : '$' + alias('region'), 
-								'latest': { '$first': '$$ROOT' }
-			 				}})
+			# pipeline.append({ '$sort': { alias('id'): DESCENDING }} )
+			# pipeline.append({ '$group' : {
+			# 					'_id' : '$' + alias('region'), 
+			# 					'latest': { '$first': '$$ROOT' }
+			#  				}})
+			# account : BSAccount | None
+			# async for doc in dbc.aggregate(pipeline, allowDiskUse = True):				
+			# 	try:
+			# 		if (account := BSAccount.transform_obj(doc['latest'], model)) is not None:
+			# 			res[account.region] = account
+			# 	except Exception as err:
+			# 		error(f'document: {doc}: error: {err}')		
+
 			account : BSAccount | None
-			async for doc in dbc.aggregate(pipeline, allowDiskUse = True):				
-				try:
-					if (account := BSAccount.transform_obj(doc['latest'], model)) is not None:
+			for region in regions:
+				if (pipeline := await self._mk_pipeline_accounts(regions={ region }, 
+							 									id_range=region.id_range_players, 
+																inactive=OptAccountsInactive.both, 
+																disabled=None)) is None:
+					raise ValueError('could not create pipeline')
+				pipeline.append({ '$sort': { alias('id'): DESCENDING }} )
+				async for doc in dbc.aggregate(pipeline, allowDiskUse = True):
+					if (account := BSAccount.transform_obj(doc, model)) is not None:
 						res[account.region] = account
-				except Exception as err:
-					error(f'document: {doc}: error: {err}')		
+						break
 
 		except Exception as err:
 			error(f'{err}')	
@@ -1131,7 +1149,7 @@ class MongoBackend(Backend):
 	
 
 	async def player_achievement_replace(self, 
-				      					player_achievement: WGPlayerAchievementsMaxSeries,
+					  					player_achievement: WGPlayerAchievementsMaxSeries,
 										upsert: bool = False) -> bool:
 		"""Replace a player achievement in the backend. Returns False 
 			if the player achievement was not replaced"""
@@ -1685,8 +1703,8 @@ class MongoBackend(Backend):
 
 
 	async def tank_stats_insert(self, 
-			     				tank_stats: Sequence[WGTankStat], 
-			     				force: bool = False) -> tuple[int, int]:
+				 				tank_stats: Sequence[WGTankStat], 
+				 				force: bool = False) -> tuple[int, int]:
 		"""Store tank stats to the backend. Returns the number of added and not added"""
 		debug('starting')
 		if force:
@@ -1989,8 +2007,8 @@ class MongoBackend(Backend):
 				tanks = [ tank ]
 
 			if (pipeline:= await self._mk_pipeline_tank_stats(release=release, 
-						     									regions=regions, 
-						     									accounts=accounts, 
+							 									regions=regions, 
+							 									accounts=accounts, 
 																tanks=tanks)) is None:
 				raise ValueError('could not build filtering pipeline')
 			
@@ -2025,8 +2043,8 @@ class MongoBackend(Backend):
 			workers : list[Task] = list()
 			for r in regions:
 				if (pipeline:= await self._mk_pipeline_tank_stats(release=release, 
-						     									regions={r}, 
-						     									accounts=accounts, 
+							 									regions={r}, 
+							 									accounts=accounts, 
 																tanks=tanks)) is None:
 						raise ValueError('could not build filtering pipeline')
 				
