@@ -756,7 +756,7 @@ async def cmd_fetch_files(db: Backend, args : Namespace,
 async def cmd_fetch_wg(db		: Backend, 
 						args 	: Namespace, 
 						accountQ: IterableQueue[BSAccount]) -> EventCounter:
-	"""Fetch account_ids fromy yastati.st"""
+	"""Fetch account_ids from WG API"""
 	debug('starting')
 	stats		: EventCounter = EventCounter('WG API')
 	try:		
@@ -789,7 +789,7 @@ async def cmd_fetch_wg(db		: Backend,
 																			idQs[region], accountQ, 
 																			null_responses=null_responses)))
 				if args.file is None:
-					id_range : range = region.id_range()
+					id_range : range = region.id_range
 					if start == 0 and not force:
 						id_range = range(latest[region].id + 1, id_range.stop)
 					else:
