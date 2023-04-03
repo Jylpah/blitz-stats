@@ -859,6 +859,9 @@ async def account_idQ_maker(idQ : IterableQueue[Sequence[int]],
 			last = i + batch		
 	except QueueDone:
 		debug('queue done')
+	except (KeyboardInterrupt, CancelledError):
+		debug('Cancelled')
+		pass
 	except Exception as err:
 		error(f'{err}')
 	stats.log('queued', last - start)
