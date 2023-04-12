@@ -26,7 +26,7 @@ from pyutils import CounterQueue, EventCounter,  TXTExportable, \
 		export, is_alphanum, chunker
 from blitzutils.models import WoTBlitzReplayJSON, WoTBlitzReplayData, Region, Account, WGAccountInfo
 from blitzutils import WoTinspector, WGApi
-from yastatist import get_accounts_since
+# from yastatist import get_accounts_since
 
 logger 	= logging.getLogger()
 error 	= logger.error
@@ -200,7 +200,7 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 		fetch_parsers = parser.add_subparsers(dest='accounts_fetch_source', 	
 														title='accounts fetch source',
 														description='valid sources', 
-														metavar='wg | wi | ys | files')
+														metavar='wg | wi | files')
 		fetch_parsers.required = True
 		fetch_wg_parser = fetch_parsers.add_parser('wg', help='accounts fetch wg help')
 		if not add_args_fetch_wg(fetch_wg_parser, config=config):
@@ -210,9 +210,9 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 		if not add_args_fetch_wi(fetch_wi_parser, config=config):
 			raise Exception("Failed to define argument parser for: accounts fetch wi")
 		
-		fetch_ys_parser = fetch_parsers.add_parser('ys', help='accounts fetch ys help')
-		if not add_args_fetch_ys(fetch_ys_parser, config=config):
-			raise Exception("Failed to define argument parser for: accounts fetch ys")
+		# fetch_ys_parser = fetch_parsers.add_parser('ys', help='accounts fetch ys help')
+		# if not add_args_fetch_ys(fetch_ys_parser, config=config):
+		# 	raise Exception("Failed to define argument parser for: accounts fetch ys")
 
 		fetch_files_parser = fetch_parsers.add_parser('files', help='accounts fetch files help')
 		if not add_args_fetch_files(fetch_files_parser, config=config):
@@ -687,9 +687,9 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 				debug('wi')
 				stats.merge_child(await cmd_fetch_wi(db, args, accountQ))
 			
-			elif args.accounts_fetch_source == 'ys':
-				debug('ys')
-				stats.merge_child(await cmd_fetch_ys(db, args, accountQ))
+			# elif args.accounts_fetch_source == 'ys':
+			# 	debug('ys')
+			# 	stats.merge_child(await cmd_fetch_ys(db, args, accountQ))
 
 			elif args.accounts_fetch_source == 'files':
 				debug('files')
@@ -1144,31 +1144,31 @@ async def fetch_wi_fetch_replays(db			: Backend,
 	return stats
 
 
-async def cmd_fetch_ys(db: Backend, 
-						args : Namespace, 
-						accountQ : IterableQueue[BSAccount]) -> EventCounter:
-	"""Fetch account_ids fromy yastati.st"""
-	debug('starting')
-	stats		: EventCounter = EventCounter('Yastati.st')
-	try:
-		since 			: int = args.ys_days_since
-		client_id 		: str = args.ys_client_id
-		client_secret 	: str = args.ys_client_secret
+# async def cmd_fetch_ys(db: Backend, 
+# 						args : Namespace, 
+# 						accountQ : IterableQueue[BSAccount]) -> EventCounter:
+# 	"""Fetch account_ids fromy yastati.st"""
+# 	debug('starting')
+# 	stats		: EventCounter = EventCounter('Yastati.st')
+# 	try:
+# 		since 			: int = args.ys_days_since
+# 		client_id 		: str = args.ys_client_id
+# 		client_secret 	: str = args.ys_client_secret
 		
-		await accountQ.add_producer()
-		with alive_bar(None, title='Getting accounts from yastati.st ') as bar:
-			for region in [Region.eu, Region.ru]:
-				async for account in get_accounts_since(region, days= since,
-														client_id = client_id, 
-														secret = client_secret):
-					await accountQ.put(account)
-					stats.log('accounts read')
-					bar()
+# 		await accountQ.add_producer()
+# 		with alive_bar(None, title='Getting accounts from yastati.st ') as bar:
+# 			for region in [Region.eu, Region.ru]:
+# 				async for account in get_accounts_since(region, days= since,
+# 														client_id = client_id, 
+# 														secret = client_secret):
+# 					await accountQ.put(account)
+# 					stats.log('accounts read')
+# 					bar()
 
-	except Exception as err:
-		error(f'{err}')
-	await accountQ.finish()
-	return stats
+# 	except Exception as err:
+# 		error(f'{err}')
+# 	await accountQ.finish()
+# 	return stats
 
 
 async def cmd_import(db: Backend, args : Namespace) -> bool:
