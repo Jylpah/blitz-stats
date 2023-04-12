@@ -962,23 +962,23 @@ async def fetch_account_info_worker(wg		: WGApi,
 
 async def cmd_fetch_wi(db: Backend, 
 						args : Namespace, 
-						accountQ : IterableQueue[BSAccount]) -> EventCounter:
+						accountQ : IterableQueue[BSAccount] | None
+						) -> EventCounter:
 	"""Fetch account_ids from replays.wotinspector.com replays"""
 	debug('starting')
-	stats		: EventCounter = EventCounter('WoTinspector')
-	
+	stats		: EventCounter = EventCounter('WoTinspector')	
 	workersN	: int 	= args.wi_workers
 	workers		: list[Task] = list()
 	max_pages	: int	= args.wi_max_pages
 	start_page 	: int 	= args.wi_start_page
-
 	rate_limit 	: float	= args.wi_rate_limit
 	# force 		: bool  = args.force
 	token		: str 	= args.wi_auth_token	# temp fix...
 	replay_idQ  : Queue[str] = Queue()
 	# pageQ		: Queue[int] = Queue()
 	wi 			: WoTinspector 	= WoTinspector(rate_limit=rate_limit, auth_token=token)	
-	await accountQ.add_producer()
+	if accountQ is not None:
+		await accountQ.add_producer()
 	try:					
 		step : int = 1
 		if max_pages < 0:
@@ -1011,7 +1011,8 @@ async def cmd_fetch_wi(db: Backend,
 	except Exception as err:
 		error(f'{err}')
 	finally:
-		await accountQ.finish()
+		if accountQ is not None:
+			await accountQ.finish()
 		await wi.close()
 	return stats
 
@@ -1116,7 +1117,8 @@ async def fetch_wi_get_replay_ids(db: Backend, wi: WoTinspector, args: Namespace
 async def fetch_wi_fetch_replays(db			: Backend, 
 								  wi			: WoTinspector, 
 								  replay_idQ 	: Queue[str], 
-								  accountQ 		: Queue[BSAccount]
+								  accountQ 		: Queue[BSAccount] | None, 
+
 								 ) -> EventCounter:
 	debug('starting')
 	stats : EventCounter = EventCounter('Fetch replays')
@@ -1129,10 +1131,11 @@ async def fetch_wi_fetch_replays(db			: Backend,
 				if replay is None:
 					verbose(f'Could not fetch replay id: {replay_id}')
 					continue
-				account_ids : list[int] = replay.get_players()
-				stats.log('players found', len(account_ids))
-				for account_id in account_ids:
-					await accountQ.put(BSAccount(id=account_id))
+				if accountQ is not None:
+					account_ids : list[int] = replay.get_players()
+					stats.log('players found', len(account_ids))
+					for account_id in account_ids:
+						await accountQ.put(BSAccount(id=account_id))
 				if await db.replay_insert(replay):
 					stats.log('replays added')
 				else:
