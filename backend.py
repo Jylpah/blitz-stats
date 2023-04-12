@@ -418,10 +418,10 @@ class Backend(ABC):
 		raise NotImplementedError
 
 
-	@abstractmethod
-	def reconnect(self) -> bool:
-		"""Reconnect backend"""
-		raise NotImplementedError
+	# @abstractmethod
+	# def reconnect(self) -> bool:
+	# 	"""Reconnect backend"""
+	# 	raise NotImplementedError
 
 
 	@abstractmethod

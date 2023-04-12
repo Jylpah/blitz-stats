@@ -187,15 +187,15 @@ class MongoBackend(Backend):
 		return None
 
 
-	def reconnect(self) -> bool:
-		"""Reconnect backend"""
-		try:
-			self._client = AsyncIOMotorClient(**self._db_config)
-			self.db 	 = self._client[self.database]
-			return True
-		except Exception as err:
-			error(f'Error connection: {self.backend}')
-		return False
+	# def reconnect(self) -> bool:
+	# 	"""Reconnect backend"""
+	# 	try:
+	# 		self._client = AsyncIOMotorClient(**self._db_config)
+	# 		self.db 	 = self._client[self.database]
+	# 		return True
+	# 	except Exception as err:
+	# 		error(f'Error connection: {self.backend}')
+	# 	return False
 
 
 	async def test(self) -> bool:
