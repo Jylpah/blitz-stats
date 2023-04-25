@@ -7,11 +7,13 @@ from pydantic import validator, root_validator, Field, HttpUrl
 
 import logging
 
-from blitzutils.models import Region, Account, WGBlitzRelease, WGAccountInfo
+from blitzutils.region 		import Region
+from blitzutils.account 	import Account
+from blitzutils.release		import WGBlitzRelease
+from blitzutils.wg_api 		import WGAccountInfo
 from pyutils import JSONExportable, epoch_now, TypeExcludeDict, I, D, Idx, \
 						BackendIndexType, BackendIndex, DESCENDING, ASCENDING, TEXT
 
-TYPE_CHECKING = True
 logger 	= logging.getLogger()
 error 	= logger.error
 message	= logger.warning

@@ -24,7 +24,7 @@ from pyutils import CounterQueue, EventCounter,  TXTExportable, \
 	CSVExportable, JSONExportable, Importable, IterableQueue, QueueDone, \
 		alive_bar_monitor, get_url, get_url_JSON_model, epoch_now, \
 		export, is_alphanum, chunker
-from blitzutils.models import WoTBlitzReplayJSON, WoTBlitzReplayData, Region, Account, WGAccountInfo
+from blitzutils.replay import WoTBlitzReplayJSON, WoTBlitzReplayData, Region, Account, WGAccountInfo
 from blitzutils import WoTinspector, WGApi
 # from yastatist import get_accounts_since
 
