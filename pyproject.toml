@@ -71,5 +71,9 @@ plugins = [
   "pydantic.mypy"
 ]
 
+# [tool.black]
+# line-length = 120
+# include = '\.pyi?$'
+
 [tool.pyright]
 reportGeneralTypeIssues = false
