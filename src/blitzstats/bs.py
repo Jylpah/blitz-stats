@@ -4,9 +4,9 @@
 
 from datetime import datetime
 from typing import Optional
-from backend import Backend
-from mongobackend import MongoBackend
-from pyutils import MultilevelFormatter
+from pyutils.multilevelformatter import MultilevelFormatter
+from yappi import start, stop, get_func_stats, set_clock_type, COLUMNS_FUNCSTATS  # type: ignore
+
 from configparser import ConfigParser
 import logging
 from argparse import ArgumentParser
@@ -14,15 +14,16 @@ from sys import argv, stdout
 from os import chdir, linesep
 from os.path import isfile, dirname
 from asyncio import run
-from yappi import start, stop, get_func_stats, set_clock_type, COLUMNS_FUNCSTATS 	# type: ignore
 
-import accounts 
-import replays 
-import releases 
-import tank_stats 
-import player_achievements 
-import setup 
-import tankopedia
+from .backend import Backend
+from .mongobackend import MongoBackend
+from . import accounts
+from . import replays
+from . import releases
+from . import tank_stats
+from . import player_achievements
+from . import setup
+from . import tankopedia
 
 # import blitzutils as bu
 # import utils as su
@@ -30,15 +31,16 @@ import tankopedia
 # from blitzutils import BlitzStars, WG, WoTinspector, RecordLogger
 
 # logging.getLogger("asyncio").setLevel(logging.DEBUG)
-logger = logging.getLogger()
-error 	= logger.error
-message	= logger.warning
-verbose	= logger.info
+logger 	= logging.getLogger()
+error	= logger.error
+message = logger.warning
+verbose = logger.info
 debug	= logger.debug
 
-# Utils 
+
+# Utils
 def get_datestr(_datetime: datetime = datetime.now()) -> str:
-	return _datetime.strftime('%Y%m%d_%H%M')
+    return _datetime.strftime("%Y%m%d_%H%M")
 
 
 # main() -------------------------------------------------------------
