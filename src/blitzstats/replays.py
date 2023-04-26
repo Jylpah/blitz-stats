@@ -10,14 +10,17 @@ from alive_progress import alive_bar					# type: ignore
 from multiprocessing import Manager, cpu_count
 from multiprocessing.pool import Pool, AsyncResult 
 
-from backend import Backend, BSTableType, get_sub_type
+from pyutils.eventcounter		import EventCounter
+from pyutils.exportable 		import JSONExportable
+from pyutils.asyncqueue 		import AsyncQueue
+from pyutils.utils				import is_alphanum
+from blitzutils.replay 			import WoTBlitzReplayJSON, WoTBlitzReplayData
+from blitzutils.region 			import Region
+from blitzutils.wotinspector 	import WoTinspector
 
-from pyutils import get_url, get_url_JSON_model, epoch_now, EventCounter, \
-					JSONExportable, AsyncQueue, is_alphanum
-from blitzutils.models import WoTBlitzReplayJSON, WoTBlitzReplayData, Region
-from blitzutils.wotinspector import WoTinspector
-from accounts import add_args_fetch_wi as add_args_accounts_fetch_wi
-from accounts import cmd_fetch_wi as cmd_accounts_fetch_wi
+from .backend import Backend, BSTableType, get_sub_type
+from .accounts import add_args_fetch_wi as add_args_accounts_fetch_wi
+from .accounts import cmd_fetch_wi as cmd_accounts_fetch_wi
 
 logger = logging.getLogger()
 error 	= logger.error

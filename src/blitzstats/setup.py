@@ -3,7 +3,7 @@ from configparser import ConfigParser
 from typing import Optional
 import logging
 
-from backend import Backend, BSTableType
+from .backend import Backend, BSTableType
 
 logger = logging.getLogger()
 error 	= logger.error
