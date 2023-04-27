@@ -756,6 +756,13 @@ async def cmd_fetch_wg(db		: Backend,
 	"""Fetch account_ids from WG API"""
 	debug('starting')
 	stats		: EventCounter = EventCounter('WG API')
+	wg 			: WGApi 		= WGApi(app_id = args.wg_app_id, 
+										ru_app_id= args.ru_app_id,
+										rate_limit = args.wg_rate_limit,
+										ru_rate_limit = args.ru_rate_limit,)
+	id_creators	: list[Task]	= list()
+	api_workers : list[Task]	= list()
+	latest		: dict[Region, BSAccount] = dict()
 	try:		
 		regions		: set[Region] 	= { Region(r) for r in args.regions }
 		start 		: int 			= args.wg_start_id
@@ -766,38 +773,37 @@ async def cmd_fetch_wg(db		: Backend,
 		force 		: bool 			= args.force		
 		null_responses: int 		= args.null_responses
 		max_accounts: int 			= args.max_accounts
-		wg 			: WGApi 		= WGApi(app_id = args.wg_app_id, 
-											ru_app_id= args.ru_app_id,
-											rate_limit = args.wg_rate_limit,
-											ru_rate_limit = args.ru_rate_limit,)
+
 		WORKERS 	: int 			= max( [int(args.wg_workers), 1])
-		id_creators	: list[Task]	= list()
-		api_workers : list[Task]	= list()
+
 		idQs 		: dict[Region, IterableQueue[Sequence[int]]] = dict()
 		
 		if start == 0 and not force and args.file is None:				
 			message('finding latest accounts by region')
-			latest : dict[Region, BSAccount] = await db.accounts_latest(regions)
+			latest = await db.accounts_latest(regions)
 		for region in regions:
 			try:
 				idQs[region] = IterableQueue(maxsize=100)
 				for _ in range(WORKERS):
-					api_workers.append(create_task(fetch_account_info_worker(wg, region, 
-																			idQs[region], accountQ, 
-																			null_responses=null_responses)))
+					api_workers.append(create_task(fetch_account_info_worker(wg, region,
+                                                             idQs[region], accountQ,
+                                                             null_responses=null_responses)))
 				if args.file is None:
-					id_range : range = region.id_range
+					id_range: range = region.id_range
 					if start == 0 and not force:
 						id_range = range(latest[region].id + 1, id_range.stop)
 					else:
 						id_range = range(start, id_range.stop)
 					if max_accounts > 0:
-						id_range = range(id_range.start, min([ id_range.start + max_accounts,  id_range.stop]))
-	
-					message(f'fetching accounts for {region}: start={id_range.start}, stop={id_range.stop}')
-					id_creators.append(create_task(account_idQ_maker(idQs[region], id_range.start, id_range.stop)))
-				else:					
-					ids : list[int] = list()
+						id_range = range(id_range.start, min(
+							[id_range.start + max_accounts,  id_range.stop]))
+
+					message(
+						f'fetching accounts for {region}: start={id_range.start}, stop={id_range.stop}')
+					id_creators.append(create_task(account_idQ_maker(
+						idQs[region], id_range.start, id_range.stop)))
+				else:
+					ids: list[int] = list()
 					await idQs[region].add_producer()
 					async for account in BSAccount.import_file(args.file):
 						ids.append(account.id)
@@ -807,10 +813,10 @@ async def cmd_fetch_wg(db		: Backend,
 					if len(ids) > 0:
 						await idQs[region].put(ids)
 					await idQs[region].finish()
-				
+
 			except Exception as err:
 				error(f"could not create account queue for '{region}': {err}")
-				raise Exception()				
+				raise Exception()
 		
 		with alive_bar(None, title='Getting accounts from WG API ') as bar:
 			try:
@@ -1132,7 +1138,7 @@ async def fetch_wi_fetch_replays(db			: Backend,
 					account_ids : list[int] = replay.get_players()
 					stats.log('players found', len(account_ids))
 					for account_id in account_ids:
-						await accountQ.put(BSAccount(id=account_id))
+						await accountQ.put(BSAccount(id=account_id))						
 				if await db.replay_insert(replay):
 					stats.log('replays added')
 				else:
