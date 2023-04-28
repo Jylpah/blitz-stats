@@ -32,11 +32,6 @@ from blitzstats import player_achievements
 from blitzstats import setup
 from blitzstats import tankopedia
 
-# import blitzutils as bu
-# import utils as su
-
-# from blitzutils import BlitzStars, WG, WoTinspector, RecordLogger
-
 # logging.getLogger("asyncio").setLevel(logging.DEBUG)
 logger 	= logging.getLogger()
 error	= logger.error
