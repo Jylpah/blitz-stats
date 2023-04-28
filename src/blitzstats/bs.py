@@ -50,7 +50,7 @@ def get_datestr(_datetime: datetime = datetime.now()) -> str:
 
 # main() -------------------------------------------------------------
 
-async def main(argv: list[str]):
+async def main() -> int:
 	# set the directory for the script
 	global logger, error, debug, verbose, message
 
@@ -201,6 +201,7 @@ async def main(argv: list[str]):
 		error(f'{err}')
 	if args.main_cmd in [ 'accounts', 'tank-stats', 'player-achievements', 'replays', 'setup' ]:
 		message(f'program finished: {datetime.now():%Y-%m-%d %H:%M}')
+	return 0
 	
 
 def print_all(stats, out, limit: int | None =None) -> None:
@@ -223,5 +224,5 @@ def print_all(stats, out, limit: int | None =None) -> None:
 
 if __name__ == "__main__":
 	#asyncio.run(main(sys.argv[1:]), debug=True)
-	run(main(argv[1:]))
+	run(main())
 
