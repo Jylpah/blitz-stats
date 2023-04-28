@@ -4,25 +4,29 @@
 
 from datetime import datetime
 from typing import Optional
-from backend import Backend
-from mongobackend import MongoBackend
-from pyutils import MultilevelFormatter
+from pyutils.multilevelformatter import MultilevelFormatter
+from yappi import start, stop, get_func_stats, set_clock_type, COLUMNS_FUNCSTATS  # type: ignore
+
 from configparser import ConfigParser
 import logging
 from argparse import ArgumentParser
 from sys import argv, stdout
 from os import chdir, linesep
-from os.path import isfile, dirname
+from os.path import isfile, dirname, realpath, expanduser
 from asyncio import run
-from yappi import start, stop, get_func_stats, set_clock_type, COLUMNS_FUNCSTATS 	# type: ignore
+import sys
 
-import accounts 
-import replays 
-import releases 
-import tank_stats 
-import player_achievements 
-import setup 
-import tankopedia
+sys.path.insert(0, dirname(dirname(realpath(__file__))))
+
+from blitzstats.backend import Backend
+from blitzstats.mongobackend import MongoBackend
+from blitzstats import accounts
+from blitzstats import replays
+from blitzstats import releases
+from blitzstats import tank_stats
+from blitzstats import player_achievements
+from blitzstats import setup
+from blitzstats import tankopedia
 
 # import blitzutils as bu
 # import utils as su
@@ -30,34 +34,42 @@ import tankopedia
 # from blitzutils import BlitzStars, WG, WoTinspector, RecordLogger
 
 # logging.getLogger("asyncio").setLevel(logging.DEBUG)
-logger = logging.getLogger()
-error 	= logger.error
-message	= logger.warning
-verbose	= logger.info
+logger 	= logging.getLogger()
+error	= logger.error
+message = logger.warning
+verbose = logger.info
 debug	= logger.debug
 
-# Utils 
+# Utils
 def get_datestr(_datetime: datetime = datetime.now()) -> str:
-	return _datetime.strftime('%Y%m%d_%H%M')
-
+	return _datetime.strftime("%Y%m%d_%H%M")
 
 # main() -------------------------------------------------------------
 
 async def main(argv: list[str]):
 	# set the directory for the script
-	global logger, error, debug, verbose, message, db, wi, bs, MAX_PAGES
+	global logger, error, debug, verbose, message
 
-	# chdir(dirname(argv[0]))
-	
 	## UPDATE after transition
 	message('Reminder: Rename Backend ErrorLog & AccountLog')
 	
-	# Default params	
-	CONFIG 		= 'blitzstats.ini'	
-	LOG 		= 'blitzstats.log'
+	# Default params
+	_PKG_NAME	= 'blitzstats'
+	CONFIG 		= _PKG_NAME + '.ini'
+	LOG 		= _PKG_NAME + '.log'
 	# THREADS 	= 20    # make it module specific?
-	BACKEND 	: Optional[str] = None
+	BACKEND 	: Optional[str] 		= None
 	config 		: Optional[ConfigParser] = None
+	CONFIG_FILE : Optional[str] 		= None
+
+	for fn in [ './' + CONFIG, 
+				dirname(realpath(__file__)) + '/' + CONFIG,
+				expanduser('~/.' + CONFIG), 
+				expanduser('~/.config/' + CONFIG), 
+				expanduser('~/.config/' + _PKG_NAME + '/config') ]:
+		if isfile(fn):
+			CONFIG_FILE=fn
+			debug(f'config file: {CONFIG_FILE}')
 
 	parser = ArgumentParser(description='Fetch and manage WoT Blitz stats', add_help=False)
 	arggroup_verbosity = parser.add_mutually_exclusive_group()
@@ -69,7 +81,8 @@ async def main(argv: list[str]):
 									const=logging.CRITICAL, help='Silent mode')
 	parser.add_argument('--log', type=str, nargs='?', default=None, const=f"{LOG}_{get_datestr()}", 
 						help='Enable file logging')	
-	parser.add_argument('--config', type=str, default=CONFIG, metavar='CONFIG', help='Read config from CONFIG')
+	parser.add_argument('--config', type=str, default=CONFIG_FILE, metavar='CONFIG', 
+						help='Read config from CONFIG')
 	parser.set_defaults(LOG_LEVEL=logging.WARNING)
 
 	args, argv = parser.parse_known_args()

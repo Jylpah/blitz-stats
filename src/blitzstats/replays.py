@@ -10,12 +10,17 @@ from alive_progress import alive_bar					# type: ignore
 from multiprocessing import Manager, cpu_count
 from multiprocessing.pool import Pool, AsyncResult 
 
-from backend import Backend, BSTableType, get_sub_type
+from pyutils.eventcounter		import EventCounter
+from pyutils.exportable 		import JSONExportable
+from pyutils.asyncqueue 		import AsyncQueue
+from pyutils.utils				import is_alphanum
+from blitzutils.replay 			import WoTBlitzReplayJSON, WoTBlitzReplayData
+from blitzutils.region 			import Region
+from blitzutils.wotinspector 	import WoTinspector
 
-from pyutils import get_url, get_url_JSON_model, epoch_now, EventCounter, \
-					JSONExportable, AsyncQueue, is_alphanum
-from blitzutils.models import WoTBlitzReplayJSON, WoTBlitzReplayData, Region
-from blitzutils.wotinspector import WoTinspector
+from .backend import Backend, BSTableType, get_sub_type
+from .accounts import add_args_fetch_wi as add_args_accounts_fetch_wi
+from .accounts import cmd_fetch_wi as cmd_accounts_fetch_wi
 
 logger = logging.getLogger()
 error 	= logger.error
@@ -53,8 +58,13 @@ def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> b
 												title='replays commands',
 												description='valid commands',
 												help='replays help',
-												metavar='export')
+												metavar='fetch | export | import')
 		replays_parsers.required = True
+		
+		fetch_parser = replays_parsers.add_parser('fetch', help="replays fetch help")
+		if not add_args_fetch(fetch_parser, config=config):
+			raise Exception("Failed to define argument parser for: replays fetch")	
+
 		export_parser = replays_parsers.add_parser('export', help="replays export help")
 		if not add_args_export(export_parser, config=config):
 			raise Exception("Failed to define argument parser for: replays export")
@@ -69,7 +79,12 @@ def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> b
 	return False
 
 
-## -
+
+def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+	parser.add_argument('--force', action='store_true', default=False, 
+							help='Ignore existing accounts exporting')
+	return add_args_accounts_fetch_wi(parser=parser, config=config)
+
 
 def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
 	try:
@@ -155,19 +170,32 @@ async def cmd(db: Backend, args : Namespace) -> bool:
 	
 	try:
 		debug('replays')
-		
-		if args.replays_cmd == 'export':
+		if args.replays_cmd == 'fetch':
+			return await cmd_fetch(db, args)
+
+		elif args.replays_cmd == 'export':
 			if args.replays_export_query_type == 'id':
-				debug('export id')
 				return await cmd_export_id(db, args)
 			elif args.replays_export_query_type == 'find':
-				debug('find')
 				return await cmd_export_find(db, args)
 			else:
 				error('replays: unknown or missing subcommand')
+
 		elif args.replays_cmd == 'import':
 			return await cmd_importMP(db, args)
 
+	except Exception as err:
+		error(f'{err}')
+	return False
+
+
+async def cmd_fetch(db: Backend, args : Namespace) -> bool:
+	try:
+		debug('starting')
+		stats = EventCounter('replays fetch')
+		stats.merge(await cmd_accounts_fetch_wi(db, args, accountQ=None))
+		stats.print()
+		return True
 	except Exception as err:
 		error(f'{err}')
 	return False

@@ -1,3 +1,4 @@
+import logging
 from enum import StrEnum
 from sys import maxsize
 from time import time
@@ -5,13 +6,15 @@ from typing import Optional, ClassVar, Any
 from math import ceil
 from pydantic import validator, root_validator, Field, HttpUrl
 
-import logging
+from pyutils.utils 			import  epoch_now
+from pyutils.exportable 	import JSONExportable, TypeExcludeDict, I, D, Idx, \
+									BackendIndexType, BackendIndex, \
+									DESCENDING, ASCENDING, TEXT
 
-from blitzutils.models import Region, Account, WGBlitzRelease, WGAccountInfo
-from pyutils import JSONExportable, epoch_now, TypeExcludeDict, I, D, Idx, \
-						BackendIndexType, BackendIndex, DESCENDING, ASCENDING, TEXT
+from blitzutils.account 	import Account
+from blitzutils.release		import WGBlitzRelease
+from blitzutils.wg_api 		import WGAccountInfo
 
-TYPE_CHECKING = True
 logger 	= logging.getLogger()
 error 	= logger.error
 message	= logger.warning

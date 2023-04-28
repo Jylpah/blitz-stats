@@ -16,17 +16,20 @@ from pymongo.errors import BulkWriteError, CollectionInvalid, ConnectionFailure
 from pydantic import BaseModel, ValidationError, Field
 from asyncstdlib import enumerate
 
-from backend import Backend, OptAccountsDistributed, OptAccountsInactive, BSTableType, \
-					MAX_UPDATE_INTERVAL, WG_ACCOUNT_ID_MAX, MIN_UPDATE_INTERVAL, ErrorLog, \
-					ErrorLogType, A
-from models import BSAccount, BSBlitzRelease, StatsTypes
-from pyutils import epoch_now, JSONExportable, AliasMapper, I, D, O, Idx, \
-	BackendIndexType, BackendIndex, DESCENDING, ASCENDING, TEXT
-# from pyutils.utils import transform_objs
-from blitzutils.models import Region, Tank, WoTBlitzReplayJSON, WoTBlitzReplayData, \
+from pyutils import JSONExportable, AliasMapper,Idx, \
+					BackendIndexType, BackendIndex
+from pyutils.exportable	import DESCENDING, ASCENDING, TEXT,  I, D, O
+from pyutils.utils 	import epoch_now
+
+from blitzutils import Region, Tank, WoTBlitzReplayJSON, WoTBlitzReplayData, \
 								WoTBlitzReplaySummary, WGTankStat, WGBlitzRelease, \
 								WGPlayerAchievementsMaxSeries, WoTBlitzTankString,\
 								EnumNation, EnumVehicleTier, EnumVehicleTypeStr
+
+from .backend import Backend, OptAccountsDistributed, OptAccountsInactive, BSTableType, \
+					MAX_UPDATE_INTERVAL, WG_ACCOUNT_ID_MAX, MIN_UPDATE_INTERVAL, ErrorLog, \
+					ErrorLogType, A
+from .models import BSAccount, BSBlitzRelease, StatsTypes
 
 # Setup logging
 logger	= logging.getLogger()
@@ -187,15 +190,15 @@ class MongoBackend(Backend):
 		return None
 
 
-	def reconnect(self) -> bool:
-		"""Reconnect backend"""
-		try:
-			self._client = AsyncIOMotorClient(**self._db_config)
-			self.db 	 = self._client[self.database]
-			return True
-		except Exception as err:
-			error(f'Error connection: {self.backend}')
-		return False
+	# def reconnect(self) -> bool:
+	# 	"""Reconnect backend"""
+	# 	try:
+	# 		self._client = AsyncIOMotorClient(**self._db_config)
+	# 		self.db 	 = self._client[self.database]
+	# 		return True
+	# 	except Exception as err:
+	# 		error(f'Error connection: {self.backend}')
+	# 	return False
 
 
 	async def test(self) -> bool:
@@ -1028,7 +1031,7 @@ class MongoBackend(Backend):
 			dbc : AsyncIOMotorCollection = self.collection_accounts
 			total : int = -1
 			if sample > 1:
-				return int(sample)
+				return int(sample) * len(regions)
 			elif stats_type is None and regions == Region.has_stats() and \
 			   		inactive == OptAccountsInactive.both and disabled is None and \
 					active_since == 0 and inactive_since == 0:				

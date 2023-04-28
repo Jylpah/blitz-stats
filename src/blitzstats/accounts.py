@@ -4,29 +4,26 @@ from typing import Optional, cast, Type, Any, TypeVar, Sequence
 from datetime import datetime, timedelta
 from time import time
 import logging
-from asyncio import create_task, gather, wait, Queue, CancelledError, Task, Condition, sleep
+from asyncio import create_task, gather, wait, Queue, CancelledError, Task, sleep
 from aiofiles import open
 from asyncstdlib import enumerate
-from os.path import isfile
-from sys import stdout
-import copy
-
 from alive_progress import alive_bar		# type: ignore
-from bson import ObjectId
 
-from csv import DictWriter, DictReader, Dialect, Sniffer, excel
+from pyutils 			import EventCounter, TXTExportable, CSVExportable, \
+	 							 JSONExportable, IterableQueue, QueueDone
+from pyutils.exportable import  export
+from pyutils.utils 		import alive_bar_monitor, get_url_JSON_model, chunker
 
-from backend import Backend, OptAccountsInactive, OptAccountsDistributed, \
-	BSTableType, ACCOUNTS_Q_MAX, get_sub_type
-from models import BSAccount, StatsTypes, BSBlitzRelease
-from models_import import WG_Account
-from pyutils import CounterQueue, EventCounter,  TXTExportable, \
-	CSVExportable, JSONExportable, Importable, IterableQueue, QueueDone, \
-		alive_bar_monitor, get_url, get_url_JSON_model, epoch_now, \
-		export, is_alphanum, chunker
-from blitzutils.models import WoTBlitzReplayJSON, WoTBlitzReplayData, Region, Account, WGAccountInfo
-from blitzutils import WoTinspector, WGApi
-from yastatist import get_accounts_since
+from blitzutils			import WoTBlitzReplayJSON, WoTBlitzReplayData, \
+								Region, Account, WGAccountInfo, \
+								WGApi, WoTinspector
+
+from .backend import Backend, OptAccountsInactive, \
+					 OptAccountsDistributed, \
+					 BSTableType, ACCOUNTS_Q_MAX, get_sub_type
+from .models import BSAccount, StatsTypes, BSBlitzRelease
+from .models_import import WG_Account
+
 
 logger 	= logging.getLogger()
 error 	= logger.error
@@ -200,7 +197,7 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 		fetch_parsers = parser.add_subparsers(dest='accounts_fetch_source', 	
 														title='accounts fetch source',
 														description='valid sources', 
-														metavar='wg | wi | ys | files')
+														metavar='wg | wi | files')
 		fetch_parsers.required = True
 		fetch_wg_parser = fetch_parsers.add_parser('wg', help='accounts fetch wg help')
 		if not add_args_fetch_wg(fetch_wg_parser, config=config):
@@ -210,9 +207,9 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 		if not add_args_fetch_wi(fetch_wi_parser, config=config):
 			raise Exception("Failed to define argument parser for: accounts fetch wi")
 		
-		fetch_ys_parser = fetch_parsers.add_parser('ys', help='accounts fetch ys help')
-		if not add_args_fetch_ys(fetch_ys_parser, config=config):
-			raise Exception("Failed to define argument parser for: accounts fetch ys")
+		# fetch_ys_parser = fetch_parsers.add_parser('ys', help='accounts fetch ys help')
+		# if not add_args_fetch_ys(fetch_ys_parser, config=config):
+		# 	raise Exception("Failed to define argument parser for: accounts fetch ys")
 
 		fetch_files_parser = fetch_parsers.add_parser('files', help='accounts fetch files help')
 		if not add_args_fetch_files(fetch_files_parser, config=config):
@@ -502,7 +499,7 @@ async def cmd_update(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		
-		stats = EventCounter('accounts update')
+		stats = EventCounter('accounts update', totals='total')
 		accountQ : IterableQueue[BSAccount] = IterableQueue(maxsize=10000)
 		db_worker = create_task(db.accounts_insert_worker(accountQ, force=args.force))
 		
@@ -687,9 +684,9 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 				debug('wi')
 				stats.merge_child(await cmd_fetch_wi(db, args, accountQ))
 			
-			elif args.accounts_fetch_source == 'ys':
-				debug('ys')
-				stats.merge_child(await cmd_fetch_ys(db, args, accountQ))
+			# elif args.accounts_fetch_source == 'ys':
+			# 	debug('ys')
+			# 	stats.merge_child(await cmd_fetch_ys(db, args, accountQ))
 
 			elif args.accounts_fetch_source == 'files':
 				debug('files')
@@ -759,6 +756,13 @@ async def cmd_fetch_wg(db		: Backend,
 	"""Fetch account_ids from WG API"""
 	debug('starting')
 	stats		: EventCounter = EventCounter('WG API')
+	wg 			: WGApi 		= WGApi(app_id = args.wg_app_id, 
+										ru_app_id= args.ru_app_id,
+										rate_limit = args.wg_rate_limit,
+										ru_rate_limit = args.ru_rate_limit,)
+	id_creators	: list[Task]	= list()
+	api_workers : list[Task]	= list()
+	latest		: dict[Region, BSAccount] = dict()
 	try:		
 		regions		: set[Region] 	= { Region(r) for r in args.regions }
 		start 		: int 			= args.wg_start_id
@@ -769,38 +773,37 @@ async def cmd_fetch_wg(db		: Backend,
 		force 		: bool 			= args.force		
 		null_responses: int 		= args.null_responses
 		max_accounts: int 			= args.max_accounts
-		wg 			: WGApi 		= WGApi(app_id = args.wg_app_id, 
-											ru_app_id= args.ru_app_id,
-											rate_limit = args.wg_rate_limit,
-											ru_rate_limit = args.ru_rate_limit,)
+
 		WORKERS 	: int 			= max( [int(args.wg_workers), 1])
-		id_creators	: list[Task]	= list()
-		api_workers : list[Task]	= list()
+
 		idQs 		: dict[Region, IterableQueue[Sequence[int]]] = dict()
 		
 		if start == 0 and not force and args.file is None:				
 			message('finding latest accounts by region')
-			latest : dict[Region, BSAccount] = await db.accounts_latest(regions)
+			latest = await db.accounts_latest(regions)
 		for region in regions:
 			try:
 				idQs[region] = IterableQueue(maxsize=100)
 				for _ in range(WORKERS):
-					api_workers.append(create_task(fetch_account_info_worker(wg, region, 
-																			idQs[region], accountQ, 
-																			null_responses=null_responses)))
+					api_workers.append(create_task(fetch_account_info_worker(wg, region,
+                                                             idQs[region], accountQ,
+                                                             null_responses=null_responses)))
 				if args.file is None:
-					id_range : range = region.id_range
+					id_range: range = region.id_range
 					if start == 0 and not force:
 						id_range = range(latest[region].id + 1, id_range.stop)
 					else:
 						id_range = range(start, id_range.stop)
 					if max_accounts > 0:
-						id_range = range(id_range.start, min([ id_range.start + max_accounts,  id_range.stop]))
-	
-					message(f'fetching accounts for {region}: start={id_range.start}, stop={id_range.stop}')
-					id_creators.append(create_task(account_idQ_maker(idQs[region], id_range.start, id_range.stop)))
-				else:					
-					ids : list[int] = list()
+						id_range = range(id_range.start, min(
+							[id_range.start + max_accounts,  id_range.stop]))
+
+					message(
+						f'fetching accounts for {region}: start={id_range.start}, stop={id_range.stop}')
+					id_creators.append(create_task(account_idQ_maker(
+						idQs[region], id_range.start, id_range.stop)))
+				else:
+					ids: list[int] = list()
 					await idQs[region].add_producer()
 					async for account in BSAccount.import_file(args.file):
 						ids.append(account.id)
@@ -810,10 +813,10 @@ async def cmd_fetch_wg(db		: Backend,
 					if len(ids) > 0:
 						await idQs[region].put(ids)
 					await idQs[region].finish()
-				
+
 			except Exception as err:
 				error(f"could not create account queue for '{region}': {err}")
-				raise Exception()				
+				raise Exception()
 		
 		with alive_bar(None, title='Getting accounts from WG API ') as bar:
 			try:
@@ -962,23 +965,23 @@ async def fetch_account_info_worker(wg		: WGApi,
 
 async def cmd_fetch_wi(db: Backend, 
 						args : Namespace, 
-						accountQ : IterableQueue[BSAccount]) -> EventCounter:
+						accountQ : IterableQueue[BSAccount] | None
+						) -> EventCounter:
 	"""Fetch account_ids from replays.wotinspector.com replays"""
 	debug('starting')
-	stats		: EventCounter = EventCounter('WoTinspector')
-	
+	stats		: EventCounter = EventCounter('WoTinspector')	
 	workersN	: int 	= args.wi_workers
 	workers		: list[Task] = list()
 	max_pages	: int	= args.wi_max_pages
 	start_page 	: int 	= args.wi_start_page
-
 	rate_limit 	: float	= args.wi_rate_limit
 	# force 		: bool  = args.force
 	token		: str 	= args.wi_auth_token	# temp fix...
 	replay_idQ  : Queue[str] = Queue()
 	# pageQ		: Queue[int] = Queue()
 	wi 			: WoTinspector 	= WoTinspector(rate_limit=rate_limit, auth_token=token)	
-	await accountQ.add_producer()
+	if accountQ is not None:
+		await accountQ.add_producer()
 	try:					
 		step : int = 1
 		if max_pages < 0:
@@ -1011,7 +1014,8 @@ async def cmd_fetch_wi(db: Backend,
 	except Exception as err:
 		error(f'{err}')
 	finally:
-		await accountQ.finish()
+		if accountQ is not None:
+			await accountQ.finish()
 		await wi.close()
 	return stats
 
@@ -1116,7 +1120,8 @@ async def fetch_wi_get_replay_ids(db: Backend, wi: WoTinspector, args: Namespace
 async def fetch_wi_fetch_replays(db			: Backend, 
 								  wi			: WoTinspector, 
 								  replay_idQ 	: Queue[str], 
-								  accountQ 		: Queue[BSAccount]
+								  accountQ 		: Queue[BSAccount] | None, 
+
 								 ) -> EventCounter:
 	debug('starting')
 	stats : EventCounter = EventCounter('Fetch replays')
@@ -1129,10 +1134,11 @@ async def fetch_wi_fetch_replays(db			: Backend,
 				if replay is None:
 					verbose(f'Could not fetch replay id: {replay_id}')
 					continue
-				account_ids : list[int] = replay.get_players()
-				stats.log('players found', len(account_ids))
-				for account_id in account_ids:
-					await accountQ.put(BSAccount(id=account_id))
+				if accountQ is not None:
+					account_ids : list[int] = replay.get_players()
+					stats.log('players found', len(account_ids))
+					for account_id in account_ids:
+						await accountQ.put(BSAccount(id=account_id))						
 				if await db.replay_insert(replay):
 					stats.log('replays added')
 				else:
@@ -1144,31 +1150,31 @@ async def fetch_wi_fetch_replays(db			: Backend,
 	return stats
 
 
-async def cmd_fetch_ys(db: Backend, 
-						args : Namespace, 
-						accountQ : IterableQueue[BSAccount]) -> EventCounter:
-	"""Fetch account_ids fromy yastati.st"""
-	debug('starting')
-	stats		: EventCounter = EventCounter('Yastati.st')
-	try:
-		since 			: int = args.ys_days_since
-		client_id 		: str = args.ys_client_id
-		client_secret 	: str = args.ys_client_secret
+# async def cmd_fetch_ys(db: Backend, 
+# 						args : Namespace, 
+# 						accountQ : IterableQueue[BSAccount]) -> EventCounter:
+# 	"""Fetch account_ids fromy yastati.st"""
+# 	debug('starting')
+# 	stats		: EventCounter = EventCounter('Yastati.st')
+# 	try:
+# 		since 			: int = args.ys_days_since
+# 		client_id 		: str = args.ys_client_id
+# 		client_secret 	: str = args.ys_client_secret
 		
-		await accountQ.add_producer()
-		with alive_bar(None, title='Getting accounts from yastati.st ') as bar:
-			for region in [Region.eu, Region.ru]:
-				async for account in get_accounts_since(region, days= since,
-														client_id = client_id, 
-														secret = client_secret):
-					await accountQ.put(account)
-					stats.log('accounts read')
-					bar()
+# 		await accountQ.add_producer()
+# 		with alive_bar(None, title='Getting accounts from yastati.st ') as bar:
+# 			for region in [Region.eu, Region.ru]:
+# 				async for account in get_accounts_since(region, days= since,
+# 														client_id = client_id, 
+# 														secret = client_secret):
+# 					await accountQ.put(account)
+# 					stats.log('accounts read')
+# 					bar()
 
-	except Exception as err:
-		error(f'{err}')
-	await accountQ.finish()
-	return stats
+# 	except Exception as err:
+# 		error(f'{err}')
+# 	await accountQ.finish()
+# 	return stats
 
 
 async def cmd_import(db: Backend, args : Namespace) -> bool:

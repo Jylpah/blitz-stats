@@ -25,23 +25,24 @@ import pandas as pd  						# type: ignore
 import pyarrow as pa						# type: ignore
 import pyarrow.dataset as ds				# type: ignore
 import pyarrow.parquet as pq				# type: ignore
-from pandas.io.json import json_normalize	# type: ignore
+#from pandas.io.json import json_normalize	# type: ignore
 
-from backend import Backend, OptAccountsInactive, BSTableType, \
+from pyutils 			import JSONExportable, TXTExportable, CSVExportable, \
+								BucketMapper, IterableQueue, QueueDone, \
+								EventCounter, AsyncQueue, CounterQueue, QCounter
+from pyutils.exportable import export
+from pyutils.utils 		import alive_bar_monitor
+
+from blitzutils import WGApi, Region, WGTankStat, WGTankStatAll, Tank, \
+						EnumVehicleTier, EnumNation, \
+						EnumVehicleTypeInt 
+
+from .backend import Backend, OptAccountsInactive, BSTableType, \
 					ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL, get_sub_type
-from models import BSAccount, BSBlitzRelease, StatsTypes
-from accounts import create_accountQ, read_args_accounts, create_accountQ_active, \
+from .models import BSAccount, BSBlitzRelease, StatsTypes
+from .accounts import create_accountQ, read_args_accounts, create_accountQ_active, \
 					accounts_parse_args
-from releases import get_releases, release_mapper
-
-from pyutils import alive_bar_monitor, \
-					is_alphanum, JSONExportable, TXTExportable, CSVExportable, export, \
-					BucketMapper, IterableQueue, QueueDone, EventCounter, AsyncQueue, \
-					CounterQueue, QCounter
-from blitzutils.models import Region, WGTankStat, WGTankStatAll, Tank, \
-								EnumVehicleTier, EnumNation, \
-								EnumVehicleTypeInt
-from blitzutils.wg import WGApi 
+from .releases import get_releases, release_mapper
 
 logger 	= logging.getLogger()
 error 	= logger.error
@@ -436,7 +437,7 @@ async def cmd_fetchMP(db: Backend, args : Namespace) -> bool:
 	debug('starting')
 	
 	try:
-		stats 	: EventCounter				= EventCounter('tank-stats fetch')	
+		stats 	: EventCounter				= EventCounter('tank-stats fetch', totals='total')	
 		regions	: set[Region] 				= { Region(r) for r in args.regions }
 		worker 	: Task
 
@@ -521,12 +522,13 @@ async def  fetch_mp_worker(region: Region) -> EventCounter:
 	statsQ		: Queue[list[WGTankStat]]		= Queue(TANK_STATS_Q_MAX)
 	args 		: Namespace 	= mp_args
 	THREADS 	: int 			= args.wg_workers	
+	wg 	: WGApi = WGApi(app_id=args.wg_app_id, 
+						ru_app_id= args.ru_app_id, 
+						rate_limit=args.wg_rate_limit, 
+						ru_rate_limit = args.ru_rate_limit,)
 	try:
 		args.regions = { region }
-		wg 	: WGApi = WGApi(app_id=args.wg_app_id, 
-							ru_app_id= args.ru_app_id, 
-							rate_limit=args.wg_rate_limit, 
-							ru_rate_limit = args.ru_rate_limit,)
+		
 
 		if not args.disabled:
 			retryQ = IterableQueue()	# must not use maxsize
@@ -553,9 +555,7 @@ async def  fetch_mp_worker(region: Region) -> EventCounter:
 					await counterQas.put(BATCH)
 					i = 0				
 		await accountQ.finish()	
-		# stats.merge(await create_accountQ(db, args, accountQ, 
-		# 									stats_type=StatsTypes.tank_stats))
-
+		
 		debug(f'waiting for account queue to finish: {region}')
 		await accountQ.join()
 		

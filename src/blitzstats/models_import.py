@@ -5,8 +5,8 @@ from sys import maxsize
 from bson import ObjectId
 import logging
 
-from blitzutils.models import Account
-from models import BSBlitzRelease
+from blitzutils.account import Account
+from .models import BSBlitzRelease
 
 logger 	= logging.getLogger()
 error 	= logger.error
