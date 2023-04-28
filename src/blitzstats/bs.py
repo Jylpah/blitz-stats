@@ -222,7 +222,10 @@ def print_all(stats, out, limit: int | None =None) -> None:
 #
 ########################################################
 
+def cli_main():
+	run(main())
+
 if __name__ == "__main__":
 	#asyncio.run(main(sys.argv[1:]), debug=True)
-	run(main())
+	cli_main()
 

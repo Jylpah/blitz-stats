@@ -55,7 +55,7 @@ dev = [
 "Bug Tracker" = "https://github.com/Jylpah/blitz-stats/issues"
 
 [project.scripts]
-bs = "blitzstats.bs:main"
+bs = "blitzstats.bs:cli_main"
 
 [build-system]
 requires = ["hatchling"]
