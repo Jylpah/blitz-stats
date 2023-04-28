@@ -1031,7 +1031,7 @@ class MongoBackend(Backend):
 			dbc : AsyncIOMotorCollection = self.collection_accounts
 			total : int = -1
 			if sample > 1:
-				return int(sample)
+				return int(sample) * len(regions)
 			elif stats_type is None and regions == Region.has_stats() and \
 			   		inactive == OptAccountsInactive.both and disabled is None and \
 					active_since == 0 and inactive_since == 0:				

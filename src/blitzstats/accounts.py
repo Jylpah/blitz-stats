@@ -499,7 +499,7 @@ async def cmd_update(db: Backend, args : Namespace) -> bool:
 	try:
 		debug('starting')
 		
-		stats = EventCounter('accounts update')
+		stats = EventCounter('accounts update', totals='total')
 		accountQ : IterableQueue[BSAccount] = IterableQueue(maxsize=10000)
 		db_worker = create_task(db.accounts_insert_worker(accountQ, force=args.force))
 		

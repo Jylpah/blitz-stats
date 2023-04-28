@@ -237,12 +237,11 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 						ru_rate_limit = args.ru_rate_limit,)
 
 	try:
-		stats 	 	: EventCounter									= EventCounter('player-achievements fetch')
-		regions	 	: set[Region]									= { Region(r) for r in args.regions }
-		regionQs 	: dict[str, IterableQueue[list[BSAccount]]]		= dict()
-		# accountQ	: IterableQueue[BSAccount] 						= IterableQueue(maxsize=10000)
-		retryQ  	: IterableQueue[BSAccount] 						= IterableQueue() 
-		statsQ	 	: Queue[list[WGPlayerAchievementsMaxSeries]]	= Queue(maxsize=PLAYER_ACHIEVEMENTS_Q_MAX)
+		stats 	 : EventCounter								= EventCounter('player-achievements fetch', totals='total')
+		regions	 : set[Region]								= { Region(r) for r in args.regions }
+		regionQs : dict[str, IterableQueue[list[BSAccount]]]= dict()
+		retryQ	 : IterableQueue[BSAccount] 				= IterableQueue() 
+		statsQ	 : Queue[list[WGPlayerAchievementsMaxSeries]]= Queue(maxsize=PLAYER_ACHIEVEMENTS_Q_MAX)
 
 		tasks : list[Task] = list()
 		tasks.append(create_task(fetch_player_achievements_backend_worker(db, statsQ)))

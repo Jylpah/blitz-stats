@@ -437,7 +437,7 @@ async def cmd_fetchMP(db: Backend, args : Namespace) -> bool:
 	debug('starting')
 	
 	try:
-		stats 	: EventCounter				= EventCounter('tank-stats fetch')	
+		stats 	: EventCounter				= EventCounter('tank-stats fetch', totals='total')	
 		regions	: set[Region] 				= { Region(r) for r in args.regions }
 		worker 	: Task
 
