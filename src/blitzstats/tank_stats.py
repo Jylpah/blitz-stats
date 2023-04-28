@@ -522,12 +522,13 @@ async def  fetch_mp_worker(region: Region) -> EventCounter:
 	statsQ		: Queue[list[WGTankStat]]		= Queue(TANK_STATS_Q_MAX)
 	args 		: Namespace 	= mp_args
 	THREADS 	: int 			= args.wg_workers	
+	wg 	: WGApi = WGApi(app_id=args.wg_app_id, 
+						ru_app_id= args.ru_app_id, 
+						rate_limit=args.wg_rate_limit, 
+						ru_rate_limit = args.ru_rate_limit,)
 	try:
 		args.regions = { region }
-		wg 	: WGApi = WGApi(app_id=args.wg_app_id, 
-							ru_app_id= args.ru_app_id, 
-							rate_limit=args.wg_rate_limit, 
-							ru_rate_limit = args.ru_rate_limit,)
+		
 
 		if not args.disabled:
 			retryQ = IterableQueue()	# must not use maxsize
@@ -554,9 +555,7 @@ async def  fetch_mp_worker(region: Region) -> EventCounter:
 					await counterQas.put(BATCH)
 					i = 0				
 		await accountQ.finish()	
-		# stats.merge(await create_accountQ(db, args, accountQ, 
-		# 									stats_type=StatsTypes.tank_stats))
-
+		
 		debug(f'waiting for account queue to finish: {region}')
 		await accountQ.join()
 		
