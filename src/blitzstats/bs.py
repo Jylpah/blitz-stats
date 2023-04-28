@@ -12,18 +12,21 @@ import logging
 from argparse import ArgumentParser
 from sys import argv, stdout
 from os import chdir, linesep
-from os.path import isfile, dirname
+from os.path import isfile, dirname, realpath
 from asyncio import run
+import sys
 
-from .backend import Backend
-from .mongobackend import MongoBackend
-from . import accounts
-from . import replays
-from . import releases
-from . import tank_stats
-from . import player_achievements
-from . import setup
-from . import tankopedia
+sys.path.insert(0, dirname(dirname(realpath(__file__))))
+
+from blitzstats.backend import Backend
+from blitzstats.mongobackend import MongoBackend
+from blitzstats import accounts
+from blitzstats import replays
+from blitzstats import releases
+from blitzstats import tank_stats
+from blitzstats import player_achievements
+from blitzstats import setup
+from blitzstats import tankopedia
 
 # import blitzutils as bu
 # import utils as su
