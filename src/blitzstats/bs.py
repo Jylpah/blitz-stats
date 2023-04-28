@@ -73,7 +73,7 @@ async def main() -> int:
 			CONFIG_FILE=fn
 			verbose(f'config file: {CONFIG_FILE}')
 	if CONFIG_FILE is None:
-		message('config file not found in: ' + ', '.join(CONFIG_FILES))
+		error('config file not found in: ' + ', '.join(CONFIG_FILES))
 
 	parser = ArgumentParser(description='Fetch and manage WoT Blitz stats', add_help=False)
 	arggroup_verbosity = parser.add_mutually_exclusive_group()
