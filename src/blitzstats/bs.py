@@ -66,14 +66,19 @@ async def main() -> int:
 	config 		: Optional[ConfigParser] = None
 	CONFIG_FILE : Optional[str] 		= None
 
-	for fn in [ './' + CONFIG, 
-				dirname(realpath(__file__)) + '/' + CONFIG,
-				expanduser('~/.' + CONFIG), 
-				expanduser('~/.config/' + CONFIG), 
-				expanduser('~/.config/' + _PKG_NAME + '/config') ]:
+	CONFIG_FILES: list[str] = [
+					'./' + CONFIG,
+		 			dirname(realpath(__file__)) + '/' + CONFIG,
+		 			'~/.' + CONFIG,
+					'~/.config/' + CONFIG,
+					'~/.config/' + _PKG_NAME + '/config'
+				]
+	for fn in [ expanduser(f) for f in CONFIG_FILES ] :
 		if isfile(fn):
 			CONFIG_FILE=fn
 			debug(f'config file: {CONFIG_FILE}')
+	if CONFIG_FILE is None:
+		message('config file not found in: ' + ', '.join(CONFIG_FILES))
 
 	parser = ArgumentParser(description='Fetch and manage WoT Blitz stats', add_help=False)
 	arggroup_verbosity = parser.add_mutually_exclusive_group()
