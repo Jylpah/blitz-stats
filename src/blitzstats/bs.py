@@ -76,7 +76,7 @@ async def main() -> int:
 	for fn in [ expanduser(f) for f in CONFIG_FILES ] :
 		if isfile(fn):
 			CONFIG_FILE=fn
-			debug(f'config file: {CONFIG_FILE}')
+			verbose(f'config file: {CONFIG_FILE}')
 	if CONFIG_FILE is None:
 		message('config file not found in: ' + ', '.join(CONFIG_FILES))
 
