@@ -5,7 +5,11 @@
 from datetime import datetime
 from typing import Optional
 from pyutils.multilevelformatter import MultilevelFormatter
-from yappi import start, stop, get_func_stats, set_clock_type, COLUMNS_FUNCSTATS  # type: ignore
+try:
+	import yappi 	# type: ignore
+	#import start, stop, get_func_stats, set_clock_type, COLUMNS_FUNCSTATS  # type: ignore
+except (ImportError, ModuleNotFoundError):
+	yappi = None
 
 from configparser import ConfigParser
 import logging
@@ -120,7 +124,8 @@ async def main(argv: list[str]):
 		# Parse command args
 		parser.add_argument('-h', '--help', action='store_true',  
 							help='Show help')
-		parser.add_argument('--profile', type=int, default=0, metavar='N',
+		if yappi is not None:
+			parser.add_argument('--profile', type=int, default=0, metavar='N',
 							help='Profile performance for N slowest function calls')
 		parser.add_argument('--backend', type=str, choices=Backend.list_available(), 
 							default=BACKEND, help='Choose backend to use')		
@@ -164,10 +169,10 @@ async def main(argv: list[str]):
 		backend : Backend | None  = Backend.create(args.backend, config=config)
 		assert backend is not None, 'Could not initialize backend'
 
-		if args.profile > 0:
+		if yappi is not None and args.profile > 0:
 			print('Starting profiling...')
-			set_clock_type('cpu')
-			start(builtins=True)
+			yappi.set_clock_type('cpu')
+			yappi.start(builtins=True)
 
 		if args.main_cmd == 'accounts':			
 			await accounts.cmd(backend, args)
@@ -186,10 +191,10 @@ async def main(argv: list[str]):
 		else:
 			parser.print_help()
 
-		if args.profile > 0:
+		if yappi is not None and args.profile > 0:
 			print('Stopping profiling')
-			stop()
-			stats = get_func_stats().sort(sort_type='ttot', sort_order='desc')			
+			yappi.stop()
+			stats = yappi.get_func_stats().sort(sort_type='ttot', sort_order='desc')
 			print_all(stats, stdout, args.profile)
 			
 	except Exception as err:
@@ -199,10 +204,10 @@ async def main(argv: list[str]):
 	
 
 def print_all(stats, out, limit: int | None =None) -> None:
-	if stats.empty():
+	if stats.empty() or yappi is None:
 		return
 	sizes = [150, 12, 8, 8, 8]
-	columns = dict(zip(range(len(COLUMNS_FUNCSTATS)), zip(COLUMNS_FUNCSTATS, sizes)))
+	columns = dict(zip(range(len(yappi.COLUMNS_FUNCSTATS)), zip(yappi.COLUMNS_FUNCSTATS, sizes)))
 	show_stats = stats
 	if limit:
 		show_stats = stats[:limit]

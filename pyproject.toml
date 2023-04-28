@@ -41,6 +41,7 @@ dev = [
 	"pytest",
 	"pytest-asyncio",
 	"pytest-datafiles",
+	"yappi>=1.4.0",
 	"types-aiofiles>=23.1.0.1",
 	"types-requests>=2.28.11.17",
 	"pyutils[dev] @ git+https://github.com/Jylpah/pyutils.git@dev",
