@@ -25,7 +25,7 @@ import pandas as pd  						# type: ignore
 import pyarrow as pa						# type: ignore
 import pyarrow.dataset as ds				# type: ignore
 import pyarrow.parquet as pq				# type: ignore
-from pandas.io.json import json_normalize	# type: ignore
+#from pandas.io.json import json_normalize	# type: ignore
 
 from pyutils 			import JSONExportable, TXTExportable, CSVExportable, \
 								BucketMapper, IterableQueue, QueueDone, \
