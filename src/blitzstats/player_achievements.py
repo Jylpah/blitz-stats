@@ -16,20 +16,18 @@ from multiprocessing import Manager, cpu_count
 from multiprocessing.pool import Pool, AsyncResult 
 import queue
 
-from backend import Backend, OptAccountsInactive, BSTableType, \
-	ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL, get_sub_type
-from models import BSAccount, BSBlitzRelease, StatsTypes
-from accounts import split_accountQ, split_accountQ_batch, create_accountQ, \
-					create_accountQ_batch, accounts_parse_args
-from releases import release_mapper
-
 from pyutils import BucketMapper, IterableQueue, QueueDone, \
-	EventCounter, JSONExportable, AsyncQueue, \
-	get_url, get_url_JSON_model, epoch_now, alive_bar_monitor, \
-	is_alphanum
-from blitzutils.models import Region, WGPlayerAchievementsMain, \
-	WGPlayerAchievementsMaxSeries
-from blitzutils.wg import WGApi 
+	EventCounter, JSONExportable, AsyncQueue
+from pyutils.utils import epoch_now, alive_bar_monitor, is_alphanum
+from blitzutils import Region, WGPlayerAchievementsMain, \
+	WGPlayerAchievementsMaxSeries, WGApi 
+
+from .backend import Backend, OptAccountsInactive, BSTableType, \
+	ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL, get_sub_type
+from .models import BSAccount, BSBlitzRelease, StatsTypes
+from .accounts import split_accountQ, split_accountQ_batch, create_accountQ, \
+					create_accountQ_batch, accounts_parse_args
+from .releases import release_mapper
 
 logger = logging.getLogger()
 error 	= logger.error
