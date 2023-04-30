@@ -1088,24 +1088,6 @@ class MongoBackend(Backend):
 			alias : Callable = a.alias
 			pipeline: list[dict[str, Any]] | None 
 			
-			# if (pipeline := await self._mk_pipeline_accounts(regions=regions, 
-			# 												inactive=OptAccountsInactive.both, 
-			# 												disabled=None)) is None:
-			# 	raise ValueError('could not create pipeline')
-
-			# pipeline.append({ '$sort': { alias('id'): DESCENDING }} )
-			# pipeline.append({ '$group' : {
-			# 					'_id' : '$' + alias('region'), 
-			# 					'latest': { '$first': '$$ROOT' }
-			#  				}})
-			# account : BSAccount | None
-			# async for doc in dbc.aggregate(pipeline, allowDiskUse = True):				
-			# 	try:
-			# 		if (account := BSAccount.transform_obj(doc['latest'], model)) is not None:
-			# 			res[account.region] = account
-			# 	except Exception as err:
-			# 		error(f'document: {doc}: error: {err}')		
-
 			account : BSAccount | None
 			for region in regions:
 				if (pipeline := await self._mk_pipeline_accounts(regions={ region }, 
