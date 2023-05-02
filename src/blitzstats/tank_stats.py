@@ -29,7 +29,7 @@ import pyarrow.parquet as pq				# type: ignore
 
 from pyutils 			import JSONExportable, TXTExportable, CSVExportable, \
 								BucketMapper, IterableQueue, QueueDone, \
-								EventCounter, AsyncQueue, CounterQueue, QCounter
+								EventCounter, AsyncQueue, QCounter
 from pyutils.exportable import export
 from pyutils.utils 		import alive_bar_monitor
 
@@ -207,9 +207,15 @@ def add_args_edit(parser: ArgumentParser, config: Optional[ConfigParser] = None)
 		if not add_args_edit_remap_release(remap_parser, config=config):
 			raise Exception("Failed to define argument parser for: tank-stats edit remap-release")
 		
-		missing_parser = edit_parsers.add_parser('fix-missing', help="tank-stats edit fix-missing help")
-		if not add_args_edit_fix_missing(missing_parser, config=config):
-			raise Exception("Failed to define argument parser for: tank-stats edit fix-missing")	
+		################################################################################
+		#
+		## DEPRECIATED: This function is not needed anymore. Comment out, but keep.
+		# 
+		################################################################################ 
+		#
+		# missing_parser = edit_parsers.add_parser('fix-missing', help="tank-stats edit fix-missing help")
+		# if not add_args_edit_fix_missing(missing_parser, config=config):
+		# 	raise Exception("Failed to define argument parser for: tank-stats edit fix-missing")	
 
 		return True
 	except Exception as err:
@@ -246,14 +252,19 @@ def add_args_edit_remap_release(parser: ArgumentParser, config: Optional[ConfigP
 	debug('starting')
 	return add_args_edit_common(parser, config)
 
-
-def add_args_edit_fix_missing(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
-	debug('starting')
-	if not add_args_edit_common(parser, config):
-		return False
-	parser.add_argument('field', type=str, metavar='FIELD',  
-						help='Fix stats with missing FIELD')
-	return True
+################################################################################
+#
+## DEPRECIATED: This function is not needed anymore. Comment out, but keep.
+# 
+################################################################################ 
+		
+# def add_args_edit_fix_missing(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+# 	debug('starting')
+# 	if not add_args_edit_common(parser, config):
+# 		return False
+# 	parser.add_argument('field', type=str, metavar='FIELD',  
+# 						help='Fix stats with missing FIELD')
+# 	return True
 
 
 def add_args_prune(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
@@ -845,38 +856,43 @@ async def cmd_edit(db: Backend, args : Namespace) -> bool:
 															accounts=accounts,
 															since=since, 
 															sample=sample))
-			
 			await tank_statQ.join()
-		if args.tank_stats_edit_cmd == 'fix-missing':
-			BATCH: int = 100
-			message(f'Fixing {args.field} for release {release}')
-			writeQ : CounterQueue[list[WGTankStat]]  = CounterQueue(maxsize=TANK_STATS_Q_MAX, 
-							   										batch=BATCH)
-			for _ in range(args.workers): 
-				edit_tasks.append(create_task(cmd_edit_fix_missing(db, tank_statQ, 
-																	writeQ=writeQ,															
-																	commit=commit, 
-																	batch = BATCH)))
-			if commit:
-				edit_tasks.append(create_task(db.tank_stats_insert_worker(writeQ, force=True)))
-				edit_tasks.append(create_task(alive_bar_monitor([writeQ], 
-						   									title=f'Fixing {args.field}', 
-															total=None)))
-			else:
-				edit_tasks.append(create_task(alive_bar_monitor([writeQ], 
-						   									title=f'Analyzing {args.field}', 
-															total=None)))
-			for r in regions:
-				edit_tasks.append(create_task(db.tank_stats_get_worker(tank_statQ,
-																		release=release, 
-																		regions={r}, 
-																		accounts=accounts,
-																		missing=args.field,
-																		since=since, 
-																		sample=sample)))
 
-			await tank_statQ.join()
-			await writeQ.join()
+		################################################################################
+		#
+		## DEPRECIATED: This function is not needed anymore. Comment out, but keep.
+		# 
+		################################################################################ 
+
+		# elif args.tank_stats_edit_cmd == 'fix-missing':
+		# 	BATCH: int = 100
+		# 	message(f'Fixing {args.field} for release {release}')
+		# 	writeQ : CounterQueue[list[WGTankStat]]  = CounterQueue(maxsize=TANK_STATS_Q_MAX, 
+		# 					   										batch=BATCH)
+		# 	for _ in range(args.workers): 
+		# 		edit_tasks.append(create_task(cmd_edit_fix_missing(db, tank_statQ, 
+		# 															writeQ=writeQ,															
+		# 															commit=commit, 
+		# 															batch = BATCH)))
+		# 	if commit:
+		# 		edit_tasks.append(create_task(db.tank_stats_insert_worker(writeQ, force=True)))
+		# 		edit_tasks.append(create_task(alive_bar_monitor([writeQ], 
+		# 				   									title=f'Fixing {args.field}', 
+		# 													total=None)))
+		# 	else:
+		# 		edit_tasks.append(create_task(alive_bar_monitor([writeQ], 
+		# 				   									title=f'Analyzing {args.field}', 
+		# 													total=None)))
+		# 	for r in regions:
+		# 		edit_tasks.append(create_task(db.tank_stats_get_worker(tank_statQ,
+		# 																release=release, 
+		# 																regions={r}, 
+		# 																accounts=accounts,
+		# 																missing=args.field,
+		# 																since=since, 
+		# 																sample=sample)))
+		# 	await tank_statQ.join()
+		# 	await writeQ.join()
 		else:
 			raise NotImplementedError			
 		
@@ -888,88 +904,93 @@ async def cmd_edit(db: Backend, args : Namespace) -> bool:
 		error(f'{err}')
 	return False
 
-
-async def cmd_edit_fix_missing(db: Backend, 
-								tank_statQ : IterableQueue[WGTankStat], 
-								writeQ: Queue[list[WGTankStat]],										
-								commit: bool = False, 
-								batch : int = 1000
-								) -> EventCounter:
-	"""Fix: move all.shots -> all.spots & missing all.spots fields by estimating 
-		those from later stats"""
-	debug('starting')
-	stats : EventCounter = EventCounter('fix missing')
-	tank_stats : list[WGTankStat] = list()
-	try:		
-		while True:
-			ts : WGTankStat = await tank_statQ.get()
-			try:
-				fixed : bool = False
-				tsa: WGTankStatAll = ts.all
-				if (region := ts.region) is None: 
-					stats.log('missing region')
-					continue
-				later_found : bool = False
-				async for later in db.tank_stats_get(accounts=[BSAccount(id=ts.account_id, region=ts.region)], 
-													regions={region}, 
-													tanks=[Tank(tank_id=ts.tank_id)], 
-													since=ts.last_battle_time + 1):
-					later_found = True
-					try:
-						ltsa = later.all
-						if ltsa.battles <= 0:
-							stats.log('bad stats: 0 battles')
-							continue
+################################################################################
+#
+## DEPRECIATED: This function is not needed anymore. Comment out, but keep.
+# 
+################################################################################ 
+		
+# async def cmd_edit_fix_missing(db: Backend, 
+# 								tank_statQ : IterableQueue[WGTankStat], 
+# 								writeQ: Queue[list[WGTankStat]],										
+# 								commit: bool = False, 
+# 								batch : int = 1000
+# 								) -> EventCounter:
+# 	"""Fix: move all.shots -> all.spots & missing all.spots fields by estimating 
+# 		those from later stats"""
+# 	debug('starting')
+# 	stats : EventCounter = EventCounter('fix missing')
+# 	tank_stats : list[WGTankStat] = list()
+# 	try:		
+# 		while True:
+# 			ts : WGTankStat = await tank_statQ.get()
+# 			try:
+# 				fixed : bool = False
+# 				tsa: WGTankStatAll = ts.all
+# 				if (region := ts.region) is None: 
+# 					stats.log('missing region')
+# 					continue
+# 				later_found : bool = False
+# 				async for later in db.tank_stats_get(accounts=[BSAccount(id=ts.account_id, region=ts.region)], 
+# 													regions={region}, 
+# 													tanks=[Tank(tank_id=ts.tank_id)], 
+# 													since=ts.last_battle_time + 1):
+# 					later_found = True
+# 					try:
+# 						ltsa = later.all
+# 						if ltsa.battles <= 0:
+# 							stats.log('bad stats: 0 battles')
+# 							continue
 						
-						# Fix shots
-						if tsa.spotted >= tsa.hits:
-							tsa.shots = tsa.spotted
-							stats.log('all.shots = all.spots')
-						else:
-							tsa.shots = int(ltsa.shots * tsa.battles / ltsa.battles)
-							stats.log('all.shots estimated')
+# 						# Fix shots
+# 						if tsa.spotted >= tsa.hits:
+# 							tsa.shots = tsa.spotted
+# 							stats.log('all.shots = all.spots')
+# 						else:
+# 							tsa.shots = int(ltsa.shots * tsa.battles / ltsa.battles)
+# 							stats.log('all.shots estimated')
 						
-						# Fix spotted
-						tsa.spotted = int(ltsa.spotted * tsa.battles / ltsa.battles)
-						stats.log('all.spotted estimated')
+# 						# Fix spotted
+# 						tsa.spotted = int(ltsa.spotted * tsa.battles / ltsa.battles)
+# 						stats.log('all.spotted estimated')
 						
-						ts.all = tsa
-						debug(f'updating {ts}: all.spotted, all.shots')
-						if commit:
-							tank_stats.append(ts)
-							if len(tank_stats) == batch:
-								await writeQ.put(tank_stats)
-								stats.log('fixed', batch)
-								tank_stats = list()
-						else:
-							message(f"Would fix: account={ts.account_id} tank={ts.tank_id} lbt={ts.last_battle_time}: spotted={ts.all.spotted}, shots={ts.all.shots} (btls={tsa.battles}) [{ltsa.spotted}, {ltsa.shots} (btls={ltsa.battles})]")
-							stats.log('would fix')
-						fixed = True
-						break					
+# 						ts.all = tsa
+# 						debug(f'updating {ts}: all.spotted, all.shots')
+# 						if commit:
+# 							tank_stats.append(ts)
+# 							if len(tank_stats) == batch:
+# 								await writeQ.put(tank_stats)
+# 								stats.log('fixed', batch)
+# 								tank_stats = list()
+# 						else:
+# 							message(f"Would fix: account={ts.account_id} tank={ts.tank_id} lbt={ts.last_battle_time}: spotted={ts.all.spotted}, shots={ts.all.shots} (btls={tsa.battles}) [{ltsa.spotted}, {ltsa.shots} (btls={ltsa.battles})]")
+# 							stats.log('would fix')
+# 						fixed = True
+# 						break					
 					
-					except Exception as err:
-						verbose(f'Failed to update {ts}: {err}')
-						stats.log('errors')
-				if not fixed:
-					stats.log('could not fix')
-					if not later_found:
-						stats.log('no later stats found')
-					verbose(f'could not fix: {ts}')
-			except Exception as err:
-				error(f'failed to fix {ts}')
-			finally:
-				tank_statQ.task_done()
+# 					except Exception as err:
+# 						verbose(f'Failed to update {ts}: {err}')
+# 						stats.log('errors')
+# 				if not fixed:
+# 					stats.log('could not fix')
+# 					if not later_found:
+# 						stats.log('no later stats found')
+# 					verbose(f'could not fix: {ts}')
+# 			except Exception as err:
+# 				error(f'failed to fix {ts}')
+# 			finally:
+# 				tank_statQ.task_done()
 	
-	except QueueDone:
-		debug('Queue done')
-		if len(tank_stats) > 0:
-			await writeQ.put(tank_stats)
-			stats.log('fixed', len(tank_stats))
-	except CancelledError:
-		debug('cancelled')		
-	except Exception as err:
-		error(f'{err}')	
-	return stats
+# 	except QueueDone:
+# 		debug('Queue done')
+# 		if len(tank_stats) > 0:
+# 			await writeQ.put(tank_stats)
+# 			stats.log('fixed', len(tank_stats))
+# 	except CancelledError:
+# 		debug('cancelled')		
+# 	except Exception as err:
+# 		error(f'{err}')	
+# 	return stats
 
 
 async def cmd_edit_rel_remap(db: Backend, 
@@ -2196,77 +2217,6 @@ async def  import_mp_worker(id: int = 0) -> EventCounter:
 		error(f'{err}')	
 	return stats
 
-
-# async def import_read_worker(import_db: Backend, 										
-# 										importQ: queue.Queue, 
-# 										total: int = 0, 
-# 										sample: float = 0):
-# 	debug(f'starting import from {import_db.driver}')
-# 	stats : EventCounter = EventCounter(f'{import_db.driver} import')
-# 	with alive_bar(total, title="Importing tank stats ", enrich_print=False, refresh_secs=1) as bar:
-# 		async for objs in import_db.objs_export(table_type=BSTableType.TankStats, 
-# 												sample=sample):
-# 			debug(f'read {len(objs)} tank_stat objects')
-# 			importQ.put(objs)
-# 			stats.log('imported', len(objs))
-# 			bar(len(objs))
-	
-# 	importQ.put(None) # add sentinel
-# 	return stats
-
-
-# def import_worker(in_type: type[JSONExportable], 
-# 					importQ: queue.Queue, 
-# 					tank_statQ: queue.Queue[list[WGTankStat]],
-# 					release_map: BucketMapper[BSBlitzRelease] | None) -> EventCounter:
-# 	"""Forkable tank stats import worker"""
-# 	debug('starting')
-# 	stats 		: EventCounter = EventCounter('import')
-# 	try:		
-# 		tank_stats 	: list[WGTankStat]
-# 		objs : list[Any] | None
-# 		mapped : int = 0
-# 		errors : int = 0
-# 		while (objs := importQ.get()) is not None:			 
-# 			try:
-# 				read : int = len(objs)
-# 				debug(f'read {read} documents')
-# 				stats.log('read', read)	
-# 				tank_stats, mapped, errors = transform_objs(in_type=in_type, 
-# 															objs=objs, 
-# 															release_map=release_map)		
-# 				stats.log('release mapped', mapped)
-# 				stats.log('errors', errors)				
-# 				tank_statQ.put(tank_stats)
-# 			except Exception as err:
-# 				error(f'{err}')
-		
-# 		# close other insert workers
-# 		importQ.put(None)			
-# 	except Exception as err:
-# 		error(f'{err}')	
-# 	return stats	
-
-
-# def transform_objs(in_type: type[JSONExportable], 
-# 				objs: list[Any]							
-# 				) -> tuple[list[WGTankStat], int]:
-# 	"""Transform list of objects to list[WGTankStat]"""
-
-# 	debug('starting')	
-# 	errors: int = 0 
-# 	tank_stats : list[WGTankStat] = list()
-# 	for obj in objs:
-# 		try:
-# 			obj_in = in_type.parse_obj(obj)					
-# 			if (tank_stat := WGTankStat.transform(obj_in)) is None:						
-# 				tank_stat = WGTankStat.parse_obj(obj_in.obj_db())			
-# 			tank_stats.append(tank_stat)						
-# 		except Exception as err:
-# 			error(f'{err}')
-# 			errors += 1
-# 	return tank_stats, errors		
-	
 
 def map_releases(tank_stats: list[WGTankStat], 
 				release_map: BucketMapper[BSBlitzRelease]) -> tuple[list[WGTankStat], int, int]:
