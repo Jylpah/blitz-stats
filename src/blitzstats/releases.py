@@ -329,6 +329,8 @@ async def get_releases(db: Backend, releases: list[str]) -> list[BSBlitzRelease]
 	return res
 
 
+## REFACTOR: Use sortedcollections.NearestDict instead. Should be faster. 
+
 async def release_mapper(db: Backend) -> BucketMapper[BSBlitzRelease]:
 	"""Fetch all releases and create a release BucketMapper object"""
 	releases : BucketMapper[BSBlitzRelease] = BucketMapper[BSBlitzRelease](attr='cut_off')
