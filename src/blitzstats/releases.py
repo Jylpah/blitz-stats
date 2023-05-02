@@ -3,6 +3,7 @@ from configparser import ConfigParser
 from typing import Optional, cast, Iterable, Any
 import logging
 from asyncio import create_task, gather, Queue, CancelledError, Task, sleep
+from sortedcollections import NearestDict  # type: ignore
 
 from aiohttp import ClientResponse
 from datetime import date, datetime
@@ -329,11 +330,22 @@ async def get_releases(db: Backend, releases: list[str]) -> list[BSBlitzRelease]
 	return res
 
 
-## REFACTOR: Use sortedcollections.NearestDict instead. Should be faster. 
+# ## REFACTOR: Use sortedcollections.NearestDict instead. Should be faster. 
 
-async def release_mapper(db: Backend) -> BucketMapper[BSBlitzRelease]:
-	"""Fetch all releases and create a release BucketMapper object"""
-	releases : BucketMapper[BSBlitzRelease] = BucketMapper[BSBlitzRelease](attr='cut_off')
+# async def release_mapper_OLD(db: Backend) -> BucketMapper[BSBlitzRelease]:
+# 	"""Fetch all releases and create a release BucketMapper object"""
+# 	releases : BucketMapper[BSBlitzRelease] = BucketMapper[BSBlitzRelease](attr='cut_off')
+# 	async for r in db.releases_get():
+# 		releases.insert(r)
+# 	return releases
+
+
+async def release_mapper(db: Backend) -> NearestDict[int, BSBlitzRelease]:
+	"""Fetch all releases and create a NearestDict() with cut-off as key"""
+	releases : NearestDict[int, BSBlitzRelease] = NearestDict(rounding=NearestDict.NEAREST_NEXT)
 	async for r in db.releases_get():
-		releases.insert(r)
+		if r.cut_off in releases.keys():
+			message(f'Cannot store releases with duplicate cut-off times: {r}')
+			continue
+		releases[r.cut_off] = r
 	return releases

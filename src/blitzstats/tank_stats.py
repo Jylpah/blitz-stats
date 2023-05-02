@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional, Literal, Any, cast
 import logging
 from asyncio import run, create_task, gather, sleep, wait, Queue, CancelledError, Task
+from sortedcollections import NearestDict 			# type: ignore
 
 import copy
 from os import getpid, makedirs
@@ -28,7 +29,7 @@ import pyarrow.parquet as pq				# type: ignore
 #from pandas.io.json import json_normalize	# type: ignore
 
 from pyutils 			import JSONExportable, TXTExportable, CSVExportable, \
-								BucketMapper, IterableQueue, QueueDone, \
+								IterableQueue, QueueDone, \
 								EventCounter, AsyncQueue, QCounter
 from pyutils.exportable import export
 from pyutils.utils 		import alive_bar_monitor
@@ -771,7 +772,7 @@ async def fetch_backend_worker(db: Backend,
 	rel : BSBlitzRelease | None
 
 	try:
-		releases : BucketMapper[BSBlitzRelease] = await release_mapper(db)
+		releases : NearestDict[int, BSBlitzRelease] = await release_mapper(db)
 		while True:
 			added 			= 0
 			not_added 		= 0
@@ -1002,7 +1003,7 @@ async def cmd_edit_rel_remap(db: Backend,
 	stats : EventCounter = EventCounter('remap releases')
 	try:
 		release 	: BSBlitzRelease | None
-		release_map : BucketMapper[BSBlitzRelease] = await release_mapper(db)
+		release_map : NearestDict[int, BSBlitzRelease] = await release_mapper(db)
 		with alive_bar(total, title="Remapping tank stats' releases ", refresh_secs=1,
 						enrich_print=False) as bar:
 			while True:
@@ -2173,7 +2174,7 @@ async def  import_mp_worker(id: int = 0) -> EventCounter:
 		global db, readQ, in_model, mp_options
 		THREADS 	: int = 4		
 		import_model: type[JSONExportable] 					= in_model
-		rel_mapper 	: BucketMapper[BSBlitzRelease] | None 	= None
+		rel_mapper 	: NearestDict[int, BSBlitzRelease] | None = None
 		tank_statsQ	: Queue[list[WGTankStat]] 				= Queue(100)
 		force 		: bool 									= mp_options['force']
 		rel_map		: bool									= mp_options['map_releases']
@@ -2219,7 +2220,8 @@ async def  import_mp_worker(id: int = 0) -> EventCounter:
 
 
 def map_releases(tank_stats: list[WGTankStat], 
-				release_map: BucketMapper[BSBlitzRelease]) -> tuple[list[WGTankStat], int, int]:
+				release_map: NearestDict[int, BSBlitzRelease]
+				) -> tuple[list[WGTankStat], int, int]:
 	debug('starting')
 	mapped: int = 0
 	errors: int = 0
@@ -2236,7 +2238,7 @@ def map_releases(tank_stats: list[WGTankStat],
 	return res, mapped, errors
 
 
-async def map_releases_worker(release_map: BucketMapper[BSBlitzRelease] | None, 
+async def map_releases_worker(release_map: NearestDict[int, BSBlitzRelease] | None, 
 								inputQ: 	Queue[list[WGTankStat]], 
 								outputQ:	Queue[list[WGTankStat]]) -> EventCounter:
 

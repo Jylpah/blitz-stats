@@ -7,7 +7,7 @@ from aiofiles import open
 from os.path import isfile
 from os import getpid
 from math import ceil
-import copy
+from sortedcollections import NearestDict 		# type: ignore
 
 from asyncstdlib import enumerate
 from alive_progress import alive_bar		# type: ignore
@@ -16,8 +16,8 @@ from multiprocessing import Manager, cpu_count
 from multiprocessing.pool import Pool, AsyncResult 
 import queue
 
-from pyutils import BucketMapper, IterableQueue, QueueDone, \
-	EventCounter, JSONExportable, AsyncQueue
+from pyutils import IterableQueue, QueueDone, EventCounter, \
+					JSONExportable, AsyncQueue
 from pyutils.utils import epoch_now, alive_bar_monitor, is_alphanum
 from blitzutils import Region, WGPlayerAchievementsMain, \
 	WGPlayerAchievementsMaxSeries, WGApi 
@@ -380,7 +380,7 @@ async def fetch_player_achievements_backend_worker(db: Backend,
 	not_added 	: int
 	
 	try:
-		releases : BucketMapper[BSBlitzRelease] = await release_mapper(db)
+		releases : NearestDict[int, BSBlitzRelease] = await release_mapper(db)
 		while True:
 			added 			= 0
 			not_added 		= 0
@@ -426,7 +426,7 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 		import_backend 	: str 							= args.import_backend
 		map_releases	: bool 							= not args.no_release_map
 
-		release_map : BucketMapper[BSBlitzRelease] = await release_mapper(db)
+		release_map : NearestDict[int, BSBlitzRelease] = await release_mapper(db)
 		workers : list[Task] = list()
 		debug('args parsed')
 		
@@ -565,7 +565,7 @@ async def  import_mp_worker(id: int = 0) -> EventCounter:
 		global db, readQ, in_model, mp_options
 		THREADS 			: int 									= 4		
 		import_model		: type[JSONExportable] 					= in_model
-		rel_mapper 			: BucketMapper[BSBlitzRelease]  		=  await release_mapper(db)
+		rel_mapper 			: NearestDict[int, BSBlitzRelease]		=  await release_mapper(db)
 		player_achievementsQ: Queue[list[WGPlayerAchievementsMaxSeries]] = Queue(100)
 		force 		: bool 											= mp_options['force']
 		player_achievements : list[WGPlayerAchievementsMaxSeries]
@@ -609,7 +609,8 @@ async def  import_mp_worker(id: int = 0) -> EventCounter:
 
 
 def map_releases(player_achievements: list[WGPlayerAchievementsMaxSeries], 
-				release_map: BucketMapper[BSBlitzRelease]) -> tuple[list[WGPlayerAchievementsMaxSeries], int, int]:
+				release_map: NearestDict[int, BSBlitzRelease]
+				) -> tuple[list[WGPlayerAchievementsMaxSeries], int, int]:
 	debug('starting')
 	mapped: int = 0
 	errors: int = 0
@@ -626,7 +627,7 @@ def map_releases(player_achievements: list[WGPlayerAchievementsMaxSeries],
 	return res, mapped, errors
 
 
-async def player_achievements_map_releases_worker(release_map: BucketMapper[BSBlitzRelease], 
+async def player_achievements_map_releases_worker(release_map: NearestDict[int, BSBlitzRelease], 
 													inputQ: Queue[WGPlayerAchievementsMaxSeries], 
 													outputQ: Queue[list[WGPlayerAchievementsMaxSeries]], 
 													map_releases: bool = True) -> EventCounter:
