@@ -532,38 +532,35 @@ class MongoBackend(Backend):
 							update	: dict | None = None,
 							fields 	: list[str] | None = None) -> bool:
 		"""Generic method to update an object of data_type"""
-		try:
-			debug('starting')
-			dbc : AsyncIOMotorCollection = self.get_collection(table_type)
-			model : type[JSONExportable] = self.get_model(table_type)
+		debug('starting')
+		dbc : AsyncIOMotorCollection = self.get_collection(table_type)
+		model : type[JSONExportable] = self.get_model(table_type)
 
-			if obj is not None:
-				if ( data:= model.transform_obj(obj)) is None:
-					raise ValueError(f'Could not transform {type(obj)} to {model}: {obj}')
+		if obj is not None:
+			if ( data:= model.transform_obj(obj)) is None:
+				raise ValueError(f'Could not transform {type(obj)} to {model}: {obj}')
 
-				if idx is None:
-					idx = data.index
+			if idx is None:
+				idx = data.index
 
-				if update is not None:
-					pass
-				elif fields is not None:
-					update = data.dict(include=set(fields))
-				else:
-					raise ValueError("'update', 'obj' and 'fields' cannot be all None")
+			if update is not None:
+				pass
+			elif fields is not None:
+				update = data.dict(include=set(fields))
+			else:
+				raise ValueError("'update', 'obj' and 'fields' cannot be all None")
 
-			elif idx is None or update is None:
-				raise ValueError("'update' is required with 'idx'")
+		elif idx is None or update is None:
+			raise ValueError("'update' is required with 'idx'")
 
-			alias_fields : dict[str, Any] = AliasMapper(model).map(update.items())
+		alias_fields : dict[str, Any] = AliasMapper(model).map(update.items())
 
-			if (res := await dbc.find_one_and_update({ '_id': idx }, { '$set': alias_fields})) is None:
-				# debug(f'Failed to update _id={idx} into {self.backend}.{dbc.name}')
-				return False
-			#debug(f'Updated (_id={idx}) into {self.backend}.{dbc.name}')
-			return True
-		except Exception as err:
-			error(f'Could not update _id={idx} in {self.table_uri(table_type)}: {err}')
-		return False
+		if (res := await dbc.find_one_and_update({ '_id': idx }, { '$set': alias_fields})) is None:
+			# debug(f'Failed to update _id={idx} into {self.backend}.{dbc.name}')
+			return False
+		#debug(f'Updated (_id={idx}) into {self.backend}.{dbc.name}')
+		return True
+
 
 
 	async def _data_delete(self, table_type: BSTableType, idx: Idx) -> bool:
