@@ -724,7 +724,7 @@ class Backend(ABC):
 	#----------------------------------------
 	
 	@abstractmethod
-	async def account_insert(self, account: BSAccount) -> bool:
+	async def account_insert(self, account: BSAccount, force: bool = False) -> bool:
 		"""Store account to the backend. Returns False 
 			if the account was not added"""
 		raise NotImplementedError
@@ -746,12 +746,12 @@ class Backend(ABC):
 		raise NotImplementedError
 	
 
-	@abstractmethod
-	async def account_replace(self, account: BSAccount,
-								upsert: bool = False) -> bool:
-		"""Update an account in the backend. Returns False 
-			if the account was not updated"""
-		raise NotImplementedError
+	# @abstractmethod
+	# async def account_replace(self, account: BSAccount,
+	# 							upsert: bool = False) -> bool:
+	# 	"""Update an account in the backend. Returns False 
+	# 		if the account was not updated"""
+	# 	raise NotImplementedError
 
 
 	@abstractmethod
@@ -830,7 +830,7 @@ class Backend(ABC):
 
 	async def accounts_insert_worker(self, 
 				  					accountQ : Queue[BSAccount], 
-									force: bool | None = None
+									force: bool = False
 									) -> EventCounter:
 		"""insert/replace accounts. force=None: insert, force=True/False: upsert=force"""
 		debug(f'starting, force={force}')
@@ -839,17 +839,24 @@ class Backend(ABC):
 			while True:
 				account = await accountQ.get()
 				try:
-					if force is None:
-						debug(f'Trying to insert account_id={account.id} into {self.backend}.{self.table_accounts}')
-						await self.account_insert(account)
-						stats.log('added')
+					debug(f'Trying to insert account_id={account.id} into {self.backend}.{self.table_accounts}')
+					await self.account_insert(account, force=force)
+					if force:
+						stats.log('added/updated')
 					else:
-						#debug(f'Trying to upsert account_id={account.id} into {self.backend}.{self.table_accounts}')
-						await self.account_replace(account, upsert=force)					
-						if force:
-							stats.log('added/updated')
-						else:
-							stats.log('updated')
+						stats.log('added')
+
+					# if force is None:
+					# 	debug(f'Trying to insert account_id={account.id} into {self.backend}.{self.table_accounts}')
+					# 	await self.account_insert(account)
+					# 	stats.log('added')
+					# else:
+					# 	#debug(f'Trying to upsert account_id={account.id} into {self.backend}.{self.table_accounts}')
+					# 	await self.account_replace(account, upsert=force)					
+					# 	if force:
+					# 		stats.log('added/updated')
+					# 	else:
+					# 		stats.log('updated')
 				except Exception as err:
 					debug(f'Error: {err}')
 					stats.log('not added/updated')

@@ -807,13 +807,13 @@ async def fetch_backend_worker(db: Backend,
 						# 		stats.log('accounts marked inactive')
 						# 	account.inactive = True
 						
-					await db.account_replace(account=account, upsert=True)
+					await db.account_insert(account=account, force=True)
 			except Exception as err:
 				error(f'{err}')
 			finally:
 				stats.log('tank stats added', added)
 				stats.log('old tank stats found', not_added)
-				debug(f'{added} tank stats added, {not_added} old tank stats found')				
+				debug(f'{added} tank stats added, {not_added} old tank stats found')
 				statsQ.task_done()
 	except CancelledError as err:
 		debug(f'Cancelled')	

@@ -434,6 +434,8 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 								help='Filter by region (default is API = eu + com + asia)')
 		parser.add_argument('--sample', type=float, default=0, 
 								help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
+		parser.add_argument('--force', action='store_true', default=False, 
+								help='Overwrite existing file(s) when exporting')
 
 		return True
 	except Exception as err:
@@ -1180,12 +1182,12 @@ async def fetch_wi_fetch_replays(db			: Backend,
 async def cmd_import(db: Backend, args : Namespace) -> bool:
 	"""Import accounts from other backend"""	
 	try:
-		stats 			: EventCounter 			= EventCounter('accounts import')
-		accountQ 		: Queue[BSAccount]		= Queue(ACCOUNTS_Q_MAX)
-		regions 		: set[Region]			= { Region(r) for r in args.regions }
-		import_db   	: Backend | None 		= None		
-		import_backend 	: str 					= args.import_backend
-		force 			: bool | None 			= None
+		stats 			: EventCounter 		= EventCounter('accounts import')
+		accountQ 		: Queue[BSAccount]	= Queue(ACCOUNTS_Q_MAX)
+		regions 		: set[Region]		= { Region(r) for r in args.regions }
+		import_db   	: Backend | None 	= None		
+		import_backend 	: str 				= args.import_backend
+		force 			: bool 				= args.force
 		if args.force:
 			force = True
 		

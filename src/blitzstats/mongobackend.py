@@ -785,11 +785,14 @@ class MongoBackend(Backend):
 ########################################################
 
 
-	async def account_insert(self, account: BSAccount) -> bool:
+	async def account_insert(self, account: BSAccount, force: bool = False) -> bool:
 		"""Store account to the backend. Returns False
 			if the account was not added"""
 		debug('starting')
-		return await self._data_insert(BSTableType.Accounts, obj=account)
+		if force: 
+			return await self._data_replace(BSTableType.Accounts, obj=account, upsert=True)
+		else:
+			return await self._data_insert(BSTableType.Accounts, obj=account)
 
 
 	async def account_get(self, account_id: int) -> BSAccount | None:
@@ -817,11 +820,11 @@ class MongoBackend(Backend):
 		return False
 
 
-	async def account_replace(self, account: BSAccount, upsert: bool = True) -> bool:
-		"""Update an account in the backend. Returns False
-			if the account was not updated"""
-		debug('starting')
-		return await self._data_replace(BSTableType.Accounts, obj=account, upsert=upsert)
+	# async def account_replace(self, account: BSAccount, upsert: bool = True) -> bool:
+	# 	"""Update an account in the backend. Returns False
+	# 		if the account was not updated"""
+	# 	debug('starting')
+	# 	return await self._data_replace(BSTableType.Accounts, obj=account, upsert=upsert)
 
 
 	async def account_delete(self, account_id: int) -> bool:
