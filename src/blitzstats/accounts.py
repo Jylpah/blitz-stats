@@ -19,7 +19,7 @@ from blitzutils			import WoTBlitzReplayJSON, WoTBlitzReplayData, \
 								WGApi, WoTinspector
 
 from .backend import Backend, OptAccountsInactive, \
-					 OptAccountsDistributed, \
+					 OptAccountsDistributed, batch_gen, \
 					 BSTableType, ACCOUNTS_Q_MAX, get_sub_type
 from .models import BSAccount, StatsTypes, BSBlitzRelease
 from .models_import import WG_Account
@@ -434,6 +434,8 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
 								help='Filter by region (default is API = eu + com + asia)')
 		parser.add_argument('--sample', type=float, default=0, 
 								help='Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number')
+		parser.add_argument('--force', action='store_true', default=False, 
+								help='Overwrite existing file(s) when exporting')
 
 		return True
 	except Exception as err:
@@ -573,7 +575,7 @@ async def cmd_update_wg(db		: Backend,
 			except KeyboardInterrupt:
 				message('cancelled')
 				for workQ in workQs.values():
-					await workQ.shutdown()		
+					await workQ.finish(all=True)		
 		await stats.gather_stats(workQ_creators, merge_child=False)
 		for region in workQs.keys():
 			debug(f'waiting for idQ for {region} to complete')
@@ -832,7 +834,7 @@ async def cmd_fetch_wg(db		: Backend,
 			except KeyboardInterrupt:
 				message('cancelled')
 				for idQ in idQs.values():
-					await idQ.shutdown()		
+					await idQ.finish(all=True)		
 		await stats.gather_stats(id_creators)
 		for region in idQs.keys():
 			debug(f'waiting for idQ for {region} to complete')
@@ -933,7 +935,7 @@ async def fetch_account_info_worker(wg		: WGApi,
 		debug(f'closing accountQ: {region}')
 		await accountQ.finish()
 		debug(f'closing idQ: {region}')
-		await idQ.shutdown()		
+		await idQ.finish(all=True)		
 	return stats
 
 
@@ -1180,12 +1182,12 @@ async def fetch_wi_fetch_replays(db			: Backend,
 async def cmd_import(db: Backend, args : Namespace) -> bool:
 	"""Import accounts from other backend"""	
 	try:
-		stats 			: EventCounter 			= EventCounter('accounts import')
-		accountQ 		: Queue[BSAccount]		= Queue(ACCOUNTS_Q_MAX)
-		regions 		: set[Region]			= { Region(r) for r in args.regions }
-		import_db   	: Backend | None 		= None		
-		import_backend 	: str 					= args.import_backend
-		force 			: bool | None 			= None
+		stats 			: EventCounter 		= EventCounter('accounts import')
+		accountQ 		: Queue[BSAccount]	= Queue(ACCOUNTS_Q_MAX)
+		regions 		: set[Region]		= { Region(r) for r in args.regions }
+		import_db   	: Backend | None 	= None		
+		import_backend 	: str 				= args.import_backend
+		force 			: bool 				= args.force
 		if args.force:
 			force = True
 		
@@ -1502,9 +1504,13 @@ async def create_accountQ_batch(db			: Backend,
 			accounts_args : dict[str, Any] | None
 			if (accounts_args := await accounts_parse_args(db, args)) is not None:
 				accounts_args['regions'] = {region}
-				async for accounts in db.accounts_get_batch(stats_type=stats_type, 
-															batch=batch, 
-															**accounts_args):
+				# async for accounts in db.accounts_get_batch(stats_type=stats_type, 
+				# 											batch=batch, 
+				# 											**accounts_args):
+				
+				async for accounts in batch_gen(db.accounts_get(stats_type=stats_type,
+																**accounts_args), 
+												batch=batch):
 					try:
 						await accountQ.put(accounts)
 						stats.log('read', len(accounts))

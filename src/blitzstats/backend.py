@@ -166,6 +166,16 @@ class ErrorLog(JSONExportable, ABC):
 		# json_encoders = { ObjectId: str }
 
 
+async def batch_gen(aget: AsyncGenerator[T, None], 
+				batch : int = 100) -> AsyncGenerator[list[T], None]:
+	res : list[T] = list()
+	async for item in aget:
+		res.append(item)
+		if len(res) >= batch:
+			yield res
+			res = list()
+
+
 class Backend(ABC):
 	"""Abstract class for a backend (mongo, postgres, files)"""
 
@@ -717,14 +727,14 @@ class Backend(ABC):
 						 batch: int = 0) -> AsyncGenerator[list[Any], None]:
 		"""Export raw objects from backend"""
 		raise NotImplementedError
-		yield [Any]			 
+		yield [Any]
 
 	#----------------------------------------
 	# accounts
 	#----------------------------------------
 	
 	@abstractmethod
-	async def account_insert(self, account: BSAccount) -> bool:
+	async def account_insert(self, account: BSAccount, force: bool = False) -> bool:
 		"""Store account to the backend. Returns False 
 			if the account was not added"""
 		raise NotImplementedError
@@ -746,12 +756,12 @@ class Backend(ABC):
 		raise NotImplementedError
 	
 
-	@abstractmethod
-	async def account_replace(self, account: BSAccount,
-								upsert: bool = False) -> bool:
-		"""Update an account in the backend. Returns False 
-			if the account was not updated"""
-		raise NotImplementedError
+	# @abstractmethod
+	# async def account_replace(self, account: BSAccount,
+	# 							upsert: bool = False) -> bool:
+	# 	"""Update an account in the backend. Returns False 
+	# 		if the account was not updated"""
+	# 	raise NotImplementedError
 
 
 	@abstractmethod
@@ -777,21 +787,21 @@ class Backend(ABC):
 		yield BSAccount(id=-1)
 	
 
-	@abstractmethod
-	async def accounts_get_batch(self, 
-							stats_type 	: StatsTypes | None = None, 
-							regions		: set[Region] = Region.API_regions(), 
-							inactive 	: OptAccountsInactive = OptAccountsInactive.default(), 
-							disabled	: bool | None = False, 
-							active_since	: int = 0,
-							inactive_since	: int = 0,
-							dist 		: OptAccountsDistributed | None = None, 
-							sample 		: float = 0, 
-							cache_valid	: float = 0,
-							batch 		: int = 100) -> AsyncGenerator[list[BSAccount], None]:
-		"""Get accounts from backend"""
-		raise NotImplementedError
-		yield BSAccount(id=-1)
+	# @abstractmethod
+	# async def accounts_get_batch(self, 
+	# 						stats_type 	: StatsTypes | None = None, 
+	# 						regions		: set[Region] = Region.API_regions(), 
+	# 						inactive 	: OptAccountsInactive = OptAccountsInactive.default(), 
+	# 						disabled	: bool | None = False, 
+	# 						active_since	: int = 0,
+	# 						inactive_since	: int = 0,
+	# 						dist 		: OptAccountsDistributed | None = None, 
+	# 						sample 		: float = 0, 
+	# 						cache_valid	: float = 0,
+	# 						batch 		: int = 100) -> AsyncGenerator[list[BSAccount], None]:
+	# 	"""Get accounts from backend"""
+	# 	raise NotImplementedError
+	# 	yield BSAccount(id=-1)
 
 	@abstractmethod
 	async def accounts_count(self, 
@@ -830,7 +840,7 @@ class Backend(ABC):
 
 	async def accounts_insert_worker(self, 
 				  					accountQ : Queue[BSAccount], 
-									force: bool | None = None
+									force: bool = False
 									) -> EventCounter:
 		"""insert/replace accounts. force=None: insert, force=True/False: upsert=force"""
 		debug(f'starting, force={force}')
@@ -839,17 +849,24 @@ class Backend(ABC):
 			while True:
 				account = await accountQ.get()
 				try:
-					if force is None:
-						debug(f'Trying to insert account_id={account.id} into {self.backend}.{self.table_accounts}')
-						await self.account_insert(account)
-						stats.log('added')
+					debug(f'Trying to insert account_id={account.id} into {self.backend}.{self.table_accounts}')
+					await self.account_insert(account, force=force)
+					if force:
+						stats.log('added/updated')
 					else:
-						#debug(f'Trying to upsert account_id={account.id} into {self.backend}.{self.table_accounts}')
-						await self.account_replace(account, upsert=force)					
-						if force:
-							stats.log('added/updated')
-						else:
-							stats.log('updated')
+						stats.log('added')
+
+					# if force is None:
+					# 	debug(f'Trying to insert account_id={account.id} into {self.backend}.{self.table_accounts}')
+					# 	await self.account_insert(account)
+					# 	stats.log('added')
+					# else:
+					# 	#debug(f'Trying to upsert account_id={account.id} into {self.backend}.{self.table_accounts}')
+					# 	await self.account_replace(account, upsert=force)					
+					# 	if force:
+					# 		stats.log('added/updated')
+					# 	else:
+					# 		stats.log('updated')
 				except Exception as err:
 					debug(f'Error: {err}')
 					stats.log('not added/updated')
@@ -884,7 +901,9 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def release_insert(self, release: BSBlitzRelease) -> bool:
+	async def release_insert(self,
+							release: BSBlitzRelease, 
+							force: bool = False) -> bool:
 		"""Insert new release to the backend"""
 		raise NotImplementedError
 
@@ -895,7 +914,8 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def release_update(self, release: BSBlitzRelease, 
+	async def release_update(self, 
+							release: BSBlitzRelease, 
 							update: dict[str, Any] | None = None, 
 							fields: list[str] | None= None) -> bool:
 		"""Update an release in the backend. Returns False 
@@ -903,12 +923,12 @@ class Backend(ABC):
 		raise NotImplementedError
 
 
-	@abstractmethod
-	async def release_replace(self, release: BSBlitzRelease, 
-								upsert: bool = False) -> bool:
-		"""Update an release in the backend. Returns False 
-			if the release was not updated"""
-		raise NotImplementedError
+	# @abstractmethod
+	# async def release_replace(self, release: BSBlitzRelease, 
+	# 							upsert: bool = False) -> bool:
+	# 	"""Update an release in the backend. Returns False 
+	# 		if the release was not updated"""
+	# 	raise NotImplementedError
 
 	
 	@abstractmethod
@@ -963,18 +983,11 @@ class Backend(ABC):
 			while True:
 				release = await releaseQ.get()
 				try:					
-					if force:
-						debug(f'Trying to upsert release={release} into {self.backend}.{self.table_releases}')
-						if await self.release_replace(release, upsert=True):
-							stats.log('releases added/updated')
-						else:
-							stats.log('releases not added')
+					debug(f'Trying to insert release={release} into {self.backend}.{self.table_releases}')
+					if await self.release_insert(release, force=force):
+						stats.log('releases added')
 					else:
-						debug(f'Trying to insert release={release} into {self.backend}.{self.table_releases}')
-						if await self.release_insert(release):
-							stats.log('releases added')
-						else:
-							stats.log('releases not added')
+						stats.log('releases not added')
 				except Exception as err:
 					debug(f'Error: {err}')
 					stats.log('errors')
@@ -1069,7 +1082,10 @@ class Backend(ABC):
 	#----------------------------------------
 
 	@abstractmethod
-	async def tank_stat_insert(self, tank_stat: WGTankStat) -> bool:
+	async def tank_stat_insert(self, 
+								tank_stat: WGTankStat, 
+								force: bool = False
+								) -> bool:
 		"""Store tank stats to the backend. Returns number of stats inserted and not inserted"""
 		raise NotImplementedError
 
@@ -1090,12 +1106,12 @@ class Backend(ABC):
 		raise NotImplementedError
 
 
-	@abstractmethod
-	async def tank_stat_replace(self, tank_stat: WGTankStat,
-								upsert: bool = False) -> bool:
-		"""Replace a tank stat in the backend. Returns False 
-			if the account was not updated"""
-		raise NotImplementedError
+	# @abstractmethod
+	# async def tank_stat_replace(self, tank_stat: WGTankStat,
+	# 							upsert: bool = False) -> bool:
+	# 	"""Replace a tank stat in the backend. Returns False 
+	# 		if the account was not updated"""
+	# 	raise NotImplementedError
 
 
 	@abstractmethod
@@ -1247,17 +1263,9 @@ class Backend(ABC):
 				read = len(tank_stats)
 				stats.log('read', read)
 				try:
-					if force:
-						# debug(f'Trying to upsert {read} tank stats into {self.backend}.{self.table_tank_stats}')
-						for tank_stat in tank_stats:
-							if await self.tank_stat_replace(tank_stat, upsert=True):
-								stats.log('added/updated')
-							else:
-								stats.log('not added')						
-					else:
-						debug(f'Trying to insert {read} tank stats into {self.backend}.{self.table_tank_stats}')
-						added, not_added = await self.tank_stats_insert(tank_stats)
-						stats.log('added', added)
+					debug(f'Trying to insert {read} tank stats into {self.backend}.{self.table_tank_stats}')
+					added, not_added = await self.tank_stats_insert(tank_stats, force=force)
+					stats.log('added', added)
 					stats.log('not added', not_added)
 				except Exception as err:
 					debug(f'Error: {err}')
@@ -1276,8 +1284,12 @@ class Backend(ABC):
 	#----------------------------------------
 
 	@abstractmethod
-	async def player_achievement_insert(self, player_achievement: WGPlayerAchievementsMaxSeries) -> bool:
-		"""Store player achievements to the backend. Returns number of stats inserted and not inserted"""
+	async def player_achievement_insert(self, 
+										player_achievement: WGPlayerAchievementsMaxSeries,
+										force: bool = False
+										) -> bool:
+		"""Store player achievements to the backend. 
+		force=True will overwrite existing item"""
 		raise NotImplementedError
 
 
@@ -1300,11 +1312,12 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def player_achievements_get(self, release: BSBlitzRelease | None = None,
-							regions: set[Region] = Region.API_regions(), 
-							accounts: Sequence[BSAccount] | None = None,
-							since:  int = 0,
-							sample : float = 0) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
+	async def player_achievements_get(self, 
+									release: BSBlitzRelease | None = None,
+									regions: set[Region] = Region.API_regions(), 
+									accounts: Sequence[BSAccount] | None = None,
+									since:  int = 0,
+									sample : float = 0) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
 		"""Return player achievements from the backend"""
 		raise NotImplementedError
 		yield WGPlayerAchievementsMaxSeries()
@@ -1319,13 +1332,13 @@ class Backend(ABC):
 		raise NotImplementedError
 
 
-	@abstractmethod
-	async def player_achievement_replace(self, 
-				      					player_achievement: WGPlayerAchievementsMaxSeries,
-										upsert: bool = False) -> bool:
-		"""Replace a player achievement in the backend. Returns False 
-			if the player achievement was not replaced"""
-		raise NotImplementedError
+	# @abstractmethod
+	# async def player_achievement_replace(self, 
+	# 			      					player_achievement: WGPlayerAchievementsMaxSeries,
+	# 									upsert: bool = False) -> bool:
+	# 	"""Replace a player achievement in the backend. Returns False 
+	# 		if the player achievement was not replaced"""
+	# 	raise NotImplementedError
 	
 
 	# @abstractmethod
@@ -1379,9 +1392,9 @@ class Backend(ABC):
 				read = len(player_achievements)
 				try:
 					if force:
-						debug(f'Trying to upsert {read} player achievements into {self.backend}.{self.table_player_achievements}')
+						debug(f'Trying to insert {read} player achievements into {self.backend}.{self.table_player_achievements}')
 						for pa in player_achievements:
-							if await self.player_achievement_replace(pa, upsert=True):
+							if await self.player_achievement_insert(pa, force=True):
 								stats.log('stats added/updated')
 							else:
 								stats.log('stats not updated')
@@ -1431,6 +1444,13 @@ class Backend(ABC):
 	# Tankopedia
 	#----------------------------------------
 
+
+	@abstractmethod
+	async def tankopedia_insert(self, tank: Tank, force : bool = True) -> bool:
+		""""insert tank into Tankopedia"""
+		raise NotImplementedError
+	
+
 	@abstractmethod
 	async def tankopedia_get(self, tank_id 	: int) -> Tank | None:
 		raise NotImplementedError
@@ -1446,8 +1466,6 @@ class Backend(ABC):
 							) -> AsyncGenerator[Tank, None]:
 		raise NotImplementedError
 		yield Tank()
-
-
 
 
 	@abstractmethod
@@ -1469,10 +1487,10 @@ class Backend(ABC):
 		yield Tank()
 
 
-	@abstractmethod
-	async def tankopedia_replace(self, tank: Tank, upsert : bool = True) -> bool:
-		""""Replace tank in Tankopedia"""
-		raise NotImplementedError
+	# @abstractmethod
+	# async def tankopedia_replace(self, tank: Tank, upsert : bool = True) -> bool:
+	# 	""""Replace tank in Tankopedia"""
+	# 	raise NotImplementedError
 
 	
 	@abstractmethod
@@ -1490,31 +1508,22 @@ class Backend(ABC):
 		raise NotImplementedError
 
 
-	@abstractmethod
-	async def tankopedia_insert(self, tank: Tank) -> bool:
-		""""insert tank into Tankopedia"""
-		raise NotImplementedError
 
-
-	async def tankopedia_insert_worker(self, tankQ: Queue[Tank] , force: bool = False) -> EventCounter:
+	async def tankopedia_insert_worker(self, 
+										tankQ: Queue[Tank], 
+										force: bool = False
+										) -> EventCounter:
 		debug(f'starting, force={force}')
 		stats : EventCounter = EventCounter('tankopedia insert')
 		try:
 			while True:
 				tank : Tank = await tankQ.get()
 				try:					
-					if force:
-						debug(f'Trying to upsert tank "{tank.name}" into {self.table_uri(BSTableType.Tankopedia)}')
-						if await self.tankopedia_replace(tank, upsert=True):
-							stats.log('tanks added/updated')
-						else:
-							stats.log('tanks not added')
+					debug('Trying to ' + 'update' if force else 'insert' + f' tank "{tank}" into {self.table_uri(BSTableType.Tankopedia)}')
+					if await self.tankopedia_insert(tank, force=force):
+						stats.log('tanks added')
 					else:
-						debug(f'Trying to insert tank "{tank}" into {self.table_uri(BSTableType.Tankopedia)}')
-						if await self.tankopedia_insert(tank):
-							stats.log('tanks added')
-						else:
-							stats.log('tanks not added')
+						stats.log('tanks not added')
 				except Exception as err:
 					debug(f'Error: {err}')
 					stats.log('errors')
@@ -1554,7 +1563,9 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def tank_string_insert(self, tank_str: WoTBlitzTankString) -> bool:
+	async def tank_string_insert(self, 
+								tank_str: WoTBlitzTankString,
+								force: bool = False) -> bool:
 		""""insert a tank string"""
 		raise NotImplementedError
 
@@ -1570,7 +1581,7 @@ class Backend(ABC):
 		yield WoTBlitzTankString()
 
 
-	@abstractmethod
-	async def tank_string_replace(self, tank_str: WoTBlitzTankString, upsert : bool = True) -> bool:
-		""""Replace tank in Tankopedia"""
-		raise NotImplementedError
+	# @abstractmethod
+	# async def tank_string_replace(self, tank_str: WoTBlitzTankString, upsert : bool = True) -> bool:
+	# 	""""Replace tank in Tankopedia"""
+	# 	raise NotImplementedError

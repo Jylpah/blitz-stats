@@ -379,29 +379,19 @@ async def cmd_update(db: Backend, args : Namespace) -> bool:
 					continue
 				# print(f'tank_id={tank.tank_id}, name={tank.name}, tier={tank.tier}')
 				try:
-					if force:
-						if await db.tankopedia_replace(tank=tank):
-							verbose(f'Replaced: tank_id={tank.tank_id} {tank.name}')
-							stats.log('tanks updated')
-					else:
-						if await db.tankopedia_get(tank.tank_id) is None:
-							if await db.tankopedia_insert(tank=tank):
-								verbose(f'Added: tank_id={tank.tank_id} {tank.name}')
-								stats.log('tanks added')
+					if await db.tankopedia_insert(tank=tank, force=force):
+						verbose(f'Added: tank_id={tank.tank_id} {tank.name}')
+						stats.log('tanks added')
 				except Exception as err:
 					error(f'Unexpected error ({tank.tank_id}): {err}')
 
 			tank_strs : list[WoTBlitzTankString] | None
 			if (tank_strs := WoTBlitzTankString.from_tankopedia(tankopedia)) is not None:
 				for tank_str in tank_strs:
-					if force:
-						if await db.tank_string_replace(tank_str):
-							stats.log('tank strings updated')
+					if await db.tank_string_insert(tank_str, force=force):
+						stats.log('tank strings added')
 					else:
-						if await db.tank_string_get(tank_str.code) is None:
-							if await db.tank_string_insert(tank_str):
-								stats.log('tank strings added')				
-					
+						stats.log('tank strings not added')
 			
 	except Exception as err:	
 		error(f'Failed to update tankopedia from {filename}: {err}')
