@@ -19,7 +19,7 @@ from blitzutils			import WoTBlitzReplayJSON, WoTBlitzReplayData, \
 								WGApi, WoTinspector
 
 from .backend import Backend, OptAccountsInactive, \
-					 OptAccountsDistributed, \
+					 OptAccountsDistributed, batch_gen, \
 					 BSTableType, ACCOUNTS_Q_MAX, get_sub_type
 from .models import BSAccount, StatsTypes, BSBlitzRelease
 from .models_import import WG_Account
@@ -1504,9 +1504,13 @@ async def create_accountQ_batch(db			: Backend,
 			accounts_args : dict[str, Any] | None
 			if (accounts_args := await accounts_parse_args(db, args)) is not None:
 				accounts_args['regions'] = {region}
-				async for accounts in db.accounts_get_batch(stats_type=stats_type, 
-															batch=batch, 
-															**accounts_args):
+				# async for accounts in db.accounts_get_batch(stats_type=stats_type, 
+				# 											batch=batch, 
+				# 											**accounts_args):
+				
+				async for accounts in batch_gen(db.accounts_get(stats_type=stats_type,
+																**accounts_args), 
+												batch=batch):
 					try:
 						await accountQ.put(accounts)
 						stats.log('read', len(accounts))
