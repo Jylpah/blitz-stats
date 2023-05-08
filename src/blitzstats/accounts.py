@@ -575,7 +575,7 @@ async def cmd_update_wg(db		: Backend,
 			except KeyboardInterrupt:
 				message('cancelled')
 				for workQ in workQs.values():
-					await workQ.shutdown()		
+					await workQ.finish(all=True)		
 		await stats.gather_stats(workQ_creators, merge_child=False)
 		for region in workQs.keys():
 			debug(f'waiting for idQ for {region} to complete')
@@ -834,7 +834,7 @@ async def cmd_fetch_wg(db		: Backend,
 			except KeyboardInterrupt:
 				message('cancelled')
 				for idQ in idQs.values():
-					await idQ.shutdown()		
+					await idQ.finish(all=True)		
 		await stats.gather_stats(id_creators)
 		for region in idQs.keys():
 			debug(f'waiting for idQ for {region} to complete')
@@ -935,7 +935,7 @@ async def fetch_account_info_worker(wg		: WGApi,
 		debug(f'closing accountQ: {region}')
 		await accountQ.finish()
 		debug(f'closing idQ: {region}')
-		await idQ.shutdown()		
+		await idQ.finish(all=True)		
 	return stats
 
 
