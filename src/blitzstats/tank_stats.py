@@ -1766,7 +1766,7 @@ def import_mp_worker_start(id: int = 0) -> EventCounter:
 	return run(import_mp_worker(id), debug=False)
 
 
-async def  import_mp_worker(id: int = 0) -> EventCounter:
+async def import_mp_worker(id: int = 0) -> EventCounter:
 	"""Forkable tank stats import worker"""
 	debug(f'#{id}: starting')
 	stats : EventCounter = EventCounter('importer')
@@ -1782,6 +1782,7 @@ async def  import_mp_worker(id: int = 0) -> EventCounter:
 		tank_stats  : list[WGTankStat]
 
 		if rel_map:
+			debug('mapping releases')
 			releases = await release_mapper(db)
 
 		for _ in range(THREADS):
