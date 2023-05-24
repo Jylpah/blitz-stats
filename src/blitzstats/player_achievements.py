@@ -393,6 +393,9 @@ async def fetch_backend_worker(db: Backend,
 						for pac in player_achievements:
 							pac.release = rel.release
 					added, not_added = await db.player_achievements_insert(player_achievements)
+					for pac in player_achievements:
+						if (account := await db.account_get(account_id=pac.account_id)) is not None:
+							account.stats_updated(StatsTypes.player_achievements)
 			except Exception as err:
 				error(f'{err}')
 			finally:
