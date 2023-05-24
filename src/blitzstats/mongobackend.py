@@ -501,12 +501,13 @@ class MongoBackend(Backend):
 			debug(f'obj={obj} type={type(obj)} model={model}')
 			if (data := model.transform_obj(obj)) is not None:
 				if (res := await dbc.replace_one({ '_id': data.index}, data.obj_db(), upsert=upsert)) is None:
-					verbose(f'Failed to replace _id={data.index} into {self.backend}.{dbc.name}')					
-				elif res.modified_count > 0:
+					verbose(f'Failed to replace _id={data.index} into {self.backend}.{dbc.name}')
+				elif res.modified_count > 0 or res.upserted_id is not None:
 					verbose(f'Replaced (_id={data.index}) into {self.table_uri(table_type)}')
 					return True
 				else:
-					verbose(f'Did not replace (_id={data.index}) into {self.table_uri(table_type)}')					
+					verbose(f'Did not replace (_id={data.index}) into {self.table_uri(table_type)}')
+					debug(f'replace result: modified={res.modified_count} upsert_id={res.upserted_id}')
 			else:
 				error(f'Could not transform obj: _id={obj.index}')				
 		except Exception as err:
