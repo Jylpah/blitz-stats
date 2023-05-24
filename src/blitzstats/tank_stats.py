@@ -1746,7 +1746,7 @@ async def cmd_importMP(db: Backend, args : Namespace) -> bool:
 def import_mp_init( backend_config	: dict[str, Any],
 					inputQ 			: queue.Queue,
 					import_model	: type[JSONExportable],
-					options : dict[str, Any]):
+					options 		: dict[str, Any]):
 	"""Initialize static/global backend into a forked process"""
 	global db, readQ, in_model, mp_options
 	debug(f'starting (PID={getpid()})')
@@ -1782,7 +1782,7 @@ async def  import_mp_worker(id: int = 0) -> EventCounter:
 		tank_stats  : list[WGTankStat]
 
 		if rel_map:
-			rel_mapper = await release_mapper(db)
+			releases = await release_mapper(db)
 
 		for _ in range(THREADS):
 			workers.append(create_task(db.tank_stats_insert_worker(tank_statsQ=tank_statsQ,
