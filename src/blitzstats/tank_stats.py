@@ -1820,8 +1820,8 @@ async def  import_mp_worker(id: int = 0) -> EventCounter:
 	return stats
 
 
-def map_releases(tank_stats: list[WGTankStat],
-				releases: NearestDict[int, BSBlitzRelease]
+def map_releases(tank_stats: 	list[WGTankStat],
+				 releases: 		NearestDict[int, BSBlitzRelease]
 				) -> tuple[list[WGTankStat], int, int]:
 	debug('starting')
 	mapped: int = 0
@@ -1829,7 +1829,7 @@ def map_releases(tank_stats: list[WGTankStat],
 	res : list[WGTankStat] = list()
 	for tank_stat in tank_stats:
 		try:
-			if (release := releases.nearest_key(tank_stat.last_battle_time)) is not None:
+			if (release := releases[tank_stat.last_battle_time]) is not None:
 				tank_stat.release = release.release
 				mapped += 1
 		except Exception as err:
