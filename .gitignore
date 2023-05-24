@@ -149,3 +149,4 @@ dmypy.json
 # export dir
 export/
 typescript*
+.git-credentials
