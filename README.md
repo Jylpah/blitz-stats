@@ -13,4 +13,8 @@ source .venv/bin/activate
 
 # Install
 pip install git+https://github.com/Jylpah/blitz-stats.git
+
+
+# Upgrade
+pip install --upgrade git+https://github.com/Jylpah/blitz-stats.git
 ```

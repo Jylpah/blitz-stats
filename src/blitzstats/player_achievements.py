@@ -244,7 +244,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 		statsQ	 : Queue[list[WGPlayerAchievementsMaxSeries]]= Queue(maxsize=PLAYER_ACHIEVEMENTS_Q_MAX)
 
 		tasks : list[Task] = list()
-		tasks.append(create_task(fetch_player_achievements_backend_worker(db, statsQ)))
+		tasks.append(create_task(fetch_backend_worker(db, statsQ)))
 
 		# Process accountQ
 		accounts : int 
@@ -266,7 +266,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 															accountQ=regionQs[region.name],
 															stats_type=StatsTypes.player_achievements)))			
 			for _ in range(ceil(min([args.wg_workers, accounts]))):
-				tasks.append(create_task(fetch_player_achievements_api_region_worker(wg_api=wg, region=region, 
+				tasks.append(create_task(fetch_api_region_worker(wg_api=wg, region=region, 
 																					accountQ=regionQs[region.name], 
 																					statsQ=statsQ, 
 																					retryQ=retryQ)))
@@ -291,7 +291,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 				# do not fill the old queues or it will never complete				
 				regionQs[region.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX) 
 				for _ in range(ceil(min([args.wg_workers, accounts]))):
-					tasks.append(create_task(fetch_player_achievements_api_region_worker(wg_api=wg, region=region, 
+					tasks.append(create_task(fetch_api_region_worker(wg_api=wg, region=region, 
 																						accountQ=regionQs[region.name],																					
 																						statsQ=statsQ)))
 			task_bar = create_task(alive_bar_monitor(list(regionQs.values()), total=accounts, 
@@ -317,7 +317,7 @@ async def cmd_fetch(db: Backend, args : Namespace) -> bool:
 	return False
 
 
-async def fetch_player_achievements_api_region_worker(wg_api: WGApi, region: Region,  
+async def fetch_api_region_worker(wg_api: WGApi, region: Region,  
 														accountQ: IterableQueue[list[BSAccount]], 
 														statsQ:   Queue[list[WGPlayerAchievementsMaxSeries]],
 														retryQ:   IterableQueue[BSAccount] | None = None) -> EventCounter:
@@ -371,8 +371,8 @@ async def fetch_player_achievements_api_region_worker(wg_api: WGApi, region: Reg
 	return stats
 
 
-async def fetch_player_achievements_backend_worker(db: Backend, 
-													statsQ: Queue[list[WGPlayerAchievementsMaxSeries]]) -> EventCounter:
+async def fetch_backend_worker(db: Backend, 
+								statsQ: Queue[list[WGPlayerAchievementsMaxSeries]]) -> EventCounter:
 	"""Async worker to add player achievements to backend. Assumes batch is for the same account"""
 	debug('starting')
 	stats 		: EventCounter = EventCounter(f'{db.driver}')
@@ -388,11 +388,14 @@ async def fetch_player_achievements_backend_worker(db: Backend,
 			try:
 				if len(player_achievements) > 0:
 					debug(f'Read {len(player_achievements)} from queue')
-					rel : BSBlitzRelease | None = releases.get(epoch_now())
+					rel : BSBlitzRelease | None = releases[epoch_now()]
 					if rel is not None:
 						for pac in player_achievements:
 							pac.release = rel.release
 					added, not_added = await db.player_achievements_insert(player_achievements)
+					for pac in player_achievements:
+						if (account := await db.account_get(account_id=pac.account_id)) is not None:
+							account.stats_updated(StatsTypes.player_achievements)
 			except Exception as err:
 				error(f'{err}')
 			finally:
@@ -426,7 +429,7 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 		import_backend 	: str 							= args.import_backend
 		map_releases	: bool 							= not args.no_release_map
 
-		release_map : NearestDict[int, BSBlitzRelease] = await release_mapper(db)
+		releases : NearestDict[int, BSBlitzRelease] = await release_mapper(db)
 		workers : list[Task] = list()
 		debug('args parsed')
 		
@@ -446,7 +449,7 @@ async def cmd_import(db: Backend, args : Namespace) -> bool:
 		for _ in range(WORKERS):
 			workers.append(create_task(db.player_achievements_insert_worker(player_achievementsQ=player_achievementsQ, 
 																	force=args.force)))
-		rel_map_worker : Task = create_task(player_achievements_map_releases_worker(release_map, inputQ=rel_mapQ, 
+		rel_map_worker : Task = create_task(player_releases_worker(releases, inputQ=rel_mapQ, 
 																outputQ=player_achievementsQ, 
 																map_releases=map_releases))		
 
@@ -565,9 +568,9 @@ async def  import_mp_worker(id: int = 0) -> EventCounter:
 		global db, readQ, in_model, mp_options
 		THREADS 			: int 									= 4		
 		import_model		: type[JSONExportable] 					= in_model
-		rel_mapper 			: NearestDict[int, BSBlitzRelease]		=  await release_mapper(db)
+		releases 			: NearestDict[int, BSBlitzRelease]		=  await release_mapper(db)
 		player_achievementsQ: Queue[list[WGPlayerAchievementsMaxSeries]] = Queue(100)
-		force 		: bool 											= mp_options['force']
+		force 				: bool 											= mp_options['force']
 		player_achievements : list[WGPlayerAchievementsMaxSeries]
 		# rel_map		: bool								= mp_options['map_releases']
 
@@ -587,7 +590,7 @@ async def  import_mp_worker(id: int = 0) -> EventCounter:
 				stats.log('player achievements read', len(player_achievements))				
 				stats.log('format errors', errors)
 
-				player_achievements, mapped, errors = map_releases(player_achievements, rel_mapper)
+				player_achievements, mapped, errors = map_releases(player_achievements, releases)
 				stats.log('release mapped', mapped)
 				stats.log('not release mapped', read - mapped)
 				stats.log('release map errors', errors)
@@ -609,7 +612,7 @@ async def  import_mp_worker(id: int = 0) -> EventCounter:
 
 
 def map_releases(player_achievements: list[WGPlayerAchievementsMaxSeries], 
-				release_map: NearestDict[int, BSBlitzRelease]
+				releases: NearestDict[int, BSBlitzRelease]
 				) -> tuple[list[WGPlayerAchievementsMaxSeries], int, int]:
 	debug('starting')
 	mapped: int = 0
@@ -617,7 +620,7 @@ def map_releases(player_achievements: list[WGPlayerAchievementsMaxSeries],
 	res : list[WGPlayerAchievementsMaxSeries] = list()
 	for player_achievement in player_achievements:		
 		try:			
-			if (release := release_map.get(player_achievement.added)) is not None:
+			if (release := releases[player_achievement.added]) is not None:
 				player_achievement.release = release.release
 				mapped += 1									
 		except Exception as err:
@@ -627,10 +630,10 @@ def map_releases(player_achievements: list[WGPlayerAchievementsMaxSeries],
 	return res, mapped, errors
 
 
-async def player_achievements_map_releases_worker(release_map: NearestDict[int, BSBlitzRelease], 
-													inputQ: Queue[WGPlayerAchievementsMaxSeries], 
-													outputQ: Queue[list[WGPlayerAchievementsMaxSeries]], 
-													map_releases: bool = True) -> EventCounter:
+async def player_releases_worker(releases: NearestDict[int, BSBlitzRelease], 
+								inputQ: Queue[WGPlayerAchievementsMaxSeries], 
+								outputQ: Queue[list[WGPlayerAchievementsMaxSeries]], 
+								map_releases: bool = True) -> EventCounter:
 	"""Map player achievements to releases and pack those to list[WGPlayerAchievementsMaxSeries] queue.
 		map_all is None means no release mapping is done"""
 	
@@ -647,7 +650,7 @@ async def player_achievements_map_releases_worker(release_map: NearestDict[int, 
 			# debug(f'read: {pac}')
 			try:
 				if map_releases:
-					if (release := release_map.get(pac.added)) is not None:
+					if (release := releases[(pac.added)]) is not None:
 						pac.release = release.release
 						# debug(f'mapped: release={release.release}')
 						stats.log('mapped')
