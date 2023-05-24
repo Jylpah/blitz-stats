@@ -1403,18 +1403,20 @@ async def create_accountQ(db		: Backend,
 		if accounts is not None:
 			
 			for account in accounts:
-				try:
-					await accountQ.put(account)
-					stats.log('read')
-				except Exception as err:
-					error(f'Could not add account ({account.id}) to queue')
-					stats.log('errors')
+				if account.region in args.regions:
+					try:
+						await accountQ.put(account)
+						stats.log('read')
+					except Exception as err:
+						error(f'Could not add account ({account.id}) to queue')
+						stats.log('errors')
 
 		elif args.file is not None:
 			async for account in BSAccount.import_file(args.file):
-				await accountQ.put(account)
-				debug(f'account put to queue: id={account.id}')
-				stats.log('read')		
+				if account.region in args.regions:
+					await accountQ.put(account)
+					debug(f'account put to queue: id={account.id}')
+					stats.log('read')
 		
 		else:			
 			accounts_args : dict[str, Any] | None
