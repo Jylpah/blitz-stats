@@ -7,23 +7,77 @@ opt_analyzer_workers = 20
 opt_uploader_workers = 5
 opt_get_account_ids_max_pages = 10
 
+[TANKOPEDIA]
+blitz_app_dir   =  "./BlitzApp/"
+
+[OPTIONS]
+opt_DB					= False
+#opt_analyzer_extended	= False
+opt_analyzer_hist		= True
+#opt_analyzer_stat_func = player
+opt_analyzer_workers	= 20
+opt_uploader_workers	= 5
+
 [WG]
 ## Find your WG account_id :  https://developers.wargaming.net/reference/all/wotb/account/list/
-#wg_id		    = 0
-wg_rate_limit   = 10
+wg_id           = 0
+rate_limit      = 10
+app_id          = GET_YOUR_OWN # https://developers.wargaming.net/
+api_workers     = 5
+
+[LESTA]
+# WG RU
+;app_id          = GET_FROM_LESTA.RU
+rate_limit      = 10
+
+
+[WOTINSPECTOR]
+rate_limit      = 0.0055
+; auth_token    = 
+max_pages       = 100
+workers         = 2
+
+[BACKEND]
+driver                  = mongodb
+cache_valid             = 7
+# Table defaults
+; t_accounts            = Accounts
+; t_tankopedia          = Tankopedia
+; t_releases            = Releases
+; t_replays             = Replays
+; t_account_log         = AccountLog
+; t_error_log           = ErrorLog
+; t_tank_stats          = TankStats
+; t_player_achievements= PlayerAchievements
+# model defaults
+; m_accounts            = BSAccount
+; m_tankopedia          = Tank
+; m_releases            = BSBlitzRelease
+; m_replays             = WoTBlitzReplayJSON
+; m_replays             = WoTBlitzReplayData
+; m_account_log         = ErrorLog
+; m_error_log           = ErrorLog
+; m_tank_stats          = WGTankStat
+; m_player_achievements = WGPlayerAchievementsMaxSeries
+
 
 [MONGODB]
-# You are unlikey to have MongoDB support...
-#db_server       = localhost
-#db_port         = 27017
-#db_auth         = admin
-#db_name 	    = BlitzStats
-#db_user         = blitzAnalysiz
-#db_password   	= PASSWORD
-#db_tls			= True
-#db_cert_req		= 2
-#db_tls_cert_file= cert.pem
-#db_tls_ca_file  = ca.pem
-
-[EXTRACT_TANKOPEDIA]
-blitz_app_dir   =  "./BlitzApp/"
+server          = localhost
+port            = 27017
+database        = BlitzStats
+auth_db         = admin
+user            = blitz
+password        = CHANGE_THIS
+tls             = False
+cert            = /home/USER/.ssl/client_cert.pem
+ca              = /home/USER/.ssl/CA.crt
+; tls_invalid_certs     = False
+; tls_invalid_host      = False
+; t_accounts            = Accounts
+; t_tankopedia          = Tankopedia
+; t_replays             = Replays
+; t_releases            = Releases
+; t_tank_stats          = TankStats
+; t_player_achievements= PlayerAchievements
+; t_account_log           = BSAccountLog
+; t_error_log             = BSErrorLog
