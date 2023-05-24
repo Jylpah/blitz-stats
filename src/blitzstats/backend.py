@@ -102,7 +102,6 @@ class OptAccountsDistributed():
 		self.mod : int = mod % div
 
 
-
 	@classmethod
 	def parse(cls, input: str) -> Optional['OptAccountsDistributed']:
 		try:
