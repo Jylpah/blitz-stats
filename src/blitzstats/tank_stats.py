@@ -162,7 +162,7 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
 		      				metavar='RATE_LIMIT', help='Rate limit for Lesta (RU) API')
 		parser.add_argument('--regions', '--region', type=str, nargs='*', choices=[ r.value for r in Region.API_regions() ],
 							default=[ r.value for r in Region.API_regions() ],
-							help='Filter by region (default: eu + com + asia + ru)')
+							help='Filter by region (default: eu + com + asia)')
 		parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ],
 								default=OptAccountsInactive.both.value, help='Include inactive accounts')
 		parser.add_argument('--active-since', type=str, default=None, metavar='RELEASE/DAYS',
