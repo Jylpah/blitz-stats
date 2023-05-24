@@ -1358,8 +1358,10 @@ class MongoBackend(Backend):
 		"""Get release from backend"""
 		debug('starting')
 		try:
+			debug(f'release={release}')
 			release = WGBlitzRelease.validate_release(release)
 			if (obj := await self._data_get(BSTableType.Releases, idx = release)) is not None:
+				# debug(f'returning release={obj}')
 				return BSBlitzRelease.transform_obj(obj, self.model_releases)
 		except Exception as err:
 			debug(f'{err}')
@@ -1386,7 +1388,7 @@ class MongoBackend(Backend):
 		debug('starting')
 		try:
 			dbc : AsyncIOMotorCollection = self.collection_releases
-			async for obj in dbc.find({ 'launch_date': { '$lte': date.today() } }).sort('launch_date', ASCENDING):
+			async for obj in dbc.find({ 'launch_date': { '$lte': datetime.utcnow().date() } }).sort('launch_date', ASCENDING):
 				return BSBlitzRelease.transform_obj(obj, self.model_releases)
 		except ValidationError as err:
 			error(f'Incorrect data format: {err}')
@@ -1422,7 +1424,9 @@ class MongoBackend(Backend):
 				raise ValueError()
 			else:
 				release = rel
+			# debug(f'release={release}, cut_off={release.cut_off}')
 			async for obj in dbc.find({ 'cut_off': { '$lt': release.cut_off } }).sort('cut_off', DESCENDING):
+				# debug(f'returning {obj}')
 				return BSBlitzRelease.transform_obj(obj, self.model_releases)
 			error('find() returned zero')
 		except ValidationError as err:
@@ -1458,15 +1462,6 @@ class MongoBackend(Backend):
 		except Exception as err:
 			debug(f'Error while updating release {release} into {self.table_uri(BSTableType.Releases)}: {err}')
 		return False
-
-	# DEPRECIATED
-	# async def release_replace(self, release: BSBlitzRelease, upsert=False) -> bool:
-	# 	"""Update an account in the backend. Returns False
-	# 		if the account was not updated"""
-	# 	debug('starting')
-	# 	# return await self._data_replace(self.collection_releases, data=release,
-	# 	# 								id=release.release, upsert=upsert)
-	# 	return await self._data_replace(BSTableType.Releases, obj=release, upsert=upsert)
 
 
 	async def release_delete(self, release: str) -> bool:
