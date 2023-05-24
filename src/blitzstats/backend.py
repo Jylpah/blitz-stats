@@ -632,82 +632,10 @@ class Backend(ABC):
 	def model_error_log(self) -> type[JSONExportable]:
 		return self.get_model(BSTableType.ErrorLog)
 
+
 	#----------------------------------------
 	# Objects
 	#----------------------------------------
-
-
-	# @abstractmethod
-	# async def data_insert(self, table_type: BSTableType, obj: JSONExportable) -> bool:
-	# 	"""Generic method to get one object into backend table in its data format"""
-	# 	raise NotImplementedError
-
-
-	# @abstractmethod
-	# async def data_get(self, table_type: BSTableType, idx: Idx) -> Any:
-	# 	"""Get raw document from MongoDB"""
-	# 	raise NotImplementedError
-
-
-	# @abstractmethod
-	# async def datas_get(self,
-	# 					table_type	: BSTableType,
-	# 					out_type	: type[D],
-	# 					pipeline 	: list[dict[str, Any]]) -> AsyncGenerator[D, None]:
-	# 	"""Get documents """
-	# 	raise NotImplementedError
-	# 	yield Any
-
-
-	# @abstractmethod
-	# async def datas_insert(self,
-	# 					  	table_type	: BSTableType,
-	# 					  	objs		: Sequence[JSONExportable]) -> tuple[int, int]:
-	# 	"""Store data to the backend. Returns the number of added and not added"""
-	# 	raise NotImplementedError
-
-
-	# @abstractmethod
-	# async def datas_update(self, table_type: BSTableType,
-	# 						objs	: Sequence[D],
-	# 						upsert	: bool = False) -> tuple[int, int]:
-	# 	"""Update data in the backend. Returns number of documents updated and not updated"""
-	# 	raise NotImplementedError
-
-
-	# @abstractmethod
-	# async def datas_count(self,
-	# 						table_type: BSTableType,
-	# 						pipeline : list[dict[str, Any]]) -> int:
-	# 	"""Count documents"""
-	# 	raise NotImplementedError
-
-
-	# @abstractmethod
-	# async def data_replace(self,
-	# 						table_type: BSTableType,
-	# 						obj: JSONExportable,
-	# 						upsert : bool = False) -> bool:
-	# 	"""Generic method to update an object of data_type"""
-	# 	raise NotImplementedError
-
-
-	# @abstractmethod
-	# async def data_update(self,
-	# 						table_type	: BSTableType,
-	# 						ndx			: Idx | None = None,
-	# 						obj 		: JSONExportable | None = None,
-	# 						update		: dict | None = None,
-	# 						fields 		: list[str] | None = None) -> bool:
-	# 	"""Updates a document into backend in the chosen backend data format"""
-	# 	raise NotImplementedError
-
-
-	# @abstractmethod
-	# async def data_delete(self, table_type: BSTableType, idx: Idx) -> bool:
-	# 	"""Delete data record from backend"""
-	# 	raise NotImplementedError
-
 
 	@abstractmethod
 	async def obj_export(self,
@@ -756,14 +684,6 @@ class Backend(ABC):
 		raise NotImplementedError
 
 
-	# @abstractmethod
-	# async def account_replace(self, account: BSAccount,
-	# 							upsert: bool = False) -> bool:
-	# 	"""Update an account in the backend. Returns False
-	# 		if the account was not updated"""
-	# 	raise NotImplementedError
-
-
 	@abstractmethod
 	async def account_delete(self, account_id: int) -> bool:
 		"""Delete account from the backend. Returns False
@@ -786,22 +706,6 @@ class Backend(ABC):
 		raise NotImplementedError
 		yield BSAccount(id=-1)
 
-
-	# @abstractmethod
-	# async def accounts_get_batch(self,
-	# 						stats_type 	: StatsTypes | None = None,
-	# 						regions		: set[Region] = Region.API_regions(),
-	# 						inactive 	: OptAccountsInactive = OptAccountsInactive.default(),
-	# 						disabled	: bool | None = False,
-	# 						active_since	: int = 0,
-	# 						inactive_since	: int = 0,
-	# 						dist 		: OptAccountsDistributed | None = None,
-	# 						sample 		: float = 0,
-	# 						cache_valid	: float = 0,
-	# 						batch 		: int = 100) -> AsyncGenerator[list[BSAccount], None]:
-	# 	"""Get accounts from backend"""
-	# 	raise NotImplementedError
-	# 	yield BSAccount(id=-1)
 
 	@abstractmethod
 	async def accounts_count(self,
@@ -856,17 +760,6 @@ class Backend(ABC):
 					else:
 						stats.log('added')
 
-					# if force is None:
-					# 	debug(f'Trying to insert account_id={account.id} into {self.backend}.{self.table_accounts}')
-					# 	await self.account_insert(account)
-					# 	stats.log('added')
-					# else:
-					# 	#debug(f'Trying to upsert account_id={account.id} into {self.backend}.{self.table_accounts}')
-					# 	await self.account_replace(account, upsert=force)
-					# 	if force:
-					# 		stats.log('added/updated')
-					# 	else:
-					# 		stats.log('updated')
 				except Exception as err:
 					debug(f'Error: {err}')
 					stats.log('not added/updated')
@@ -921,14 +814,6 @@ class Backend(ABC):
 		"""Update an release in the backend. Returns False
 			if the release was not updated"""
 		raise NotImplementedError
-
-
-	# @abstractmethod
-	# async def release_replace(self, release: BSBlitzRelease,
-	# 							upsert: bool = False) -> bool:
-	# 	"""Update an release in the backend. Returns False
-	# 		if the release was not updated"""
-	# 	raise NotImplementedError
 
 
 	@abstractmethod
@@ -1106,14 +991,6 @@ class Backend(ABC):
 		raise NotImplementedError
 
 
-	# @abstractmethod
-	# async def tank_stat_replace(self, tank_stat: WGTankStat,
-	# 							upsert: bool = False) -> bool:
-	# 	"""Replace a tank stat in the backend. Returns False
-	# 		if the account was not updated"""
-	# 	raise NotImplementedError
-
-
 	@abstractmethod
 	async def tank_stat_delete(self, account_id: int, tank_id: int,
 								last_battle_time: int) -> bool:
@@ -1162,12 +1039,6 @@ class Backend(ABC):
 							sample : 	float = 0) -> int:
 		"""Get number of tank-stats from backend"""
 		raise NotImplementedError
-
-
-	# @abstractmethod
-	# async def tank_stats_update(self, tank_stats: list[WGTankStat], upsert: bool = False) -> tuple[int, int]:
-	# 	"""Update or upsert tank stats to the backend. Returns number of stats updated and not updated"""
-	# 	raise NotImplementedError
 
 
 	@abstractmethod
@@ -1332,21 +1203,6 @@ class Backend(ABC):
 		raise NotImplementedError
 
 
-	# @abstractmethod
-	# async def player_achievement_replace(self,
-	# 			      					player_achievement: WGPlayerAchievementsMaxSeries,
-	# 									upsert: bool = False) -> bool:
-	# 	"""Replace a player achievement in the backend. Returns False
-	# 		if the player achievement was not replaced"""
-	# 	raise NotImplementedError
-
-
-	# @abstractmethod
-	# async def player_achievements_update(self, player_achievements: list[WGPlayerAchievementsMaxSeries], upsert: bool = False) -> tuple[int, int]:
-	# 	"""Update or upsert player achievements to the backend. Returns number of stats updated and not updated"""
-	# 	raise NotImplementedError
-
-
 	@abstractmethod
 	async def player_achievement_export(self, sample: float = 0,
 										) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
@@ -1487,12 +1343,6 @@ class Backend(ABC):
 		yield Tank()
 
 
-	# @abstractmethod
-	# async def tankopedia_replace(self, tank: Tank, upsert : bool = True) -> bool:
-	# 	""""Replace tank in Tankopedia"""
-	# 	raise NotImplementedError
-
-
 	@abstractmethod
 	async def tankopedia_update(self, tank: Tank,
 								update: dict[str, Any] | None = None,
@@ -1579,9 +1429,3 @@ class Backend(ABC):
 	async def tank_strings_get(self, search: str | None) -> AsyncGenerator[WoTBlitzTankString, None]:
 		raise NotImplementedError
 		yield WoTBlitzTankString()
-
-
-	# @abstractmethod
-	# async def tank_string_replace(self, tank_str: WoTBlitzTankString, upsert : bool = True) -> bool:
-	# 	""""Replace tank in Tankopedia"""
-	# 	raise NotImplementedError
