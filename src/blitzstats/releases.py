@@ -196,7 +196,7 @@ async def cmd(db: Backend, args : Namespace) -> bool:
 		elif args.releases_cmd == 'import':
 			debug('releases import')
 			return await cmd_import(db, args)	
-		elif args.releases_cmd == 'export':
+		elif args.releases_cmd == 'export' or args.releases_cmd == 'list':
 			debug('releases export')
 			return await cmd_export(db, args)		
 		else:
