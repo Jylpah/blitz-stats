@@ -785,9 +785,12 @@ async def fetch_backend_worker(db: Backend,
 					debug(f'Read {len(tank_stats)} from queue')
 					
 					last_battle_time = max( [ ts.last_battle_time for ts in tank_stats] )
-					for ts in tank_stats:						 
-						if (rel := releases.get(ts.last_battle_time)) is not None:
+					for ts in tank_stats:
+						if (rel := releases[(ts.last_battle_time)]) is not None:
 							ts.release = rel.release
+						else:
+							error(f'could not map release last_battle_time={ts.last_battle_time}')
+							stats.log('release mapping errors')
 
 					added, not_added = await db.tank_stats_insert(tank_stats, force=force)	
 					account_id = tank_stats[0].account_id
@@ -833,10 +836,7 @@ async def cmd_edit(db: Backend, args : Namespace) -> bool:
 		debug('starting')
 		release 	: BSBlitzRelease | None = None
 		if args.release is not None:
-			release = BSBlitzRelease(release=args.release)
-		stats 		: EventCounter 			= EventCounter('tank-stats edit')
-		regions		: set[Region] 			= { Region(r) for r in args.regions }
-		since		: int = 0
+			release = await db.release_get(release=args.release)
 		if args.since is not None:
 			since = int(datetime.fromisoformat(args.since).timestamp())
 		accounts 	: list[BSAccount] | None= read_args_accounts(args.accounts)
@@ -851,11 +851,11 @@ async def cmd_edit(db: Backend, args : Namespace) -> bool:
 											accounts=accounts, since=since, sample=sample)
 			edit_tasks.append(create_task(cmd_edit_rel_remap(db, tank_statQ, commit, N)))
 			
-			stats.merge_child(await db.tank_stats_get_worker(tank_statQ, 
-						    								release=release, 
-															regions=regions, 
+			stats.merge_child(await db.tank_stats_get_worker(tank_statQ,
+															release=release,
+															regions=regions,
 															accounts=accounts,
-															since=since, 
+															since=since,
 															sample=sample))
 			await tank_statQ.join()
 
@@ -1003,14 +1003,13 @@ async def cmd_edit_rel_remap(db: Backend,
 	stats : EventCounter = EventCounter('remap releases')
 	try:
 		release 	: BSBlitzRelease | None
-		release_map : NearestDict[int, BSBlitzRelease] = await release_mapper(db)
+		releases : NearestDict[int, BSBlitzRelease] = await release_mapper(db)
 		with alive_bar(total, title="Remapping tank stats' releases ", refresh_secs=1,
 						enrich_print=False) as bar:
 			while True:
 				ts : WGTankStat = await tank_statQ.get()			
 				try:
-					release = release_map.get(ts.last_battle_time)
-					if release is None:
+					if (release := releases[ts.last_battle_time]) is None:
 						error(f'Could not map: {ts}')
 						stats.log('errors')
 						continue
@@ -1025,7 +1024,7 @@ async def cmd_edit_rel_remap(db: Backend,
 								debug(f'failed to remap release for {ts}')
 								stats.log('failed to update')
 						else:
-							message(f'Would update release {ts.release} to {release.release} for {ts}')
+							message(f'would update release {ts.release} to {release.release} for {ts}')
 					else:
 						debug(f'No need to remap: {ts}')
 						stats.log('no need')			
@@ -2238,9 +2237,10 @@ def map_releases(tank_stats: list[WGTankStat],
 	return res, mapped, errors
 
 
-async def map_releases_worker(release_map: NearestDict[int, BSBlitzRelease] | None, 
-								inputQ: 	Queue[list[WGTankStat]], 
-								outputQ:	Queue[list[WGTankStat]]) -> EventCounter:
+async def map_releases_worker(releases: NearestDict[int, BSBlitzRelease] | None,
+							  inputQ: 	Queue[list[WGTankStat]],
+							  outputQ:	Queue[list[WGTankStat]]
+							  ) -> EventCounter:
 
 	"""Map tank stats to releases and pack those to list[WGTankStat] queue.
 		map_all is None means no release mapping is done"""
@@ -2252,25 +2252,25 @@ async def map_releases_worker(release_map: NearestDict[int, BSBlitzRelease] | No
 			tank_stats = await inputQ.get()
 			stats.log('read', len(tank_stats))
 			try:
-				if release_map is not None:
+				if releases is not None:
 					for tank_stat in tank_stats:
-						if (release := release_map.get(tank_stat.last_battle_time)) is not None:
+						if (release := releases[(tank_stat.last_battle_time)]) is not None:
 							tank_stat.release = release.release
 							stats.log('mapped')
 						else:
 							stats.log('could not map')
 				else:
 					stats.log('not mapped', len(tank_stats))
-			
-				await outputQ.put(tank_stats)						
+
+				await outputQ.put(tank_stats)
 			except Exception as err:
 				error(f'Processing input queue: {err}')
-			finally: 									
+			finally:
 				inputQ.task_done()
 	except CancelledError:
-		debug('Cancelled')		
+		debug('Cancelled')
 	except Exception as err:
-		error(f'{err}')	
+		error(f'{err}')
 	return stats
 
 
