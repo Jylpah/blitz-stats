@@ -565,9 +565,9 @@ async def  fetch_mp_worker(region: Region) -> EventCounter:
 				i += 1
 				if i == BATCH:
 					await counterQas.put(BATCH)
-					i = 0				
-		await accountQ.finish()	
-		
+					i = 0
+			await counterQas.put(i)
+		await accountQ.finish()
 		debug(f'waiting for account queue to finish: {region}')
 		await accountQ.join()
 		
