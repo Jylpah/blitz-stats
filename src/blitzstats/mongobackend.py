@@ -470,7 +470,7 @@ class MongoBackend(Backend):
 			if (data := model.transform_obj(obj)) is not None:
 				res : InsertOneResult = await dbc.insert_one(data.obj_db())
 				# debug(f'Inserted {type(data)} (_id={res.inserted_id}) into {self.backend}.{dbc.name}: {data}')
-				return True
+				return res.inserted_id is not None
 		except Exception as err:
 			debug(f'Failed to insert obj={obj} into {self.table_uri(table_type)}: {err}')
 		return False
