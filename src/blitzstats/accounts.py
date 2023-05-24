@@ -1660,7 +1660,7 @@ def read_args_accounts(accounts: list[str]) -> list[BSAccount] | None:
 
 
 async def accounts_parse_args(db: Backend, 
-			      				args : Namespace,
+							  args : Namespace,
 							 ) -> dict[str, Any] | None:
 	"""parse accounts args"""
 	debug('starting')
@@ -1704,7 +1704,7 @@ async def accounts_parse_args(db: Backend,
 			debug('could not read --distributed')
 		
 		days : int
-		today : datetime = datetime.today()
+		today : datetime = datetime.utcnow()
 		start : datetime
 		try:
 			if ( rel := await db.release_get(args.inactive_since)) is not None:
@@ -1719,7 +1719,9 @@ async def accounts_parse_args(db: Backend,
 		
 		try:
 			if ( rel := await db.release_get(args.active_since)) is not None:
+				# debug(f'active_since={rel}')
 				if (prev := await db.release_get_previous(rel)) is not None:
+					#debug(f'active_since: prev={prev}')
 					res['active_since'] = prev.cut_off
 			else:
 				days = int(args.active_since)
