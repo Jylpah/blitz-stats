@@ -201,9 +201,10 @@ class BSBlitzRelease(WGBlitzRelease):
 
 	@validator('cut_off')
 	def validate_cut_off(cls, v: int) -> int:
-		ROUND_TO : int = 10*60
+		# ROUND_TO : int = 10*60
 		if v >= 0:
-			return ceil(v / ROUND_TO) * ROUND_TO
+			# return ceil(v / ROUND_TO) * ROUND_TO
+			return v
 		raise ValueError('cut_off has to be >= 0')
 
 
