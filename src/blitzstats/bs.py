@@ -63,8 +63,6 @@ async def main() -> int:
 	# set the directory for the script
 	global logger, error, debug, verbose, message
 	start_time : datetime = datetime.now()
-	## UPDATE after transition
-	message('Reminder: Rename Backend ErrorLog & AccountLog')
 	
 	# Default params
 	_PKG_NAME	= 'blitzstats'
@@ -72,7 +70,7 @@ async def main() -> int:
 	LOG 		= _PKG_NAME + '.log'
 	# THREADS 	= 20    # make it module specific?
 	BACKEND 	: Optional[str] 		= None
-	config 		: Optional[ConfigParser] = None
+	config 		: Optional[ConfigParser]= None
 	CONFIG_FILE : Optional[str] 		= None
 
 	CONFIG_FILES: list[str] = [
