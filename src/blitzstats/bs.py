@@ -114,7 +114,10 @@ async def main() -> int:
 			if 'BACKEND' in config.sections():
 				debug('Reading config section BACKEND')
 				configDef = config['BACKEND']
-				BACKEND = configDef.get('driver', None)			
+				BACKEND = configDef.get('driver', None)
+			else:
+				error(f'No section BACKEND found from config: {args.config}')
+				error(f"Sections found: {' ,'.join([s for s in config.sections() ])}")
 		else:
 			debug("No config file found")		
 
