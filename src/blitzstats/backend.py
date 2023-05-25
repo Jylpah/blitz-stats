@@ -1281,16 +1281,22 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def errors_get(self, table_type: BSTableType | None = None, doc_id : Any | None = None,
-							after: datetime | None = None) -> AsyncGenerator[ErrorLog, None]:
+	async def errors_get(self, 
+						 table_type: BSTableType | None = None, 
+						 doc_id : Any | None = None,
+						 after: datetime | None = None
+						 ) -> AsyncGenerator[ErrorLog, None]:
 		"""Return errors from backend ErrorLog"""
 		raise NotImplementedError
 		yield ErrorLog(table='foo', error='bar')
 
 
 	@abstractmethod
-	async def errors_clear(self, table_type: BSTableType, doc_id : Any | None = None,
-							after: datetime | None = None) -> int:
+	async def errors_clear(self, 
+							table_type: BSTableType, 
+							doc_id : Any | None = None,
+							after: datetime | None = None
+							) -> int:
 		"""Clear errors from backend ErrorLog"""
 		raise NotImplementedError
 
