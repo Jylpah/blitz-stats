@@ -211,7 +211,7 @@ class Backend(ABC):
 		# default tables
 		self.set_table(BSTableType.Accounts, 	'Accounts')
 		self.set_table(BSTableType.Tankopedia,  'Tankopedia')
-		self.set_table(BSTableType.TankStrings,  'TankStrings')
+		self.set_table(BSTableType.TankStrings, 'TankStrings')
 		self.set_table(BSTableType.Releases,  	'Releases')
 		self.set_table(BSTableType.Replays,  	'Replays')
 		self.set_table(BSTableType.AccountLog,  'AccountLog')
@@ -437,12 +437,6 @@ class Backend(ABC):
 	def copy(self, **kwargs) -> Optional['Backend']:
 		"""Create a copy of backend"""
 		raise NotImplementedError
-
-
-	# @abstractmethod
-	# def reconnect(self) -> bool:
-	# 	"""Reconnect backend"""
-	# 	raise NotImplementedError
 
 
 	@abstractmethod
