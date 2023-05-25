@@ -149,10 +149,19 @@ class ErrorLogType(IntEnum):
 	Duplicate 		= 20
 
 
+
+#----------------------------------------
+# ErrorLog - entry for error log entries
+#----------------------------------------
+# WORK IN PROGRESS ##############################
 class ErrorLog(JSONExportable, ABC):
+	"""Class for error log entries.  
+		* Should it be abstract at all?
+		* How to deal with different backends with different indexes? 
+		* Should 'doc_id' field use JSONExportable.indexes field?"""
 	table 	: str 					= Field(alias='t')
 	doc_id 	: Any | None			= Field(default=None, alias='did')
-	date 	: datetime				= Field(default=datetime.now(), alias='d')
+	date 	: datetime				= Field(default=datetime.utcnow(), alias='d')
 	msg 	: str | None			= Field(default=None, alias='e')
 	type 	: ErrorLogType			= Field(default=ErrorLogType.Error, alias='t')
 
@@ -202,7 +211,7 @@ class Backend(ABC):
 		# default tables
 		self.set_table(BSTableType.Accounts, 	'Accounts')
 		self.set_table(BSTableType.Tankopedia,  'Tankopedia')
-		self.set_table(BSTableType.TankStrings,  'TankStrings')
+		self.set_table(BSTableType.TankStrings, 'TankStrings')
 		self.set_table(BSTableType.Releases,  	'Releases')
 		self.set_table(BSTableType.Replays,  	'Replays')
 		self.set_table(BSTableType.AccountLog,  'AccountLog')
@@ -428,12 +437,6 @@ class Backend(ABC):
 	def copy(self, **kwargs) -> Optional['Backend']:
 		"""Create a copy of backend"""
 		raise NotImplementedError
-
-
-	# @abstractmethod
-	# def reconnect(self) -> bool:
-	# 	"""Reconnect backend"""
-	# 	raise NotImplementedError
 
 
 	@abstractmethod
@@ -1281,16 +1284,22 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def errors_get(self, table_type: BSTableType | None = None, doc_id : Any | None = None,
-							after: datetime | None = None) -> AsyncGenerator[ErrorLog, None]:
+	async def errors_get(self, 
+						 table_type: BSTableType | None = None, 
+						 doc_id : Any | None = None,
+						 after: datetime | None = None
+						 ) -> AsyncGenerator[ErrorLog, None]:
 		"""Return errors from backend ErrorLog"""
 		raise NotImplementedError
 		yield ErrorLog(table='foo', error='bar')
 
 
 	@abstractmethod
-	async def errors_clear(self, table_type: BSTableType, doc_id : Any | None = None,
-							after: datetime | None = None) -> int:
+	async def errors_clear(self, 
+							table_type: BSTableType, 
+							doc_id : Any | None = None,
+							after: datetime | None = None
+							) -> int:
 		"""Clear errors from backend ErrorLog"""
 		raise NotImplementedError
 

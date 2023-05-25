@@ -111,10 +111,10 @@ async def main() -> int:
 			debug(f'Reading config from {args.config}')
 			config = ConfigParser()
 			config.read(args.config)
-			if 'GENERAL' in config.sections():
-				debug('Reading config section GENERAL')
-				configDef = config['GENERAL']
-				BACKEND = configDef.get('backend', None)			
+			if 'BACKEND' in config.sections():
+				debug('Reading config section BACKEND')
+				configDef = config['BACKEND']
+				BACKEND = configDef.get('driver', None)			
 		else:
 			debug("No config file found")		
 
