@@ -1,5 +1,5 @@
 import logging
-import aiofiles
+from aiofiles import open
 from argparse import ArgumentParser, Namespace, SUPPRESS
 from configparser import ConfigParser
 from typing import Optional, cast
@@ -295,16 +295,35 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 	
 		export_worker 	: Task
 	
-		export_worker = create_task( export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], 
+		if args.format in ['txt', 'csv']:
+			export_worker = create_task( export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], 
 															tankQ), 
-											format=args.format, filename=filename, 
-											force=args.force, append=False))
-		
-		stats.merge_child(await db.tankopedia_get_worker(tankQ, tanks=tanks, tier=tier,
-										tank_type=tank_type, nation=nation,
-										is_premium=is_premium))
-		await tankQ.join()
-		await stats.gather_stats([export_worker])
+															format=args.format, filename=filename, 
+															force=args.force, append=False))
+						
+			stats.merge_child(await db.tankopedia_get_worker(tankQ, tanks=tanks, tier=tier,
+																tank_type=tank_type, nation=nation,
+																is_premium=is_premium))
+			await tankQ.join()
+			await stats.gather_stats([export_worker])
+		elif args.format == 'json':
+			tankopedia = WGApiTankopedia()
+			tankopedia.data = dict()
+			async for tank in db.tankopedia_get_many(tanks=tanks, 
+													tier=tier,
+													tank_type=tank_type, 
+													nation=nation,
+													is_premium=is_premium):
+				if (wgtank := WGTank.transform(tank)) is not None:
+					tankopedia.add(wgtank)
+				else:
+					error(f'could not transform tank_id={tank.tank_id}: {tank}')
+			if not filename.endswith('.json'):
+				filename += '.json'
+			async with open(filename, mode='w', encoding='utf-8') as outfile:
+				await outfile.write(tankopedia.json_src())
+			stats.log('tanks exported', len(tankopedia.data))
+
 		if not std_out:
 			stats.print()
 
@@ -367,7 +386,7 @@ async def cmd_update(db: Backend, args : Namespace) -> bool:
 	force 		: bool 	= args.force
 	stats 		: EventCounter = EventCounter('tankopedia update')
 	try:		
-		async with aiofiles.open(filename, 'rt', encoding="utf8") as fp:
+		async with open(filename, 'rt', encoding="utf8") as fp:
 			# Update Tankopedia
 			tankopedia : WGApiTankopedia = WGApiTankopedia.parse_raw(await fp.read())
 			if tankopedia.data is None:
