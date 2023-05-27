@@ -2,7 +2,7 @@
 
 # Script fetch Blitz player stats and tank stats
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 from pyutils.multilevelformatter import MultilevelFormatter
 try:
@@ -43,14 +43,26 @@ debug	= logger.debug
 def get_datestr(_datetime: datetime = datetime.now()) -> str:
 	return _datetime.strftime("%Y%m%d_%H%M")
 
+
+def time_str(date_time: datetime = datetime.now()) -> str:
+	"""Return time as string in YYYY-MM-DD HH:mm format. 
+		Default is current local time"""
+	return f'{date_time:%Y-%m-%d %H:%M}'
+
+
+def time_elapsed(start: datetime, end: datetime = datetime.now()) -> str:
+	"""Return time difference as string in HH:mm:ss format"""
+	seconds: int = int((end - start).total_seconds())
+	hours, remainder = divmod(seconds, 60*60)
+	minutes, seconds = divmod(remainder, 60)
+	return f'{hours}:{minutes}:{seconds}'
+
 # main() -------------------------------------------------------------
 
 async def main() -> int:
 	# set the directory for the script
 	global logger, error, debug, verbose, message
-
-	## UPDATE after transition
-	message('Reminder: Rename Backend ErrorLog & AccountLog')
+	start_time : datetime = datetime.now()
 	
 	# Default params
 	_PKG_NAME	= 'blitzstats'
@@ -58,7 +70,7 @@ async def main() -> int:
 	LOG 		= _PKG_NAME + '.log'
 	# THREADS 	= 20    # make it module specific?
 	BACKEND 	: Optional[str] 		= None
-	config 		: Optional[ConfigParser] = None
+	config 		: Optional[ConfigParser]= None
 	CONFIG_FILE : Optional[str] 		= None
 
 	CONFIG_FILES: list[str] = [
@@ -203,7 +215,7 @@ async def main() -> int:
 	except Exception as err:
 		error(f'{err}')
 	if args.main_cmd in [ 'accounts', 'tank-stats', 'player-achievements', 'replays', 'setup' ]:
-		message(f'program finished: {datetime.now():%Y-%m-%d %H:%M}')
+		message(f'program finished: {time_str()} ({time_elapsed(start_time)})')
 	return 0
 	
 

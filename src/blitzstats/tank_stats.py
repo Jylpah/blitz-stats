@@ -373,7 +373,7 @@ def add_args_export_data(parser: ArgumentParser, config: Optional[ConfigParser] 
 			configTS 		= config['TANK_STATS']
 			EXPORT_FORMAT	= configTS.get('export_data_format', DEFAULT_EXPORT_DATA_FORMAT)
 			EXPORT_FILE		= configTS.get('export_data_file', EXPORT_FILE )
-			EXPORT_DIR		= configTS.get('export_data_file', EXPORT_DIR )
+			EXPORT_DIR		= configTS.get('export_data_dir', EXPORT_DIR )
 		parser.add_argument('EXPORT_TYPE', type=str, choices=['update', 'career'],
 							help="export latest stats or stats for the update")
 		parser.add_argument('RELEASE', type=str,
