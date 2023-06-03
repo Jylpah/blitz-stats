@@ -422,9 +422,14 @@ class Backend(ABC):
 		return self._cache_valid
 
 
-	@abstractmethod
 	def __eq__(self, __o: object) -> bool:
-		raise NotImplementedError
+		"""Default __eq__() function"""
+		return (
+            __o is not None
+	    	and isinstance(__o, Backend)
+            and type(__o) is type(self)
+            and self.database == __o.database
+        )
 
 
 	@abstractmethod
