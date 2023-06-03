@@ -404,13 +404,13 @@ async def cmd_update(db: Backend, args : Namespace) -> bool:
 				except Exception as err:
 					error(f'Unexpected error ({tank.tank_id}): {err}')
 
-			tank_strs : list[WoTBlitzTankString] | None
-			if (tank_strs := WoTBlitzTankString.from_tankopedia(tankopedia)) is not None:
-				for tank_str in tank_strs:
-					if await db.tank_string_insert(tank_str, force=force):
-						stats.log('tank strings added')
-					else:
-						stats.log('tank strings not added')
+			# tank_strs : list[WoTBlitzTankString] | None
+			# if (tank_strs := WoTBlitzTankString.from_tankopedia(tankopedia)) is not None:
+			# 	for tank_str in tank_strs:
+			# 		if await db.tank_string_insert(tank_str, force=force):
+			# 			stats.log('tank strings added')
+			# 		else:
+			# 			stats.log('tank strings not added')
 			
 	except Exception as err:	
 		error(f'Failed to update tankopedia from {filename}: {err}')
