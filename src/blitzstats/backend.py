@@ -15,13 +15,13 @@ from blitzutils.wg_api 	import WGTankStat, WGPlayerAchievementsMaxSeries, \
 								WGPlayerAchievementsMain, WoTBlitzTankString
 
 from blitzutils.tank 	import WGTank, Tank, EnumVehicleTier, EnumNation, EnumVehicleTypeStr
-from blitzutils.replay 	import WoTBlitzReplayJSON, WoTBlitzReplayData
+from blitzutils.replay 	import WoTBlitzReplayJSON
 from blitzutils.region 	import Region
 
 from pyutils import EventCounter, IterableQueue, JSONExportable, QueueDone
 from pyutils.utils 	import epoch_now, is_alphanum
 
-from .models import BSAccount, BSBlitzRelease, StatsTypes
+from .models import BSAccount, BSBlitzRelease, BSBlitzReplay, StatsTypes
 
 
 # Setup logging
@@ -904,7 +904,7 @@ class Backend(ABC):
 
 
 	@abstractmethod
-	async def replay_get(self, replay_id: str) -> WoTBlitzReplayData | None:
+	async def replay_get(self, replay_id: str) -> BSBlitzReplay | None:
 		"""Get a replay from backend based on replayID"""
 		raise NotImplementedError
 
@@ -918,10 +918,10 @@ class Backend(ABC):
 	# replay fields that can be searched: protagonist, battle_start_timestamp, account_id, vehicle_tier
 	@abstractmethod
 	async def replays_get(self, since: int = 0,
-							**summary_fields) -> AsyncGenerator[WoTBlitzReplayData, None]:
+							**summary_fields) -> AsyncGenerator[BSBlitzReplay, None]:
 		"""Get replays from backed"""
 		raise NotImplementedError
-		yield WoTBlitzReplayData()
+		yield BSBlitzReplay()
 
 
 	@abstractmethod
@@ -963,10 +963,10 @@ class Backend(ABC):
 
 
 	async def replays_export(self,
-							 sample: float = 0) -> AsyncGenerator[WoTBlitzReplayData, None]:
+							 sample: float = 0) -> AsyncGenerator[BSBlitzReplay, None]:
 		"""Export replays from Mongo DB"""
 		raise NotImplementedError
-		yield WoTBlitzReplayData()
+		yield BSBlitzReplay()
 
 
 	#----------------------------------------
