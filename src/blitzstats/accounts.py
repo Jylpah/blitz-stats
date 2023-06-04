@@ -14,14 +14,14 @@ from pyutils 			import EventCounter, TXTExportable, CSVExportable, \
 from pyutils.exportable import  export
 from pyutils.utils 		import alive_bar_monitor, get_url_JSON_model, chunker
 
-from blitzutils			import WoTBlitzReplayJSON, WoTBlitzReplayData, \
+from blitzutils			import WoTBlitzReplayJSON, \
 								Region, Account, WGAccountInfo, \
 								WGApi, WoTinspector
 
 from .backend import Backend, OptAccountsInactive, \
 					 OptAccountsDistributed, batch_gen, \
 					 BSTableType, ACCOUNTS_Q_MAX, get_sub_type
-from .models import BSAccount, StatsTypes, BSBlitzRelease
+from .models import BSAccount, BSBlitzReplay, StatsTypes, BSBlitzRelease
 from .models_import import WG_Account
 
 
@@ -1052,7 +1052,7 @@ async def cmd_fetch_wi(db: Backend,
 # 					if len(replay_ids) == 0:
 # 						break
 # 					for replay_id in replay_ids:
-# 						res: WoTBlitzReplayData | None = await db.replay_get(replay_id=replay_id)
+# 						res: BSBlitzReplay | None = await db.replay_get(replay_id=replay_id)
 # 						if res is not None:
 # 							debug(f'Replay already in the {db.backend}: {replay_id}')
 # 							stats.log('old replays found')
@@ -1094,7 +1094,7 @@ async def fetch_wi_get_replay_ids(db: Backend, wi: WoTinspector, args: Namespace
 					debug(f'spidering page {page}')
 					
 					for replay_id in await wi.get_replay_ids(page):
-						res: WoTBlitzReplayData | None = await db.replay_get(replay_id=replay_id)
+						res: BSBlitzReplay | None = await db.replay_get(replay_id=replay_id)
 						if res is not None:
 							debug(f'Replay already in the {db.backend}: {replay_id}')
 							stats.log('old replays found')
@@ -1268,8 +1268,7 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 			await accountQs[Qid].add_producer()
 			account_workers.append(create_task(db.accounts_get_worker(accountQs[Qid], 																		
 																		**accounts_args)))
-			export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], 
-														accountQs[Qid]), 
+			export_workers.append(create_task(export(iterable=accountQs[Qid], 
 													format=args.format, 
 													filename=f'{filename}.{i}', 
 													force=force, 
@@ -1286,8 +1285,7 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 				accountQs[region.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
 				
 				await accountQs[region.name].add_producer()										
-				export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], 
-														accountQs[region.name]), 
+				export_workers.append(create_task(export(iterable=accountQs[region.name], 
 														format=args.format, 
 														filename=f'{filename}.{region.name}', 
 														force=force, append=args.append)))			
@@ -1302,7 +1300,7 @@ async def cmd_export(db: Backend, args : Namespace) -> bool:
 
 			if filename != '-':
 				filename += '.all'
-			export_workers.append(create_task(export(Q=cast(Queue[CSVExportable] | Queue[TXTExportable] | Queue[JSONExportable], accountQs['all']), 
+			export_workers.append(create_task(export(iterable=accountQs['all'], 
 											format=args.format, filename=filename, 
 											force=force, append=args.append)))
 		
