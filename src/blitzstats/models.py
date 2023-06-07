@@ -239,10 +239,84 @@ class BSBlitzRelease(WGBlitzRelease):
         return super().txt_row(format) + extra
 
 
-	def txt_row(self, format: str = '') -> str:
-		extra : str = ''
-		if format == 'rich':
-			extra = f"\t{self.cut_off}"
-		return super().txt_row(format) + extra
+class BSBlitzReplay(WoTBlitzReplaySummary):
+    id: str | None = Field(default=None, alias="_id")
+
+    _ViewUrlBase: str = "https://replays.wotinspector.com/en/view/"
+    _DLurlBase: str = "https://replays.wotinspector.com/en/download/"
+
+
+    class Config:
+        arbitrary_types_allowed = True
+        allow_mutation = True
+        validate_assignment = True
+        allow_population_by_field_name = True
+
+    @property
+    def index(self) -> Idx:
+        """return backend index"""
+        if self.id is not None:
+            return self.id
+        raise ValueError("id is missing")
+
+    @property
+    def view_url(self) -> str:
+        if self.id is not None:
+            return f"{self._ViewUrlBase}{self.id}"
+        raise ValueError("field 'id' is missing")
+
+    @property
+    def dl_url(self) -> str:
+        if self.id is not None:
+            return f"{self._DLurlBase}{self.id}"
+        raise ValueError("field 'id' is missing")
+
+    @property
+    def indexes(self) -> dict[str, Idx]:
+        """return backend indexes"""
+        return {"id": self.index}
+
+    @classmethod
+    def backend_indexes(cls) -> list[list[tuple[str, BackendIndexType]]]:
+        """return backend search indexes"""
+        indexes: list[list[tuple[str, BackendIndexType]]] = list()
+        indexes.append(
+            [
+                ("protagonist", ASCENDING),
+                ("room_type", ASCENDING),
+                ("vehicle_tier", ASCENDING),
+                ("battle_start_timestamp", DESCENDING),
+            ]
+        )
+        indexes.append([("room_type", ASCENDING), ("vehicle_tier",
+                       ASCENDING), ("battle_start_timestamp", DESCENDING)])
+        return indexes
+
+    @classmethod
+    def transform_WoTBlitzReplayData(cls, in_obj: WoTBlitzReplayData) -> Optional["BSBlitzReplay"]:
+        res: BSBlitzReplay | None = None
+        try:
+            if (res := BSBlitzReplay.parse_obj(in_obj.summary.dict())) is not None:
+                res.id = in_obj.id
+                return res
+            else:
+                error(f"failed to transform object: {in_obj}")
+        except ValidationError as err:
+            error(f"failed to transform object: {in_obj}: {err}")
+        return res
+
+    @classmethod
+    def transform_WoTBlitzReplayJSON(cls, in_obj: WoTBlitzReplayJSON) -> Optional["BSBlitzReplay"]:
+        if (replay_data := WoTBlitzReplayData.transform(in_obj)) is not None:
+            return cls.transform_WoTBlitzReplayData(replay_data)
+        return None
+
+
+BSBlitzReplay.register_transformation(
+    WoTBlitzReplayData, BSBlitzReplay.transform_WoTBlitzReplayData)
+BSBlitzReplay.register_transformation(
+    WoTBlitzReplayJSON, BSBlitzReplay.transform_WoTBlitzReplayJSON)
+
+
 
 
