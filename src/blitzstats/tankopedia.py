@@ -401,11 +401,11 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
                     tankopedia.add(wgtank)
                 else:
                     error(f"could not transform tank_id={tank.tank_id}: {tank}")
-            if not filename.endswith(".json"):
-                filename += ".json"
-            async with open(filename, mode="w", encoding="utf-8") as outfile:
-                await outfile.write(tankopedia.json_src())
-            stats.log("tanks exported", len(tankopedia.data))
+            if await tankopedia.save_json(filename) > 0:
+                stats.log("tanks exported", len(tankopedia.data))
+            else:
+                error("could not export tankopedia")
+                stats.log("error")
 
         if not std_out:
             stats.print()
