@@ -66,7 +66,7 @@ class BSAccount(Account):
     added						: int  = Field(default_factory=epoch_now, alias="a")
     inactive					: bool = Field(default=False, alias="i")
     disabled					: bool = Field(default=False, alias="d")
-        # fmt: on
+    # fmt: on
 
     _min_inactivity_days: int = MIN_INACTIVITY_DAYS
     _exclude_defaults = False
@@ -201,6 +201,7 @@ class BSAccount(Account):
             error(f"{err}")
         return None
 
+
 BSAccount.register_transformation(Account, BSAccount.transform_Account)
 
 
@@ -245,7 +246,6 @@ class BSBlitzReplay(WoTBlitzReplaySummary):
     _ViewUrlBase: str = "https://replays.wotinspector.com/en/view/"
     _DLurlBase: str = "https://replays.wotinspector.com/en/download/"
 
-
     class Config:
         arbitrary_types_allowed = True
         allow_mutation = True
@@ -288,8 +288,7 @@ class BSBlitzReplay(WoTBlitzReplaySummary):
                 ("battle_start_timestamp", DESCENDING),
             ]
         )
-        indexes.append([("room_type", ASCENDING), ("vehicle_tier",
-                       ASCENDING), ("battle_start_timestamp", DESCENDING)])
+        indexes.append([("room_type", ASCENDING), ("vehicle_tier", ASCENDING), ("battle_start_timestamp", DESCENDING)])
         return indexes
 
     @classmethod
@@ -312,11 +311,129 @@ class BSBlitzReplay(WoTBlitzReplaySummary):
         return None
 
 
-BSBlitzReplay.register_transformation(
-    WoTBlitzReplayData, BSBlitzReplay.transform_WoTBlitzReplayData)
-BSBlitzReplay.register_transformation(
-    WoTBlitzReplayJSON, BSBlitzReplay.transform_WoTBlitzReplayJSON)
+BSBlitzReplay.register_transformation(WoTBlitzReplayData, BSBlitzReplay.transform_WoTBlitzReplayData)
+BSBlitzReplay.register_transformation(WoTBlitzReplayJSON, BSBlitzReplay.transform_WoTBlitzReplayJSON)
 
 
+# fmt: off
+class Tank(JSONExportable, CSVExportable, TXTExportable):
+    tank_id 	: int						= Field(default=..., alias='_id')
+    name 		: str | None				= Field(default=None, alias='n')
+    nation		: EnumNation | None 		= Field(default=None, alias='c')
+    type		: EnumVehicleTypeInt | None	= Field(default=None, alias='v')
+    tier		: EnumVehicleTier | None 	= Field(default=None, alias='t')
+    is_premium 	: bool 						= Field(default=False, alias='p')
+    next_tanks	: list[int] | None			= Field(default=None, alias='s')
+    # fmt: on
+    _exclude_defaults = False
+
+    class Config:
+        allow_mutation = True
+        validate_assignment = True
+        allow_population_by_field_name = True
+        # use_enum_values			= True
+        extra = Extra.allow
+
+    @property
+    def index(self) -> Idx:
+        """return backend index"""
+        return self.tank_id
+
+    @property
+    def indexes(self) -> dict[str, Idx]:
+        """return backend indexes"""
+        return {'tank_id': self.index}
+
+    @classmethod
+    def backend_indexes(cls) -> list[list[tuple[str, BackendIndexType]]]:
+        indexes: list[list[BackendIndex]] = list()
+        indexes.append([('tier', ASCENDING),
+                        ('type', ASCENDING)
+                        ])
+        indexes.append([('tier', ASCENDING),
+                        ('nation', ASCENDING)
+                        ])
+        indexes.append([('name', TEXT)
+                        ])
+        return indexes
+
+    @validator('next_tanks', pre=True)
+    def next_tanks2list(cls, v):
+        try:
+            if v is not None:
+                return [int(k) for k in v.keys()]
+        except Exception as err:
+            error(f"Error validating 'next_tanks': {err}")
+        return None
+
+    @validator('tier', pre=True)
+    def prevalidate_tier(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            return EnumVehicleTier[v.upper()].value
+        else:
+            return v
+
+    @validator('tier')
+    def validate_tier(cls, v):
+        if isinstance(v, int):
+            return EnumVehicleTier(v)
+        else:
+            return v
+
+    def __str__(self) -> str:
+        return f'{self.name}'
+
+    @classmethod
+    def transform_WGTank(cls, in_obj: 'WGTank') -> Optional['Tank']:
+        """Transform WGTank object to Tank"""
+        try:
+            # debug(f'type={type(in_obj)}')
+            # debug(f'in_obj={in_obj}')
+            tank_type: EnumVehicleTypeInt | None = None
+            if in_obj.type is not None:
+                tank_type = in_obj.type.as_int
+            return Tank(tank_id=in_obj.tank_id,
+                        name=in_obj.name,
+                        tier=in_obj.tier,
+                        type=tank_type,
+                        is_premium=in_obj.is_premium,
+                        nation=in_obj.nation,
+                        )
+        except Exception as err:
+            error(f'{err}')
+        return None
+
+    def csv_headers(self) -> list[str]:
+        """Provide CSV headers as list"""
+        return list(Tank.__fields__.keys())
+
+    def txt_row(self, format: str = '') -> str:
+        """export data as single row of text"""
+        return f'({self.tank_id}) {self.name} tier {self.tier} {self.type} {self.nation}'
 
 
+def WGTank2Tank(in_obj: "Tank") -> Optional["WGTank"]:
+    """Transform Tank object to WGTank"""
+    try:
+        # debug(f'type={type(in_obj)}')
+        # debug(f'in_obj={in_obj}')
+        tank_type: EnumVehicleTypeStr | None = None
+        if in_obj.type is not None:
+            tank_type = in_obj.type.as_str
+        # debug(f'trying to transform tank:{in_obj.dict()}')
+        return WGTank(
+            tank_id=in_obj.tank_id,
+            name=in_obj.name,
+            tier=in_obj.tier,
+            type=tank_type,
+            is_premium=in_obj.is_premium,
+            nation=in_obj.nation,
+        )
+    except Exception as err:
+        error(f"{err}")
+    return None
+
+
+# register model transformations
+Tank.register_transformation(WGTank, Tank.transform_WGTank)
+WGTank.register_transformation(Tank, WGTank2Tank)
