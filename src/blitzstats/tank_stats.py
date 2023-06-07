@@ -628,9 +628,9 @@ async def cmd_fetchMP(db: Backend, args: Namespace) -> bool:
 
         with Manager() as manager:
             counterQ: queue.Queue[int] = manager.Queue(ACCOUNTS_Q_MAX)
-            counterQas: AsyncQueue[int] = AsyncQueue.from_queue(counterQ)
+            counterQas: AsyncQueue[int] = AsyncQueue(counterQ)
             # writeQ 	: queue.Queue[list[WGTankStat]]	= manager.Queue(TANK_STATS_Q_MAX)
-            # statsQ	: AsyncQueue[list[WGTankStat]]	= AsyncQueue.from_queue(writeQ)
+            # statsQ	: AsyncQueue[list[WGTankStat]]	= AsyncQueue(writeQ)
             WORKERS: int = len(regions)
 
             with Pool(processes=WORKERS, initializer=fetch_mp_init, initargs=[db.config, args, counterQ]) as pool:
@@ -683,7 +683,7 @@ def fetch_mp_init(
         raise ValueError("could not create backend")
     db = tmp_db
     mp_args = args
-    counterQas = AsyncQueue.from_queue(counterQ)
+    counterQas = AsyncQueue(counterQ)
     debug("finished")
 
 
@@ -1471,8 +1471,8 @@ async def cmd_export_career(db: Backend, args: Namespace) -> bool:
         with Manager() as manager:
             dataQ: queue.Queue[pd.DataFrame] = manager.Queue(TANK_STATS_Q_MAX)
             workQ: queue.Queue[BSAccount | None] = manager.Queue(100)
-            adataQ: AsyncQueue[pd.DataFrame] = AsyncQueue.from_queue(dataQ)
-            aworkQ: AsyncQueue[BSAccount | None] = AsyncQueue.from_queue(workQ)
+            adataQ: AsyncQueue[pd.DataFrame] = AsyncQueue(dataQ)
+            aworkQ: AsyncQueue[BSAccount | None] = AsyncQueue(workQ)
             writer: Task = create_task(export_dataset_writer(basedir, adataQ, format, force))
 
             with Pool(
@@ -1525,8 +1525,8 @@ def export_career_mp_init(
     if (tmp_db := Backend.create(**backend_config)) is None:
         raise ValueError("could not create backend")
     db = tmp_db
-    workQ_a = AsyncQueue.from_queue(accountQ)
-    writeQ = AsyncQueue.from_queue(dataQ)
+    workQ_a = AsyncQueue(accountQ)
+    writeQ = AsyncQueue(dataQ)
     mp_options = options
     debug("finished")
 
@@ -1635,8 +1635,8 @@ async def cmd_export_update(db: Backend, args: Namespace) -> bool:
         with Manager() as manager:
             dataQ: queue.Queue[pd.DataFrame] = manager.Queue(TANK_STATS_Q_MAX)
             tankQ: queue.Queue[int | None] = manager.Queue()
-            adataQ: AsyncQueue[pd.DataFrame] = AsyncQueue.from_queue(dataQ)
-            atankQ: AsyncQueue[int | None] = AsyncQueue.from_queue(tankQ)
+            adataQ: AsyncQueue[pd.DataFrame] = AsyncQueue(dataQ)
+            atankQ: AsyncQueue[int | None] = AsyncQueue(tankQ)
             worker: Task = create_task(export_dataset_writer(basedir, adataQ, export_format, force))
 
             with Pool(
@@ -1693,8 +1693,8 @@ def export_update_mp_init(
     if (tmp_db := Backend.create(**backend_config)) is None:
         raise ValueError("could not create backend")
     db = tmp_db
-    workQ_t = AsyncQueue.from_queue(tankQ)
-    writeQ = AsyncQueue.from_queue(dataQ)
+    workQ_t = AsyncQueue(tankQ)
+    writeQ = AsyncQueue(dataQ)
     mp_options = options
     debug("finished")
 
@@ -1946,7 +1946,7 @@ def import_mp_init(
     if (tmp_db := Backend.create(**backend_config)) is None:
         raise ValueError("could not create backend")
     db = tmp_db
-    readQ = AsyncQueue.from_queue(inputQ)
+    readQ = AsyncQueue(inputQ)
     in_model = import_model
     mp_options = options
     debug("finished")

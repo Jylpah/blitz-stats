@@ -368,7 +368,7 @@ def import_mp_init(
     if (tmp_db := Backend.create(**backend_config)) is None:
         raise ValueError("could not create backend")
     db = tmp_db
-    readQ = AsyncQueue.from_queue(inputQ)
+    readQ = AsyncQueue(inputQ)
     in_model = import_model
     mp_options = options
     debug("finished")
