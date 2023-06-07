@@ -80,9 +80,9 @@ init_typed = false
 warn_required_dynamic_aliases = false
 warn_untyped_fields = true
 
-# [tool.black]
-# line-length = 120
-# include = '\.pyi?$'
+[tool.black]
+# line-length = 88
+include = '\.pyi?$'
 
 [tool.pyright]
 reportGeneralTypeIssues = false
