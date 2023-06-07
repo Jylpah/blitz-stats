@@ -89,9 +89,9 @@ class MongoErrorLog(ErrorLog):
 #
 ##############################################
 
-# I = TypeVar('I', str, int, ObjectId)
-# D = TypeVar('D', bound=JSONExportable)
-# O = TypeVar('O', bound=JSONExportable)
+D = TypeVar("D", bound="JSONExportable")
+J = TypeVar("J", bound="JSONExportable")
+O = TypeVar("O", bound="JSONExportable")
 
 MongoIndexAscDesc = BackendIndexType
 MongoIndex = BackendIndex
@@ -492,12 +492,12 @@ class MongoBackend(Backend):
     #
     ########################################################
 
-    async def _data_insert(self, table_type: BSTableType, obj: JSONImportable) -> bool:
+    async def _data_insert(self, table_type: BSTableType, obj: JSONExportable) -> bool:
         """Generic method to get one object of data_type"""
         try:
             # debug('starting')
             dbc: AsyncIOMotorCollection = self.get_collection(table_type)
-            model: type[JSONImportable] = self.get_model(table_type)
+            model: type[JSONExportable] = self.get_model(table_type)
             data: JSONExportable | None = obj
             if type(obj) is not model:
                 data = model.transform(obj)
@@ -1261,7 +1261,7 @@ class MongoBackend(Backend):
         debug("starting")
         try:
             debug(f"release={release}")
-            release = WGBlitzRelease.validate_release(release)
+            release = BSBlitzRelease.validate_release(release)
             if (obj := await self._data_get(BSTableType.Releases, idx=release)) is not None:
                 # debug(f'returning release={obj}')
                 return BSBlitzRelease.transform(obj)
@@ -1363,7 +1363,7 @@ class MongoBackend(Backend):
     async def release_delete(self, release: str) -> bool:
         """Delete a release from backend"""
         debug("starting")
-        release = WGBlitzRelease.validate_release(release)
+        release = BSBlitzRelease.validate_release(release)
         return await self._data_delete(BSTableType.Releases, idx=release)
 
     async def _mk_pipeline_releases(
