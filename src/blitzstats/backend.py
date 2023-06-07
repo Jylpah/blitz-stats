@@ -14,7 +14,7 @@ from blitzutils.region import Region
 from blitzutils.wg_api import WGTankStat, WGPlayerAchievementsMaxSeries, WGPlayerAchievementsMain, WoTBlitzTankString
 
 from blitzutils.tank import WGTank, EnumVehicleTier, EnumNation, EnumVehicleTypeStr
-from blitzutils.replay import WoTBlitzReplayJSON
+from blitzutils.replay import WoTBlitzReplayJSON, WoTBlitzReplayData
 from blitzutils.region import Region
 
 from pyutils import EventCounter, IterableQueue, JSONExportable, QueueDone
