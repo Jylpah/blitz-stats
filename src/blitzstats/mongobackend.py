@@ -7,18 +7,12 @@ from typing import (
     Any,
     Iterable,
     Sequence,
-    Union,
-    Tuple,
-    Literal,
     Final,
     AsyncGenerator,
     TypeVar,
-    ClassVar,
     cast,
-    Generic,
     Callable,
 )
-import random
 import logging
 import re
 
@@ -30,14 +24,13 @@ from pymongo.errors import BulkWriteError, CollectionInvalid, ConnectionFailure
 from pydantic import BaseModel, ValidationError, Field
 from asyncstdlib import enumerate
 
-from pyutils import JSONExportable, JSONImportable, AliasMapper, Idx, BackendIndexType, BackendIndex
-from pyutils.exportable import DESCENDING, ASCENDING, TEXT, I, D, O
+from pyutils import JSONExportable, AliasMapper, Idx, BackendIndexType, BackendIndex
+from pyutils.exportable import DESCENDING, ASCENDING, TEXT
 from pyutils.utils import epoch_now
 
 from blitzutils import (
     Region,
     WGTankStat,
-    WGBlitzRelease,
     WGPlayerAchievementsMaxSeries,
     WoTBlitzTankString,
     EnumNation,
@@ -1592,7 +1585,7 @@ class MongoBackend(Backend):
         try:
             debug("starting")
 
-            # class WGTankStat(JSONExportable, JSONImportable):
+            # class WGTankStat(JSONExportable):
             # id					: ObjectId | None = Field(None, alias='_id')
             # _region				: Region | None = Field(None, alias='r')
             # all					: WGTankStatAll = Field(..., alias='s')
@@ -1651,7 +1644,7 @@ class MongoBackend(Backend):
         try:
             debug("starting")
 
-            # class WGTankStat(JSONExportable, JSONImportable):
+            # class WGTankStat(JSONExportable):
             # 	id					: ObjectId  	= Field(alias='_id')
             ## region				: Region | None = Field(default=None, alias='r')
             # 	all					: WGTankStatAll = Field(..., alias='s')
