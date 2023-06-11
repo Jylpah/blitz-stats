@@ -4,7 +4,7 @@ from configparser import ConfigParser
 from argparse import Namespace, ArgumentParser
 from abc import ABC, abstractmethod
 from os.path import isfile
-from typing import Optional, Any, Sequence, AsyncGenerator, TypeVar, cast
+from typing import Optional, Any, Sequence, AsyncGenerator, TypeVar, cast, Type
 from datetime import datetime
 from enum import StrEnum, IntEnum
 from asyncio import Queue, CancelledError
@@ -415,6 +415,58 @@ class Backend(ABC):
     async def init(self, tables: list[str] = [tt.value for tt in BSTableType]) -> bool:  # type: ignore
         """Init backend and indexes"""
         raise NotImplementedError
+
+    def list_config(self, tables: list[str] = [tt.value for tt in BSTableType]) -> bool:  # type: ignore
+        """List backend config. Call super().list_config() in implementation backend"""
+
+        # driver
+        print(f"driver: {self.driver}")
+        print(f"database: {self.database}")
+
+        if self.db_config is not None:
+            for key in self.db_config:
+                if key == "password":
+                    print("password: is set")
+                    continue
+                print(f"{key}: {self._db_config[key]}")
+
+        # table and model config
+        print("Table config ------------------------------------------")
+        for table in tables:
+            table_type: BSTableType = BSTableType(table)
+            print(
+                f"Table type: {table_type.value}: table={self.get_table(table_type)}, model={self.get_model(table_type).__name__}"
+            )
+        # Table indexes
+
+        return True
+
+    async def test_config(self, tables: list[str] = [tt.value for tt in BSTableType], tests: int = 1000) -> bool:  # type: ignore
+        """Init backend and indexes"""
+
+        # table_types: list[BSTableType] = [BSTableType(table) for table in tables]
+
+        # if BSTableType.Accounts in table_types:
+        #     message(
+        #         f"Testing Accounts: table={self.get_table(BSTableType.Accounts)}, model={self.get_model(BSTableType.Accounts)}"
+        #     )
+        #     accounts = list[BSAccount] = list()
+        #     async for account in self.accounts_get(sample=100):
+        stats = EventCounter(f"test {self.driver}")
+        for table in tables:
+            table_type = BSTableType(table)
+            message(
+                f"Testing {table_type.value}: table={self.get_table(table_type)}, model={self.get_model(table_type)}"
+            )
+            model: Type[JSONExportable] = self.get_model(table_type)
+            async for obj in self.obj_export(table_type=table_type, sample=tests):
+                if (_ := model.from_obj(obj)) is None:
+                    error(f"failed to parse {model} from table={self.get_table(table_type)}: {obj}")
+                    stats.log(f"{table_type.value} errors")
+                else:
+                    stats.log(f"{table_type.value} OK")
+        stats.print()
+        return True
 
     @abstractmethod
     def copy(self, **kwargs) -> Optional["Backend"]:

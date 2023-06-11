@@ -95,6 +95,14 @@ def add_args_test(parser: ArgumentParser, config: Optional[ConfigParser] = None)
             metavar="TABLE [TABLE...]",
             help="TABLE(S) to test: " + ", ".join(tables),
         )
+        parser.add_argument(
+            "setup_test_tests",
+            default=1000,
+            nargs="?",
+            type=int,
+            metavar="N",
+            help="number of tests to run",
+        )
         return True
     except Exception as err:
         error(f"{err}")
@@ -151,8 +159,7 @@ async def cmd_list(db: Backend, args: Namespace) -> bool:
 
         if "all" in tables:
             tables = [tt.name for tt in BSTableType]
-        await db.list_config(tables=tables)
-        return True
+        return db.list_config(tables=tables)
     except Exception as err:
         error(f"{err}")
     return False
@@ -165,7 +172,7 @@ async def cmd_test(db: Backend, args: Namespace) -> bool:
 
         if "all" in tables:
             tables = [tt.name for tt in BSTableType]
-        await db.test_config(tables=tables)
+        await db.test_config(tables=tables, tests=args.setup_test_tests)
         return True
     except Exception as err:
         error(f"{err}")
