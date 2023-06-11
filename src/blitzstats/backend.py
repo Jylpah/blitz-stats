@@ -456,7 +456,7 @@ class Backend(ABC):
         for table in tables:
             table_type = BSTableType(table)
             message(
-                f"Testing {table_type.value}: table={self.get_table(table_type)}, model={self.get_model(table_type)}"
+                f"Testing {table_type.value}: table={self.get_table(table_type)}, model={self.get_model(table_type).__name__}"
             )
             model: Type[JSONExportable] = self.get_model(table_type)
             async for obj in self.obj_export(table_type=table_type, sample=tests):
