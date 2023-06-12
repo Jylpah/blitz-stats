@@ -452,20 +452,38 @@ class Backend(ABC):
         #     )
         #     accounts = list[BSAccount] = list()
         #     async for account in self.accounts_get(sample=100):
-        stats = EventCounter(f"test {self.driver}")
         for table in tables:
             table_type = BSTableType(table)
-            message(
-                f"Testing {table_type.value}: table={self.get_table(table_type)}, model={self.get_model(table_type).__name__}"
-            )
             model: Type[JSONExportable] = self.get_model(table_type)
+            tries: int = 0
+            ok: int = 0
             async for obj in self.obj_export(table_type=table_type, sample=tests):
+                tries += 1
                 if (_ := model.from_obj(obj)) is None:
                     error(f"failed to parse {model} from table={self.get_table(table_type)}: {obj}")
-                    stats.log(f"{table_type.value} errors")
                 else:
-                    stats.log(f"{table_type.value} OK")
-        stats.print()
+                    ok += 1
+            if tries == 0:
+                if logger.level == logging.INFO:
+                    print(
+                        f"{table_type.value}: ERROR ({ok}/{tries}/{tests}) table={self.get_table(table_type)}, model={self.get_model(table_type).__name__}"
+                    )
+                else:
+                    message(f"{table_type.value}: ERROR, could not fetch any data")
+            elif tries == ok:
+                if logger.level == logging.INFO:
+                    print(
+                        f"{table_type.value}: OK ({ok}/{tries}/{tests}) table={self.get_table(table_type)}, model={self.get_model(table_type).__name__}"
+                    )
+                else:
+                    message(f"{table_type.value}: OK")
+            else:
+                if logger.level == logging.INFO:
+                    print(
+                        f"{table_type.value}: FAILURE ({ok}/{tries}/{tests}) table={self.get_table(table_type)}, model={self.get_model(table_type).__name__}"
+                    )
+                else:
+                    message(f"{table_type.value}: FAILURE")
         return True
 
     @abstractmethod
