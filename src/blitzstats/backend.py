@@ -219,7 +219,7 @@ class Backend(ABC):
         self.set_model(BSTableType.Tankopedia, Tank)
         self.set_model(BSTableType.TankStrings, WoTBlitzTankString)
         self.set_model(BSTableType.Releases, BSBlitzRelease)
-        self.set_model(BSTableType.Replays, WoTBlitzReplayJSON)
+        self.set_model(BSTableType.Replays, BSBlitzReplay)
         self.set_model(BSTableType.AccountLog, ErrorLog)
         self.set_model(BSTableType.ErrorLog, ErrorLog)
         self.set_model(BSTableType.TankStats, WGTankStat)
