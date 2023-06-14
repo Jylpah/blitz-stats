@@ -216,7 +216,7 @@ class MongoBackend(Backend):
 
     async def test(self) -> bool:
         try:
-            debug(f"trying to connect: {self.backend}")
+            debug(f"trying to connect: {self.driver}")
             # The ping command is cheap and does not require auth.
             await self.db.command("ping")
             # await self._client.server_info()

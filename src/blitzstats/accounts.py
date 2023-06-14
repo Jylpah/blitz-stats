@@ -738,20 +738,20 @@ async def cmd_update(db: Backend, args: Namespace) -> bool:
         debug("starting")
 
         stats = EventCounter("accounts update", totals="total")
-        accountQ: IterableQueue[BSAccount] = IterableQueue(maxsize=10000)
-        db_worker = create_task(db.accounts_insert_worker(accountQ, force=args.force))
+        updateQ: IterableQueue[BSAccount] = IterableQueue(maxsize=10000)
+        db_worker = create_task(db.accounts_insert_worker(updateQ, force=True))  # without force=True update fails
 
         try:
             if args.accounts_update_source == "wg":
                 debug("wg")
-                stats.merge_child(await cmd_update_wg(db, args, accountQ))
+                stats.merge_child(await cmd_update_wg(db, args, updateQ))
             else:
                 raise ValueError(f"unknown accounts update source: {args.accounts_update_source}")
 
         except Exception as err:
             error(f"{err}")
 
-        await accountQ.join()
+        await updateQ.join()
         await stats.gather_stats([db_worker])
         stats.print()
 
@@ -767,7 +767,7 @@ async def cmd_update(db: Backend, args: Namespace) -> bool:
 ###########################################
 
 
-async def cmd_update_wg(db: Backend, args: Namespace, accountQ: IterableQueue[BSAccount]) -> EventCounter:
+async def cmd_update_wg(db: Backend, args: Namespace, updateQ: IterableQueue[BSAccount]) -> EventCounter:
     """Update accounts from WG API"""
     debug("starting")
     stats: EventCounter = EventCounter("WG API", totals="Total")
@@ -782,7 +782,6 @@ async def cmd_update_wg(db: Backend, args: Namespace, accountQ: IterableQueue[BS
         WORKERS: int = max([args.wg_workers, 1])
         workQ_creators: list[Task] = list()
         api_workers: list[Task] = list()
-        # inQ				: IterableQueue[BSAccount] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
         workQs: dict[Region, IterableQueue[list[BSAccount]]] = dict()
 
         for region in regions:
@@ -794,18 +793,19 @@ async def cmd_update_wg(db: Backend, args: Namespace, accountQ: IterableQueue[BS
                     )
                 )
             )
-        # workQ_creators.append(create_task(split_accountQ_batch(inQ, workQs)))
 
         for region in regions:
             for _ in range(WORKERS):
-                api_workers.append(create_task(update_account_info_worker(wg, region, workQs[region], accountQ)))
+                api_workers.append(
+                    create_task(update_account_info_worker(wg, region, workQ=workQs[region], updateQ=updateQ))
+                )
 
         with alive_bar(None, title="Updating accounts from WG API ") as bar:
             try:
                 prev: int = 0
                 done: int
-                while not accountQ.is_filled:
-                    done = accountQ.count
+                while not updateQ.is_filled:
+                    done = updateQ.count
                     if done - prev > 0:
                         bar(done - prev)
                     prev = done
@@ -831,29 +831,29 @@ async def update_account_info_worker(
     wg: WGApi,
     region: Region,
     workQ: IterableQueue[list[BSAccount]],
-    accountQ: IterableQueue[BSAccount],
+    updateQ: IterableQueue[BSAccount],
 ) -> EventCounter:
     """Update accounts with data from WG API accounts/info"""
     debug("starting")
     stats: EventCounter = EventCounter(f"{region}")
     infos: list[WGAccountInfo] | None
     accounts: dict[int, BSAccount]
+    account: BSAccount
     ids: list[int] = list()
 
+    await updateQ.add_producer()
     try:
-        await accountQ.add_producer()
-
         while True:
             accounts = dict()
-            for a in await workQ.get():
-                accounts[a.id] = a
+            for account in await workQ.get():
+                accounts[account.id] = account
             N: int = len(accounts)
             try:
                 stats.log("account_ids", N)
                 if N == 0 or N > 100:
                     raise ValueError(f"Incorrect number of account_ids give {N}")
 
-                ids = [a.id for a in accounts.values()]
+                ids = list(accounts.keys())
                 ids_stats: list[int] = list()
                 if (infos := await wg.get_account_info(ids, region)) is not None:
                     stats.log("stats found", len(infos))
@@ -861,15 +861,15 @@ async def update_account_info_worker(
                     # accounts with stats
                     for info in infos:
                         try:
-                            a = accounts[info.account_id]
+                            account = accounts[info.account_id]
                             ids_stats.append(info.account_id)
                             # error(f'updating account_id={a.id}: {info}')
-                            if a.update(info):
+                            if account.update(info):
                                 # error(f'updated: {a}')
-                                await accountQ.put(a)
+                                await updateQ.put(account)
                                 stats.log("updated")
                             else:
-                                debug(f"Could not update: account_id={a.id} region={a.region}")
+                                error(f"Could not update: account_id={account.id} region={account.region}")
                                 stats.log("not updated")
                         except KeyError as err:
                             error(f"{err}")
@@ -880,7 +880,7 @@ async def update_account_info_worker(
                         try:
                             a = accounts[account_id]
                             a.disabled = True
-                            await accountQ.put(a)
+                            await updateQ.put(a)
                             # error(f'disabled account: {a}')
                             stats.log("disabled")
                         except KeyError as err:
@@ -904,8 +904,8 @@ async def update_account_info_worker(
     except Exception as err:
         error(f"{err}")
     finally:
-        debug(f"closing accountQ: {region}")
-        await accountQ.finish()
+        debug(f"closing updateQ: {region}")
+        await updateQ.finish()
     return stats
 
 
@@ -1598,7 +1598,7 @@ async def count_accounts(db: Backend, args: Namespace, stats_type: StatsTypes | 
     accounts_N: int = 0
     try:
         regions: set[Region] = {Region(r) for r in args.regions}
-        accounts: list[BSAccount] | None = read_args_accounts(args.accounts)
+        accounts: list[BSAccount] | None = await read_args_accounts(db, args.accounts)
 
         if accounts is not None:
             accounts_N = len(accounts)
@@ -1649,10 +1649,11 @@ async def create_accountQ(
     """Helper to make accountQ from arguments"""
     stats: EventCounter = EventCounter(f"{db.driver}: accounts")
     debug("starting")
+    regions: set[Region] = set(args.region)
     try:
         accounts: list[BSAccount] | None = None
         try:
-            accounts = read_args_accounts(args.accounts)
+            accounts = await read_args_accounts(db, args.accounts)
         except:
             debug("could not read --accounts")
 
@@ -1660,17 +1661,17 @@ async def create_accountQ(
 
         if accounts is not None:
             for account in accounts:
-                if account.region in args.regions:
+                if account.region in regions:
                     try:
                         await accountQ.put(account)
                         stats.log("read")
-                    except Exception as err:
-                        error(f"Could not add account ({account.id}) to queue")
+                    except QueueDone as err:
+                        error(f"Could not add account ({account.id}) to queue: {err}")
                         stats.log("errors")
 
         elif args.file is not None:
             async for account in BSAccount.import_file(args.file):
-                if account.region in args.regions:
+                if account.region in regions:
                     await accountQ.put(account)
                     debug(f"account put to queue: id={account.id}")
                     stats.log("read")
@@ -1682,13 +1683,15 @@ async def create_accountQ(
                     try:
                         await accountQ.put(account)
                         stats.log("read")
-                    except Exception as err:
-                        error(f"Could not add account ({account.id}) to queue")
+                    except QueueDone as err:
+                        error(f"Could not add account ({account.id}) to queue: {err}")
                         stats.log("errors")
             else:
                 error(f"could not parse args: {args}")
     except CancelledError as err:
-        debug(f"Cancelled")
+        debug("Cancelled")
+    except KeyboardInterrupt:
+        debug("Keyboard interrupt received")
     except Exception as err:
         error(f"{err}")
     finally:
@@ -1707,13 +1710,11 @@ async def create_accountQ_batch(
 ) -> EventCounter:
     """Helper to make accountQ from arguments"""
     stats: EventCounter = EventCounter(f"{db.driver}: accounts")
-    # assert len(args.regions) == 1, "account batch queue supports only a single region"
     debug(f"starting: {region}")
-    ##  region : Region = [ Region(r) for r in args.regions ][0]
     try:
         accounts: list[BSAccount] | None = None
         try:
-            accounts = read_args_accounts(args.accounts)
+            accounts = await read_args_accounts(db, args.accounts)
         except:
             debug("could not read --accounts")
 
@@ -1763,10 +1764,6 @@ async def create_accountQ_batch(
             accounts_args: dict[str, Any] | None
             if (accounts_args := await accounts_parse_args(db, args)) is not None:
                 accounts_args["regions"] = {region}
-                # async for accounts in db.accounts_get_batch(stats_type=stats_type,
-                # 											batch=batch,
-                # 											**accounts_args):
-
                 async for accounts in batch_gen(db.accounts_get(stats_type=stats_type, **accounts_args), batch=batch):
                     try:
                         await accountQ.put(accounts)
@@ -1897,11 +1894,15 @@ async def split_accountQ_batch(
     return stats
 
 
-def read_args_accounts(accounts: list[str]) -> list[BSAccount] | None:
+async def read_args_accounts(db: Backend, accounts: list[str]) -> list[BSAccount] | None:
     res: list[BSAccount] = list()
     for a in accounts:
         try:
-            if (acc := BSAccount(id=a)) is not None:
+            if (acc := BSAccount(id=a)) is None:
+                continue
+            if (account_db := await db.account_get(account_id=acc.id)) is not None:
+                res.append(account_db)
+            else:
                 res.append(acc)
         except Exception as err:
             error(f"{err}")
@@ -1920,7 +1921,7 @@ async def accounts_parse_args(
 
     try:
         try:
-            res["regions"] = {Region(r) for r in args.regions}
+            res["regions"] = set(args.regions)
         except:
             debug("could not read --regions")
 

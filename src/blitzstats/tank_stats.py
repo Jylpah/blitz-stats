@@ -1019,7 +1019,7 @@ async def cmd_edit(db: Backend, args: Namespace) -> bool:
         since: int = 0
         if args.since is not None:
             since = int(datetime.fromisoformat(args.since).timestamp())
-        accounts: list[BSAccount] | None = read_args_accounts(args.accounts)
+        accounts: list[BSAccount] | None = await read_args_accounts(db, args.accounts)
         sample: float = args.sample
         commit: bool = args.commit
         tank_statQ: IterableQueue[WGTankStat] = IterableQueue(maxsize=TANK_STATS_Q_MAX)
@@ -1349,7 +1349,7 @@ async def cmd_export_text(db: Backend, args: Namespace) -> bool:
         force: bool = args.force
         export_stdout: bool = filename == "-"
         sample: float = args.sample
-        accounts: list[BSAccount] | None = read_args_accounts(args.accounts)
+        accounts: list[BSAccount] | None = await read_args_accounts(db, args.accounts)
         tanks: list[Tank] | None = read_args_tanks(args.tanks)
         release: BSBlitzRelease | None = None
         if args.release is not None:
