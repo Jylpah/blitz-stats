@@ -198,7 +198,18 @@ class BSAccount(Account):
             error(f"{err}")
         return None
 
+    @classmethod
+    def transform_WGAccountInfo(cls, in_obj: WGAccountInfo) -> Optional["BSAccount"]:
+        """Transform WGAccountInfo object to BSAccount"""
+        try:
+            account: Account | None = Account.transform(in_obj)
+            return BSAccount.transform(account)
+        except Exception as err:
+            error(f"{err}")
+        return None
 
+
+BSAccount.register_transformation(WGAccountInfo, BSAccount.transform_WGAccountInfo)
 BSAccount.register_transformation(Account, BSAccount.transform_Account)
 
 
