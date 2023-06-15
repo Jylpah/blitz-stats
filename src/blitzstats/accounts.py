@@ -1047,6 +1047,8 @@ async def cmd_fetch_wg(db: Backend, args: Namespace, accountQ: IterableQueue[BSA
                     ids: list[int] = list()
                     await idQs[region].add_producer()
                     async for account in BSAccount.import_file(args.file):
+                        if account.region != region:
+                            continue
                         ids.append(account.id)
                         if len(ids) == 100:
                             await idQs[region].put(ids)
@@ -1102,12 +1104,13 @@ async def account_idQ_maker(idQ: IterableQueue[Sequence[int]], start: int, end: 
         debug("queue done")
     except (KeyboardInterrupt, CancelledError):
         debug("Cancelled")
-        pass
+        raise
     except Exception as err:
         error(f"{err}")
-    stats.log("queued", last - start)
-    debug(f"closing idQ")
-    await idQ.finish()
+    finally:
+        stats.log("queued", last - start)
+        debug(f"closing idQ")
+        await idQ.finish()
     return stats
 
 
@@ -1173,34 +1176,8 @@ async def fetch_account_info_worker(
         debug(f"closing accountQ: {region}")
         await accountQ.finish()
         debug(f"closing idQ: {region}")
-        await idQ.finish(all=True)
+        await idQ.finish(all=True, empty=True)
     return stats
-
-
-# async def accountQ_filter(limit : int,
-# 						  inQ: Queue[list[BSAccount] | None],
-# 						  accountQ : Queue[list[BSAccount]]) -> EventCounter:
-# 	"""Read inputQ and stop after 'limit' consequtive None  has been counted"""
-# 	debug('starting')
-# 	stats : EventCounter = EventCounter('account Q filter')
-# 	try:
-# 		accounts : list[BSAccount] | None
-# 		left : int = limit
-# 		while True:
-# 			accounts = await inQ.get()
-# 			if accounts is None:
-# 				left -= 1
-# 				stats.log('no stats')
-# 			else:
-# 				left = limit
-# 				await accountQ.put(accounts)
-# 				stats.log('stats', len(accounts))
-# 			if left == 0:
-# 				debug(f'limit reached: {limit}')
-# 				break
-# 	except Exception as err:
-# 		error(f'{err}')
-# 	return stats
 
 
 async def cmd_fetch_wi(db: Backend, args: Namespace, accountQ: IterableQueue[BSAccount] | None) -> EventCounter:
