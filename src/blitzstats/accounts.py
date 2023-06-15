@@ -865,11 +865,11 @@ async def update_account_info_worker(
                             ids_stats.append(info.account_id)
                             # error(f'updating account_id={a.id}: {info}')
                             if account.update(info):
-                                # error(f'updated: {a}')
+                                debug("account_id=%d region=%s: updated", account.id, account.region)
                                 await updateQ.put(account)
                                 stats.log("updated")
                             else:
-                                error(f"Could not update: account_id={account.id} region={account.region}")
+                                debug("account_id=%d region=%s: not updated", account.id, account.region)
                                 stats.log("not updated")
                         except KeyError as err:
                             error(f"{err}")
