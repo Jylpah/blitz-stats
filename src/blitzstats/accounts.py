@@ -1904,10 +1904,13 @@ async def accounts_parse_args(
     res: dict[str, Any] = dict()
 
     try:
-        try:
-            res["regions"] = set(args.regions)
-        except:
-            debug("could not read --regions")
+        regions: set[Region] = set()
+        for region in args.regions:
+            try:
+                regions.add(Region(region))
+            except:
+                error(f"could not read --regions={region}")
+        res["regions"] = regions
 
         # try:
         # 	res['accounts'] = read_args_accounts(args.accounts)
