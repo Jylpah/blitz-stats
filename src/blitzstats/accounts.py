@@ -870,6 +870,7 @@ async def update_account_info_worker(
                             else:
                                 debug("account_id=%d region=%s: not updated", account.id, account.region)
                                 stats.log("not updated")
+                            account.disabled = False
                             await updateQ.put(account)  # to updated account_info_updated
                         except KeyError as err:
                             error(f"{err}")
