@@ -641,6 +641,7 @@ async def cmd_fetchMP(db: Backend, args: Namespace) -> bool:
                 # worker = create_task(fetch_backend_worker(db, statsQ, force=args.force))
                 counter: QCounter = QCounter(counterQas)
                 worker = create_task(counter.start())
+                message("counting accounts ...")
                 accounts: int = await db.accounts_count(StatsTypes.tank_stats, **accounts_args)
                 debug(f"starting {WORKERS} workers")
                 results: AsyncResult = pool.map_async(fetch_mp_worker_start, regions)
