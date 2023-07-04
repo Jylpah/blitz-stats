@@ -866,11 +866,11 @@ async def update_account_info_worker(
                             # error(f'updating account_id={a.id}: {info}')
                             if account.update(info):
                                 debug("account_id=%d region=%s: updated", account.id, account.region)
-                                await updateQ.put(account)
                                 stats.log("updated")
                             else:
                                 debug("account_id=%d region=%s: not updated", account.id, account.region)
                                 stats.log("not updated")
+                            await updateQ.put(account)  # to updated account_info_updated
                         except KeyError as err:
                             error(f"{err}")
 
@@ -1649,6 +1649,9 @@ async def create_accountQ(
         elif args.file is not None:
             async for account in BSAccount.import_file(args.file):
                 if account.region in regions:
+                    if args.file.lower().endswith(".txt"):
+                        if (a := await db.account_get(account.id)) is not None:
+                            account = a
                     await accountQ.put(account)
                     debug(f"account put to queue: id={account.id}")
                     stats.log("read")
@@ -1712,6 +1715,9 @@ async def create_accountQ_batch(
             async for account in BSAccount.import_file(args.file):
                 try:
                     if account.region == region:
+                        if args.file.lower().endswith(".txt"):
+                            if (a := await db.account_get(account.id)) is not None:
+                                account = a
                         accounts.append(account)
                         if len(accounts) == batch:
                             await accountQ.put(accounts)
