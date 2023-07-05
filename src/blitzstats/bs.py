@@ -43,18 +43,24 @@ debug = logger.debug
 
 
 # Utils
-def get_datestr(_datetime: datetime = datetime.now()) -> str:
-    return _datetime.strftime("%Y%m%d_%H%M")
+def get_datestr(date_time: datetime | None = None) -> str:
+    if date_time is None:
+        date_time = datetime.now()
+    return f"{date_time:%Y%m%d_%H%M}"
 
 
-def time_str(date_time: datetime = datetime.now()) -> str:
+def time_str(date_time: datetime | None = None) -> str:
     """Return time as string in YYYY-MM-DD HH:mm format.
     Default is current local time"""
+    if date_time is None:
+        date_time = datetime.now()
     return f"{date_time:%Y-%m-%d %H:%M}"
 
 
-def time_elapsed(start: datetime, end: datetime = datetime.now()) -> str:
+def time_elapsed(start: datetime, end: datetime | None = None) -> str:
     """Return time difference as string in HH:mm:ss format"""
+    if end is None:
+        end = datetime.now()
     seconds: int = int((end - start).total_seconds())
     hours, remainder = divmod(seconds, 60 * 60)
     minutes, seconds = divmod(remainder, 60)
@@ -227,7 +233,7 @@ async def main() -> int:
 
     except Exception as err:
         error(f"{err}")
-    if args.main_cmd in ["accounts", "tank-stats", "player-achievements", "replays", "setup"]:
+    if args.main_cmd in ["accounts", "tank-stats", "player-achievements", "replays"]:
         message(f"program finished: {time_str()} ({time_elapsed(start_time)})")
     return 0
 
