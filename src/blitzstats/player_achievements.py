@@ -332,6 +332,7 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
             accounts_args: dict[str, Any] | None
             if (accounts_args := await accounts_parse_args(db, args)) is None:
                 raise ValueError(f"could not parse account args: {args}")
+            message("counting accounts...")
             accounts = await db.accounts_count(StatsTypes.player_achievements, **accounts_args)
 
         if args.sample > 1:
