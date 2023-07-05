@@ -64,7 +64,7 @@ def time_elapsed(start: datetime, end: datetime | None = None) -> str:
     seconds: int = int((end - start).total_seconds())
     hours, remainder = divmod(seconds, 60 * 60)
     minutes, seconds = divmod(remainder, 60)
-    return f"{hours}:{minutes}:{seconds}"
+    return f"{hours}h {minutes}min {seconds}sec"
 
 
 # main() -------------------------------------------------------------
