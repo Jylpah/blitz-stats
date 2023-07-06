@@ -95,6 +95,7 @@ async def main() -> int:
         if isfile(fn):
             CONFIG_FILE = fn
             verbose(f"config file: {CONFIG_FILE}")
+            break
     if CONFIG_FILE is None:
         error("config file not found in: " + ", ".join(CONFIG_FILES))
 
