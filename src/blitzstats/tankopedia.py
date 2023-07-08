@@ -397,15 +397,19 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
             async for tank in db.tankopedia_get_many(
                 tanks=tanks, tier=tier, tank_type=tank_type, nation=nation, is_premium=is_premium
             ):
+                stats.log("tanks read")
                 if (wgtank := WGTank.transform(tank)) is not None:
                     tankopedia.add(wgtank)
                 else:
                     error(f"could not transform tank_id={tank.tank_id}: {tank}")
-            if await tankopedia.save_json(filename) > 0:
-                stats.log("tanks exported", len(tankopedia.data))
+            if std_out:
+                print(json.dumps([wgtank.obj_src() for wgtank in tankopedia], indent=4))
             else:
-                error("could not export tankopedia")
-                stats.log("error")
+                if await tankopedia.save_json(filename) > 0:
+                    stats.log("tanks exported", len(tankopedia.data))
+                else:
+                    error("could not export tankopedia")
+                    stats.log("error")
 
         if not std_out:
             stats.print()
