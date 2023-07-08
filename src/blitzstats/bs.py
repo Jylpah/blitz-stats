@@ -151,8 +151,6 @@ async def main() -> int:
         else:
             debug("No config file found")
 
-
-
         # Parse command args
         parser.add_argument("-h", "--help", action="store_true", help="Show help")
         if yappi is not None:
