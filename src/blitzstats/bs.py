@@ -118,6 +118,9 @@ async def main() -> int:
 
     args, argv = parser.parse_known_args()
 
+    debug(f"Args parsed: {str(args)}")
+    debug(f"Args not parsed yet: {str(argv)}")
+
     try:
         # setup logging
         logger.setLevel(args.LOG_LEVEL)
@@ -148,8 +151,7 @@ async def main() -> int:
         else:
             debug("No config file found")
 
-        debug(f"Args parsed: {str(args)}")
-        debug(f"Args not parsed yet: {str(argv)}")
+
 
         # Parse command args
         parser.add_argument("-h", "--help", action="store_true", help="Show help")
