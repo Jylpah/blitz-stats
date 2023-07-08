@@ -1354,6 +1354,7 @@ class Backend(ABC):
             async for tank in self.tankopedia_get_many(
                 tanks=tanks, tier=tier, tank_type=tank_type, nation=nation, is_premium=is_premium
             ):
+                # debug("got: %s", str(tank))
                 await tankQ.put(tank)
                 stats.log("tanks")
         except Exception as err:

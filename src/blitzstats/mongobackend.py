@@ -1973,8 +1973,11 @@ class MongoBackend(Backend):
                 raise ValueError("Could not create Tankopedia pipeline")
             # debug(f'pipeline={pipeline}')
             async for data in self._datas_get(BSTableType.Tankopedia, pipeline):
+                # debug("got: %s", str(data))
                 if (tank := Tank.transform(data)) is not None:
                     yield tank
+                else:
+                    error(f"could not transform Tank from object: {data}")
         except Exception as err:
             error(f"Could get Tankopedia from {self.table_uri(BSTableType.Tankopedia)}: {err}")
 

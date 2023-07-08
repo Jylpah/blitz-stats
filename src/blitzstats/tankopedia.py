@@ -351,7 +351,6 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
     try:
         debug("starting")
         stats: EventCounter = EventCounter("tankopedia export")
-        tankQ: IterableQueue[Tank] = IterableQueue(maxsize=100)
         filename: str = args.filename
         nation: EnumNation | None = None
         tier: EnumVehicleTier | None = None
@@ -375,6 +374,8 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
         export_worker: Task
 
         if args.format in ["txt", "csv"]:
+            tankQ: IterableQueue[Tank] = IterableQueue(maxsize=100)
+
             export_worker = create_task(
                 export(
                     iterable=tankQ,
@@ -385,13 +386,15 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
                 )
             )
 
+            await tankQ.add_producer()
             stats.merge_child(
                 await db.tankopedia_get_worker(
                     tankQ, tanks=tanks, tier=tier, tank_type=tank_type, nation=nation, is_premium=is_premium
                 )
             )
+            await tankQ.finish()
             await tankQ.join()
-            await stats.gather_stats([export_worker])
+            await stats.gather_stats([export_worker], cancel=False)
         elif args.format == "json":
             tankopedia = WGApiTankopedia()
             tankopedia.data = dict()
@@ -478,24 +481,23 @@ async def cmd_update(db: Backend, args: Namespace) -> bool:
     filename: str = args.file
     force: bool = args.force
     stats: EventCounter = EventCounter("tankopedia update")
+    tankopedia: WGApiTankopedia | None
     try:
-        async with open(filename, "rt", encoding="utf8") as fp:
-            # Update Tankopedia
-            tankopedia: WGApiTankopedia = WGApiTankopedia.parse_raw(await fp.read())
-            if tankopedia.data is None:
-                raise ValueError(f"Could not find tanks from file: {filename}")
+        if (tankopedia := await WGApiTankopedia.open_json(filename)) is None:
+            raise ValueError(f"could not read tanks from file: {filename}")
 
-            for wgtank in tankopedia.data.values():
-                if (tank := Tank.transform(wgtank)) is None:
-                    error(f"Could not convert format to Tank: {tank}")
-                    continue
-                # print(f'tank_id={tank.tank_id}, name={tank.name}, tier={tank.tier}')
-                try:
-                    if await db.tankopedia_insert(tank=tank, force=force):
-                        verbose(f"Added: tank_id={tank.tank_id} {tank.name}")
-                        stats.log("tanks added")
-                except Exception as err:
-                    error(f"Unexpected error ({tank.tank_id}): {err}")
+        for wgtank in tankopedia:
+            if (tank := Tank.transform(wgtank)) is None:
+                error(f"Could not transform {wgtank.name} (tank_id={wgtank.tank_id}) to Tank format")
+                continue
+            try:
+                if await db.tankopedia_insert(tank=tank, force=force):
+                    verbose(f"Added: tank_id={tank.tank_id} {tank.name}")
+                    stats.log("tanks added/updated")
+                else:
+                    stats.log("tanks not added")
+            except Exception as err:
+                error(f"Unexpected error ({tank.tank_id}): {err}")
 
             # tank_strs : list[WoTBlitzTankString] | None
             # if (tank_strs := WoTBlitzTankString.from_tankopedia(tankopedia)) is not None:
