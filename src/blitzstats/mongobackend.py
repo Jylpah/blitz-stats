@@ -35,7 +35,6 @@ from blitzutils import (
     WoTBlitzTankString,
     EnumNation,
     EnumVehicleTier,
-    EnumVehicleTypeStr,
 )
 
 from .backend import (
@@ -51,7 +50,7 @@ from .backend import (
     A,
     batch_gen,
 )
-from .models import BSAccount, BSBlitzRelease, BSBlitzReplay, StatsTypes, Tank
+from .models import BSAccount, BSBlitzRelease, BSBlitzReplay, StatsTypes, Tank, EnumVehicleTypeInt
 
 # Setup logging
 logger = logging.getLogger()
@@ -1917,7 +1916,7 @@ class MongoBackend(Backend):
         self,
         tanks: list[Tank] | None = None,
         tier: EnumVehicleTier | None = None,
-        tank_type: EnumVehicleTypeStr | None = None,
+        tank_type: EnumVehicleTypeInt | None = None,
         nation: EnumNation | None = None,
         is_premium: bool | None = None,
     ) -> list[dict[str, Any]] | None:
@@ -1934,7 +1933,7 @@ class MongoBackend(Backend):
             if tank_type is not None:
                 match.append({alias("type"): tank_type.value})
             if nation is not None:
-                match.append({alias("nation"): nation.name})
+                match.append({alias("nation"): nation.value})
             if tanks is not None and len(tanks) > 0:
                 match.append({alias("tank_id"): {"$in": [t.tank_id for t in tanks]}})
             if len(match) > 0:
@@ -1958,7 +1957,7 @@ class MongoBackend(Backend):
         self,
         tanks: list[Tank] | None = None,
         tier: EnumVehicleTier | None = None,
-        tank_type: EnumVehicleTypeStr | None = None,
+        tank_type: EnumVehicleTypeInt | None = None,
         nation: EnumNation | None = None,
         is_premium: bool | None = None,
     ) -> AsyncGenerator[Tank, None]:
@@ -1985,7 +1984,7 @@ class MongoBackend(Backend):
         self,
         tanks: list[Tank] | None = None,
         tier: EnumVehicleTier | None = None,
-        tank_type: EnumVehicleTypeStr | None = None,
+        tank_type: EnumVehicleTypeInt | None = None,
         nation: EnumNation | None = None,
         is_premium: bool | None = None,
     ) -> int:

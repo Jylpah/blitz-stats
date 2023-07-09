@@ -13,14 +13,14 @@ from pydantic import Field
 from blitzutils.region import Region
 from blitzutils.wg_api import WGTankStat, WGPlayerAchievementsMaxSeries, WGPlayerAchievementsMain, WoTBlitzTankString
 
-from blitzutils.tank import WGTank, EnumVehicleTier, EnumNation, EnumVehicleTypeStr
+from blitzutils.tank import WGTank, EnumVehicleTier, EnumNation
 from blitzutils.replay import WoTBlitzReplayJSON, WoTBlitzReplayData
 from blitzutils.region import Region
 
 from pyutils import EventCounter, IterableQueue, JSONExportable, QueueDone
 from pyutils.utils import epoch_now, is_alphanum
 
-from .models import BSAccount, BSBlitzRelease, BSBlitzReplay, StatsTypes, Tank
+from .models import BSAccount, BSBlitzRelease, BSBlitzReplay, StatsTypes, Tank, EnumVehicleTypeInt
 
 
 # Setup logging
@@ -1276,7 +1276,7 @@ class Backend(ABC):
         self,
         tanks: list[Tank] | None = None,
         tier: EnumVehicleTier | None = None,
-        tank_type: EnumVehicleTypeStr | None = None,
+        tank_type: EnumVehicleTypeInt | None = None,
         nation: EnumNation | None = None,
         is_premium: bool | None = None,
     ) -> AsyncGenerator[Tank, None]:
@@ -1288,7 +1288,7 @@ class Backend(ABC):
         self,
         tanks: list[Tank] | None = None,
         tier: EnumVehicleTier | None = None,
-        tank_type: EnumVehicleTypeStr | None = None,
+        tank_type: EnumVehicleTypeInt | None = None,
         nation: EnumNation | None = None,
         is_premium: bool | None = None,
     ) -> int:
@@ -1345,7 +1345,7 @@ class Backend(ABC):
         tankQ: Queue[Tank],
         tanks: list[Tank] | None = None,
         tier: EnumVehicleTier | None = None,
-        tank_type: EnumVehicleTypeStr | None = None,
+        tank_type: EnumVehicleTypeInt | None = None,
         nation: EnumNation | None = None,
         is_premium: bool | None = None,
     ) -> EventCounter:
