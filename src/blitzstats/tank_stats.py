@@ -1387,11 +1387,7 @@ async def cmd_export_text(db: Backend, args: Namespace) -> bool:
                 )
             # split by region
             export_workers.append(
-                create_task(
-                    split_tank_statQ_by_region(
-                        Q_all=tank_statQs["all"], regionQs=cast(dict[str, Queue[WGTankStat]], tank_statQs)
-                    )
-                )
+                create_task(split_tank_statQ_by_region(Q_all=tank_statQs["all"], regionQs=tank_statQs))
             )
         else:
             if filename != "-":
@@ -1420,18 +1416,20 @@ async def cmd_export_text(db: Backend, args: Namespace) -> bool:
             await queue.join()
         if bar is not None:
             bar.cancel()
-        for res in await gather(backend_worker):
-            if isinstance(res, EventCounter):
-                stats.merge_child(res)
-            elif type(res) is BaseException:
-                error(f"{db.driver}: tank_stats_get_worker() returned error: {res}")
-        for worker in export_workers:
-            worker.cancel()
-        for res in await gather(*export_workers):
-            if isinstance(res, EventCounter):
-                stats.merge_child(res)
-            elif type(res) is BaseException:
-                error(f"export(format={args.format}) returned error: {res}")
+        await stats.gather_stats([backend_worker], cancel=False)
+        # for res in await gather(backend_worker):
+        #     if isinstance(res, EventCounter):
+        #         stats.merge_child(res)
+        #     elif type(res) is BaseException:
+        #         error(f"{db.driver}: tank_stats_get_worker() returned error: {res}")
+        # for worker in export_workers:
+        #     worker.cancel()
+        await stats.gather_stats(export_workers, cancel=False)
+        # for res in await gather(*export_workers):
+        #     if isinstance(res, EventCounter):
+        #         stats.merge_child(res)
+        #     elif type(res) is BaseException:
+        #         error(f"export(format={args.format}) returned error: {res}")
         if not export_stdout:
             message(stats.print(do_print=False, clean=True))
 
@@ -2070,19 +2068,20 @@ async def map_releases_worker(
 
 
 async def split_tank_statQ_by_region(
-    Q_all,
-    regionQs: dict[str, Queue[WGTankStat]],
+    Q_all: IterableQueue[WGTankStat],
+    regionQs: dict[str, IterableQueue[WGTankStat]],
     progress: bool = False,
     bar_title: str = "Splitting tank stats queue",
 ) -> EventCounter:
     debug("starting")
     stats: EventCounter = EventCounter("tank stats")
     try:
+        for Q in regionQs.values():
+            await Q.add_producer()
         with alive_bar(
             Q_all.qsize(), title=bar_title, manual=True, refresh_secs=1, enrich_print=False, disable=not progress
         ) as bar:
-            while True:
-                tank_stat: WGTankStat = await Q_all.get()
+            async for tank_stat in Q_all:
                 try:
                     if tank_stat.region is None:
                         raise ValueError(f"account ({tank_stat.id}) does not have region defined")
@@ -2098,15 +2097,17 @@ async def split_tank_statQ_by_region(
                     error(f"{err}")
                 finally:
                     stats.log("total")
-                    Q_all.task_done()
                     bar()
-                    if progress and Q_all.qsize() == 0:
-                        break
+                    # if progress and Q_all.qsize() == 0:
+                    #     break
 
     except CancelledError as err:
         debug(f"Cancelled")
     except Exception as err:
         error(f"{err}")
+    finally:
+        for Q in regionQs.values():
+            await Q.finish()
     return stats
 
 

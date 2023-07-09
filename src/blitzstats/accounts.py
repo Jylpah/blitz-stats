@@ -1802,8 +1802,7 @@ async def split_accountQ(inQ: IterableQueue[BSAccount], regionQs: dict[str, Iter
         for Q in regionQs.values():
             await Q.add_producer()
 
-        while True:
-            account = await inQ.get()
+        async for account in inQ:
             try:
                 if account.region is None:
                     raise ValueError(f"account ({account.id}) does not have region defined")
@@ -1819,9 +1818,9 @@ async def split_accountQ(inQ: IterableQueue[BSAccount], regionQs: dict[str, Iter
                 error(f"{err}")
             finally:
                 stats.log("total")
-                inQ.task_done()
-    except QueueDone:
-        debug("Marking regionQs finished")
+
+    # except QueueDone:
+    #     debug("Marking regionQs finished")
     except CancelledError as err:
         debug(f"Cancelled")
     except Exception as err:
@@ -1843,8 +1842,7 @@ async def split_accountQ_batch(
             batches[region] = list()
             await Q.add_producer()
 
-        while True:
-            account = await inQ.get()
+        async for account in inQ:
             try:
                 region = account.region
                 if region in regionQs.keys():
@@ -1862,7 +1860,7 @@ async def split_accountQ_batch(
                 error(f"{err}")
             finally:
                 stats.log("total")
-                inQ.task_done()
+                # inQ.task_done()
     except QueueDone:
         debug("inQ done")
         for region in batches.keys():

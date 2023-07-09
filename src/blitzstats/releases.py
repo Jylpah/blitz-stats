@@ -2,7 +2,7 @@ from argparse import ArgumentParser, Namespace
 from configparser import ConfigParser
 from typing import Optional, cast, Iterable, Any
 import logging
-from asyncio import create_task, gather, Queue, CancelledError, Task, sleep
+from asyncio import create_task, gather, wait, Queue, CancelledError, Task, sleep
 from sortedcollections import NearestDict  # type: ignore
 
 from aiohttp import ClientResponse
@@ -317,7 +317,7 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
             await releaseQ.put(release)
         await releaseQ.finish()
         await releaseQ.join()
-        export_worker.cancel()
+        await wait([export_worker])
 
         return True
     except Exception as err:
