@@ -2,7 +2,16 @@ from argparse import ArgumentParser, Namespace, SUPPRESS
 from configparser import ConfigParser
 from typing import Optional, Any, Iterable, cast
 import logging
-from asyncio import create_task, run, gather, Queue, CancelledError, Task, sleep, Condition
+from asyncio import (
+    create_task,
+    run,
+    gather,
+    Queue,
+    CancelledError,
+    Task,
+    sleep,
+    Condition,
+)
 from aiofiles import open
 from os.path import isfile
 from os import getpid
@@ -18,11 +27,30 @@ import queue
 
 from pyutils import IterableQueue, QueueDone, EventCounter, JSONExportable, AsyncQueue
 from pyutils.utils import epoch_now, alive_bar_monitor, is_alphanum
-from blitzutils import Region, WGPlayerAchievementsMain, WGPlayerAchievementsMaxSeries, WGApi
+from blitzutils import (
+    Region,
+    WGPlayerAchievementsMain,
+    WGPlayerAchievementsMaxSeries,
+    WGApi,
+    add_args_wg,
+)
 
-from .backend import Backend, OptAccountsInactive, BSTableType, ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL, get_sub_type
+from .backend import (
+    Backend,
+    OptAccountsInactive,
+    BSTableType,
+    ACCOUNTS_Q_MAX,
+    MIN_UPDATE_INTERVAL,
+    get_sub_type,
+)
 from .models import BSAccount, BSBlitzRelease, StatsTypes
-from .accounts import split_accountQ, split_accountQ_batch, create_accountQ, create_accountQ_batch, accounts_parse_args
+from .accounts import (
+    split_accountQ,
+    split_accountQ_batch,
+    create_accountQ,
+    create_accountQ_batch,
+    accounts_parse_args,
+)
 from .releases import release_mapper
 
 logger = logging.getLogger()
@@ -62,21 +90,37 @@ def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> b
         )
         parsers.required = True
 
-        fetch_parser = parsers.add_parser("fetch", aliases=["get"], help="player-achievements fetch help")
+        fetch_parser = parsers.add_parser(
+            "fetch", aliases=["get"], help="player-achievements fetch help"
+        )
         if not add_args_fetch(fetch_parser, config=config):
-            raise Exception("Failed to define argument parser for: player-achievements fetch")
+            raise Exception(
+                "Failed to define argument parser for: player-achievements fetch"
+            )
 
-        prune_parser = parsers.add_parser("prune", help="player-achievements prune help")
+        prune_parser = parsers.add_parser(
+            "prune", help="player-achievements prune help"
+        )
         if not add_args_prune(prune_parser, config=config):
-            raise Exception("Failed to define argument parser for: player-achievements prune")
+            raise Exception(
+                "Failed to define argument parser for: player-achievements prune"
+            )
 
-        import_parser = parsers.add_parser("import", help="player-achievements import help")
+        import_parser = parsers.add_parser(
+            "import", help="player-achievements import help"
+        )
         if not add_args_import(import_parser, config=config):
-            raise Exception("Failed to define argument parser for: player-achievements import")
+            raise Exception(
+                "Failed to define argument parser for: player-achievements import"
+            )
 
-        export_parser = parsers.add_parser("export", help="player-achievements export help")
+        export_parser = parsers.add_parser(
+            "export", help="player-achievements export help"
+        )
         if not add_args_export(export_parser, config=config):
-            raise Exception("Failed to define argument parser for: player-achievements export")
+            raise Exception(
+                "Failed to define argument parser for: player-achievements export"
+            )
         debug("Finished")
         return True
     except Exception as err:
@@ -84,46 +128,15 @@ def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> b
     return False
 
 
-def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_fetch(
+    parser: ArgumentParser, config: Optional[ConfigParser] = None
+) -> bool:
     try:
         debug("starting")
-        WG_RATE_LIMIT: float = 10
-        WG_WORKERS: int = 10
-        WG_APP_ID: str = WGApi.DEFAULT_WG_APP_ID
 
-        # Lesta / RU
-        LESTA_RATE_LIMIT: float = 10
-        LESTA_WORKERS: int = 10
-        LESTA_APP_ID: str = WGApi.DEFAULT_LESTA_APP_ID
-        NULL_RESPONSES: int = 20
+        if not add_args_wg(parser, config):
+            return False
 
-        if config is not None and "WG" in config.sections():
-            configWG = config["WG"]
-            WG_RATE_LIMIT = configWG.getfloat("rate_limit", WG_RATE_LIMIT)
-            WG_WORKERS = configWG.getint("api_workers", WG_WORKERS)
-            WG_APP_ID = configWG.get("app_id", WG_APP_ID)
-
-        if config is not None and "LESTA" in config.sections():
-            configRU = config["LESTA"]
-            LESTA_RATE_LIMIT = configRU.getfloat("rate_limit", LESTA_RATE_LIMIT)
-            LESTA_WORKERS = configRU.getint("api_workers", LESTA_WORKERS)
-            LESTA_APP_ID = configRU.get("app_id", LESTA_APP_ID)
-
-        parser.add_argument("--wg-workers", type=int, default=WG_WORKERS, help="Set number of asynchronous workers")
-        parser.add_argument("--wg-app-id", type=str, default=WG_APP_ID, help="Set WG APP ID")
-        parser.add_argument(
-            "--wg-rate-limit", type=float, default=WG_RATE_LIMIT, metavar="RATE_LIMIT", help="Rate limit for WG API"
-        )
-        parser.add_argument(
-            "--ru-app-id", type=str, default=LESTA_APP_ID, metavar="APP_ID", help="Set Lesta (RU) APP ID"
-        )
-        parser.add_argument(
-            "--ru-rate-limit",
-            type=float,
-            default=LESTA_RATE_LIMIT,
-            metavar="RATE_LIMIT",
-            help="Rate limit for Lesta (RU) API",
-        )
         parser.add_argument(
             "--regions",
             "--region",
@@ -179,7 +192,10 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
             help="Fetch stats for the listed ACCOUNT_ID(s)",
         )
         parser.add_argument(
-            "--force", action="store_true", default=False, help="Overwrite existing file(s) when exporting"
+            "--force",
+            action="store_true",
+            default=False,
+            help="Overwrite existing file(s) when exporting",
         )
         parser.add_argument(
             "--sample",
@@ -202,9 +218,16 @@ def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None
     return False
 
 
-def add_args_prune(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_prune(
+    parser: ArgumentParser, config: Optional[ConfigParser] = None
+) -> bool:
     debug("starting")
-    parser.add_argument("release", type=str, metavar="RELEASE", help="prune player achievements for a RELEASE")
+    parser.add_argument(
+        "release",
+        type=str,
+        metavar="RELEASE",
+        help="prune player achievements for a RELEASE",
+    )
     parser.add_argument(
         "--regions",
         "--region",
@@ -215,13 +238,20 @@ def add_args_prune(parser: ArgumentParser, config: Optional[ConfigParser] = None
         help="filter by region (default: eu + com + asia + ru)",
     )
     parser.add_argument(
-        "--commit", action="store_true", default=False, help="execute pruning stats instead of listing duplicates"
+        "--commit",
+        action="store_true",
+        default=False,
+        help="execute pruning stats instead of listing duplicates",
     )
-    parser.add_argument("--sample", type=int, default=0, metavar="SAMPLE", help="sample size")
+    parser.add_argument(
+        "--sample", type=int, default=0, metavar="SAMPLE", help="sample size"
+    )
     return True
 
 
-def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_import(
+    parser: ArgumentParser, config: Optional[ConfigParser] = None
+) -> bool:
     debug("starting")
     try:
         debug("starting")
@@ -239,8 +269,12 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
                 backend.driver, help=f"player-achievements import {backend.driver} help"
             )
             if not backend.add_args_import(import_parser, config=config):
-                raise Exception(f"Failed to define argument parser for: player-achievements import {backend.driver}")
-        parser.add_argument("--workers", type=int, default=0, help="Set number of asynchronous workers")
+                raise Exception(
+                    f"Failed to define argument parser for: player-achievements import {backend.driver}"
+                )
+        parser.add_argument(
+            "--workers", type=int, default=0, help="Set number of asynchronous workers"
+        )
         parser.add_argument(
             "--import-model",
             metavar="IMPORT-TYPE",
@@ -256,10 +290,16 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
             help="Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number",
         )
         parser.add_argument(
-            "--force", action="store_true", default=False, help="Overwrite existing stats when importing"
+            "--force",
+            action="store_true",
+            default=False,
+            help="Overwrite existing stats when importing",
         )
         parser.add_argument(
-            "--no-release-map", action="store_true", default=False, help="Do not map releases when importing"
+            "--no-release-map",
+            action="store_true",
+            default=False,
+            help="Do not map releases when importing",
         )
         parser.add_argument("--last", action="store_true", default=False, help=SUPPRESS)
 
@@ -269,7 +309,9 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
     return False
 
 
-def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_export(
+    parser: ArgumentParser, config: Optional[ConfigParser] = None
+) -> bool:
     debug("starting")
     return True
 
@@ -297,7 +339,9 @@ async def cmd(db: Backend, args: Namespace) -> bool:
             return await cmd_prune(db, args)
 
         else:
-            raise ValueError(f"Unsupported command: player-achievements { args.player_achievements_cmd}")
+            raise ValueError(
+                f"Unsupported command: player-achievements { args.player_achievements_cmd}"
+            )
 
     except Exception as err:
         error(f"{err}")
@@ -319,7 +363,9 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
         regions: set[Region] = {Region(r) for r in args.regions}
         regionQs: dict[str, IterableQueue[list[BSAccount]]] = dict()
         retryQ: IterableQueue[BSAccount] = IterableQueue()
-        statsQ: Queue[list[WGPlayerAchievementsMaxSeries]] = Queue(maxsize=PLAYER_ACHIEVEMENTS_Q_MAX)
+        statsQ: Queue[list[WGPlayerAchievementsMaxSeries]] = Queue(
+            maxsize=PLAYER_ACHIEVEMENTS_Q_MAX
+        )
 
         tasks: list[Task] = list()
         tasks.append(create_task(fetch_backend_worker(db, statsQ)))
@@ -333,7 +379,9 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
             if (accounts_args := await accounts_parse_args(db, args)) is None:
                 raise ValueError(f"could not parse account args: {args}")
             message("counting accounts...")
-            accounts = await db.accounts_count(StatsTypes.player_achievements, **accounts_args)
+            accounts = await db.accounts_count(
+                StatsTypes.player_achievements, **accounts_args
+            )
 
         if args.sample > 1:
             args.sample = int(args.sample / len(regions))
@@ -343,7 +391,11 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
             tasks.append(
                 create_task(
                     create_accountQ_batch(
-                        db, args, region, accountQ=regionQs[region.name], stats_type=StatsTypes.player_achievements
+                        db,
+                        args,
+                        region,
+                        accountQ=regionQs[region.name],
+                        stats_type=StatsTypes.player_achievements,
                     )
                 )
             )
@@ -351,12 +403,21 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
                 tasks.append(
                     create_task(
                         fetch_api_region_worker(
-                            wg_api=wg, region=region, accountQ=regionQs[region.name], statsQ=statsQ, retryQ=retryQ
+                            wg_api=wg,
+                            region=region,
+                            accountQ=regionQs[region.name],
+                            statsQ=statsQ,
+                            retryQ=retryQ,
                         )
                     )
                 )
         task_bar: Task = create_task(
-            alive_bar_monitor(list(regionQs.values()), total=accounts, batch=100, title="Fetching player achievement")
+            alive_bar_monitor(
+                list(regionQs.values()),
+                total=accounts,
+                batch=100,
+                title="Fetching player achievement",
+            )
         )
         # tasks.append(create_task(split_accountQ(accountQ, regionQs)))
         # stats.merge_child(await create_accountQ(db, args, accountQ, StatsTypes.player_achievements))
@@ -378,16 +439,25 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
                     tasks.append(
                         create_task(
                             fetch_api_region_worker(
-                                wg_api=wg, region=region, accountQ=regionQs[region.name], statsQ=statsQ
+                                wg_api=wg,
+                                region=region,
+                                accountQ=regionQs[region.name],
+                                statsQ=statsQ,
                             )
                         )
                     )
             task_bar = create_task(
-                alive_bar_monitor(list(regionQs.values()), total=accounts, title="Re-trying player achievement")
+                alive_bar_monitor(
+                    list(regionQs.values()),
+                    total=accounts,
+                    title="Re-trying player achievement",
+                )
             )
             await split_accountQ_batch(retryQ, regionQs)
             for rname, Q in regionQs.items():
-                debug(f"waiting for region re-try queue to finish: {rname} size={Q.qsize()}")
+                debug(
+                    f"waiting for region re-try queue to finish: {rname} size={Q.qsize()}"
+                )
                 await Q.join()
             task_bar.cancel()
         else:
@@ -434,7 +504,9 @@ async def fetch_api_region_worker(
                 account_ids = [a for a in accounts.keys()]
                 debug(f"account_ids={account_ids}")
                 if len(account_ids) > 0:
-                    if (res := await wg_api.get_player_achievements(account_ids, region)) is None:
+                    if (
+                        res := await wg_api.get_player_achievements(account_ids, region)
+                    ) is None:
                         res = list()
                     else:
                         await statsQ.put(res)
@@ -463,7 +535,9 @@ async def fetch_api_region_worker(
     return stats
 
 
-async def fetch_backend_worker(db: Backend, statsQ: Queue[list[WGPlayerAchievementsMaxSeries]]) -> EventCounter:
+async def fetch_backend_worker(
+    db: Backend, statsQ: Queue[list[WGPlayerAchievementsMaxSeries]]
+) -> EventCounter:
     """Async worker to add player achievements to backend. Assumes batch is for the same account"""
     debug("starting")
     stats: EventCounter = EventCounter(f"{db.driver}")
@@ -475,7 +549,9 @@ async def fetch_backend_worker(db: Backend, statsQ: Queue[list[WGPlayerAchieveme
         while True:
             added = 0
             not_added = 0
-            player_achievements: list[WGPlayerAchievementsMaxSeries] = await statsQ.get()
+            player_achievements: list[
+                WGPlayerAchievementsMaxSeries
+            ] = await statsQ.get()
             try:
                 if len(player_achievements) > 0:
                     debug(f"Read {len(player_achievements)} from queue")
@@ -483,16 +559,22 @@ async def fetch_backend_worker(db: Backend, statsQ: Queue[list[WGPlayerAchieveme
                     if rel is not None:
                         for pac in player_achievements:
                             pac.release = rel.release
-                    added, not_added = await db.player_achievements_insert(player_achievements)
+                    added, not_added = await db.player_achievements_insert(
+                        player_achievements
+                    )
                     for pac in player_achievements:
-                        if (account := await db.account_get(account_id=pac.account_id)) is not None:
+                        if (
+                            account := await db.account_get(account_id=pac.account_id)
+                        ) is not None:
                             account.stats_updated(StatsTypes.player_achievements)
             except Exception as err:
                 error(f"{err}")
             finally:
                 stats.log("stats added", added)
                 stats.log("old stats", not_added)
-                debug(f"{added} player achievements added, {not_added} old player achievements found")
+                debug(
+                    f"{added} player achievements added, {not_added} old player achievements found"
+                )
                 statsQ.task_done()
     except CancelledError as err:
         debug(f"Cancelled")
@@ -511,9 +593,13 @@ async def fetch_backend_worker(db: Backend, statsQ: Queue[list[WGPlayerAchieveme
 async def cmd_import(db: Backend, args: Namespace) -> bool:
     """Import player achievements from other backend"""
     try:
-        assert is_alphanum(args.import_model), f"invalid --import-model: {args.import_model}"
+        assert is_alphanum(
+            args.import_model
+        ), f"invalid --import-model: {args.import_model}"
         debug("starting")
-        player_achievementsQ: Queue[list[WGPlayerAchievementsMaxSeries]] = Queue(PLAYER_ACHIEVEMENTS_Q_MAX)
+        player_achievementsQ: Queue[list[WGPlayerAchievementsMaxSeries]] = Queue(
+            PLAYER_ACHIEVEMENTS_Q_MAX
+        )
         rel_mapQ: Queue[WGPlayerAchievementsMaxSeries] = Queue()
         stats: EventCounter = EventCounter("player-achievements import")
         WORKERS: int = args.workers
@@ -534,9 +620,13 @@ async def cmd_import(db: Backend, args: Namespace) -> bool:
                 config_file=args.import_config,
             )
         ) is None:
-            raise ValueError(f"Could not init {import_backend} to import player achievements from")
+            raise ValueError(
+                f"Could not init {import_backend} to import player achievements from"
+            )
         # debug(f'import_db: {await import_db._client.server_info()}')
-        message(f"Import from: {import_db.backend}.{import_db.table_player_achievements}")
+        message(
+            f"Import from: {import_db.backend}.{import_db.table_player_achievements}"
+        )
 
         message("Counting player achievements to import ...")
         N: int = await import_db.player_achievements_count(sample=args.sample)
@@ -545,14 +635,26 @@ async def cmd_import(db: Backend, args: Namespace) -> bool:
         for _ in range(WORKERS):
             workers.append(
                 create_task(
-                    db.player_achievements_insert_worker(player_achievementsQ=player_achievementsQ, force=args.force)
+                    db.player_achievements_insert_worker(
+                        player_achievementsQ=player_achievementsQ, force=args.force
+                    )
                 )
             )
         rel_map_worker: Task = create_task(
-            player_releases_worker(releases, inputQ=rel_mapQ, outputQ=player_achievementsQ, map_releases=map_releases)
+            player_releases_worker(
+                releases,
+                inputQ=rel_mapQ,
+                outputQ=player_achievementsQ,
+                map_releases=map_releases,
+            )
         )
 
-        with alive_bar(N, title="Importing player achievements ", enrich_print=False, refresh_secs=1) as bar:
+        with alive_bar(
+            N,
+            title="Importing player achievements ",
+            enrich_print=False,
+            refresh_secs=1,
+        ) as bar:
             async for pac in import_db.player_achievement_export(sample=args.sample):
                 await rel_mapQ.put(pac)
                 bar()
@@ -594,25 +696,38 @@ async def cmd_importMP(db: Backend, args: Namespace) -> bool:
                 config_file=args.import_config,
             )
         ) is None:
-            raise ValueError(f"Could not init {import_backend} to import player achievements from")
+            raise ValueError(
+                f"Could not init {import_backend} to import player achievements from"
+            )
 
         with Manager() as manager:
-            readQ: queue.Queue[list[Any] | None] = manager.Queue(PLAYER_ACHIEVEMENTS_Q_MAX)
+            readQ: queue.Queue[list[Any] | None] = manager.Queue(
+                PLAYER_ACHIEVEMENTS_Q_MAX
+            )
             options: dict[str, Any] = dict()
             options["force"] = args.force
             # options['map_releases'] 				= not args.no_release_map
 
             with Pool(
-                processes=WORKERS, initializer=import_mp_init, initargs=[db.config, readQ, import_model, options]
+                processes=WORKERS,
+                initializer=import_mp_init,
+                initargs=[db.config, readQ, import_model, options],
             ) as pool:
                 debug(f"starting {WORKERS} workers")
-                results: AsyncResult = pool.map_async(import_mp_worker_start, range(WORKERS))
+                results: AsyncResult = pool.map_async(
+                    import_mp_worker_start, range(WORKERS)
+                )
                 pool.close()
 
                 message("Counting player achievements to import ...")
                 N: int = await import_db.player_achievements_count(sample=args.sample)
 
-                with alive_bar(N, title="Importing player achievements ", enrich_print=False, refresh_secs=1) as bar:
+                with alive_bar(
+                    N,
+                    title="Importing player achievements ",
+                    enrich_print=False,
+                    refresh_secs=1,
+                ) as bar:
                     async for objs in import_db.objs_export(
                         table_type=BSTableType.PlayerAchievements, sample=args.sample
                     ):
@@ -622,7 +737,9 @@ async def cmd_importMP(db: Backend, args: Namespace) -> bool:
                         stats.log(f"{db.driver}: stats read", read)
                         bar(read)
 
-                debug(f"Finished exporting {import_model} from {import_db.table_uri(BSTableType.PlayerAchievements)}")
+                debug(
+                    f"Finished exporting {import_model} from {import_db.table_uri(BSTableType.PlayerAchievements)}"
+                )
                 for _ in range(WORKERS):
                     readQ.put(None)  # add sentinel
 
@@ -638,7 +755,10 @@ async def cmd_importMP(db: Backend, args: Namespace) -> bool:
 
 
 def import_mp_init(
-    backend_config: dict[str, Any], inputQ: queue.Queue, import_model: type[BaseModel], options: dict[str, Any]
+    backend_config: dict[str, Any],
+    inputQ: queue.Queue,
+    import_model: type[BaseModel],
+    options: dict[str, Any],
 ):
     """Initialize static/global backend into a forked process"""
     global db, readQ, in_model, mp_options
@@ -677,7 +797,9 @@ async def import_mp_worker(id: int = 0) -> EventCounter:
         for _ in range(THREADS):
             workers.append(
                 create_task(
-                    db.player_achievements_insert_worker(player_achievementsQ=player_achievementsQ, force=force)
+                    db.player_achievements_insert_worker(
+                        player_achievementsQ=player_achievementsQ, force=force
+                    )
                 )
             )
         errors: int = 0
@@ -688,12 +810,16 @@ async def import_mp_worker(id: int = 0) -> EventCounter:
                 read: int = len(objs)
                 debug(f"read {read} documents")
                 stats.log("stats read", read)
-                player_achievements = WGPlayerAchievementsMaxSeries.from_objs(objs=objs, in_type=import_model)
+                player_achievements = WGPlayerAchievementsMaxSeries.from_objs(
+                    objs=objs, in_type=import_model
+                )
                 errors = len(objs) - len(player_achievements)
                 stats.log("player achievements read", len(player_achievements))
                 stats.log("format errors", errors)
 
-                player_achievements, mapped, errors = map_releases(player_achievements, releases)
+                player_achievements, mapped, errors = map_releases(
+                    player_achievements, releases
+                )
                 stats.log("release mapped", mapped)
                 stats.log("not release mapped", read - mapped)
                 stats.log("release map errors", errors)
@@ -715,7 +841,8 @@ async def import_mp_worker(id: int = 0) -> EventCounter:
 
 
 def map_releases(
-    player_achievements: list[WGPlayerAchievementsMaxSeries], releases: NearestDict[int, BSBlitzRelease]
+    player_achievements: list[WGPlayerAchievementsMaxSeries],
+    releases: NearestDict[int, BSBlitzRelease],
 ) -> tuple[list[WGPlayerAchievementsMaxSeries], int, int]:
     debug("starting")
     mapped: int = 0
@@ -803,19 +930,24 @@ async def cmd_prune(db: Backend, args: Namespace) -> bool:
 
         progress_str: str = "Finding duplicates "
         if commit:
-            message(f"Pruning  player achievements from {db.table_uri(BSTableType.PlayerAchievements)}")
+            message(
+                f"Pruning  player achievements from {db.table_uri(BSTableType.PlayerAchievements)}"
+            )
             message("Press CTRL+C to cancel in 3 secs...")
             await sleep(3)
             progress_str = "Pruning duplicates "
 
         with alive_bar(len(regions), title=progress_str, refresh_secs=1) as bar:
             for region in regions:
-                async for dup in db.player_achievements_duplicates(release, regions={region}, sample=sample):
+                async for dup in db.player_achievements_duplicates(
+                    release, regions={region}, sample=sample
+                ):
                     stats.log("duplicates found")
                     if commit:
                         # verbose(f'deleting duplicate: {dup}')
                         if await db.player_achievement_delete(
-                            account=BSAccount(id=dup.account_id, region=region), added=dup.added
+                            account=BSAccount(id=dup.account_id, region=region),
+                            added=dup.added,
                         ):
                             verbose(f"deleted duplicate: {dup}")
                             stats.log("duplicates deleted")
