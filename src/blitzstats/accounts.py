@@ -8,6 +8,7 @@ from asyncio import create_task, gather, wait, Queue, CancelledError, Task, slee
 from aiofiles import open
 from asyncstdlib import enumerate
 from alive_progress import alive_bar  # type: ignore
+from pydantic import ValidationError
 
 from pyutils import EventCounter, TXTExportable, CSVExportable, JSONExportable, IterableQueue, QueueDone
 from pyutils.exportable import export
@@ -217,7 +218,7 @@ def add_args_update_wg(parser: ArgumentParser, config: Optional[ConfigParser] = 
             nargs="*",
             metavar="ACCOUNT_ID [ACCOUNT_ID1 ...]",
             help="update accounts for the listed ACCOUNT_ID(s). \
-									ACCOUNT_ID format 'account_id:region' or 'account_id'",
+                                    ACCOUNT_ID format 'account_id:region' or 'account_id'",
         )
         # parser.add_argument('--start', dest='wg_start_id',
         # 					metavar='ACCOUNT_ID', type=int, default=0,
@@ -360,7 +361,7 @@ def add_args_fetch_wg(parser: ArgumentParser, config: Optional[ConfigParser] = N
             type=int,
             default=0,
             help="start fetching account_ids from ACCOUNT_ID (default = 0 \
-								start from highest ACCOUNT_ID in backend)",
+                                start from highest ACCOUNT_ID in backend)",
         )
         parser.add_argument(
             "--force", action="store_true", default=False, help="fetch accounts starting from --start ACCOUNT_ID"
@@ -571,6 +572,15 @@ def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = Non
         parser.add_argument(
             "--force", action="store_true", default=False, help="Overwrite existing file(s) when exporting"
         )
+        parser.add_argument(
+            "--accounts",
+            type=str,
+            default=[],
+            nargs="*",
+            metavar="ACCOUNT_ID [ACCOUNT_ID1 ...]",
+            help="exports accounts for the listed ACCOUNT_ID(s). \
+                                    ACCOUNT_ID format 'account_id:region' or 'account_id'",
+        )
         parser.add_argument("--disabled", action="store_true", default=False, help="Disabled accounts")
         parser.add_argument(
             "--inactive",
@@ -693,7 +703,12 @@ def add_args_remove(parser: ArgumentParser, config: Optional[ConfigParser] = Non
             "--file", metavar="FILE", type=str, default=None, help="File to export accounts to. Use '-' for STDIN"
         )
         account_src_parser.add_argument(
-            "--accounts", metavar="ACCOUNT_ID [ACCOUNT_ID ...]", type=int, nargs="+", help="accounts to remove"
+            "--accounts",
+            metavar="ACCOUNT_ID [ACCOUNT_ID ...]",
+            type=int,
+            nargs="+",
+            help="remove listed ACCOUNT_ID(s). \
+					ACCOUNT_ID format 'account_id:region' or 'account_id'",
         )
 
         return True
@@ -1457,7 +1472,6 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
         export_stdout: bool = filename == "-"
         sample: float = args.sample
         accountQs: dict[str, IterableQueue[BSAccount]] = dict()
-        # regionQs 	: dict[Region, IterableQueue[BSAccount]] = dict()
         account_workers: list[Task] = list()
         export_workers: list[Task] = list()
 
@@ -1550,7 +1564,7 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
             bar.cancel()
 
         await stats.gather_stats(account_workers)
-        await stats.gather_stats(export_workers)
+        await stats.gather_stats(export_workers, cancel=False)
 
         if not export_stdout:
             stats.print()
@@ -1576,10 +1590,9 @@ async def count_accounts(db: Backend, args: Namespace, stats_type: StatsTypes | 
     accounts_N: int = 0
     try:
         regions: set[Region] = {Region(r) for r in args.regions}
-        accounts: list[BSAccount] | None = await read_args_accounts(db, args.accounts)
 
-        if accounts is not None:
-            accounts_N = len(accounts)
+        if len(args.accounts) > 0:
+            return len(args.accounts)
         elif args.file is not None:
             message(f"Reading accounts from {args.file}")
             async with open(args.file, mode="r") as f:
@@ -1631,13 +1644,14 @@ async def create_accountQ(
     try:
         accounts: list[BSAccount] | None = None
         try:
-            accounts = await read_args_accounts(db, args.accounts)
+            accounts = read_args_accounts(args.accounts)
         except:
             debug("could not read --accounts")
 
         await accountQ.add_producer()
 
         if accounts is not None:
+            accounts = await accounts_read_from_db(db, accounts)
             for account in accounts:
                 if account.region in regions:
                     try:
@@ -1695,7 +1709,7 @@ async def create_accountQ_batch(
     try:
         accounts: list[BSAccount] | None = None
         try:
-            accounts = await read_args_accounts(db, args.accounts)
+            accounts = read_args_accounts(args.accounts)
         except:
             debug("could not read --accounts")
 
@@ -1703,6 +1717,7 @@ async def create_accountQ_batch(
 
         if accounts is not None:
             accounts = [account for account in accounts if account.region == region]
+            accounts = await accounts_read_from_db(db, accounts)
             for account_batch in chunker(accounts, batch):
                 try:
                     await accountQ.put(account_batch)
@@ -1876,20 +1891,27 @@ async def split_accountQ_batch(
     return stats
 
 
-async def read_args_accounts(db: Backend, accounts: list[str]) -> list[BSAccount] | None:
+def read_args_accounts(accounts: Sequence[str]) -> list[BSAccount] | None:
     res: list[BSAccount] = list()
     for a in accounts:
         try:
-            if (acc := BSAccount(id=a)) is None:
-                continue
-            if (account_db := await db.account_get(account_id=acc.id)) is not None:
-                res.append(account_db)
-            else:
+            if (acc := BSAccount(id=a)) is not None:
                 res.append(acc)
-        except Exception as err:
+        except ValidationError as err:
             error(f"{err}")
     if len(res) == 0:
         return None
+    return res
+
+
+async def accounts_read_from_db(db: Backend, accounts: Sequence[BSAccount], db_only: bool = False) -> list[BSAccount]:
+    """Read DB versions of "skeleton" accounts from DB"""
+    res: list[BSAccount] = list()
+    for acc in accounts:
+        if (account_db := await db.account_get(account_id=acc.id)) is not None:
+            res.append(account_db)
+        elif not db_only:
+            res.append(acc)
     return res
 
 
@@ -1910,10 +1932,10 @@ async def accounts_parse_args(
                 error(f"could not read --regions={region}")
         res["regions"] = regions
 
-        # try:
-        # 	res['accounts'] = read_args_accounts(args.accounts)
-        # except:
-        # 	debug('could not read --accounts')
+        try:
+            res["accounts"] = read_args_accounts(args.accounts)
+        except:
+            debug("could not read --accounts")
 
         try:
             res["inactive"] = OptAccountsInactive(args.inactive)

@@ -786,6 +786,7 @@ class MongoBackend(Backend):
         self,
         stats_type: StatsTypes | None = None,
         regions: set[Region] = Region.API_regions(),
+        accounts: Sequence[BSAccount] | None = None,
         id_range: range | None = None,
         inactive: OptAccountsInactive = OptAccountsInactive.auto,
         dist: OptAccountsDistributed | None = None,
@@ -798,7 +799,8 @@ class MongoBackend(Backend):
         assert sample >= 0, f"'sample' must be >= 0, was {sample}"
         try:
             debug("starting")
-            a = AliasMapper(self.model_accounts)
+            db_model: type[JSONExportable] = self.model_accounts
+            a = AliasMapper(db_model)
             alias: Callable = a.alias
             dbc: AsyncIOMotorCollection = self.collection_accounts
             match: list[dict[str, str | int | float | dict | list]] = list()
@@ -812,6 +814,9 @@ class MongoBackend(Backend):
             # Pipeline build based on ESR rule
             # https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
 
+            if accounts is not None:
+                db_accounts: list[JSONExportable] = db_model.transform_many(accounts)
+                match.append({alias("id"): {"$in": [db_account.index for db_account in db_accounts]}})
             if disabled is not None:
                 match.append({alias("disabled"): disabled})
             if inactive == OptAccountsInactive.yes:
@@ -877,6 +882,7 @@ class MongoBackend(Backend):
         self,
         stats_type: StatsTypes | None = None,
         regions: set[Region] = Region.API_regions(),
+        accounts: Sequence[BSAccount] | None = None,
         inactive: OptAccountsInactive = OptAccountsInactive.default(),
         disabled: bool | None = False,
         active_since: int = 0,
@@ -893,6 +899,7 @@ class MongoBackend(Backend):
             pipeline = await self._mk_pipeline_accounts(
                 stats_type=stats_type,
                 regions=regions,
+                accounts=accounts,
                 inactive=inactive,
                 disabled=disabled,
                 active_since=active_since,
@@ -906,7 +913,7 @@ class MongoBackend(Backend):
                 raise ValueError(f"could not create get-accounts {self.table_uri(BSTableType.Accounts)} cursor")
             # message(f'accounts_get(): pipeline={pipeline}')
 
-            # 'batchSize' is required for keeping cursor alive
+            # 'batchSize' is required to keep cursor alive
             async for data in self._datas_get(BSTableType.Accounts, pipeline=pipeline, batchSize=5000):
                 try:
                     if (player := BSAccount.transform(data)) is None:
@@ -925,6 +932,7 @@ class MongoBackend(Backend):
         self,
         stats_type: StatsTypes | None = None,
         regions: set[Region] = Region.API_regions(),
+        accounts: Sequence[BSAccount] | None = None,
         inactive: OptAccountsInactive = OptAccountsInactive.default(),
         disabled: bool | None = False,
         active_since: int = 0,
@@ -934,6 +942,8 @@ class MongoBackend(Backend):
         cache_valid: float = 0,
     ) -> int:
         assert sample >= 0, f"'sample' must be >= 0, was {sample}"
+        if accounts is not None:
+            return len(accounts)
         try:
             debug("starting")
             dbc: AsyncIOMotorCollection = self.collection_accounts
