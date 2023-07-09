@@ -131,7 +131,7 @@ async def cmd(db: Backend, args: Namespace) -> bool:
             debug("setup test")
             return await cmd_test(db, args)
         else:
-            error("setup: unknown or missing subcommand")
+            error(f"setup: unknown or missing subcommand: {args.setup_cmd}")
 
     except Exception as err:
         error(f"{err}")

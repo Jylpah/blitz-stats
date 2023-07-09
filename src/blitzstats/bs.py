@@ -64,7 +64,7 @@ def time_elapsed(start: datetime, end: datetime | None = None) -> str:
     seconds: int = int((end - start).total_seconds())
     hours, remainder = divmod(seconds, 60 * 60)
     minutes, seconds = divmod(remainder, 60)
-    return f"{hours}:{minutes}:{seconds}"
+    return f"{hours}h {minutes}min {seconds}sec"
 
 
 # main() -------------------------------------------------------------
@@ -95,6 +95,7 @@ async def main() -> int:
         if isfile(fn):
             CONFIG_FILE = fn
             verbose(f"config file: {CONFIG_FILE}")
+            break
     if CONFIG_FILE is None:
         error("config file not found in: " + ", ".join(CONFIG_FILES))
 
@@ -116,6 +117,9 @@ async def main() -> int:
     parser.set_defaults(LOG_LEVEL=logging.WARNING)
 
     args, argv = parser.parse_known_args()
+
+    debug(f"Args parsed: {str(args)}")
+    debug(f"Args not parsed yet: {str(argv)}")
 
     try:
         # setup logging
@@ -146,9 +150,6 @@ async def main() -> int:
                 error(f"Sections found: {' ,'.join([s for s in config.sections() ])}")
         else:
             debug("No config file found")
-
-        debug(f"Args parsed: {str(args)}")
-        debug(f"Args not parsed yet: {str(argv)}")
 
         # Parse command args
         parser.add_argument("-h", "--help", action="store_true", help="Show help")

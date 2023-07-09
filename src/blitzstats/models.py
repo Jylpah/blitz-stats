@@ -417,7 +417,10 @@ class Tank(JSONExportable, CSVExportable, TXTExportable):
 
     def txt_row(self, format: str = '') -> str:
         """export data as single row of text"""
-        return f'({self.tank_id}) {self.name} tier {self.tier} {self.type} {self.nation}'
+        if format == 'rich':
+            return f'({self.tank_id}) {self.name} tier {self.tier} {self.type} {self.nation}'
+        else:
+            return f'({self.tank_id}) {self.name}'
 
 
 def WGTank2Tank(in_obj: "Tank") -> Optional["WGTank"]:
