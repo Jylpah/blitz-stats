@@ -9,11 +9,29 @@ import json
 # from yappi import profile 					# type: ignore
 
 from pyutils import export, IterableQueue, EventCounter
-from blitzutils import EnumNation, EnumVehicleTier, EnumVehicleTypeStr, EnumVehicleTypeInt, WGTank
-from blitzutils.wg_api import WGApiTankopedia, WoTBlitzTankString
+from blitzutils import (
+    EnumNation,
+    EnumVehicleTier,
+    EnumVehicleTypeStr,
+    EnumVehicleTypeInt,
+)
+from blitzutils import (
+    WGTank,
+    Region,
+    add_args_wg,
+    WGApi,
+    WGApiTankopedia,
+    WoTBlitzTankString,
+)
 
-
-from .backend import Backend, OptAccountsInactive, BSTableType, ACCOUNTS_Q_MAX, MIN_UPDATE_INTERVAL, get_sub_type
+from .backend import (
+    Backend,
+    OptAccountsInactive,
+    BSTableType,
+    ACCOUNTS_Q_MAX,
+    MIN_UPDATE_INTERVAL,
+    get_sub_type,
+)
 from .models import BSAccount, BSBlitzRelease, StatsTypes, Tank
 
 logger = logging.getLogger()
@@ -47,7 +65,9 @@ def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> b
         if not add_args_add(add_parser, config=config):
             raise Exception("Failed to define argument parser for: tankopedia add")
 
-        update_parser = tankopedia_parsers.add_parser("update", help="tankopedia update help")
+        update_parser = tankopedia_parsers.add_parser(
+            "update", help="tankopedia update help"
+        )
         if not add_args_update(update_parser, config=config):
             raise Exception("Failed to define argument parser for: tankopedia update")
 
@@ -55,11 +75,15 @@ def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> b
         if not add_args_edit(edit_parser, config=config):
             raise Exception("Failed to define argument parser for: tankopedia edit")
 
-        import_parser = tankopedia_parsers.add_parser("import", help="tankopedia import help")
+        import_parser = tankopedia_parsers.add_parser(
+            "import", help="tankopedia import help"
+        )
         if not add_args_import(import_parser, config=config):
             raise Exception("Failed to define argument parser for: tankopedia import")
 
-        export_parser = tankopedia_parsers.add_parser("export", help="tankopedia export help")
+        export_parser = tankopedia_parsers.add_parser(
+            "export", help="tankopedia export help"
+        )
         if not add_args_export(export_parser, config=config):
             raise Exception("Failed to define argument parser for: tankopedia export")
         debug("Finished")
@@ -73,7 +97,14 @@ def add_args_add(parser: ArgumentParser, config: Optional[ConfigParser] = None) 
     try:
         debug("starting")
         parser.add_argument("tank_id", type=int, help="tank_id > 0")
-        parser.add_argument("--name", type=str, dest="tank_name", metavar="NAME", default=None, help="tank name")
+        parser.add_argument(
+            "--name",
+            type=str,
+            dest="tank_name",
+            metavar="NAME",
+            default=None,
+            help="tank name",
+        )
         parser.add_argument(
             "--nation",
             type=str,
@@ -83,7 +114,12 @@ def add_args_add(parser: ArgumentParser, config: Optional[ConfigParser] = None) 
             help="tank nation: " + ", ".join([n.name for n in EnumNation]),
         )
         parser.add_argument(
-            "--tier", type=str, dest="tank_tier", metavar="TIER", default=None, help="tank tier I-X or 1-10"
+            "--tier",
+            type=str,
+            dest="tank_tier",
+            metavar="TIER",
+            default=None,
+            help="tank tier I-X or 1-10",
         )
         parser.add_argument(
             "--type",
@@ -93,36 +129,106 @@ def add_args_add(parser: ArgumentParser, config: Optional[ConfigParser] = None) 
             default=None,
             help="tank type: " + ", ".join([n.name for n in EnumVehicleTypeInt]),
         )
-        parser.add_argument("--premium", action="store_true", default=False, dest="is_premium", help="premium tank")
-
-        return True
-    except Exception as err:
-        error(f"{err}")
-    return False
-
-
-def add_args_update(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
-    try:
-        debug("starting")
-        parser.add_argument("file", type=str, default=TANKOPEDIA_FILE, nargs="?", help="tankopedia file")
         parser.add_argument(
-            "--force",
+            "--premium",
             action="store_true",
             default=False,
-            help="Overwrite existing tanks entries instead of updating new ones",
+            dest="is_premium",
+            help="premium tank",
         )
+
         return True
     except Exception as err:
         error(f"{err}")
     return False
 
 
-def add_args_edit(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_update(
+    parser: ArgumentParser, config: Optional[ConfigParser] = None
+) -> bool:
+    try:
+        debug("starting")
+        update_parsers = parser.add_subparsers(
+            dest="tankopedia_update_source",
+            title="tankopedia update commands",
+            description="valid commands",
+            metavar="file | wg",
+        )
+        update_parsers.required = True
+        update_file_parser = update_parsers.add_parser(
+            "file", help="tankopedia update file help"
+        )
+        if not add_args_update_file(update_file_parser, config=config):
+            raise Exception(
+                "Failed to define argument parser for: tankopedia update file"
+            )
+
+        update_wg_parser = update_parsers.add_parser(
+            "wg", help="tankopedia update wg help"
+        )
+        if not add_args_update_wg(update_wg_parser, config=config):
+            raise Exception(
+                "Failed to define argument parser for: tankopedia update help"
+            )
+
+        parser.add_argument(
+            "--add-only",
+            action="store_true",
+            default=False,
+            help="Only add new tanks, do not update existing ones",
+        )
+        parser.add_argument(
+            "--dry-run",
+            action="store_true",
+            default=False,
+            help="Read and compare update, but do not write to the backend",
+        )
+
+        return True
+    except Exception as err:
+        error(f"{err}")
+    return False
+
+
+def add_args_update_file(
+    parser: ArgumentParser, config: Optional[ConfigParser] = None
+) -> bool:
+    try:
+        debug("starting")
+        parser.add_argument(
+            "file",
+            type=str,
+            default=TANKOPEDIA_FILE,
+            metavar="FILE",
+            help="read tankopedia update from FILE",
+        )
+
+        return True
+    except Exception as err:
+        error(f"{err}")
+    return False
+
+
+def add_args_update_wg(
+    parser: ArgumentParser, config: Optional[ConfigParser] = None
+) -> bool:
+    debug("starting")
+    return add_args_wg(parser, config)
+
+
+def add_args_edit(
+    parser: ArgumentParser, config: Optional[ConfigParser] = None
+) -> bool:
     try:
         debug("starting")
         parser.add_argument("tank_id", type=int, help="Tank to edit: tank_id > 0")
         parser.add_argument(
-            "--name", type=str, dest="tank_name", metavar="NAME", default=None, help="edit tank's name"
+            "--name",
+            type=str,
+            dest="tank_name",
+            metavar="NAME",
+            default=None,
+            help="edit tank's name",
         )
         parser.add_argument(
             "--nation",
@@ -133,7 +239,12 @@ def add_args_edit(parser: ArgumentParser, config: Optional[ConfigParser] = None)
             help="edit tank's nation: " + ", ".join([n.name for n in EnumNation]),
         )
         parser.add_argument(
-            "--tier", type=str, dest="tank_tier", metavar="TIER", default=None, help="edit tank's tier I-X or 1-10"
+            "--tier",
+            type=str,
+            dest="tank_tier",
+            metavar="TIER",
+            default=None,
+            help="edit tank's tier I-X or 1-10",
         )
         parser.add_argument(
             "--type",
@@ -144,7 +255,11 @@ def add_args_edit(parser: ArgumentParser, config: Optional[ConfigParser] = None)
             help="edit tank's type: " + ", ".join([n.name for n in EnumVehicleTypeInt]),
         )
         parser.add_argument(
-            "--premium", action="store_true", default=False, dest="is_premium", help="set tank as premium tank"
+            "--premium",
+            action="store_true",
+            default=False,
+            dest="is_premium",
+            help="set tank as premium tank",
         )
         parser.add_argument(
             "--non-premium",
@@ -159,7 +274,9 @@ def add_args_edit(parser: ArgumentParser, config: Optional[ConfigParser] = None)
     return False
 
 
-def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_import(
+    parser: ArgumentParser, config: Optional[ConfigParser] = None
+) -> bool:
     try:
         debug("starting")
         import_parsers = parser.add_subparsers(
@@ -171,9 +288,13 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
         import_parsers.required = True
 
         for backend in Backend.get_registered():
-            import_parser = import_parsers.add_parser(backend.driver, help=f"tankopedia import {backend.driver} help")
+            import_parser = import_parsers.add_parser(
+                backend.driver, help=f"tankopedia import {backend.driver} help"
+            )
             if not backend.add_args_import(import_parser, config=config):
-                raise Exception(f"Failed to define argument parser for: tankopedia import {backend.driver}")
+                raise Exception(
+                    f"Failed to define argument parser for: tankopedia import {backend.driver}"
+                )
 
         parser.add_argument(
             "--import-model",
@@ -185,7 +306,10 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
         )
         parser.add_argument("--sample", type=float, default=0, help="Sample size")
         parser.add_argument(
-            "--force", action="store_true", default=False, help="Overwrite existing file(s) when exporting"
+            "--force",
+            action="store_true",
+            default=False,
+            help="Overwrite existing file(s) when exporting",
         )
         return True
     except Exception as err:
@@ -193,7 +317,9 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
     return False
 
 
-def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_export(
+    parser: ArgumentParser, config: Optional[ConfigParser] = None
+) -> bool:
     try:
         debug("starting")
         EXPORT_FORMAT = "txt"
@@ -229,7 +355,12 @@ def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = Non
             help="export tank stats for the listed TANK_ID(s)",
         )
         parser.add_argument(
-            "--tier", type=int, default=None, metavar="TIER", choices=range(1, 11), help="export tanks of TIER"
+            "--tier",
+            type=int,
+            default=None,
+            metavar="TIER",
+            choices=range(1, 11),
+            help="export tanks of TIER",
         )
         parser.add_argument(
             "--type",
@@ -248,12 +379,25 @@ def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = Non
             help="export tanks of NATION",
         )
         parser.add_argument(
-            "--premium", default=None, action="store_true", dest="is_premium", help="export premium tanks"
+            "--premium",
+            default=None,
+            action="store_true",
+            dest="is_premium",
+            help="export premium tanks",
         )
         parser.add_argument(
-            "--non-premium", default=None, action="store_false", dest="is_premium", help="export non-premium tanks"
+            "--non-premium",
+            default=None,
+            action="store_false",
+            dest="is_premium",
+            help="export non-premium tanks",
         )
-        parser.add_argument("--force", action="store_true", default=False, help="overwrite existing expoirt file")
+        parser.add_argument(
+            "--force",
+            action="store_true",
+            default=False,
+            help="overwrite existing expoirt file",
+        )
 
         return True
     except Exception as err:
@@ -315,7 +459,9 @@ async def cmd_add(db: Backend, args: Namespace) -> bool:
             try:
                 tank_nation = EnumNation[args.tank_nation]
             except Exception as err:
-                raise ValueError(f"could not set nation from '{args.tank_nation}': {err}")
+                raise ValueError(
+                    f"could not set nation from '{args.tank_nation}': {err}"
+                )
         if args.tank_tier is not None:
             try:
                 tank_tier = EnumVehicleTier.read_tier(args.tank_tier)
@@ -327,7 +473,12 @@ async def cmd_add(db: Backend, args: Namespace) -> bool:
             except Exception as err:
                 raise ValueError(f"could not set nation from '{args.tank_type}': {err}")
         tank: Tank = Tank(
-            tank_id=tank_id, name=tank_name, nation=tank_nation, tier=tank_tier, type=tank_type, is_premium=is_premium
+            tank_id=tank_id,
+            name=tank_name,
+            nation=tank_nation,
+            tier=tank_tier,
+            type=tank_type,
+            is_premium=is_premium,
         )
 
         if await db.tankopedia_insert(tank):
@@ -391,7 +542,12 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
             await tankQ.add_producer()
             stats.merge_child(
                 await db.tankopedia_get_worker(
-                    tankQ, tanks=tanks, tier=tier, tank_type=tank_type, nation=nation, is_premium=is_premium
+                    tankQ,
+                    tanks=tanks,
+                    tier=tier,
+                    tank_type=tank_type,
+                    nation=nation,
+                    is_premium=is_premium,
                 )
             )
             await tankQ.finish()
@@ -401,7 +557,11 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
             tankopedia = WGApiTankopedia()
             tankopedia.data = dict()
             async for tank in db.tankopedia_get_many(
-                tanks=tanks, tier=tier, tank_type=tank_type, nation=nation, is_premium=is_premium
+                tanks=tanks,
+                tier=tier,
+                tank_type=tank_type,
+                nation=nation,
+                is_premium=is_premium,
             ):
                 stats.log("tanks read")
                 if (wgtank := WGTank.transform(tank)) is not None:
@@ -442,7 +602,9 @@ async def cmd_import(db: Backend, args: Namespace) -> bool:
         import_db: Backend | None = None
         import_backend: str = args.import_backend
 
-        insert_worker: Task = create_task(db.tankopedia_insert_worker(tankQ=tankQ, force=args.force))
+        insert_worker: Task = create_task(
+            db.tankopedia_insert_worker(tankQ=tankQ, force=args.force)
+        )
 
         if (
             import_db := Backend.create_import_backend(
@@ -453,7 +615,9 @@ async def cmd_import(db: Backend, args: Namespace) -> bool:
                 config_file=args.import_config,
             )
         ) is None:
-            raise ValueError(f"Could not init {import_backend} to import tankopedia from")
+            raise ValueError(
+                f"Could not init {import_backend} to import tankopedia from"
+            )
 
         debug(f"import_db: {import_db.table_uri(BSTableType.Tankopedia)}")
 
@@ -478,38 +642,119 @@ async def cmd_import(db: Backend, args: Namespace) -> bool:
 
 
 async def cmd_update(db: Backend, args: Namespace) -> bool:
+    try:
+        debug("starting")
+        stats = EventCounter("tankopedia update")
+        force: bool = not args.add_only
+        dry_run: bool = args.dry_run
+        stats.log("added", 0)
+        stats.log("updated", 0)
+        tankopedia_new: WGApiTankopedia | None
+        if args.tankopedia_update_source == "file":
+            debug("wi")
+            if (tankopedia_new := await cmd_update_file(db, args)) is None:
+                raise ValueError(f"failed to read tankopedia from file: {args.file}")
+            stats.log("tanks read from file", len(tankopedia_new))
+
+        elif args.tankopedia_update_source == "wg":
+            debug("wg")
+            if (tankopedia_new := await cmd_update_wg(db, args)) is None:
+                raise ValueError(f"failed to read tankopedia from WG API")
+            stats.log("tanks read from WG API", len(tankopedia_new))
+
+        else:
+            raise ValueError(
+                f"tankopedia update: unknown or missing subcommand: {args.setup_cmd}"
+            )
+
+        tankopedia: WGApiTankopedia | None
+        if (tankopedia := await get_tankopedia(db)) is None:
+            error(f"could not read Tankopedia from backend: {db.backend}")
+            return False
+
+        added: set[int]
+        updated: set[int]
+        try:
+            (added, updated) = tankopedia.update(tankopedia_new)
+        except Exception as err:
+            error(f"failed to update tankopedia: {err}")
+            raise
+
+        for tank_id in added:
+            if (tank := Tank.transform(tankopedia[tank_id])) is None:
+                error(
+                    f"Could not transform {tankopedia[tank_id].name} (tank_id={tank_id}) to Tank format"
+                )
+                stats.log("errors")
+                continue
+
+            if dry_run:
+                verbose("would add: tank_id=%d %s", tank.tank_id, tank.name)
+                stats.log("would add")
+            else:
+                if await db.tankopedia_insert(tank=tank, force=force):
+                    verbose("added: tank_id=%d %s", tank.tank_id, tank.name)
+                    stats.log("added")
+                else:
+                    stats.log("not added")
+
+        for tank_id in updated:
+            if (tank := Tank.transform(tankopedia[tank_id])) is None:
+                error(
+                    f"Could not transform {tankopedia[tank_id].name} (tank_id={tank_id}) to Tank format"
+                )
+                continue
+
+            if dry_run:
+                stats.log("would update")
+                verbose("would update: tank_id=%d %s", tank.tank_id, tank.name)
+            else:
+                if await db.tankopedia_insert(tank=tank, force=force):
+                    verbose("updated: tank_id=%d %s", tank.tank_id, tank.name)
+                    stats.log("updated")
+                else:
+                    stats.log("not updated")
+
+        stats.print()
+
+    except Exception as err:
+        error(f"{err}")
+    return False
+
+
+async def get_tankopedia(db: Backend) -> WGApiTankopedia | None:
+    """return Tankopedia from backend"""
+    debug("starting")
+    tankopedia = WGApiTankopedia()
+    try:
+        async for tank in db.tankopedia_get_many():
+            debug("read: tank_id=%d %s", tank.tank_id, tank.name)
+            if (wgtank := WGTank.transform(tank)) is not None:
+                tankopedia.add(wgtank)
+            else:
+                debug(f"failed to transform tank to WGTank format: {tank}")
+        debug("read %d tanks from backend", len(tankopedia))
+        return tankopedia
+    except Exception as err:
+        error(f"{err}")
+    return None
+
+
+async def cmd_update_file(db: Backend, args: Namespace) -> WGApiTankopedia | None:
     """Update tankopedia in the database from a file"""
     debug("starting")
     filename: str = args.file
-    force: bool = args.force
-    stats: EventCounter = EventCounter("tankopedia update")
-    tankopedia: WGApiTankopedia | None
-    try:
-        if (tankopedia := await WGApiTankopedia.open_json(filename)) is None:
-            raise ValueError(f"could not read tanks from file: {filename}")
+    return await WGApiTankopedia.open_json(filename)
 
-        for wgtank in tankopedia:
-            if (tank := Tank.transform(wgtank)) is None:
-                error(f"Could not transform {wgtank.name} (tank_id={wgtank.tank_id}) to Tank format")
-                continue
-            try:
-                if await db.tankopedia_insert(tank=tank, force=force):
-                    verbose(f"Added: tank_id={tank.tank_id} {tank.name}")
-                    stats.log("tanks added/updated")
-                else:
-                    stats.log("tanks not added")
-            except Exception as err:
-                error(f"Unexpected error ({tank.tank_id}): {err}")
 
-            # tank_strs : list[WoTBlitzTankString] | None
-            # if (tank_strs := WoTBlitzTankString.from_tankopedia(tankopedia)) is not None:
-            # 	for tank_str in tank_strs:
-            # 		if await db.tank_string_insert(tank_str, force=force):
-            # 			stats.log('tank strings added')
-            # 		else:
-            # 			stats.log('tank strings not added')
-
-    except Exception as err:
-        error(f"Failed to update tankopedia from {filename}: {err}")
-    stats.print()
-    return True
+async def cmd_update_wg(db: Backend, args: Namespace) -> WGApiTankopedia | None:
+    """Update tankopedia in the database from a WG API"""
+    debug("starting")
+    region: Region = Region[args.wg_region]
+    async with WGApi(
+        app_id=args.wg_app_id,
+        ru_app_id=args.ru_app_id,
+        rate_limit=args.wg_rate_limit,
+        ru_rate_limit=args.ru_rate_limit,
+    ) as wg:
+        return await wg.get_tankopedia(region=region)
