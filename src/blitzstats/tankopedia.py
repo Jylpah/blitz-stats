@@ -236,7 +236,7 @@ def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = Non
             type=str,
             default=None,
             metavar="TYPE",
-            choices=[n.name for n in EnumVehicleTypeStr],
+            choices=[n.name for n in EnumVehicleTypeInt],
             help="export tanks of TYPE",
         )
         parser.add_argument(
@@ -354,20 +354,22 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
         filename: str = args.filename
         nation: EnumNation | None = None
         tier: EnumVehicleTier | None = None
-        tank_type: EnumVehicleTypeStr | None = None
+        tank_type: EnumVehicleTypeInt | None = None
         is_premium: bool | None = None
-        tanks: list[Tank] = list()
+        tanks: list[Tank] | None = None
         std_out: bool = filename == "-"
 
         if args.nation is not None:
             nation = EnumNation[args.nation]
+            debug(f"--nation: {nation}")
         if args.tier is not None:
             tier = EnumVehicleTier(args.tier)
         if args.type is not None:
-            tank_type = EnumVehicleTypeStr[args.type]
+            tank_type = EnumVehicleTypeInt[args.type]
         if args.is_premium is not None:
             is_premium = args.is_premium
         if args.tanks is not None:
+            tanks = list()
             for tank_id in args.tanks:
                 tanks.append(Tank(tank_id=tank_id))
 
