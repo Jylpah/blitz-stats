@@ -29,7 +29,14 @@ from pymongo.errors import BulkWriteError, CollectionInvalid, ConnectionFailure
 from pydantic import BaseModel, ValidationError, Field
 from asyncstdlib import enumerate
 
-from pyutils import JSONExportable, AliasMapper, Idx, BackendIndexType, BackendIndex
+from pyutils import (
+    JSONExportable,
+    AliasMapper,
+    Idx,
+    BackendIndexType,
+    BackendIndex,
+    awrap,
+)
 from pyutils.exportable import DESCENDING, ASCENDING, TEXT
 from pyutils.utils import epoch_now
 
@@ -1631,9 +1638,15 @@ class MongoBackend(Backend):
                 release_match=release_match, since=since, first=first
             )
 
+            releases: list[BSBlitzRelease] = list()
             async for data in self._datas_get(BSTableType.Releases, pipeline=pipeline):
                 if (release := BSBlitzRelease.transform(data)) is not None:
-                    yield release
+                    releases.append(release)
+
+            releases.sort(key=lambda s: [int(u) for u in s.release.split(".")])
+
+            async for release in awrap(releases):
+                yield release
 
         except Exception as err:
             error(f"Error getting releases: {err}")
