@@ -4,12 +4,18 @@ from typing import Optional, cast, Iterable, Any
 import logging
 from asyncio import create_task, gather, wait, Queue, CancelledError, Task, sleep
 from sortedcollections import NearestDict  # type: ignore
-
+from math import ceil
 from aiohttp import ClientResponse
 from datetime import date, datetime
 from os.path import isfile
 
-from pyutils import EventCounter, JSONExportable, CSVExportable, TXTExportable, IterableQueue
+from pyutils import (
+    EventCounter,
+    JSONExportable,
+    CSVExportable,
+    TXTExportable,
+    IterableQueue,
+)
 from pyutils.exportable import export
 from pyutils.utils import is_alphanum
 from blitzutils import WGBlitzRelease
@@ -50,15 +56,21 @@ def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> b
         if not add_args_edit(edit_parser, config=config):
             raise Exception("Failed to define argument parser for: releases edit")
 
-        remove_parser = releases_parsers.add_parser("remove", help="releases remove help")
+        remove_parser = releases_parsers.add_parser(
+            "remove", help="releases remove help"
+        )
         if not add_args_remove(remove_parser, config=config):
             raise Exception("Failed to define argument parser for: releases remove")
 
-        import_parser = releases_parsers.add_parser("import", help="releases import help")
+        import_parser = releases_parsers.add_parser(
+            "import", help="releases import help"
+        )
         if not add_args_import(import_parser, config=config):
             raise Exception("Failed to define argument parser for: releases import")
 
-        export_parser = releases_parsers.add_parser("export", aliases=["list"], help="releases export help")
+        export_parser = releases_parsers.add_parser(
+            "export", aliases=["list"], help="releases export help"
+        )
         if not add_args_export(export_parser, config=config):
             raise Exception("Failed to define argument parser for: releases export")
 
@@ -71,34 +83,70 @@ def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> b
 def add_args_add(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
     try:
         debug("starting")
-        parser.add_argument("release", type=str, default=None, metavar="RELEASE", help="RELEASE to add")
-        parser.add_argument("--cut-off", type=str, default=None, help="release cut-off time")
-        parser.add_argument("--launch", type=str, default=None, help="release launch date")
-
+        parser.add_argument(
+            "release", type=str, default=None, metavar="RELEASE", help="RELEASE to add"
+        )
+        parser.add_argument(
+            "--launch", type=str, default=None, help="release launch date"
+        )
+        parser.add_argument(
+            "--cut-off", type=str, default=None, help="release cut-off time"
+        )
+        parser.add_argument(
+            "--round-cut-off",
+            "--round",
+            type=int,
+            default=0,
+            metavar="MINUTES",
+            help="round cut-off time to the next full MINUTES",
+        )
         return True
     except Exception as err:
         error(f"add_args_add() : {err}")
     return False
 
 
-def add_args_edit(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_edit(
+    parser: ArgumentParser, config: Optional[ConfigParser] = None
+) -> bool:
     try:
         debug("starting")
-        parser.add_argument("release", type=str, metavar="RELEASE", help="RELEASE to edit")
-        parser.add_argument("--cut-off", type=str, default=None, help="new release cut-off time")
-        parser.add_argument("--launch", type=str, default=None, help="new release launch date")
+        parser.add_argument(
+            "release", type=str, metavar="RELEASE", help="RELEASE to edit"
+        )
+        parser.add_argument(
+            "--cut-off", type=str, default=None, help="new release cut-off time"
+        )
+        parser.add_argument(
+            "--launch", type=str, default=None, help="new release launch date"
+        )
+        parser.add_argument(
+            "--round-cut-off",
+            "--round",
+            type=int,
+            default=0,
+            metavar="MINUTES",
+            help="round cut-off time to the next full MINUTES",
+        )
         return True
     except Exception as err:
         error(f"add_args_edit() : {err}")
     return False
 
 
-def add_args_remove(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_remove(
+    parser: ArgumentParser, config: Optional[ConfigParser] = None
+) -> bool:
     try:
         debug("starting")
-        parser.add_argument("release", type=str, metavar="RELEASE", help="RELEASE to remove")
         parser.add_argument(
-            "--force", action="store_true", default=False, help="do not wait before removing releases "
+            "release", type=str, metavar="RELEASE", help="RELEASE to remove"
+        )
+        parser.add_argument(
+            "--force",
+            action="store_true",
+            default=False,
+            help="do not wait before removing releases ",
         )
         return True
     except Exception as err:
@@ -106,7 +154,9 @@ def add_args_remove(parser: ArgumentParser, config: Optional[ConfigParser] = Non
     return False
 
 
-def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_import(
+    parser: ArgumentParser, config: Optional[ConfigParser] = None
+) -> bool:
     try:
         debug("starting")
         import_parsers = parser.add_subparsers(
@@ -118,9 +168,13 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
         import_parsers.required = True
 
         for backend in Backend.get_registered():
-            import_parser = import_parsers.add_parser(backend.driver, help=f"releases import {backend.driver} help")
+            import_parser = import_parsers.add_parser(
+                backend.driver, help=f"releases import {backend.driver} help"
+            )
             if not backend.add_args_import(import_parser, config=config):
-                raise Exception(f"Failed to define argument parser for: releases import {backend.driver}")
+                raise Exception(
+                    f"Failed to define argument parser for: releases import {backend.driver}"
+                )
 
         parser.add_argument(
             "--import-model",
@@ -130,9 +184,14 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
             choices=["BSBlitzRelease", "WG_Release"],
             help="data format to import. Default is blitz-stats native format.",
         )
-        parser.add_argument("--sample", type=int, default=0, metavar="SAMPLE", help="sample size")
         parser.add_argument(
-            "--force", action="store_true", default=False, help="overwrite existing file(s) when exporting"
+            "--sample", type=int, default=0, metavar="SAMPLE", help="sample size"
+        )
+        parser.add_argument(
+            "--force",
+            action="store_true",
+            default=False,
+            help="overwrite existing file(s) when exporting",
         )
         parser.add_argument(
             "--releases",
@@ -156,7 +215,9 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
     return False
 
 
-def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_export(
+    parser: ArgumentParser, config: Optional[ConfigParser] = None
+) -> bool:
     try:
         debug("starting")
         parser.add_argument(
@@ -184,10 +245,17 @@ def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = Non
             help="releases list format",
         )
         parser.add_argument(
-            "--file", metavar="FILE", type=str, default="-", help="File to export releases to. Use '-' for STDIN"
+            "--file",
+            metavar="FILE",
+            type=str,
+            default="-",
+            help="File to export releases to. Use '-' for STDIN",
         )
         parser.add_argument(
-            "--force", action="store_true", default=False, help="Overwrite existing file(s) when exporting"
+            "--force",
+            action="store_true",
+            default=False,
+            help="Overwrite existing file(s) when exporting",
         )
         return True
     except Exception as err:
@@ -246,30 +314,41 @@ async def cmd(db: Backend, args: Namespace) -> bool:
 
 
 async def cmd_add(db: Backend, args: Namespace) -> bool:
+    debug("starting")
+    release: BSBlitzRelease | None = None
     try:
-        debug("starting")
-        release: BSBlitzRelease | None = None
-        try:
-            release = BSBlitzRelease(release=args.release, launch_date=args.launch, cut_off=args.cut_off)
-        except:
-            debug(f"No valid release given as argument")
+        release = BSBlitzRelease(
+            release=args.release,
+            launch_date=args.launch,
+            cut_off=args.cut_off,
+        )
+        release.cut_off = round_epoch(release.cut_off, args.round_cut_off * 60)
+        return await db.release_insert(release=release)
+    except:
+        error(f"No valid release given as argument")
 
-        if release is None:
-            release = await db.release_get_latest()
-            if release is None:
-                raise ValueError("Could not find previous release and no new release set")
-            return await db.release_insert(release.next())
-        else:
-            return await db.release_insert(release=release)
-    except Exception as err:
-        error(f"{err}")
+    # if release is None:
+    #     release = await db.release_get_latest()
+    #     if release is None:
+    #         raise ValueError(
+    #             "Could not find previous release and no new release set"
+    #         )
+    #     return await db.release_insert(release.next())
+    # else:
+    #     return await db.release_insert(release=release)
+
     return False
 
 
 async def cmd_edit(db: Backend, args: Namespace) -> bool:
     try:
         debug("starting")
-        release = BSBlitzRelease(release=args.release, launch_date=args.launch, cut_off=args.cut_off)
+        release = BSBlitzRelease(
+            release=args.release,
+            launch_date=args.launch,
+            cut_off=args.cut_off,
+        )
+        release.cut_off = round_epoch(release.cut_off, args.round_cut_off * 60)
         update: dict[str, Any] = release.dict(exclude_unset=True, exclude_none=True)
         del update["release"]
         return await db.release_update(release, update=update)
@@ -310,9 +389,15 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
         )
 
         if args.since is not None:
-            since = int(datetime.combine(date.fromisoformat(args.since), datetime.min.time()).timestamp())
+            since = int(
+                datetime.combine(
+                    date.fromisoformat(args.since), datetime.min.time()
+                ).timestamp()
+            )
         await releaseQ.add_producer()
-        async for release in db.releases_get(release_match=args.release_match, since=since):
+        async for release in db.releases_get(
+            release_match=args.release_match, since=since
+        ):
             debug(f"adding release {release.release} to the export queue")
             await releaseQ.put(release)
         await releaseQ.finish()
@@ -328,14 +413,18 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
 async def cmd_import(db: Backend, args: Namespace) -> bool:
     """Import releases from other backend"""
     try:
-        assert is_alphanum(args.import_model), f"invalid --import-model: {args.import_model}"
+        assert is_alphanum(
+            args.import_model
+        ), f"invalid --import-model: {args.import_model}"
 
         stats: EventCounter = EventCounter("releases import")
         releaseQ: Queue[BSBlitzRelease] = Queue(100)
         import_db: Backend | None = None
         import_backend: str = args.import_backend
 
-        write_worker: Task = create_task(db.releases_insert_worker(releaseQ=releaseQ, force=args.force))
+        write_worker: Task = create_task(
+            db.releases_insert_worker(releaseQ=releaseQ, force=args.force)
+        )
 
         if (
             import_db := Backend.create_import_backend(
@@ -354,7 +443,9 @@ async def cmd_import(db: Backend, args: Namespace) -> bool:
 
         await releaseQ.join()
         write_worker.cancel()
-        worker_res: tuple[EventCounter | BaseException] = await gather(write_worker, return_exceptions=True)
+        worker_res: tuple[EventCounter | BaseException] = await gather(
+            write_worker, return_exceptions=True
+        )
         if type(worker_res[0]) is EventCounter:
             stats.merge_child(worker_res[0])
         elif type(worker_res[0]) is BaseException:
@@ -391,10 +482,22 @@ async def get_releases(db: Backend, releases: list[str]) -> list[BSBlitzRelease]
 
 async def release_mapper(db: Backend) -> NearestDict[int, BSBlitzRelease]:
     """Fetch all releases and create a NearestDict() with cut-off as key"""
-    releases: NearestDict[int, BSBlitzRelease] = NearestDict(rounding=NearestDict.NEAREST_NEXT)
+    releases: NearestDict[int, BSBlitzRelease] = NearestDict(
+        rounding=NearestDict.NEAREST_NEXT
+    )
     async for r in db.releases_get():
         if r.cut_off in releases.keys():
             message(f"Cannot store releases with duplicate cut-off times: {r}")
             continue
         releases[r.cut_off] = r
     return releases
+
+
+def round_epoch(epoch: int, round_to: int = 0) -> int:
+    """Round epoch time to the next even 'round_to'.
+    Adds round_to/2 to the epoch first to ensure there is enough gap"""
+    assert isinstance(epoch, int), "epoch has to be an int"
+    if round_to > 0:
+        epoch = epoch + int(round_to / 2)
+        return ceil(epoch / round_to) * round_to
+    return epoch
