@@ -1,6 +1,7 @@
 # blitz-stats
 
-Python tool to fetch, manage and exports stats for Wargaming's [World of Tanks Blitz](https://wotblitz.com) mobile game. 
+Python tool to fetch, manage and exports stats for Wargaming's [World of Tanks Blitz](https://wotblitz.com) 
+mobile game. Requires [MongoDB](https://mongodb.com) as backend.
 
 # Install
 
