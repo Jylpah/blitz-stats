@@ -1859,7 +1859,7 @@ async def cmd_export_update(db: Backend, args: Namespace) -> bool:
         options["release"] = release.release
         tank_id: int
         WORKERS: int = min([cpu_count() - 1, MAX_WORKERS])
-        message(f"Exporting update totals for release {release}")
+        message(f"Exporting update stats for release {release}")
 
         with Manager() as manager:
             dataQ: queue.Queue[pd.DataFrame] = manager.Queue(TANK_STATS_Q_MAX)
