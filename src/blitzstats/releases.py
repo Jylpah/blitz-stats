@@ -87,10 +87,18 @@ def add_args_add(parser: ArgumentParser, config: Optional[ConfigParser] = None) 
             "release", type=str, default=None, metavar="RELEASE", help="RELEASE to add"
         )
         parser.add_argument(
-            "--launch", type=str, default=None, help="release launch date"
+            "--launch",
+            type=str,
+            default=None,
+            metavar="DATE",
+            help="release launch date",
         )
         parser.add_argument(
-            "--cut-off", type=str, default=None, help="release cut-off time"
+            "--cut-off",
+            type=str,
+            default=None,
+            metavar="EPOCH",
+            help="release cut-off time",
         )
         parser.add_argument(
             "--round-cut-off",
@@ -115,10 +123,18 @@ def add_args_edit(
             "release", type=str, metavar="RELEASE", help="RELEASE to edit"
         )
         parser.add_argument(
-            "--cut-off", type=str, default=None, help="new release cut-off time"
+            "--cut-off",
+            type=str,
+            default=None,
+            metavar="EPOCH",
+            help="new release cut-off time",
         )
         parser.add_argument(
-            "--launch", type=str, default=None, help="new release launch date"
+            "--launch",
+            type=str,
+            default=None,
+            metavar="DATE",
+            help="new release launch date",
         )
         parser.add_argument(
             "--round-cut-off",
