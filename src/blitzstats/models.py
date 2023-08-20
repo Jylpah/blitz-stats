@@ -1,6 +1,5 @@
 import logging
 from enum import StrEnum
-from sys import maxsize
 from time import time
 import json
 from typing import Optional, ClassVar, Any
@@ -159,16 +158,24 @@ class BSAccount(Account):
     def is_inactive(self, stats_type: StatsTypes | None = None) -> bool:
         """Check if account is active"""
         stats_updated: int | None
-        if stats_type is None or (stats_updated := getattr(self, stats_type.value)) is None:
+        if (
+            stats_type is None
+            or (stats_updated := getattr(self, stats_type.value)) is None
+        ):
             stats_updated = epoch_now()
-        return stats_updated - self.last_battle_time > self._min_inactivity_days * 24 * 3600
+        return (
+            stats_updated - self.last_battle_time
+            > self._min_inactivity_days * 24 * 3600
+        )
 
     def update_needed(self, stats_type: StatsTypes) -> bool:
         """Check whether the account needs an update"""
         stats_updated: int | None
         if (stats_updated := getattr(self, stats_type.value)) is None:
             stats_updated = 0
-        return (epoch_now() - stats_updated) > min(MAX_UPDATE_INTERVAL, (stats_updated - self.last_battle_time) / 3)
+        return (epoch_now() - stats_updated) > min(
+            MAX_UPDATE_INTERVAL, (stats_updated - self.last_battle_time) / 3
+        )
 
     def update(self, update: WGAccountInfo) -> bool:
         """Update BSAccount() from WGACcountInfo i.e. from WG API"""
@@ -214,7 +221,10 @@ BSAccount.register_transformation(Account, BSAccount.transform_Account)
 
 
 class BSBlitzRelease(WGBlitzRelease):
-    cut_off: int = Field(default=maxsize)
+    _max_epoch: int = 2**63 - 1  # MAX_INT64 (signed)
+    cut_off: int = Field(default=_max_epoch)
+
+    _exclude_defaults = False
 
     class Config:
         allow_mutation = True
@@ -224,7 +234,7 @@ class BSBlitzRelease(WGBlitzRelease):
     @validator("cut_off", pre=True)
     def check_cut_off_now(cls, v):
         if v is None:
-            return maxsize
+            return cls._max_epoch
         elif isinstance(v, str) and v == "now":
             return epoch_now()
         else:
@@ -296,11 +306,19 @@ class BSBlitzReplay(WoTBlitzReplaySummary):
                 ("battle_start_timestamp", DESCENDING),
             ]
         )
-        indexes.append([("room_type", ASCENDING), ("vehicle_tier", ASCENDING), ("battle_start_timestamp", DESCENDING)])
+        indexes.append(
+            [
+                ("room_type", ASCENDING),
+                ("vehicle_tier", ASCENDING),
+                ("battle_start_timestamp", DESCENDING),
+            ]
+        )
         return indexes
 
     @classmethod
-    def transform_WoTBlitzReplayData(cls, in_obj: WoTBlitzReplayData) -> Optional["BSBlitzReplay"]:
+    def transform_WoTBlitzReplayData(
+        cls, in_obj: WoTBlitzReplayData
+    ) -> Optional["BSBlitzReplay"]:
         res: BSBlitzReplay | None = None
         try:
             if (res := BSBlitzReplay.parse_obj(in_obj.summary.dict())) is not None:
@@ -313,14 +331,20 @@ class BSBlitzReplay(WoTBlitzReplaySummary):
         return res
 
     @classmethod
-    def transform_WoTBlitzReplayJSON(cls, in_obj: WoTBlitzReplayJSON) -> Optional["BSBlitzReplay"]:
+    def transform_WoTBlitzReplayJSON(
+        cls, in_obj: WoTBlitzReplayJSON
+    ) -> Optional["BSBlitzReplay"]:
         if (replay_data := WoTBlitzReplayData.transform(in_obj)) is not None:
             return cls.transform_WoTBlitzReplayData(replay_data)
         return None
 
 
-BSBlitzReplay.register_transformation(WoTBlitzReplayData, BSBlitzReplay.transform_WoTBlitzReplayData)
-BSBlitzReplay.register_transformation(WoTBlitzReplayJSON, BSBlitzReplay.transform_WoTBlitzReplayJSON)
+BSBlitzReplay.register_transformation(
+    WoTBlitzReplayData, BSBlitzReplay.transform_WoTBlitzReplayData
+)
+BSBlitzReplay.register_transformation(
+    WoTBlitzReplayJSON, BSBlitzReplay.transform_WoTBlitzReplayJSON
+)
 
 
 # fmt: off
