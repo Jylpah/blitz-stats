@@ -1655,6 +1655,7 @@ async def cmd_export_career(db: Backend, args: Namespace) -> bool:
     assert args.format in EXPORT_DATA_FORMATS, "--format has to be 'arrow' or 'parquet'"
     WORKERS: int = args.workers
     stats: EventCounter = EventCounter("tank-stats export")
+
     try:
         regions: set[Region] = {Region(r) for r in args.regions}
         release: BSBlitzRelease = BSBlitzRelease(release=args.RELEASE)
@@ -1668,6 +1669,8 @@ async def cmd_export_career(db: Backend, args: Namespace) -> bool:
         options: dict[str, Any] = dict()
         options["release"] = release
         options["after"] = args.after
+
+        message(f"Exporting career stats for release {release}")
 
         if WORKERS > 0:
             WORKERS = min([cpu_count() - 1, WORKERS])
@@ -1856,6 +1859,7 @@ async def cmd_export_update(db: Backend, args: Namespace) -> bool:
         options["release"] = release.release
         tank_id: int
         WORKERS: int = min([cpu_count() - 1, MAX_WORKERS])
+        message(f"Exporting update totals for release {release}")
 
         with Manager() as manager:
             dataQ: queue.Queue[pd.DataFrame] = manager.Queue(TANK_STATS_Q_MAX)
