@@ -7,9 +7,8 @@ from asyncio import run, create_task, gather, sleep, wait, Queue, CancelledError
 from sortedcollections import NearestDict  # type: ignore
 
 import copy
-from os import getpid, makedirs
-from aiofiles import open
-from os.path import isfile, dirname
+from os import getpid
+
 import os.path
 from math import ceil
 
@@ -27,7 +26,6 @@ import queue
 import pandas as pd  # type: ignore
 import pyarrow as pa  # type: ignore
 import pyarrow.dataset as ds  # type: ignore
-import pyarrow.parquet as pq  # type: ignore
 
 # from pandas.io.json import json_normalize	# type: ignore
 
@@ -70,6 +68,13 @@ from .accounts import (
 )
 from .releases import get_releases, release_mapper
 
+from .arrow import (
+    data_writer,
+    dataset_writer,
+    EXPORT_DATA_FORMATS,
+    DEFAULT_EXPORT_DATA_FORMAT,
+)
+
 logger = logging.getLogger()
 error = logger.error
 message = logger.warning
@@ -84,10 +89,6 @@ WORKERS_PRUNE: int = 10
 WORKERS_EDIT: int = 10
 TANK_STATS_Q_MAX: int = 1000
 TANK_STATS_BATCH: int = 50000
-
-EXPORT_WRITE_BATCH: int = int(50e6)
-EXPORT_DATA_FORMATS: list[str] = ["parquet", "arrow"]
-DEFAULT_EXPORT_DATA_FORMAT: str = EXPORT_DATA_FORMATS[0]
 
 # Globals
 
@@ -621,7 +622,7 @@ def add_args_export_data(
             "--after",
             action="store_true",
             default=False,
-            help="exports stats at the end of release, default is False",
+            help="exports stats at the end of release (default=False)",
         )
         parser.add_argument(
             "--format",
@@ -639,7 +640,7 @@ def add_args_export_data(
             type=str,
             nargs="?",
             default=EXPORT_DIR,
-            help="base dir to export data",
+            help=f"base dir to export data (default={EXPORT_DIR})",
         )
         parser.add_argument(
             "--regions",
@@ -1682,8 +1683,19 @@ async def cmd_export_career(db: Backend, args: Namespace) -> bool:
             workQ: queue.Queue[BSAccount | None] = manager.Queue(100)
             adataQ: AsyncQueue[pd.DataFrame] = AsyncQueue(dataQ)
             aworkQ: AsyncQueue[BSAccount | None] = AsyncQueue(workQ)
+            partioning: ds.Partioning = ds.partitioning(
+                pa.schema([("region", pa.string())])
+            )
+            schema: pa.Schema = WGTankStat.arrow_schema()
             writer: Task = create_task(
-                export_dataset_writer(basedir, adataQ, format, force)
+                dataset_writer(
+                    basedir,
+                    adataQ,
+                    format,
+                    partioning=partioning,
+                    schema=schema,
+                    force=force,
+                )
             )
 
             with Pool(
@@ -1866,8 +1878,19 @@ async def cmd_export_update(db: Backend, args: Namespace) -> bool:
             tankQ: queue.Queue[int | None] = manager.Queue()
             adataQ: AsyncQueue[pd.DataFrame] = AsyncQueue(dataQ)
             atankQ: AsyncQueue[int | None] = AsyncQueue(tankQ)
+            partioning: ds.Partioning = ds.partitioning(
+                pa.schema([("region", pa.string())])
+            )
+            schema: pa.Schema = WGTankStat.arrow_schema()
             worker: Task = create_task(
-                export_dataset_writer(basedir, adataQ, export_format, force)
+                dataset_writer(
+                    basedir,
+                    adataQ,
+                    export_format,
+                    partioning=partioning,
+                    schema=schema,
+                    force=force,
+                )
             )
 
             with Pool(
@@ -2011,119 +2034,6 @@ async def export_update_fetcher(
 
     tankQ.task_done()
     await tankQ.put(None)
-
-    return stats
-
-
-async def export_dataset_writer(
-    basedir: str,
-    dataQ: AsyncQueue[pd.DataFrame],
-    export_format: str,
-    force: bool = False,
-) -> EventCounter:
-    """Worker to write on data stats to a file in format"""
-    global EXPORT_WRITE_BATCH
-    debug("starting")
-    assert (
-        export_format in EXPORT_DATA_FORMATS
-    ), f"export format has to be one of: {', '.join(EXPORT_DATA_FORMATS)}"
-    stats: EventCounter = EventCounter(f"writer")
-
-    try:
-        makedirs(dirname(basedir), exist_ok=True)
-
-        # batch 	: pa.RecordBatch = pa.RecordBatch.from_pandas(await dataQ.get())
-        # schema 	: pa.Schema 	 = batch.schema
-        batch: pa.RecordBatch
-        schema: pa.Schema = WGTankStat.arrow_schema()
-        part: ds.Partitioning = ds.partitioning(pa.schema([("region", pa.string())]))
-        dfs: list[pa.RecordBatch] = list()
-        rows: int = 0
-        i: int = 0
-        try:
-            while True:
-                batch = pa.RecordBatch.from_pandas(await dataQ.get(), schema)
-                try:
-                    rows += batch.num_rows
-                    dfs.append(batch)
-                    if rows > EXPORT_WRITE_BATCH:
-                        debug(f"writing {rows} rows")
-                        ds.write_dataset(
-                            dfs,
-                            base_dir=basedir,
-                            basename_template=f"part-{i}"
-                            + "-{i}."
-                            + f"{export_format}",
-                            format=export_format,
-                            partitioning=part,
-                            schema=schema,
-                            existing_data_behavior="overwrite_or_ignore",
-                        )
-                        stats.log("stats written", rows)
-                        rows = 0
-                        i += 1
-                        dfs = list()
-                except Exception as err:
-                    error(f"{err}")
-                dataQ.task_done()
-                # batch = pa.RecordBatch.from_pandas(await dataQ.get(), schema)
-
-        except CancelledError:
-            debug("cancelled")
-
-        if len(dfs) > 0:
-            ds.write_dataset(
-                dfs,
-                base_dir=basedir,
-                basename_template=f"part-{i}" + "-{i}." + f"{export_format}",
-                format=export_format,
-                partitioning=part,
-                schema=schema,
-                existing_data_behavior="overwrite_or_ignore",
-            )
-            stats.log("stats written", rows)
-
-    except Exception as err:
-        error(f"{err}")
-    return stats
-
-
-async def export_data_writer(
-    basedir: str,
-    filename: str,
-    dataQ: AsyncQueue[pd.DataFrame],
-    export_format: str,
-    force: bool = False,
-) -> EventCounter:
-    """Worker to write on data stats to a file in format"""
-    debug("starting")
-    # global export_total_rows
-    assert (
-        export_format in EXPORT_DATA_FORMATS
-    ), f"export format has to be one of: {', '.join(EXPORT_DATA_FORMATS)}"
-    stats: EventCounter = EventCounter(f"writer")
-
-    try:
-        makedirs(dirname(basedir), exist_ok=True)
-        export_file: str = os.path.join(basedir, f"{filename}.{export_format}")
-        if not force and isfile(export_file):
-            raise FileExistsError(export_file)
-        schema: pa.Schema = WGTankStat.arrow_schema()
-
-        with pq.ParquetWriter(export_file, schema, compression="lz4") as writer:
-            while True:
-                batch = pa.RecordBatch.from_pandas(await dataQ.get(), schema)
-                try:
-                    writer.write_batch(batch)
-                    stats.log("rows written", batch.num_rows)
-                except Exception as err:
-                    error(f"{err}")
-                dataQ.task_done()
-
-    except CancelledError:
-        debug("cancelled")
-    except Exception as err:
-        error(f"{err}")
 
     return stats
 
