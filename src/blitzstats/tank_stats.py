@@ -69,7 +69,6 @@ from .accounts import (
 from .releases import get_releases, release_mapper
 
 from .arrow import (
-    data_writer,
     dataset_writer,
     EXPORT_DATA_FORMATS,
     DEFAULT_EXPORT_DATA_FORMAT,
