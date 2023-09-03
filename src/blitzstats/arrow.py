@@ -34,6 +34,54 @@ DEFAULT_EXPORT_DATA_FORMAT: str = EXPORT_DATA_FORMATS[0]
 EXPORT_WRITE_BATCH: int = int(50e6)
 
 
+def create_schema(
+    obj: dict[str, Any], parent: str = "", default=pa.int32()
+) -> list[tuple[str, Any]]:
+    """Create Python Arrow schema as list of field, type tuples"""
+    # obj_src: dict[str, Any] = obj.obj_src()
+    schema: list[tuple[str, Any]] = list()
+    for key, value in obj.items():
+        schema_key: str = parent + key
+        print(f"key={key}, value={value}, type={type(value)}")
+        try:
+            if isinstance(value, Enum):
+                print(f"key={key} is Enum")
+                if isinstance(value, IntEnum):
+                    schema.append(
+                        (schema_key, pa.dictionary(pa.int8(), pa.int32(), ordered=True))
+                    )
+                else:
+                    schema.append(
+                        (
+                            schema_key,
+                            pa.dictionary(pa.int8(), pa.string(), ordered=True),
+                        )
+                    )
+            elif isinstance(value, float):
+                schema.append((schema_key, pa.float32()))
+            elif isinstance(value, int):
+                if value > 10e6:
+                    schema.append((schema_key, pa.int64()))
+                else:
+                    schema.append((schema_key, pa.int32()))
+            elif isinstance(value, str):
+                print(f"key={key} is string")
+                schema.append((schema_key, pa.string()))
+            elif isinstance(value, bool):
+                schema.append((schema_key, pa.bool_()))
+            elif isinstance(value, ObjectId):
+                schema.append((schema_key, pa.string()))
+            elif isinstance(value, dict):
+                schema = schema + create_schema(value, f"{key}.")
+            else:
+                raise ValueError(
+                    f"unsupported field type: field={schema_key}, type={type(value)}"
+                )
+        except Exception as err:
+            error(err)
+    return schema
+
+
 async def data_writer(
     basedir: str,
     filename: str,
