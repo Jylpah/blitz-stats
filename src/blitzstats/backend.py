@@ -169,13 +169,17 @@ class ErrorLog(JSONExportable, ABC):
         # json_encoders = { ObjectId: str }
 
 
-async def batch_gen(aget: AsyncGenerator[T, None], batch: int = 100) -> AsyncGenerator[list[T], None]:
+async def batch_gen(
+    aget: AsyncGenerator[T, None], batch: int = 100
+) -> AsyncGenerator[list[T], None]:
     res: list[T] = list()
     async for item in aget:
         res.append(item)
         if len(res) >= batch:
             yield res
             res = list()
+    if len(res) > 0:
+        yield res
 
 
 class Backend(ABC):
