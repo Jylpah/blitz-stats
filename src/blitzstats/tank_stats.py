@@ -600,16 +600,15 @@ def add_args_export_data(
     try:
         debug("starting")
         EXPORT_FORMAT: str = DEFAULT_EXPORT_DATA_FORMAT
-        EXPORT_FILE: str = "update_totals"
+        # EXPORT_FILE: str = "update_totals"
         EXPORT_DIR: str = "export"
 
-        if config is not None and "TANK_STATS" in config.sections():
-            configTS = config["TANK_STATS"]
-            EXPORT_FORMAT = configTS.get(
-                "export_data_format", DEFAULT_EXPORT_DATA_FORMAT
-            )
-            EXPORT_FILE = configTS.get("export_data_file", EXPORT_FILE)
-            EXPORT_DIR = configTS.get("export_data_dir", EXPORT_DIR)
+        if config is not None and "EXPORT" in config.sections():
+            configEXP = config["EXPORT"]
+            EXPORT_FORMAT = configEXP.get("data_format", DEFAULT_EXPORT_DATA_FORMAT)
+            # EXPORT_FILE = configEXP.get("file", EXPORT_FILE)
+            EXPORT_DIR = configEXP.get("dir", EXPORT_DIR)
+
         parser.add_argument(
             "EXPORT_TYPE",
             type=str,
@@ -634,12 +633,13 @@ def add_args_export_data(
         # parser.add_argument('--filename', metavar='FILE', type=str, nargs='?', default=None,
         # 					help='file to export tank-stats to')
         parser.add_argument(
-            "--basedir",
+            "--dir",
+            dest="basedir",
             metavar="FILE",
             type=str,
             nargs="?",
             default=EXPORT_DIR,
-            help=f"base dir to export data (default={EXPORT_DIR})",
+            help=f"directory to export data (default: {EXPORT_DIR})",
         )
         parser.add_argument(
             "--regions",
