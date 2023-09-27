@@ -11,7 +11,12 @@ from asyncio import Queue, CancelledError
 from pydantic import Field
 
 from blitzutils.region import Region
-from blitzutils.wg_api import WGTankStat, WGPlayerAchievementsMaxSeries, WGPlayerAchievementsMain, WoTBlitzTankString
+from blitzutils.wg_api import (
+    WGTankStat,
+    WGPlayerAchievementsMaxSeries,
+    WGPlayerAchievementsMain,
+    WoTBlitzTankString,
+)
 
 from blitzutils.tank import WGTank, EnumVehicleTier, EnumNation
 from blitzutils.replay import WoTBlitzReplayJSON, WoTBlitzReplayData
@@ -20,7 +25,14 @@ from blitzutils.region import Region
 from pyutils import EventCounter, IterableQueue, JSONExportable, QueueDone
 from pyutils.utils import epoch_now, is_alphanum
 
-from .models import BSAccount, BSBlitzRelease, BSBlitzReplay, StatsTypes, Tank, EnumVehicleTypeInt
+from .models import (
+    BSAccount,
+    BSBlitzRelease,
+    BSBlitzReplay,
+    StatsTypes,
+    Tank,
+    EnumVehicleTypeInt,
+)
 
 
 # Setup logging
@@ -46,6 +58,7 @@ A = TypeVar("A")
 ## Utils
 #
 ##############################################
+##
 
 
 def get_type(name: str) -> type[object] | None:
@@ -238,7 +251,10 @@ class Backend(ABC):
             self.set_table(BSTableType.Releases, configBackend.get("t_releases"))
             self.set_table(BSTableType.Replays, configBackend.get("t_replays"))
             self.set_table(BSTableType.TankStats, configBackend.get("t_tank_stats"))
-            self.set_table(BSTableType.PlayerAchievements, configBackend.get("t_player_achievements"))
+            self.set_table(
+                BSTableType.PlayerAchievements,
+                configBackend.get("t_player_achievements"),
+            )
             self.set_table(BSTableType.AccountLog, configBackend.get("t_account_log"))
             self.set_table(BSTableType.ErrorLog, configBackend.get("t_error_log"))
 
@@ -248,7 +264,10 @@ class Backend(ABC):
             self.set_model(BSTableType.Releases, configBackend.get("m_releases"))
             self.set_model(BSTableType.Replays, configBackend.get("m_replays"))
             self.set_model(BSTableType.TankStats, configBackend.get("m_tank_stats"))
-            self.set_model(BSTableType.PlayerAchievements, configBackend.get("m_player_achievements"))
+            self.set_model(
+                BSTableType.PlayerAchievements,
+                configBackend.get("m_player_achievements"),
+            )
             self.set_model(BSTableType.AccountLog, configBackend.get("m_account_log"))
             self.set_model(BSTableType.ErrorLog, configBackend.get("m_error_log"))
 
@@ -266,7 +285,9 @@ class Backend(ABC):
             error(f"{err}")
         return None
 
-    def config_models(self, model_config: dict[BSTableType, type[JSONExportable]] | None = None) -> None:
+    def config_models(
+        self, model_config: dict[BSTableType, type[JSONExportable]] | None = None
+    ) -> None:
         try:
             if model_config is not None:
                 for table_type, model in model_config.items():
@@ -301,7 +322,11 @@ class Backend(ABC):
 
     @classmethod
     def create(
-        cls, driver: str, config: ConfigParser | None = None, copy_from: Optional["Backend"] = None, **kwargs
+        cls,
+        driver: str,
+        config: ConfigParser | None = None,
+        copy_from: Optional["Backend"] = None,
+        **kwargs,
     ) -> Optional["Backend"]:
         try:
             debug("starting")
@@ -334,17 +359,27 @@ class Backend(ABC):
                 config.read(config_file)
 
             kwargs: dict[str, Any] = Backend.read_args(args, driver, importdb=True)
-            if (import_db := Backend.create(driver, config=config, copy_from=copy_from, **kwargs)) is None:
+            if (
+                import_db := Backend.create(
+                    driver, config=config, copy_from=copy_from, **kwargs
+                )
+            ) is None:
                 raise ValueError(f"Could not init {driver} to import releases from")
 
             if args.import_table is not None:
                 import_db.set_table(import_type, args.import_table)
             elif copy_from is not None:
-                if copy_from == import_db and copy_from.get_table(import_type) == import_db.get_table(import_type):
+                if copy_from == import_db and copy_from.get_table(
+                    import_type
+                ) == import_db.get_table(import_type):
                     raise ValueError("Cannot import from itself")
 
-            if (import_model := get_sub_type(args.import_model, JSONExportable)) is None:
-                assert False, "--import-model not found or is not a subclass of JSONExportable"
+            if (
+                import_model := get_sub_type(args.import_model, JSONExportable)
+            ) is None:
+                assert (
+                    False
+                ), "--import-model not found or is not a subclass of JSONExportable"
             import_db.set_model(import_type, import_model)
 
             return import_db
@@ -353,7 +388,9 @@ class Backend(ABC):
         return None
 
     @classmethod
-    def add_args_import(cls, parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+    def add_args_import(
+        cls, parser: ArgumentParser, config: Optional[ConfigParser] = None
+    ) -> bool:
         debug("starting")
         parser.add_argument(
             "--import-config",
@@ -366,17 +403,24 @@ class Backend(ABC):
         return True
 
     @classmethod
-    def read_args(cls, args: Namespace, driver: str, importdb: bool = False) -> dict[str, Any]:
+    def read_args(
+        cls, args: Namespace, driver: str, importdb: bool = False
+    ) -> dict[str, Any]:
         """Read Argparse args for creating a Backend()"""
         debug("starting")
         if driver in cls._backends:
-            return cls._backends[driver].read_args(args, driver=driver, importdb=importdb)
+            return cls._backends[driver].read_args(
+                args, driver=driver, importdb=importdb
+            )
         else:
             raise ValueError(f"Backend not implemented: {driver}")
 
     @classmethod
     def read_args_helper(
-        cls, args: Namespace, params: Sequence[str | tuple[str, str]], importdb: bool = False
+        cls,
+        args: Namespace,
+        params: Sequence[str | tuple[str, str]],
+        importdb: bool = False,
     ) -> dict[str, Any]:
         kwargs: dict[str, Any] = dict()
         arg_dict: dict[str, Any] = vars(args)
@@ -412,7 +456,10 @@ class Backend(ABC):
     def __eq__(self, __o: object) -> bool:
         """Default __eq__() function"""
         return (
-            __o is not None and isinstance(__o, Backend) and type(__o) is type(self) and self.database == __o.database
+            __o is not None
+            and isinstance(__o, Backend)
+            and type(__o) is type(self)
+            and self.database == __o.database
         )
 
     @abstractmethod
@@ -464,7 +511,9 @@ class Backend(ABC):
             async for obj in self.obj_export(table_type=table_type, sample=tests):
                 tries += 1
                 if (_ := model.from_obj(obj)) is None:
-                    error(f"failed to parse {model} from table={self.get_table(table_type)}: {obj}")
+                    error(
+                        f"failed to parse {model} from table={self.get_table(table_type)}: {obj}"
+                    )
                 else:
                     ok += 1
             if tries == 0:
@@ -544,7 +593,9 @@ class Backend(ABC):
         if database is None:
             pass
         else:
-            assert is_alphanum(database), f"Illegal characters in the table name: {database}"
+            assert is_alphanum(
+                database
+            ), f"Illegal characters in the table name: {database}"
             self._database = database
         return None
 
@@ -568,7 +619,9 @@ class Backend(ABC):
         else:
             return self._M[table]
 
-    def set_model(self, table: BSTableType | str, model: type[JSONExportable] | str | None) -> None:
+    def set_model(
+        self, table: BSTableType | str, model: type[JSONExportable] | str | None
+    ) -> None:
         """Set collection model"""
         debug(f"table: {table}, model: {model}")
         table_type: BSTableType
@@ -666,7 +719,10 @@ class Backend(ABC):
 
     @abstractmethod
     async def obj_export(
-        self, table_type: BSTableType, pipeline: list[dict[str, Any]] = list(), sample: float = 0
+        self,
+        table_type: BSTableType,
+        pipeline: list[dict[str, Any]] = list(),
+        sample: float = 0,
     ) -> AsyncGenerator[Any, None]:
         """Export raw object from backend"""
         raise NotImplementedError
@@ -674,7 +730,11 @@ class Backend(ABC):
 
     @abstractmethod
     async def objs_export(
-        self, table_type: BSTableType, pipeline: list[dict[str, Any]] = list(), sample: float = 0, batch: int = 0
+        self,
+        table_type: BSTableType,
+        pipeline: list[dict[str, Any]] = list(),
+        sample: float = 0,
+        batch: int = 0,
     ) -> AsyncGenerator[list[Any], None]:
         """Export raw objects from backend"""
         raise NotImplementedError
@@ -697,7 +757,10 @@ class Backend(ABC):
 
     @abstractmethod
     async def account_update(
-        self, account: BSAccount, update: dict[str, Any] | None = None, fields: list[str] | None = None
+        self,
+        account: BSAccount,
+        update: dict[str, Any] | None = None,
+        fields: list[str] | None = None,
     ) -> bool:
         """Update an account in the backend. Returns False
         if the account was not updated"""
@@ -744,7 +807,9 @@ class Backend(ABC):
         """Get number of accounts from backend"""
         raise NotImplementedError
 
-    async def accounts_get_worker(self, accountQ: Queue[BSAccount], **getargs) -> EventCounter:
+    async def accounts_get_worker(
+        self, accountQ: Queue[BSAccount], **getargs
+    ) -> EventCounter:
         debug("starting")
         stats: EventCounter = EventCounter("accounts")
         try:
@@ -762,7 +827,9 @@ class Backend(ABC):
         """Store accounts to the backend. Returns number of accounts inserted and not inserted"""
         raise NotImplementedError
 
-    async def accounts_insert_worker(self, accountQ: Queue[BSAccount], force: bool = False) -> EventCounter:
+    async def accounts_insert_worker(
+        self, accountQ: Queue[BSAccount], force: bool = False
+    ) -> EventCounter:
         """insert/replace accounts. force=None: insert, force=True/False: upsert=force"""
         debug(f"starting, force={force}")
         stats: EventCounter = EventCounter("accounts insert")
@@ -770,7 +837,9 @@ class Backend(ABC):
             while True:
                 account = await accountQ.get()
                 try:
-                    debug(f"Trying to insert account_id={account.id} into {self.backend}.{self.table_accounts}")
+                    debug(
+                        f"Trying to insert account_id={account.id} into {self.backend}.{self.table_accounts}"
+                    )
                     await self.account_insert(account, force=force)
                     if force:
                         stats.log("added/updated")
@@ -792,7 +861,9 @@ class Backend(ABC):
         return stats
 
     @abstractmethod
-    async def accounts_export(self, sample: float = 0) -> AsyncGenerator[BSAccount, None]:
+    async def accounts_export(
+        self, sample: float = 0
+    ) -> AsyncGenerator[BSAccount, None]:
         """import accounts"""
         raise NotImplementedError
         yield BSAccount()
@@ -807,7 +878,9 @@ class Backend(ABC):
     # ----------------------------------------
 
     @abstractmethod
-    async def release_insert(self, release: BSBlitzRelease, force: bool = False) -> bool:
+    async def release_insert(
+        self, release: BSBlitzRelease, force: bool = False
+    ) -> bool:
         """Insert new release to the backend"""
         raise NotImplementedError
 
@@ -817,7 +890,10 @@ class Backend(ABC):
 
     @abstractmethod
     async def release_update(
-        self, release: BSBlitzRelease, update: dict[str, Any] | None = None, fields: list[str] | None = None
+        self,
+        release: BSBlitzRelease,
+        update: dict[str, Any] | None = None,
+        fields: list[str] | None = None,
     ) -> bool:
         """Update an release in the backend. Returns False
         if the release was not updated"""
@@ -844,31 +920,42 @@ class Backend(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def release_get_previous(self, release: BSBlitzRelease) -> BSBlitzRelease | None:
+    async def release_get_previous(
+        self, release: BSBlitzRelease
+    ) -> BSBlitzRelease | None:
         """Get previous release"""
         raise NotImplementedError
 
     @abstractmethod
     async def releases_get(
-        self, release_match: str | None = None, since: int = 0, first: BSBlitzRelease | None = None
+        self,
+        release_match: str | None = None,
+        since: int = 0,
+        first: BSBlitzRelease | None = None,
     ) -> AsyncGenerator[BSBlitzRelease, None]:
         raise NotImplementedError
         yield BSBlitzRelease()
 
     @abstractmethod
-    async def releases_export(self, sample: float = 0) -> AsyncGenerator[BSBlitzRelease, None]:
+    async def releases_export(
+        self, sample: float = 0
+    ) -> AsyncGenerator[BSBlitzRelease, None]:
         """Export releases"""
         raise NotImplementedError
         yield BSBlitzRelease()
 
-    async def releases_insert_worker(self, releaseQ: Queue[BSBlitzRelease], force: bool = False) -> EventCounter:
+    async def releases_insert_worker(
+        self, releaseQ: Queue[BSBlitzRelease], force: bool = False
+    ) -> EventCounter:
         debug(f"starting, force={force}")
         stats: EventCounter = EventCounter("releases insert")
         try:
             while True:
                 release = await releaseQ.get()
                 try:
-                    debug(f"Trying to insert release={release} into {self.backend}.{self.table_releases}")
+                    debug(
+                        f"Trying to insert release={release} into {self.backend}.{self.table_releases}"
+                    )
                     if await self.release_insert(release, force=force):
                         stats.log("releases added")
                     else:
@@ -906,29 +993,39 @@ class Backend(ABC):
 
     # replay fields that can be searched: protagonist, battle_start_timestamp, account_id, vehicle_tier
     @abstractmethod
-    async def replays_get(self, since: int = 0, **summary_fields) -> AsyncGenerator[BSBlitzReplay, None]:
+    async def replays_get(
+        self, since: int = 0, **summary_fields
+    ) -> AsyncGenerator[BSBlitzReplay, None]:
         """Get replays from backed"""
         raise NotImplementedError
         yield BSBlitzReplay()
 
     @abstractmethod
-    async def replays_count(self, since: int = 0, sample: float = 0, **summary_fields) -> int:
+    async def replays_count(
+        self, since: int = 0, sample: float = 0, **summary_fields
+    ) -> int:
         """Count replays in backed"""
         raise NotImplementedError
 
     @abstractmethod
-    async def replays_insert(self, replays: Sequence[JSONExportable]) -> tuple[int, int]:
+    async def replays_insert(
+        self, replays: Sequence[JSONExportable]
+    ) -> tuple[int, int]:
         """Store replays to the backend. Returns number of replays inserted and not inserted"""
         raise NotImplementedError
 
-    async def replays_insert_worker(self, replayQ: Queue[JSONExportable], force: bool = False) -> EventCounter:
+    async def replays_insert_worker(
+        self, replayQ: Queue[JSONExportable], force: bool = False
+    ) -> EventCounter:
         debug(f"starting, force={force}")
         stats: EventCounter = EventCounter("replays insert")
         try:
             while True:
                 replay = await replayQ.get()
                 try:
-                    debug(f"Insertting replay={replay.index} into {self.table_uri(BSTableType.Releases)}")
+                    debug(
+                        f"Insertting replay={replay.index} into {self.table_uri(BSTableType.Releases)}"
+                    )
                     if await self.replay_insert(replay):
                         stats.log("added")
                     else:
@@ -944,7 +1041,9 @@ class Backend(ABC):
             error(f"{err}")
         return stats
 
-    async def replays_export(self, sample: float = 0) -> AsyncGenerator[BSBlitzReplay, None]:
+    async def replays_export(
+        self, sample: float = 0
+    ) -> AsyncGenerator[BSBlitzReplay, None]:
         """Export replays from Mongo DB"""
         raise NotImplementedError
         yield BSBlitzReplay()
@@ -954,30 +1053,41 @@ class Backend(ABC):
     # ----------------------------------------
 
     @abstractmethod
-    async def tank_stat_insert(self, tank_stat: WGTankStat, force: bool = False) -> bool:
+    async def tank_stat_insert(
+        self, tank_stat: WGTankStat, force: bool = False
+    ) -> bool:
         """Store tank stats to the backend. Returns number of stats inserted and not inserted"""
         raise NotImplementedError
 
     @abstractmethod
-    async def tank_stat_get(self, account_id: int, tank_id: int, last_battle_time: int) -> WGTankStat | None:
+    async def tank_stat_get(
+        self, account_id: int, tank_id: int, last_battle_time: int
+    ) -> WGTankStat | None:
         """Store tank stats to the backend. Returns number of stats inserted and not inserted"""
         raise NotImplementedError
 
     @abstractmethod
     async def tank_stat_update(
-        self, tank_stat: WGTankStat, update: dict[str, Any] | None = None, fields: list[str] | None = None
+        self,
+        tank_stat: WGTankStat,
+        update: dict[str, Any] | None = None,
+        fields: list[str] | None = None,
     ) -> bool:
         """Update an tank stat in the backend. Returns False
         if the tank stat was not updated"""
         raise NotImplementedError
 
     @abstractmethod
-    async def tank_stat_delete(self, account_id: int, tank_id: int, last_battle_time: int) -> bool:
+    async def tank_stat_delete(
+        self, account_id: int, tank_id: int, last_battle_time: int
+    ) -> bool:
         """Delete a tank stat from the backend. Returns True if successful"""
         raise NotImplementedError
 
     @abstractmethod
-    async def tank_stats_insert(self, tank_stats: Sequence[WGTankStat], force: bool = False) -> tuple[int, int]:
+    async def tank_stats_insert(
+        self, tank_stats: Sequence[WGTankStat], force: bool = False
+    ) -> tuple[int, int]:
         """Store tank stats to the backend. Returns number of stats inserted and not inserted"""
         raise NotImplementedError
 
@@ -1020,20 +1130,28 @@ class Backend(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def tank_stat_export(self, sample: float = 0) -> AsyncGenerator[WGTankStat, None]:
+    async def tank_stat_export(
+        self, sample: float = 0
+    ) -> AsyncGenerator[WGTankStat, None]:
         """Export tank stats from Mongo DB"""
         raise NotImplementedError
         yield WGTankStat()
 
     @abstractmethod
-    async def tank_stats_export(self, sample: float = 0, batch: int = 0) -> AsyncGenerator[list[WGTankStat], None]:
+    async def tank_stats_export(
+        self, sample: float = 0, batch: int = 0
+    ) -> AsyncGenerator[list[WGTankStat], None]:
         """Export tank stats from Mongo DB"""
         raise NotImplementedError
         yield [WGTankStat()]
 
     @abstractmethod
     async def tank_stats_duplicates(
-        self, tank: Tank, release: BSBlitzRelease, regions: set[Region] = Region.API_regions(), sample: int = 0
+        self,
+        tank: Tank,
+        release: BSBlitzRelease,
+        regions: set[Region] = Region.API_regions(),
+        sample: int = 0,
     ) -> AsyncGenerator[WGTankStat, None]:
         """Find duplicate tank stats from the backend"""
         raise NotImplementedError
@@ -1065,7 +1183,9 @@ class Backend(ABC):
         """Return count of unique values of field. **args see tank_stats_unique()"""
         raise NotImplementedError
 
-    async def tank_stats_get_worker(self, tank_statsQ: Queue[WGTankStat], **getargs) -> EventCounter:
+    async def tank_stats_get_worker(
+        self, tank_statsQ: Queue[WGTankStat], **getargs
+    ) -> EventCounter:
         debug("starting")
         stats: EventCounter = EventCounter("tank stats")
         try:
@@ -1103,8 +1223,12 @@ class Backend(ABC):
                 read = len(tank_stats)
                 stats.log("read", read)
                 try:
-                    debug(f"Trying to insert {read} tank stats into {self.backend}.{self.table_tank_stats}")
-                    added, not_added = await self.tank_stats_insert(tank_stats, force=force)
+                    debug(
+                        f"Trying to insert {read} tank stats into {self.backend}.{self.table_tank_stats}"
+                    )
+                    added, not_added = await self.tank_stats_insert(
+                        tank_stats, force=force
+                    )
                     stats.log("added", added)
                     stats.log("not added", not_added)
                 except Exception as err:
@@ -1131,7 +1255,9 @@ class Backend(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def player_achievement_get(self, account: BSAccount, added: int) -> WGPlayerAchievementsMaxSeries | None:
+    async def player_achievement_get(
+        self, account: BSAccount, added: int
+    ) -> WGPlayerAchievementsMaxSeries | None:
         """Store player achievements to the backend. Returns number of stats inserted and not inserted"""
         raise NotImplementedError
 
@@ -1192,14 +1318,19 @@ class Backend(ABC):
 
     @abstractmethod
     async def player_achievements_duplicates(
-        self, release: BSBlitzRelease, regions: set[Region] = Region.API_regions(), sample: int = 0
+        self,
+        release: BSBlitzRelease,
+        regions: set[Region] = Region.API_regions(),
+        sample: int = 0,
     ) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
         """Find duplicate player achievements from the backend"""
         raise NotImplementedError
         yield WGPlayerAchievementsMaxSeries()
 
     async def player_achievements_insert_worker(
-        self, player_achievementsQ: Queue[list[WGPlayerAchievementsMaxSeries]], force: bool = False
+        self,
+        player_achievementsQ: Queue[list[WGPlayerAchievementsMaxSeries]],
+        force: bool = False,
     ) -> EventCounter:
         debug(f"starting, force={force}")
         stats: EventCounter = EventCounter("player-achievements insert")
@@ -1226,7 +1357,9 @@ class Backend(ABC):
                         debug(
                             f"Trying to insert {read} player achievements into {self.backend}.{self.table_player_achievements}"
                         )
-                        added, not_added = await self.player_achievements_insert(player_achievements)
+                        added, not_added = await self.player_achievements_insert(
+                            player_achievements
+                        )
                         stats.log("accounts added", added)
                     stats.log("accounts not added", not_added)
                 except Exception as err:
@@ -1251,7 +1384,10 @@ class Backend(ABC):
 
     @abstractmethod
     async def errors_get(
-        self, table_type: BSTableType | None = None, doc_id: Any | None = None, after: datetime | None = None
+        self,
+        table_type: BSTableType | None = None,
+        doc_id: Any | None = None,
+        after: datetime | None = None,
     ) -> AsyncGenerator[ErrorLog, None]:
         """Return errors from backend ErrorLog"""
         raise NotImplementedError
@@ -1259,7 +1395,10 @@ class Backend(ABC):
 
     @abstractmethod
     async def errors_clear(
-        self, table_type: BSTableType, doc_id: Any | None = None, after: datetime | None = None
+        self,
+        table_type: BSTableType,
+        doc_id: Any | None = None,
+        after: datetime | None = None,
     ) -> int:
         """Clear errors from backend ErrorLog"""
         raise NotImplementedError
@@ -1308,7 +1447,10 @@ class Backend(ABC):
 
     @abstractmethod
     async def tankopedia_update(
-        self, tank: Tank, update: dict[str, Any] | None = None, fields: list[str] | None = None
+        self,
+        tank: Tank,
+        update: dict[str, Any] | None = None,
+        fields: list[str] | None = None,
     ) -> bool:
         """Update a tank in the backend's tankopedia. Returns False
         if the tank was not updated"""
@@ -1319,7 +1461,9 @@ class Backend(ABC):
         """Delete a tank from Tankopedia"""
         raise NotImplementedError
 
-    async def tankopedia_insert_worker(self, tankQ: Queue[Tank], force: bool = False) -> EventCounter:
+    async def tankopedia_insert_worker(
+        self, tankQ: Queue[Tank], force: bool = False
+    ) -> EventCounter:
         debug(f"starting, force={force}")
         stats: EventCounter = EventCounter("tankopedia insert")
         try:
@@ -1329,7 +1473,8 @@ class Backend(ABC):
                     debug(
                         "Trying to " + "update"
                         if force
-                        else "insert" + f' tank "{tank}" into {self.table_uri(BSTableType.Tankopedia)}'
+                        else "insert"
+                        + f' tank "{tank}" into {self.table_uri(BSTableType.Tankopedia)}'
                     )
                     if await self.tankopedia_insert(tank, force=force):
                         stats.log("tanks added")
@@ -1358,7 +1503,11 @@ class Backend(ABC):
         stats: EventCounter = EventCounter("get tankopedia")
         try:
             async for tank in self.tankopedia_get_many(
-                tanks=tanks, tier=tier, tank_type=tank_type, nation=nation, is_premium=is_premium
+                tanks=tanks,
+                tier=tier,
+                tank_type=tank_type,
+                nation=nation,
+                is_premium=is_premium,
             ):
                 # debug("got: %s", str(tank))
                 await tankQ.put(tank)
@@ -1372,7 +1521,9 @@ class Backend(ABC):
     # ----------------------------------------
 
     @abstractmethod
-    async def tank_string_insert(self, tank_str: WoTBlitzTankString, force: bool = False) -> bool:
+    async def tank_string_insert(
+        self, tank_str: WoTBlitzTankString, force: bool = False
+    ) -> bool:
         """ "insert a tank string"""
         raise NotImplementedError
 
@@ -1381,6 +1532,8 @@ class Backend(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def tank_strings_get(self, search: str | None) -> AsyncGenerator[WoTBlitzTankString, None]:
+    async def tank_strings_get(
+        self, search: str | None
+    ) -> AsyncGenerator[WoTBlitzTankString, None]:
         raise NotImplementedError
         yield WoTBlitzTankString()
