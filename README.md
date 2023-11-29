@@ -26,3 +26,13 @@ pip install git+https://github.com/Jylpah/blitz-stats.git
 ```
 pip install --upgrade git+https://github.com/Jylpah/blitz-stats.git
 ```
+
+# Usage
+
+```
+bs --help
+```
+
+# Status
+
+Working and functional. Your mileage may vary :-) 
