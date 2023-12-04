@@ -14,7 +14,7 @@ from blitzutils.region import Region
 from blitzutils.wg_api import (
     TankStat,
     WGPlayerAchievementsMaxSeries,
-    WGPlayerAchievementsMain,
+    PlayerAchievementsMain,
     WoTBlitzTankString,
 )
 

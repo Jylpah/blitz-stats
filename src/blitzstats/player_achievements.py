@@ -29,7 +29,7 @@ from pyutils import IterableQueue, QueueDone, EventCounter, JSONExportable, Asyn
 from pyutils.utils import epoch_now, alive_bar_monitor, is_alphanum
 from blitzutils import (
     Region,
-    WGPlayerAchievementsMain,
+    PlayerAchievementsMain,
     WGPlayerAchievementsMaxSeries,
     WGApi,
     add_args_wg,
@@ -280,7 +280,7 @@ def add_args_import(
             metavar="IMPORT-TYPE",
             type=str,
             required=True,
-            choices=["WGPlayerAchievementsMaxSeries", "WGPlayerAchievementsMain"],
+            choices=["WGPlayerAchievementsMaxSeries", "PlayerAchievementsMain"],
             help="Data format to import. Default is blitz-stats native format.",
         )
         parser.add_argument(
