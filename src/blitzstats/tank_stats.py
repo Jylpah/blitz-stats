@@ -59,7 +59,7 @@ from .backend import (
     MIN_UPDATE_INTERVAL,
     get_sub_type,
 )
-from .models import BSAccount, BSBlitzRelease, StatsTypes, Tank
+from .models import BSAccount, BSBlitzRelease, StatsTypes, BSTank
 from .accounts import (
     create_accountQ,
     read_args_accounts,
@@ -1277,7 +1277,7 @@ async def cmd_edit(db: Backend, args: Namespace) -> bool:
 # 				later_found : bool = False
 # 				async for later in db.tank_stats_get(accounts=[BSAccount(id=ts.account_id, region=ts.region)],
 # 													regions={region},
-# 													tanks=[Tank(tank_id=ts.tank_id)],
+# 													tanks=[BSTank(tank_id=ts.tank_id)],
 # 													since=ts.last_battle_time + 1):
 # 					later_found = True
 # 					try:
@@ -1410,7 +1410,7 @@ async def cmd_prune(db: Backend, args: Namespace) -> bool:
         release: BSBlitzRelease = BSBlitzRelease(release=args.release)
         stats: EventCounter = EventCounter(f"tank-stats prune {release}")
         commit: bool = args.commit
-        tankQ: Queue[Tank] = Queue()
+        tankQ: Queue[BSTank] = Queue()
         workers: list[Task] = list()
         WORKERS: int = args.workers
         if sample > 0:
@@ -1427,7 +1427,7 @@ async def cmd_prune(db: Backend, args: Namespace) -> bool:
         async for tank_id in db.tank_stats_unique(
             "tank_id", int, release=release, regions=regions
         ):
-            await tankQ.put(Tank(tank_id=tank_id))
+            await tankQ.put(BSTank(tank_id=tank_id))
 
         # N : int = await db.tankopedia_count()
         N: int = tankQ.qsize()
@@ -1467,8 +1467,8 @@ async def cmd_prune(db: Backend, args: Namespace) -> bool:
 
 async def prune_worker(
     db: Backend,
-    tankQ: Queue[Tank],
-    # tank: Tank,
+    tankQ: Queue[BSTank],
+    # tank: BSTank,
     release: BSBlitzRelease,
     regions: set[Region],
     commit: bool = False,
@@ -1535,7 +1535,7 @@ async def cmd_export_text(db: Backend, args: Namespace) -> bool:
         export_stdout: bool = filename == "-"
         sample: float = args.sample
         accounts: list[BSAccount] | None = read_args_accounts(args.accounts)
-        tanks: list[Tank] | None = read_args_tanks(args.tanks)
+        tanks: list[BSTank] | None = read_args_tanks(args.tanks)
         release: BSBlitzRelease | None = None
         if args.release is not None:
             release = (await get_releases(db, [args.release]))[0]
@@ -2011,7 +2011,7 @@ async def export_update_fetcher(
     try:
         while (tank_id := await tankQ.get()) is not None:
             async for tank_stat in db.tank_stats_get(
-                release=release, regions=regions, tanks=[Tank(tank_id=tank_id)]
+                release=release, regions=regions, tanks=[BSTank(tank_id=tank_id)]
             ):
                 tank_stats.append(tank_stat.obj_src())
                 if len(tank_stats) == TANK_STATS_BATCH:
@@ -2305,10 +2305,10 @@ async def split_tank_statQ_by_region(
     return stats
 
 
-def read_args_tanks(tank_ids: list[int]) -> list[Tank] | None:
-    tanks: list[Tank] = list()
+def read_args_tanks(tank_ids: list[int]) -> list[BSTank] | None:
+    tanks: list[BSTank] = list()
     for id in tank_ids:
-        tanks.append(Tank(tank_id=id))
+        tanks.append(BSTank(tank_id=id))
     if len(tanks) == 0:
         return None
     return tanks

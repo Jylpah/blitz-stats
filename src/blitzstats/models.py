@@ -348,7 +348,7 @@ BSBlitzReplay.register_transformation(
 
 
 # fmt: off
-class Tank(JSONExportable, CSVExportable, TXTExportable):
+class BSTank(JSONExportable, CSVExportable, TXTExportable):
     tank_id 	: int						= Field(default=..., alias='_id')
     name 		: str | None				= Field(default=None, alias='n')
     nation		: EnumNation | None 		= Field(default=None, alias='c')
@@ -416,15 +416,15 @@ class Tank(JSONExportable, CSVExportable, TXTExportable):
         return f'{self.name}'
 
     @classmethod
-    def transform_WGTank(cls, in_obj: 'WGTank') -> Optional['Tank']:
-        """Transform WGTank object to Tank"""
+    def transform_WGTank(cls, in_obj: 'WGTank') -> Optional['BSTank']:
+        """Transform WGTank object to BSTank"""
         try:
             # debug(f'type={type(in_obj)}')
             # debug(f'in_obj={in_obj}')
             tank_type: EnumVehicleTypeInt | None = None
             if in_obj.type is not None:
                 tank_type = in_obj.type.as_int
-            return Tank(tank_id=in_obj.tank_id,
+            return BSTank(tank_id=in_obj.tank_id,
                         name=in_obj.name,
                         tier=in_obj.tier,
                         type=tank_type,
@@ -437,7 +437,7 @@ class Tank(JSONExportable, CSVExportable, TXTExportable):
 
     def csv_headers(self) -> list[str]:
         """Provide CSV headers as list"""
-        return list(Tank.__fields__.keys())
+        return list(BSTank.__fields__.keys())
 
     def txt_row(self, format: str = '') -> str:
         """export data as single row of text"""
@@ -447,8 +447,8 @@ class Tank(JSONExportable, CSVExportable, TXTExportable):
             return f'({self.tank_id}) {self.name}'
 
 
-def WGTank2Tank(in_obj: "Tank") -> Optional["WGTank"]:
-    """Transform Tank object to WGTank"""
+def WGTank2Tank(in_obj: "BSTank") -> Optional["WGTank"]:
+    """Transform BSTank object to WGTank"""
     try:
         # debug(f'type={type(in_obj)}')
         # debug(f'in_obj={in_obj}')
@@ -470,5 +470,5 @@ def WGTank2Tank(in_obj: "Tank") -> Optional["WGTank"]:
 
 
 # register model transformations
-Tank.register_transformation(WGTank, Tank.transform_WGTank)
-WGTank.register_transformation(Tank, WGTank2Tank)
+BSTank.register_transformation(WGTank, BSTank.transform_WGTank)
+WGTank.register_transformation(BSTank, WGTank2Tank)

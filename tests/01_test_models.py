@@ -1,5 +1,3 @@
-
-
 ## from blitzutils
 
 # @pytest.mark.asyncio
@@ -11,19 +9,19 @@
 #             try:
 #                 tanks_json = TanksJsonList.parse_raw(await file.read())
 #             except Exception as err:
-#                 assert False, f"Parsing test file List[Tank] failed: {basename(tanks_json_fn)}"
+#                 assert False, f"Parsing test file List[BSTank] failed: {basename(tanks_json_fn)}"
 #     for tank in tanks_json:
 #         if (wgtank := WGTank.transform(tank)) is None:
-#             assert False, f"could transform Tank to WGTank: tank_id={tank.tank_id} {tank}"
+#             assert False, f"could transform BSTank to WGTank: tank_id={tank.tank_id} {tank}"
 #         assert (
 #             wgtank.tank_id == tank.tank_id
-#         ), f"tank_id does not match after WGTank.transform(Tank): tank_id={tank.tank_id} {tank}"
+#         ), f"tank_id does not match after WGTank.transform(BSTank): tank_id={tank.tank_id} {tank}"
 #         assert (
 #             wgtank.name == tank.name
-#         ), f"name does not match after WGTank.transform(Tank): tank_id={tank.tank_id} {tank}"
+#         ), f"name does not match after WGTank.transform(BSTank): tank_id={tank.tank_id} {tank}"
 #         assert (
 #             wgtank.type is not None and tank.type is not None
 #         ), f"could not transform tank type: tank_id={tank.tank_id} {tank}"
 #         assert (
 #             wgtank.type.name == tank.type.name
-#         ), f"tank type does not match after WGTank.transform(Tank): tank_id={tank.tank_id} {tank}"
+#         ), f"tank type does not match after WGTank.transform(BSTank): tank_id={tank.tank_id} {tank}"

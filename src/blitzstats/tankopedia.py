@@ -32,7 +32,7 @@ from .backend import (
     MIN_UPDATE_INTERVAL,
     get_sub_type,
 )
-from .models import BSAccount, BSBlitzRelease, StatsTypes, Tank
+from .models import BSAccount, BSBlitzRelease, StatsTypes, BSTank
 
 logger = logging.getLogger()
 error = logger.error
@@ -221,7 +221,7 @@ def add_args_edit(
 ) -> bool:
     try:
         debug("starting")
-        parser.add_argument("tank_id", type=int, help="Tank to edit: tank_id > 0")
+        parser.add_argument("tank_id", type=int, help="BSTank to edit: tank_id > 0")
         parser.add_argument(
             "--name",
             type=str,
@@ -301,7 +301,7 @@ def add_args_import(
             metavar="IMPORT-TYPE",
             type=str,
             required=True,
-            choices=["Tank", "WGTank"],
+            choices=["BSTank", "WGTank"],
             help="Data format to import. Default is blitz-stats native format.",
         )
         parser.add_argument("--sample", type=float, default=0, help="Sample size")
@@ -472,7 +472,7 @@ async def cmd_add(db: Backend, args: Namespace) -> bool:
                 tank_type = EnumVehicleTypeInt[args.tank_type]
             except Exception as err:
                 raise ValueError(f"could not set nation from '{args.tank_type}': {err}")
-        tank: Tank = Tank(
+        tank: BSTank = BSTank(
             tank_id=tank_id,
             name=tank_name,
             nation=tank_nation,
@@ -507,7 +507,7 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
         tier: EnumVehicleTier | None = None
         tank_type: EnumVehicleTypeInt | None = None
         is_premium: bool | None = None
-        tanks: list[Tank] | None = None
+        tanks: list[BSTank] | None = None
         std_out: bool = filename == "-"
 
         if args.nation is not None:
@@ -522,12 +522,12 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
         if args.tanks is not None:
             tanks = list()
             for tank_id in args.tanks:
-                tanks.append(Tank(tank_id=tank_id))
+                tanks.append(BSTank(tank_id=tank_id))
 
         export_worker: Task
 
         if args.format in ["txt", "csv"]:
-            tankQ: IterableQueue[Tank] = IterableQueue(maxsize=100)
+            tankQ: IterableQueue[BSTank] = IterableQueue(maxsize=100)
 
             export_worker = create_task(
                 export(
@@ -598,7 +598,7 @@ async def cmd_import(db: Backend, args: Namespace) -> bool:
         debug("starting")
         debug(f"{args}")
         stats: EventCounter = EventCounter("tankopedia import")
-        tankQ: Queue[Tank] = Queue(100)
+        tankQ: Queue[BSTank] = Queue(100)
         import_db: Backend | None = None
         import_backend: str = args.import_backend
 
@@ -681,9 +681,9 @@ async def cmd_update(db: Backend, args: Namespace) -> bool:
             raise
 
         for tank_id in added:
-            if (tank := Tank.transform(tankopedia[tank_id])) is None:
+            if (tank := BSTank.transform(tankopedia[tank_id])) is None:
                 error(
-                    f"Could not transform {tankopedia[tank_id].name} (tank_id={tank_id}) to Tank format"
+                    f"Could not transform {tankopedia[tank_id].name} (tank_id={tank_id}) to BSTank format"
                 )
                 stats.log("errors")
                 continue
@@ -699,9 +699,9 @@ async def cmd_update(db: Backend, args: Namespace) -> bool:
                     stats.log("not added")
 
         for tank_id in updated:
-            if (tank := Tank.transform(tankopedia[tank_id])) is None:
+            if (tank := BSTank.transform(tankopedia[tank_id])) is None:
                 error(
-                    f"Could not transform {tankopedia[tank_id].name} (tank_id={tank_id}) to Tank format"
+                    f"Could not transform {tankopedia[tank_id].name} (tank_id={tank_id}) to BSTank format"
                 )
                 continue
 

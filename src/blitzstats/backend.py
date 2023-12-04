@@ -30,7 +30,7 @@ from .models import (
     BSBlitzRelease,
     BSBlitzReplay,
     StatsTypes,
-    Tank,
+    BSTank,
     EnumVehicleTypeInt,
 )
 
@@ -233,7 +233,7 @@ class Backend(ABC):
 
         # set default models
         self.set_model(BSTableType.Accounts, BSAccount)
-        self.set_model(BSTableType.Tankopedia, Tank)
+        self.set_model(BSTableType.Tankopedia, BSTank)
         self.set_model(BSTableType.TankStrings, WoTBlitzTankString)
         self.set_model(BSTableType.Releases, BSBlitzRelease)
         self.set_model(BSTableType.Replays, BSBlitzReplay)
@@ -1097,7 +1097,7 @@ class Backend(ABC):
         release: BSBlitzRelease | None = None,
         regions: set[Region] = Region.API_regions(),
         accounts: Sequence[BSAccount] | None = None,
-        tanks: Sequence[Tank] | None = None,
+        tanks: Sequence[BSTank] | None = None,
         missing: str | None = None,
         since: int = 0,
         sample: float = 0,
@@ -1122,7 +1122,7 @@ class Backend(ABC):
         release: BSBlitzRelease | None = None,
         regions: set[Region] = Region.API_regions(),
         accounts: Sequence[BSAccount] | None = None,
-        tanks: Sequence[Tank] | None = None,
+        tanks: Sequence[BSTank] | None = None,
         since: int = 0,
         sample: float = 0,
     ) -> int:
@@ -1148,7 +1148,7 @@ class Backend(ABC):
     @abstractmethod
     async def tank_stats_duplicates(
         self,
-        tank: Tank,
+        tank: BSTank,
         release: BSBlitzRelease,
         regions: set[Region] = Region.API_regions(),
         sample: int = 0,
@@ -1165,7 +1165,7 @@ class Backend(ABC):
         release: BSBlitzRelease | None = None,
         regions: set[Region] = Region.API_regions(),
         account: BSAccount | None = None,
-        tank: Tank | None = None,
+        tank: BSTank | None = None,
     ) -> AsyncGenerator[A, None]:
         """Return unique values of field"""
         raise NotImplementedError
@@ -1178,7 +1178,7 @@ class Backend(ABC):
         release: BSBlitzRelease | None = None,
         regions: set[Region] = Region.API_regions(),
         account: BSAccount | None = None,
-        tank: Tank | None = None,
+        tank: BSTank | None = None,
     ) -> int:
         """Return count of unique values of field. **args see tank_stats_unique()"""
         raise NotImplementedError
@@ -1408,30 +1408,30 @@ class Backend(ABC):
     # ----------------------------------------
 
     @abstractmethod
-    async def tankopedia_insert(self, tank: Tank, force: bool = True) -> bool:
+    async def tankopedia_insert(self, tank: BSTank, force: bool = True) -> bool:
         """ "insert tank into Tankopedia"""
         raise NotImplementedError
 
     @abstractmethod
-    async def tankopedia_get(self, tank_id: int) -> Tank | None:
+    async def tankopedia_get(self, tank_id: int) -> BSTank | None:
         raise NotImplementedError
 
     @abstractmethod
     async def tankopedia_get_many(
         self,
-        tanks: list[Tank] | None = None,
+        tanks: list[BSTank] | None = None,
         tier: EnumVehicleTier | None = None,
         tank_type: EnumVehicleTypeInt | None = None,
         nation: EnumNation | None = None,
         is_premium: bool | None = None,
-    ) -> AsyncGenerator[Tank, None]:
+    ) -> AsyncGenerator[BSTank, None]:
         raise NotImplementedError
-        yield Tank()
+        yield BSTank()
 
     @abstractmethod
     async def tankopedia_count(
         self,
-        tanks: list[Tank] | None = None,
+        tanks: list[BSTank] | None = None,
         tier: EnumVehicleTier | None = None,
         tank_type: EnumVehicleTypeInt | None = None,
         nation: EnumNation | None = None,
@@ -1440,15 +1440,17 @@ class Backend(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def tankopedia_export(self, sample: float = 0) -> AsyncGenerator[Tank, None]:
+    async def tankopedia_export(
+        self, sample: float = 0
+    ) -> AsyncGenerator[BSTank, None]:
         """Export tankopedia"""
         raise NotImplementedError
-        yield Tank()
+        yield BSTank()
 
     @abstractmethod
     async def tankopedia_update(
         self,
-        tank: Tank,
+        tank: BSTank,
         update: dict[str, Any] | None = None,
         fields: list[str] | None = None,
     ) -> bool:
@@ -1457,18 +1459,18 @@ class Backend(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def tankopedia_delete(self, tank: Tank) -> bool:
+    async def tankopedia_delete(self, tank: BSTank) -> bool:
         """Delete a tank from Tankopedia"""
         raise NotImplementedError
 
     async def tankopedia_insert_worker(
-        self, tankQ: Queue[Tank], force: bool = False
+        self, tankQ: Queue[BSTank], force: bool = False
     ) -> EventCounter:
         debug(f"starting, force={force}")
         stats: EventCounter = EventCounter("tankopedia insert")
         try:
             while True:
-                tank: Tank = await tankQ.get()
+                tank: BSTank = await tankQ.get()
                 try:
                     debug(
                         "Trying to " + "update"
@@ -1493,8 +1495,8 @@ class Backend(ABC):
 
     async def tankopedia_get_worker(
         self,
-        tankQ: Queue[Tank],
-        tanks: list[Tank] | None = None,
+        tankQ: Queue[BSTank],
+        tanks: list[BSTank] | None = None,
         tier: EnumVehicleTier | None = None,
         tank_type: EnumVehicleTypeInt | None = None,
         nation: EnumNation | None = None,
@@ -1517,7 +1519,7 @@ class Backend(ABC):
         return stats
 
     # ----------------------------------------
-    # Tank Strings
+    # BSTank Strings
     # ----------------------------------------
 
     @abstractmethod

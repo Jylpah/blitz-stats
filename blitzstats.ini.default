@@ -51,7 +51,7 @@ cache_valid             = 7
 ; t_player_achievements= PlayerAchievements
 # model defaults
 ; m_accounts            = BSAccount
-; m_tankopedia          = Tank
+; m_tankopedia          = BSTank
 ; m_releases            = BSBlitzRelease
 ; m_replays             = WoTBlitzReplayJSON
 ; m_replays             = WoTBlitzReplayData

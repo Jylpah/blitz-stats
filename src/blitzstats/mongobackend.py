@@ -67,7 +67,7 @@ from .models import (
     BSBlitzRelease,
     BSBlitzReplay,
     StatsTypes,
-    Tank,
+    BSTank,
     EnumVehicleTypeInt,
 )
 
@@ -1866,7 +1866,7 @@ class MongoBackend(Backend):
         release: BSBlitzRelease | None = None,
         regions: set[Region] = Region.API_regions(),
         accounts: Sequence[BSAccount] | None = None,
-        tanks: Sequence[Tank] | None = None,
+        tanks: Sequence[BSTank] | None = None,
         missing: str | None = None,
         since: int = 0,
         sample: float = 0,
@@ -1929,7 +1929,7 @@ class MongoBackend(Backend):
         self,
         account: BSAccount,
         release: BSBlitzRelease,
-        # tanks: 		Sequence[Tank] | None = None,
+        # tanks: 		Sequence[BSTank] | None = None,
     ) -> list[dict[str, Any]] | None:
         try:
             debug("starting")
@@ -1980,7 +1980,7 @@ class MongoBackend(Backend):
         release: BSBlitzRelease | None = None,
         regions: set[Region] = Region.API_regions(),
         accounts: Sequence[BSAccount] | None = None,
-        tanks: Sequence[Tank] | None = None,
+        tanks: Sequence[BSTank] | None = None,
         missing: str | None = None,
         since: int = 0,
         sample: float = 0,
@@ -2051,7 +2051,7 @@ class MongoBackend(Backend):
         release: BSBlitzRelease | None = None,
         regions: set[Region] = Region.API_regions(),
         accounts: Sequence[BSAccount] | None = None,
-        tanks: Sequence[Tank] | None = None,
+        tanks: Sequence[BSTank] | None = None,
         since: int = 0,
         sample: float = 0,
     ) -> int:
@@ -2115,7 +2115,7 @@ class MongoBackend(Backend):
 
     async def tank_stats_duplicates(
         self,
-        tank: Tank,
+        tank: BSTank,
         release: BSBlitzRelease,
         regions: set[Region] = Region.API_regions(),
         sample: int = 0,
@@ -2175,14 +2175,14 @@ class MongoBackend(Backend):
         release: BSBlitzRelease | None = None,
         regions: set[Region] = Region.API_regions(),
         account: BSAccount | None = None,
-        tank: Tank | None = None,
+        tank: BSTank | None = None,
     ) -> AsyncGenerator[A, None]:
         """Return unique values of field"""
         debug("starting")
         try:
             pipeline: list[dict[str, Any]] | None
             accounts: Sequence[BSAccount] | None = None
-            tanks: Sequence[Tank] | None = None
+            tanks: Sequence[BSTank] | None = None
 
             if account is not None:
                 accounts = [account]
@@ -2210,7 +2210,7 @@ class MongoBackend(Backend):
         release: BSBlitzRelease | None = None,
         regions: set[Region] = Region.API_regions(),
         account: BSAccount | None = None,
-        tank: Tank | None = None,
+        tank: BSTank | None = None,
     ) -> int:
         """Return count of unique values of field"""
         debug("starting")
@@ -2218,7 +2218,7 @@ class MongoBackend(Backend):
         try:
             pipeline: list[dict[str, Any]] | None
             accounts: Sequence[BSAccount] | None = None
-            tanks: Sequence[Tank] | None = None
+            tanks: Sequence[BSTank] | None = None
 
             if account is not None:
                 accounts = [account]
@@ -2258,7 +2258,7 @@ class MongoBackend(Backend):
 
     def _mk_tankopedia_pipeline(
         self,
-        tanks: list[Tank] | None = None,
+        tanks: list[BSTank] | None = None,
         tier: EnumVehicleTier | None = None,
         tank_type: EnumVehicleTypeInt | None = None,
         nation: EnumNation | None = None,
@@ -2288,25 +2288,25 @@ class MongoBackend(Backend):
             error(f"could not create query: {err}")
         return None
 
-    async def tankopedia_get(self, tank_id: int) -> Tank | None:
+    async def tankopedia_get(self, tank_id: int) -> BSTank | None:
         debug("starting")
         try:
             if (
                 obj := await self._data_get(BSTableType.Tankopedia, idx=tank_id)
             ) is not None:
-                return Tank.from_obj(obj, self.model_tankopedia)
+                return BSTank.from_obj(obj, self.model_tankopedia)
         except Exception as err:
             error(f"{err}")
         return None
 
     async def tankopedia_get_many(
         self,
-        tanks: list[Tank] | None = None,
+        tanks: list[BSTank] | None = None,
         tier: EnumVehicleTier | None = None,
         tank_type: EnumVehicleTypeInt | None = None,
         nation: EnumNation | None = None,
         is_premium: bool | None = None,
-    ) -> AsyncGenerator[Tank, None]:
+    ) -> AsyncGenerator[BSTank, None]:
         debug("starting")
         try:
             pipeline: list[dict[str, Any]] | None
@@ -2323,10 +2323,10 @@ class MongoBackend(Backend):
             # debug(f'pipeline={pipeline}')
             async for data in self._datas_get(BSTableType.Tankopedia, pipeline):
                 # debug("got: %s", str(data))
-                if (tank := Tank.transform(data)) is not None:
+                if (tank := BSTank.transform(data)) is not None:
                     yield tank
                 else:
-                    error(f"could not transform Tank from object: {data}")
+                    error(f"could not transform BSTank from object: {data}")
         except Exception as err:
             error(
                 f"Could get Tankopedia from {self.table_uri(BSTableType.Tankopedia)}: {err}"
@@ -2334,7 +2334,7 @@ class MongoBackend(Backend):
 
     async def tankopedia_count(
         self,
-        tanks: list[Tank] | None = None,
+        tanks: list[BSTank] | None = None,
         tier: EnumVehicleTier | None = None,
         tank_type: EnumVehicleTypeInt | None = None,
         nation: EnumNation | None = None,
@@ -2360,7 +2360,7 @@ class MongoBackend(Backend):
             )
         return -1
 
-    async def tankopedia_insert(self, tank: Tank, force: bool = False) -> bool:
+    async def tankopedia_insert(self, tank: BSTank, force: bool = False) -> bool:
         """ "insert tank into Tankopedia"""
         debug("starting")
         if force:
@@ -2372,7 +2372,7 @@ class MongoBackend(Backend):
 
     async def tankopedia_update(
         self,
-        tank: Tank,
+        tank: BSTank,
         update: dict[str, Any] | None = None,
         fields: list[str] | None = None,
     ) -> bool:
@@ -2389,18 +2389,20 @@ class MongoBackend(Backend):
             )
         return False
 
-    async def tankopedia_export(self, sample: float = 0) -> AsyncGenerator[Tank, None]:
+    async def tankopedia_export(
+        self, sample: float = 0
+    ) -> AsyncGenerator[BSTank, None]:
         """Export tankopedia"""
         debug(f"starting: model={self.model_tankopedia} ")
         async for tank in self._datas_export(
             BSTableType.Tankopedia,
             in_type=self.model_tankopedia,
-            out_type=Tank,
+            out_type=BSTank,
             sample=sample,
         ):
             yield tank
 
-    async def tankopedia_delete(self, tank: Tank) -> bool:
+    async def tankopedia_delete(self, tank: BSTank) -> bool:
         """Delete a tank from Tankopedia"""
         return await self._data_delete(BSTableType.Tankopedia, idx=tank.tank_id)
 
