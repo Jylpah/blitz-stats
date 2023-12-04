@@ -12,7 +12,7 @@ from pydantic import Field
 
 from blitzutils.region import Region
 from blitzutils.wg_api import (
-    WGTankStat,
+    TankStat,
     WGPlayerAchievementsMaxSeries,
     WGPlayerAchievementsMain,
     WoTBlitzTankString,
@@ -239,7 +239,7 @@ class Backend(ABC):
         self.set_model(BSTableType.Replays, BSBlitzReplay)
         self.set_model(BSTableType.AccountLog, ErrorLog)
         self.set_model(BSTableType.ErrorLog, ErrorLog)
-        self.set_model(BSTableType.TankStats, WGTankStat)
+        self.set_model(BSTableType.TankStats, TankStat)
         self.set_model(BSTableType.PlayerAchievements, WGPlayerAchievementsMaxSeries)
 
         if config is not None and "BACKEND" in config.sections():
@@ -1053,23 +1053,21 @@ class Backend(ABC):
     # ----------------------------------------
 
     @abstractmethod
-    async def tank_stat_insert(
-        self, tank_stat: WGTankStat, force: bool = False
-    ) -> bool:
+    async def tank_stat_insert(self, tank_stat: TankStat, force: bool = False) -> bool:
         """Store tank stats to the backend. Returns number of stats inserted and not inserted"""
         raise NotImplementedError
 
     @abstractmethod
     async def tank_stat_get(
         self, account_id: int, tank_id: int, last_battle_time: int
-    ) -> WGTankStat | None:
+    ) -> TankStat | None:
         """Store tank stats to the backend. Returns number of stats inserted and not inserted"""
         raise NotImplementedError
 
     @abstractmethod
     async def tank_stat_update(
         self,
-        tank_stat: WGTankStat,
+        tank_stat: TankStat,
         update: dict[str, Any] | None = None,
         fields: list[str] | None = None,
     ) -> bool:
@@ -1086,7 +1084,7 @@ class Backend(ABC):
 
     @abstractmethod
     async def tank_stats_insert(
-        self, tank_stats: Sequence[WGTankStat], force: bool = False
+        self, tank_stats: Sequence[TankStat], force: bool = False
     ) -> tuple[int, int]:
         """Store tank stats to the backend. Returns number of stats inserted and not inserted"""
         raise NotImplementedError
@@ -1101,17 +1099,17 @@ class Backend(ABC):
         missing: str | None = None,
         since: int = 0,
         sample: float = 0,
-    ) -> AsyncGenerator[WGTankStat, None]:
+    ) -> AsyncGenerator[TankStat, None]:
         """Return tank stats from the backend"""
         raise NotImplementedError
-        yield WGTankStat()
+        yield TankStat()
 
     @abstractmethod
     async def tank_stats_export_career(
         self,
         account: BSAccount,
         release: BSBlitzRelease,
-    ) -> AsyncGenerator[list[WGTankStat], None]:
+    ) -> AsyncGenerator[list[TankStat], None]:
         """Return tank stats from the backend"""
         raise NotImplementedError
         yield list()
@@ -1132,18 +1130,18 @@ class Backend(ABC):
     @abstractmethod
     async def tank_stat_export(
         self, sample: float = 0
-    ) -> AsyncGenerator[WGTankStat, None]:
+    ) -> AsyncGenerator[TankStat, None]:
         """Export tank stats from Mongo DB"""
         raise NotImplementedError
-        yield WGTankStat()
+        yield TankStat()
 
     @abstractmethod
     async def tank_stats_export(
         self, sample: float = 0, batch: int = 0
-    ) -> AsyncGenerator[list[WGTankStat], None]:
+    ) -> AsyncGenerator[list[TankStat], None]:
         """Export tank stats from Mongo DB"""
         raise NotImplementedError
-        yield [WGTankStat()]
+        yield [TankStat()]
 
     @abstractmethod
     async def tank_stats_duplicates(
@@ -1152,10 +1150,10 @@ class Backend(ABC):
         release: BSBlitzRelease,
         regions: set[Region] = Region.API_regions(),
         sample: int = 0,
-    ) -> AsyncGenerator[WGTankStat, None]:
+    ) -> AsyncGenerator[TankStat, None]:
         """Find duplicate tank stats from the backend"""
         raise NotImplementedError
-        yield WGTankStat()
+        yield TankStat()
 
     @abstractmethod
     async def tank_stats_unique(
@@ -1184,7 +1182,7 @@ class Backend(ABC):
         raise NotImplementedError
 
     async def tank_stats_get_worker(
-        self, tank_statsQ: Queue[WGTankStat], **getargs
+        self, tank_statsQ: Queue[TankStat], **getargs
     ) -> EventCounter:
         debug("starting")
         stats: EventCounter = EventCounter("tank stats")
@@ -1208,7 +1206,7 @@ class Backend(ABC):
         return stats
 
     async def tank_stats_insert_worker(
-        self, tank_statsQ: Queue[list[WGTankStat]], force: bool = False
+        self, tank_statsQ: Queue[list[TankStat]], force: bool = False
     ) -> EventCounter:
         debug(f"starting, force={force}")
         stats: EventCounter = EventCounter("tank-stats insert")

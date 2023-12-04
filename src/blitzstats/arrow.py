@@ -105,7 +105,7 @@ async def data_writer(
         export_file: str = os.path.join(basedir, f"{filename}.{export_format}")
         if not force and isfile(export_file):
             raise FileExistsError(export_file)
-        # schema: pa.Schema = WGTankStat.arrow_schema()
+        # schema: pa.Schema = TankStat.arrow_schema()
         if export_format == "parquet":
             with pq.ParquetWriter(export_file, schema, compression="lz4") as writer:
                 while True:
