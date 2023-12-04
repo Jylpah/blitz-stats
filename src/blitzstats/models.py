@@ -30,7 +30,7 @@ from blitzutils import (
     WGAccountInfo,
     WoTBlitzReplaySummary,
     WoTBlitzReplayData,
-    WoTBlitzReplayJSON,
+    ReplayJSON,
     Tank,
     EnumNation,
     EnumVehicleTypeInt,
@@ -332,7 +332,7 @@ class BSBlitzReplay(WoTBlitzReplaySummary):
 
     @classmethod
     def transform_WoTBlitzReplayJSON(
-        cls, in_obj: WoTBlitzReplayJSON
+        cls, in_obj: ReplayJSON
     ) -> Optional["BSBlitzReplay"]:
         if (replay_data := WoTBlitzReplayData.transform(in_obj)) is not None:
             return cls.transform_WoTBlitzReplayData(replay_data)
@@ -343,7 +343,7 @@ BSBlitzReplay.register_transformation(
     WoTBlitzReplayData, BSBlitzReplay.transform_WoTBlitzReplayData
 )
 BSBlitzReplay.register_transformation(
-    WoTBlitzReplayJSON, BSBlitzReplay.transform_WoTBlitzReplayJSON
+    ReplayJSON, BSBlitzReplay.transform_WoTBlitzReplayJSON
 )
 
 

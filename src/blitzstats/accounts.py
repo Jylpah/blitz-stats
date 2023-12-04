@@ -22,7 +22,7 @@ from pyutils.exportable import export
 from pyutils.utils import alive_bar_monitor, get_url_JSON_model, chunker
 
 from blitzutils import (
-    WoTBlitzReplayJSON,
+    ReplayJSON,
     Region,
     Account,
     WGAccountInfo,
@@ -1433,8 +1433,8 @@ async def fetch_wi_fetch_replays(
             replay_id = await replay_idQ.get()
             try:
                 url: str = wi.get_url_replay_JSON(replay_id)
-                replay: WoTBlitzReplayJSON | None = await get_url_JSON_model(
-                    wi.session, url, WoTBlitzReplayJSON
+                replay: ReplayJSON | None = await get_url_JSON_model(
+                    wi.session, url, ReplayJSON
                 )
                 if replay is None:
                     verbose(f"Could not fetch replay id: {replay_id}")

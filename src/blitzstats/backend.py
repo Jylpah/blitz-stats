@@ -19,7 +19,7 @@ from blitzutils.wg_api import (
 )
 
 from blitzutils.tank import Tank, EnumVehicleTier, EnumNation
-from blitzutils.replay import WoTBlitzReplayJSON, WoTBlitzReplayData
+from blitzutils.replay import ReplayJSON, WoTBlitzReplayData
 from blitzutils.region import Region
 
 from pyutils import EventCounter, IterableQueue, JSONExportable, QueueDone
@@ -977,7 +977,7 @@ class Backend(ABC):
 
     @abstractmethod
     async def replay_insert(self, replay: JSONExportable) -> bool:
-        # async def replay_insert(self, replay: WoTBlitzReplayJSON) -> bool:
+        # async def replay_insert(self, replay: ReplayJSON) -> bool:
         """Store replay into backend"""
         raise NotImplementedError
 
