@@ -42,7 +42,7 @@ from pyutils.utils import epoch_now
 
 from blitzutils import (
     Region,
-    WGTankStat,
+    TankStat,
     WGPlayerAchievementsMaxSeries,
     WoTBlitzTankString,
     EnumNation,
@@ -1785,9 +1785,7 @@ class MongoBackend(Backend):
     #
     ########################################################
 
-    async def tank_stat_insert(
-        self, tank_stat: WGTankStat, force: bool = False
-    ) -> bool:
+    async def tank_stat_insert(self, tank_stat: TankStat, force: bool = False) -> bool:
         """Insert a single tank stat"""
         debug("starting")
         if force:
@@ -1799,22 +1797,22 @@ class MongoBackend(Backend):
 
     async def tank_stat_get(
         self, account_id: int, tank_id: int, last_battle_time: int
-    ) -> WGTankStat | None:
+    ) -> TankStat | None:
         """Return tank stats from the backend"""
         try:
             debug("starting")
-            idx: ObjectId = WGTankStat.mk_id(account_id, last_battle_time, tank_id)
+            idx: ObjectId = TankStat.mk_id(account_id, last_battle_time, tank_id)
             if (
                 res := await self._data_get(BSTableType.TankStats, idx=idx)
             ) is not None:
-                return WGTankStat.from_obj(res, self.model_tank_stats)
+                return TankStat.from_obj(res, self.model_tank_stats)
         except Exception as err:
             error(f"Unknown error: {err}")
         return None
 
     async def tank_stat_update(
         self,
-        tank_stat: WGTankStat,
+        tank_stat: TankStat,
         update: dict[str, Any] | None = None,
         fields: list[str] | None = None,
     ) -> bool:
@@ -1840,14 +1838,14 @@ class MongoBackend(Backend):
     ) -> bool:
         try:
             debug("starting")
-            idx: ObjectId = WGTankStat.mk_id(account_id, last_battle_time, tank_id)
+            idx: ObjectId = TankStat.mk_id(account_id, last_battle_time, tank_id)
             return await self._data_delete(BSTableType.TankStats, idx=idx)
         except Exception as err:
             error(f"Unknown error: {err}")
         return False
 
     async def tank_stats_insert(
-        self, tank_stats: Sequence[WGTankStat], force: bool = False
+        self, tank_stats: Sequence[TankStat], force: bool = False
     ) -> tuple[int, int]:
         """Store tank stats to the backend. Returns the number of added and not added"""
         debug("starting")
@@ -1875,7 +1873,7 @@ class MongoBackend(Backend):
         try:
             debug("starting")
 
-            # class WGTankStat(JSONExportable):
+            # class TankStat(JSONExportable):
             # id					: ObjectId | None = Field(None, alias='_id')
             # _region				: Region | None = Field(None, alias='r')
             # all					: WGTankStatAll = Field(..., alias='s')
@@ -1934,7 +1932,7 @@ class MongoBackend(Backend):
         try:
             debug("starting")
 
-            # class WGTankStat(JSONExportable):
+            # class TankStat(JSONExportable):
             # 	id					: ObjectId  	= Field(alias='_id')
             ## region				: Region | None = Field(default=None, alias='r')
             # 	all					: WGTankStatAll = Field(..., alias='s')
@@ -1984,7 +1982,7 @@ class MongoBackend(Backend):
         missing: str | None = None,
         since: int = 0,
         sample: float = 0,
-    ) -> AsyncGenerator[WGTankStat, None]:
+    ) -> AsyncGenerator[TankStat, None]:
         """Return tank stats from the backend"""
         try:
             debug("starting")
@@ -2004,10 +2002,10 @@ class MongoBackend(Backend):
                 )
 
             async for data in self._datas_get(BSTableType.TankStats, pipeline):
-                if (tank_stat := WGTankStat.transform(data)) is not None:
+                if (tank_stat := TankStat.transform(data)) is not None:
                     yield tank_stat
                 else:
-                    error(f"could not transform data to WGTankStat: {data}")
+                    error(f"could not transform data to TankStat: {data}")
         except Exception as err:
             error(
                 f"Error fetching tank stats from {self.table_uri(BSTableType.TankStats)}: {err}"
@@ -2017,7 +2015,7 @@ class MongoBackend(Backend):
         self,
         account: BSAccount,
         release: BSBlitzRelease,
-    ) -> AsyncGenerator[list[WGTankStat], None]:
+    ) -> AsyncGenerator[list[TankStat], None]:
         """Return tank stats from the backend"""
         try:
             debug("starting")
@@ -2033,14 +2031,14 @@ class MongoBackend(Backend):
 
             async for data in self.objs_export(BSTableType.TankStats, pipeline):
                 if (
-                    len(tank_stats := WGTankStat.from_objs(data, self.model_tank_stats))
+                    len(tank_stats := TankStat.from_objs(data, self.model_tank_stats))
                     > 0
                 ):
                     yield tank_stats
-                # if (tank_stat := WGTankStat.transform(data)) is not None:
+                # if (tank_stat := TankStat.transform(data)) is not None:
                 # 	yield tank_stat
                 # else:
-                # 	error(f'could not transform data to WGTankStat: {data}')
+                # 	error(f'could not transform data to TankStat: {data}')
         except Exception as err:
             error(
                 f"Error fetching tank stats from {self.table_uri(BSTableType.TankStats)}: {err}"
@@ -2090,20 +2088,20 @@ class MongoBackend(Backend):
 
     async def tank_stat_export(
         self, sample: float = 0
-    ) -> AsyncGenerator[WGTankStat, None]:
+    ) -> AsyncGenerator[TankStat, None]:
         """Export tank stats from Mongo DB"""
         debug("starting")
         async for tank_stat in self._datas_export(
             BSTableType.TankStats,
             in_type=self.model_tank_stats,
-            out_type=WGTankStat,
+            out_type=TankStat,
             sample=sample,
         ):
             yield tank_stat
 
     async def tank_stats_export(
         self, sample: float = 0, batch: int = 0
-    ) -> AsyncGenerator[list[WGTankStat], None]:
+    ) -> AsyncGenerator[list[TankStat], None]:
         """Export tank stats as list from Mongo DB"""
         debug("starting")
         if batch == 0:
@@ -2111,7 +2109,7 @@ class MongoBackend(Backend):
         async for objs in self.objs_export(
             BSTableType.TankStats, sample=sample, batch=batch
         ):
-            yield WGTankStat.from_objs(objs=objs, in_type=self.model_tank_stats)
+            yield TankStat.from_objs(objs=objs, in_type=self.model_tank_stats)
 
     async def tank_stats_duplicates(
         self,
@@ -2119,7 +2117,7 @@ class MongoBackend(Backend):
         release: BSBlitzRelease,
         regions: set[Region] = Region.API_regions(),
         sample: int = 0,
-    ) -> AsyncGenerator[WGTankStat, None]:
+    ) -> AsyncGenerator[TankStat, None]:
         """Find duplicate tank stats from the backend"""
         debug("starting")
         try:
@@ -2157,7 +2155,7 @@ class MongoBackend(Backend):
                         if (
                             obj := await self._data_get(BSTableType.TankStats, idx)
                         ) is not None:
-                            if (tank_stat := WGTankStat.transform(obj)) is not None:
+                            if (tank_stat := TankStat.transform(obj)) is not None:
                                 # debug(f'tank stat duplicate: {tank_stat}')
                                 yield tank_stat
                 except Exception as err:
