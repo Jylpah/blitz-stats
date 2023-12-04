@@ -58,7 +58,7 @@ cache_valid             = 7
 ; m_account_log         = ErrorLog
 ; m_error_log           = ErrorLog
 ; m_tank_stats          = TankStat
-; m_player_achievements = WGPlayerAchievementsMaxSeries
+; m_player_achievements = PlayerAchievementsMaxSeries
 
 
 [MONGODB]

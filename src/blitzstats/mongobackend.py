@@ -43,7 +43,7 @@ from pyutils.utils import epoch_now
 from blitzutils import (
     Region,
     TankStat,
-    WGPlayerAchievementsMaxSeries,
+    PlayerAchievementsMaxSeries,
     WoTBlitzTankString,
     EnumNation,
     EnumVehicleTier,
@@ -1187,7 +1187,7 @@ class MongoBackend(Backend):
     ########################################################
 
     async def player_achievement_insert(
-        self, player_achievement: WGPlayerAchievementsMaxSeries, force: bool = False
+        self, player_achievement: PlayerAchievementsMaxSeries, force: bool = False
     ) -> bool:
         """Insert a single player achievement"""
         debug("starting")
@@ -1202,17 +1202,17 @@ class MongoBackend(Backend):
 
     async def player_achievement_get(
         self, account: BSAccount, added: int
-    ) -> WGPlayerAchievementsMaxSeries | None:
+    ) -> PlayerAchievementsMaxSeries | None:
         """Return a player_achievement from the backend"""
         debug("starting")
         try:
-            idx: ObjectId = WGPlayerAchievementsMaxSeries.mk_index(
+            idx: ObjectId = PlayerAchievementsMaxSeries.mk_index(
                 account_id=account.id, region=account.region, added=added
             )
             if (
                 res := await self._data_get(BSTableType.PlayerAchievements, idx=idx)
             ) is not None:
-                return WGPlayerAchievementsMaxSeries.from_obj(res, self.model_accounts)
+                return PlayerAchievementsMaxSeries.from_obj(res, self.model_accounts)
         except Exception as err:
             error(f"Unknown error: {err}")
         return None
@@ -1222,7 +1222,7 @@ class MongoBackend(Backend):
         try:
             debug("starting")
             debug(f"account={account}, added={added}")
-            idx: ObjectId = WGPlayerAchievementsMaxSeries.mk_index(
+            idx: ObjectId = PlayerAchievementsMaxSeries.mk_index(
                 account.id, region=account.region, added=added
             )
             return await self._data_delete(BSTableType.PlayerAchievements, idx=idx)
@@ -1231,7 +1231,7 @@ class MongoBackend(Backend):
         return False
 
     async def player_achievements_insert(
-        self, player_achievements: Sequence[WGPlayerAchievementsMaxSeries]
+        self, player_achievements: Sequence[PlayerAchievementsMaxSeries]
     ) -> tuple[int, int]:
         """Store player achievements to the backend. Returns number of stats inserted and not inserted"""
         debug("starting")
@@ -1251,7 +1251,7 @@ class MongoBackend(Backend):
         try:
             debug("starting")
 
-            # class WGPlayerAchievementsMaxSeries(JSONExportable):
+            # class PlayerAchievementsMaxSeries(JSONExportable):
             # 	id 			: ObjectId | None	= Field(default=None, alias='_id')
             # 	jointVictory: int 				= Field(default=0, alias='jv')
             # 	account_id	: int		 		= Field(default=0, alias='a')
@@ -1298,7 +1298,7 @@ class MongoBackend(Backend):
         accounts: Iterable[BSAccount] | None = None,
         since: int = 0,
         sample: float = 0,
-    ) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
+    ) -> AsyncGenerator[PlayerAchievementsMaxSeries, None]:
         """Return player achievements from the backend"""
         try:
             debug("starting")
@@ -1318,7 +1318,7 @@ class MongoBackend(Backend):
             async for data in self._datas_get(
                 BSTableType.PlayerAchievements, pipeline=pipeline
             ):
-                if (pa := WGPlayerAchievementsMaxSeries.transform(data)) is not None:
+                if (pa := PlayerAchievementsMaxSeries.transform(data)) is not None:
                     yield pa
         except Exception as err:
             error(
@@ -1361,7 +1361,7 @@ class MongoBackend(Backend):
             error(f"counting player achievements failed: {err}")
         return -1
 
-    # async def player_achievements_update(self, player_achievements: list[WGPlayerAchievementsMaxSeries], upsert: bool = False) -> tuple[int, int]:
+    # async def player_achievements_update(self, player_achievements: list[PlayerAchievementsMaxSeries], upsert: bool = False) -> tuple[int, int]:
     # 	"""Update or upsert player achievements to the backend. Returns number of stats updated and not updated"""
     # 	debug('starting')
     # 	return await self._datas_update(BSTableType.PlayerAchievements,
@@ -1370,11 +1370,11 @@ class MongoBackend(Backend):
 
     async def player_achievement_export(
         self, sample: float = 0
-    ) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
+    ) -> AsyncGenerator[PlayerAchievementsMaxSeries, None]:
         """Export player achievements from Mongo DB"""
         async for obj in self.obj_export(BSTableType.PlayerAchievements, sample=sample):
             if (
-                pa := WGPlayerAchievementsMaxSeries.from_obj(
+                pa := PlayerAchievementsMaxSeries.from_obj(
                     obj, self.model_player_achievements
                 )
             ) is not None:
@@ -1384,7 +1384,7 @@ class MongoBackend(Backend):
         self,
         sample: float = 0,
         batch: int = 0,
-    ) -> AsyncGenerator[list[WGPlayerAchievementsMaxSeries], None]:
+    ) -> AsyncGenerator[list[PlayerAchievementsMaxSeries], None]:
         """Export player achievements as a list from Mongo DB"""
         debug("starting")
         if batch == 0:
@@ -1392,7 +1392,7 @@ class MongoBackend(Backend):
         async for objs in self.objs_export(
             BSTableType.PlayerAchievements, sample=sample, batch=batch
         ):
-            yield WGPlayerAchievementsMaxSeries.from_objs(
+            yield PlayerAchievementsMaxSeries.from_objs(
                 objs=objs, in_type=self.model_player_achievements
             )
 
@@ -1401,7 +1401,7 @@ class MongoBackend(Backend):
         release: BSBlitzRelease,
         regions: set[Region] = Region.API_regions(),
         sample: int = 0,
-    ) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
+    ) -> AsyncGenerator[PlayerAchievementsMaxSeries, None]:
         """Find duplicate player achievements from the backend"""
         debug("starting")
         try:
@@ -1442,7 +1442,7 @@ class MongoBackend(Backend):
                             )
                         ) is not None:
                             if (
-                                pa := WGPlayerAchievementsMaxSeries.transform(obj)
+                                pa := PlayerAchievementsMaxSeries.transform(obj)
                             ) is not None:
                                 # debug(f'tank stat duplicate: {tank_stat}')
                                 yield pa

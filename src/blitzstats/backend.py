@@ -13,7 +13,7 @@ from pydantic import Field
 from blitzutils.region import Region
 from blitzutils.wg_api import (
     TankStat,
-    WGPlayerAchievementsMaxSeries,
+    PlayerAchievementsMaxSeries,
     PlayerAchievementsMain,
     WoTBlitzTankString,
 )
@@ -240,7 +240,7 @@ class Backend(ABC):
         self.set_model(BSTableType.AccountLog, ErrorLog)
         self.set_model(BSTableType.ErrorLog, ErrorLog)
         self.set_model(BSTableType.TankStats, TankStat)
-        self.set_model(BSTableType.PlayerAchievements, WGPlayerAchievementsMaxSeries)
+        self.set_model(BSTableType.PlayerAchievements, PlayerAchievementsMaxSeries)
 
         if config is not None and "BACKEND" in config.sections():
             configBackend = config["BACKEND"]
@@ -1246,7 +1246,7 @@ class Backend(ABC):
 
     @abstractmethod
     async def player_achievement_insert(
-        self, player_achievement: WGPlayerAchievementsMaxSeries, force: bool = False
+        self, player_achievement: PlayerAchievementsMaxSeries, force: bool = False
     ) -> bool:
         """Store player achievements to the backend.
         force=True will overwrite existing item"""
@@ -1255,7 +1255,7 @@ class Backend(ABC):
     @abstractmethod
     async def player_achievement_get(
         self, account: BSAccount, added: int
-    ) -> WGPlayerAchievementsMaxSeries | None:
+    ) -> PlayerAchievementsMaxSeries | None:
         """Store player achievements to the backend. Returns number of stats inserted and not inserted"""
         raise NotImplementedError
 
@@ -1266,7 +1266,7 @@ class Backend(ABC):
 
     @abstractmethod
     async def player_achievements_insert(
-        self, player_achievements: Sequence[WGPlayerAchievementsMaxSeries]
+        self, player_achievements: Sequence[PlayerAchievementsMaxSeries]
     ) -> tuple[int, int]:
         """Store player achievements to the backend. Returns number of stats inserted and not inserted"""
         raise NotImplementedError
@@ -1279,10 +1279,10 @@ class Backend(ABC):
         accounts: Sequence[BSAccount] | None = None,
         since: int = 0,
         sample: float = 0,
-    ) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
+    ) -> AsyncGenerator[PlayerAchievementsMaxSeries, None]:
         """Return player achievements from the backend"""
         raise NotImplementedError
-        yield WGPlayerAchievementsMaxSeries()
+        yield PlayerAchievementsMaxSeries()
 
     @abstractmethod
     async def player_achievements_count(
@@ -1299,20 +1299,20 @@ class Backend(ABC):
     async def player_achievement_export(
         self,
         sample: float = 0,
-    ) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
+    ) -> AsyncGenerator[PlayerAchievementsMaxSeries, None]:
         """Export player achievements from Mongo DB"""
         raise NotImplementedError
-        yield WGPlayerAchievementsMaxSeries()
+        yield PlayerAchievementsMaxSeries()
 
     @abstractmethod
     async def player_achievements_export(
         self,
         sample: float = 0,
         batch: int = 0,
-    ) -> AsyncGenerator[list[WGPlayerAchievementsMaxSeries], None]:
+    ) -> AsyncGenerator[list[PlayerAchievementsMaxSeries], None]:
         """Export player achievements in a batch from Mongo DB"""
         raise NotImplementedError
-        yield [WGPlayerAchievementsMaxSeries()]
+        yield [PlayerAchievementsMaxSeries()]
 
     @abstractmethod
     async def player_achievements_duplicates(
@@ -1320,14 +1320,14 @@ class Backend(ABC):
         release: BSBlitzRelease,
         regions: set[Region] = Region.API_regions(),
         sample: int = 0,
-    ) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
+    ) -> AsyncGenerator[PlayerAchievementsMaxSeries, None]:
         """Find duplicate player achievements from the backend"""
         raise NotImplementedError
-        yield WGPlayerAchievementsMaxSeries()
+        yield PlayerAchievementsMaxSeries()
 
     async def player_achievements_insert_worker(
         self,
-        player_achievementsQ: Queue[list[WGPlayerAchievementsMaxSeries]],
+        player_achievementsQ: Queue[list[PlayerAchievementsMaxSeries]],
         force: bool = False,
     ) -> EventCounter:
         debug(f"starting, force={force}")
