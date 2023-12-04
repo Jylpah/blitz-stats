@@ -16,7 +16,7 @@ from blitzutils import (
     EnumVehicleTypeInt,
 )
 from blitzutils import (
-    WGTank,
+    Tank,
     Region,
     add_args_wg,
     WGApi,
@@ -301,7 +301,7 @@ def add_args_import(
             metavar="IMPORT-TYPE",
             type=str,
             required=True,
-            choices=["BSTank", "WGTank"],
+            choices=["BSTank", "Tank"],
             help="Data format to import. Default is blitz-stats native format.",
         )
         parser.add_argument("--sample", type=float, default=0, help="Sample size")
@@ -564,7 +564,7 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
                 is_premium=is_premium,
             ):
                 stats.log("tanks read")
-                if (wgtank := WGTank.transform(tank)) is not None:
+                if (wgtank := Tank.transform(tank)) is not None:
                     tankopedia.add(wgtank)
                 else:
                     error(f"could not transform tank_id={tank.tank_id}: {tank}")
@@ -729,10 +729,10 @@ async def get_tankopedia(db: Backend) -> WGApiTankopedia | None:
     try:
         async for tank in db.tankopedia_get_many():
             debug("read: tank_id=%d %s", tank.tank_id, tank.name)
-            if (wgtank := WGTank.transform(tank)) is not None:
+            if (wgtank := Tank.transform(tank)) is not None:
                 tankopedia.add(wgtank)
             else:
-                debug(f"failed to transform tank to WGTank format: {tank}")
+                debug(f"failed to transform tank to Tank format: {tank}")
         debug("read %d tanks from backend", len(tankopedia))
         return tankopedia
     except Exception as err:

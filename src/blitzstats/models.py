@@ -31,7 +31,7 @@ from blitzutils import (
     WoTBlitzReplaySummary,
     WoTBlitzReplayData,
     WoTBlitzReplayJSON,
-    WGTank,
+    Tank,
     EnumNation,
     EnumVehicleTypeInt,
     EnumVehicleTier,
@@ -416,8 +416,8 @@ class BSTank(JSONExportable, CSVExportable, TXTExportable):
         return f'{self.name}'
 
     @classmethod
-    def transform_WGTank(cls, in_obj: 'WGTank') -> Optional['BSTank']:
-        """Transform WGTank object to BSTank"""
+    def transform_WGTank(cls, in_obj: 'Tank') -> Optional['BSTank']:
+        """Transform Tank object to BSTank"""
         try:
             # debug(f'type={type(in_obj)}')
             # debug(f'in_obj={in_obj}')
@@ -447,8 +447,8 @@ class BSTank(JSONExportable, CSVExportable, TXTExportable):
             return f'({self.tank_id}) {self.name}'
 
 
-def WGTank2Tank(in_obj: "BSTank") -> Optional["WGTank"]:
-    """Transform BSTank object to WGTank"""
+def WGTank2Tank(in_obj: "BSTank") -> Optional["Tank"]:
+    """Transform BSTank object to Tank"""
     try:
         # debug(f'type={type(in_obj)}')
         # debug(f'in_obj={in_obj}')
@@ -456,7 +456,7 @@ def WGTank2Tank(in_obj: "BSTank") -> Optional["WGTank"]:
         if in_obj.type is not None:
             tank_type = in_obj.type.as_str
         # debug(f'trying to transform tank:{in_obj.dict()}')
-        return WGTank(
+        return Tank(
             tank_id=in_obj.tank_id,
             name=in_obj.name,
             tier=in_obj.tier,
@@ -470,5 +470,5 @@ def WGTank2Tank(in_obj: "BSTank") -> Optional["WGTank"]:
 
 
 # register model transformations
-BSTank.register_transformation(WGTank, BSTank.transform_WGTank)
-WGTank.register_transformation(BSTank, WGTank2Tank)
+BSTank.register_transformation(Tank, BSTank.transform_WGTank)
+Tank.register_transformation(BSTank, WGTank2Tank)

@@ -18,7 +18,7 @@ from blitzutils.wg_api import (
     WoTBlitzTankString,
 )
 
-from blitzutils.tank import WGTank, EnumVehicleTier, EnumNation
+from blitzutils.tank import Tank, EnumVehicleTier, EnumNation
 from blitzutils.replay import WoTBlitzReplayJSON, WoTBlitzReplayData
 from blitzutils.region import Region
 
