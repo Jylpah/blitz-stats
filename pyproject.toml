@@ -1,6 +1,6 @@
 [project]
 name = "blitz-stats"
-version = "0.9.19a1"
+version = "0.9.20"
 authors = [ 
     { name="Jylpah", email="jylpah@gmail.com"} 
     ]
