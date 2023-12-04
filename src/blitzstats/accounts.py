@@ -239,7 +239,7 @@ def add_args_update_wg(
             type=float,
             default=ACCOUNT_INFO_CACHE_VALID,
             metavar="DAYS",
-            help="Fetch stats only for accounts with stats older than DAYS",
+            help="update only accounts updated more than DAYS ago",
         )
         parser.add_argument(
             "--sample",
