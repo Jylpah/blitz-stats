@@ -26,12 +26,12 @@ from pyutils import (
 
 from blitzutils import (
     Account,
-    WGBlitzRelease,
-    WGAccountInfo,
-    WoTBlitzReplaySummary,
-    WoTBlitzReplayData,
-    WoTBlitzReplayJSON,
-    WGTank,
+    Release,
+    AccountInfo,
+    ReplaySummary,
+    ReplayData,
+    ReplayJSON,
+    Tank,
     EnumNation,
     EnumVehicleTypeInt,
     EnumVehicleTier,
@@ -177,7 +177,7 @@ class BSAccount(Account):
             MAX_UPDATE_INTERVAL, (stats_updated - self.last_battle_time) / 3
         )
 
-    def update(self, update: WGAccountInfo) -> bool:
+    def update(self, update: AccountInfo) -> bool:
         """Update BSAccount() from WGACcountInfo i.e. from WG API"""
         updated: bool = False
         try:
@@ -206,8 +206,8 @@ class BSAccount(Account):
         return None
 
     @classmethod
-    def transform_WGAccountInfo(cls, in_obj: WGAccountInfo) -> Optional["BSAccount"]:
-        """Transform WGAccountInfo object to BSAccount"""
+    def transform_WGAccountInfo(cls, in_obj: AccountInfo) -> Optional["BSAccount"]:
+        """Transform AccountInfo object to BSAccount"""
         try:
             account: Account | None = Account.transform(in_obj)
             return BSAccount.transform(account)
@@ -216,11 +216,11 @@ class BSAccount(Account):
         return None
 
 
-BSAccount.register_transformation(WGAccountInfo, BSAccount.transform_WGAccountInfo)
+BSAccount.register_transformation(AccountInfo, BSAccount.transform_WGAccountInfo)
 BSAccount.register_transformation(Account, BSAccount.transform_Account)
 
 
-class BSBlitzRelease(WGBlitzRelease):
+class BSBlitzRelease(Release):
     _max_epoch: int = 2**63 - 1  # MAX_INT64 (signed)
     cut_off: int = Field(default=_max_epoch)
 
@@ -258,7 +258,7 @@ class BSBlitzRelease(WGBlitzRelease):
         return super().txt_row(format) + extra
 
 
-class BSBlitzReplay(WoTBlitzReplaySummary):
+class BSBlitzReplay(ReplaySummary):
     id: str | None = Field(default=None, alias="_id")
 
     _ViewUrlBase: str = "https://replays.wotinspector.com/en/view/"
@@ -317,7 +317,7 @@ class BSBlitzReplay(WoTBlitzReplaySummary):
 
     @classmethod
     def transform_WoTBlitzReplayData(
-        cls, in_obj: WoTBlitzReplayData
+        cls, in_obj: ReplayData
     ) -> Optional["BSBlitzReplay"]:
         res: BSBlitzReplay | None = None
         try:
@@ -332,23 +332,23 @@ class BSBlitzReplay(WoTBlitzReplaySummary):
 
     @classmethod
     def transform_WoTBlitzReplayJSON(
-        cls, in_obj: WoTBlitzReplayJSON
+        cls, in_obj: ReplayJSON
     ) -> Optional["BSBlitzReplay"]:
-        if (replay_data := WoTBlitzReplayData.transform(in_obj)) is not None:
+        if (replay_data := ReplayData.transform(in_obj)) is not None:
             return cls.transform_WoTBlitzReplayData(replay_data)
         return None
 
 
 BSBlitzReplay.register_transformation(
-    WoTBlitzReplayData, BSBlitzReplay.transform_WoTBlitzReplayData
+    ReplayData, BSBlitzReplay.transform_WoTBlitzReplayData
 )
 BSBlitzReplay.register_transformation(
-    WoTBlitzReplayJSON, BSBlitzReplay.transform_WoTBlitzReplayJSON
+    ReplayJSON, BSBlitzReplay.transform_WoTBlitzReplayJSON
 )
 
 
 # fmt: off
-class Tank(JSONExportable, CSVExportable, TXTExportable):
+class BSTank(JSONExportable, CSVExportable, TXTExportable):
     tank_id 	: int						= Field(default=..., alias='_id')
     name 		: str | None				= Field(default=None, alias='n')
     nation		: EnumNation | None 		= Field(default=None, alias='c')
@@ -416,15 +416,15 @@ class Tank(JSONExportable, CSVExportable, TXTExportable):
         return f'{self.name}'
 
     @classmethod
-    def transform_WGTank(cls, in_obj: 'WGTank') -> Optional['Tank']:
-        """Transform WGTank object to Tank"""
+    def transform_WGTank(cls, in_obj: 'Tank') -> Optional['BSTank']:
+        """Transform Tank object to BSTank"""
         try:
             # debug(f'type={type(in_obj)}')
             # debug(f'in_obj={in_obj}')
             tank_type: EnumVehicleTypeInt | None = None
             if in_obj.type is not None:
                 tank_type = in_obj.type.as_int
-            return Tank(tank_id=in_obj.tank_id,
+            return BSTank(tank_id=in_obj.tank_id,
                         name=in_obj.name,
                         tier=in_obj.tier,
                         type=tank_type,
@@ -437,7 +437,7 @@ class Tank(JSONExportable, CSVExportable, TXTExportable):
 
     def csv_headers(self) -> list[str]:
         """Provide CSV headers as list"""
-        return list(Tank.__fields__.keys())
+        return list(BSTank.__fields__.keys())
 
     def txt_row(self, format: str = '') -> str:
         """export data as single row of text"""
@@ -447,8 +447,8 @@ class Tank(JSONExportable, CSVExportable, TXTExportable):
             return f'({self.tank_id}) {self.name}'
 
 
-def WGTank2Tank(in_obj: "Tank") -> Optional["WGTank"]:
-    """Transform Tank object to WGTank"""
+def WGTank2Tank(in_obj: "BSTank") -> Optional["Tank"]:
+    """Transform BSTank object to Tank"""
     try:
         # debug(f'type={type(in_obj)}')
         # debug(f'in_obj={in_obj}')
@@ -456,7 +456,7 @@ def WGTank2Tank(in_obj: "Tank") -> Optional["WGTank"]:
         if in_obj.type is not None:
             tank_type = in_obj.type.as_str
         # debug(f'trying to transform tank:{in_obj.dict()}')
-        return WGTank(
+        return Tank(
             tank_id=in_obj.tank_id,
             name=in_obj.name,
             tier=in_obj.tier,
@@ -470,5 +470,5 @@ def WGTank2Tank(in_obj: "Tank") -> Optional["WGTank"]:
 
 
 # register model transformations
-Tank.register_transformation(WGTank, Tank.transform_WGTank)
-WGTank.register_transformation(Tank, WGTank2Tank)
+BSTank.register_transformation(Tank, BSTank.transform_WGTank)
+Tank.register_transformation(BSTank, WGTank2Tank)

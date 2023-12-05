@@ -12,14 +12,14 @@ from pydantic import Field
 
 from blitzutils.region import Region
 from blitzutils.wg_api import (
-    WGTankStat,
-    WGPlayerAchievementsMaxSeries,
-    WGPlayerAchievementsMain,
+    TankStat,
+    PlayerAchievementsMaxSeries,
+    PlayerAchievementsMain,
     WoTBlitzTankString,
 )
 
-from blitzutils.tank import WGTank, EnumVehicleTier, EnumNation
-from blitzutils.replay import WoTBlitzReplayJSON, WoTBlitzReplayData
+from blitzutils.tank import Tank, EnumVehicleTier, EnumNation
+from blitzutils.replay import ReplayJSON, ReplayData
 from blitzutils.region import Region
 
 from pyutils import EventCounter, IterableQueue, JSONExportable, QueueDone
@@ -30,7 +30,7 @@ from .models import (
     BSBlitzRelease,
     BSBlitzReplay,
     StatsTypes,
-    Tank,
+    BSTank,
     EnumVehicleTypeInt,
 )
 
@@ -233,14 +233,14 @@ class Backend(ABC):
 
         # set default models
         self.set_model(BSTableType.Accounts, BSAccount)
-        self.set_model(BSTableType.Tankopedia, Tank)
+        self.set_model(BSTableType.Tankopedia, BSTank)
         self.set_model(BSTableType.TankStrings, WoTBlitzTankString)
         self.set_model(BSTableType.Releases, BSBlitzRelease)
         self.set_model(BSTableType.Replays, BSBlitzReplay)
         self.set_model(BSTableType.AccountLog, ErrorLog)
         self.set_model(BSTableType.ErrorLog, ErrorLog)
-        self.set_model(BSTableType.TankStats, WGTankStat)
-        self.set_model(BSTableType.PlayerAchievements, WGPlayerAchievementsMaxSeries)
+        self.set_model(BSTableType.TankStats, TankStat)
+        self.set_model(BSTableType.PlayerAchievements, PlayerAchievementsMaxSeries)
 
         if config is not None and "BACKEND" in config.sections():
             configBackend = config["BACKEND"]
@@ -977,7 +977,7 @@ class Backend(ABC):
 
     @abstractmethod
     async def replay_insert(self, replay: JSONExportable) -> bool:
-        # async def replay_insert(self, replay: WoTBlitzReplayJSON) -> bool:
+        # async def replay_insert(self, replay: ReplayJSON) -> bool:
         """Store replay into backend"""
         raise NotImplementedError
 
@@ -1053,23 +1053,21 @@ class Backend(ABC):
     # ----------------------------------------
 
     @abstractmethod
-    async def tank_stat_insert(
-        self, tank_stat: WGTankStat, force: bool = False
-    ) -> bool:
+    async def tank_stat_insert(self, tank_stat: TankStat, force: bool = False) -> bool:
         """Store tank stats to the backend. Returns number of stats inserted and not inserted"""
         raise NotImplementedError
 
     @abstractmethod
     async def tank_stat_get(
         self, account_id: int, tank_id: int, last_battle_time: int
-    ) -> WGTankStat | None:
+    ) -> TankStat | None:
         """Store tank stats to the backend. Returns number of stats inserted and not inserted"""
         raise NotImplementedError
 
     @abstractmethod
     async def tank_stat_update(
         self,
-        tank_stat: WGTankStat,
+        tank_stat: TankStat,
         update: dict[str, Any] | None = None,
         fields: list[str] | None = None,
     ) -> bool:
@@ -1086,7 +1084,7 @@ class Backend(ABC):
 
     @abstractmethod
     async def tank_stats_insert(
-        self, tank_stats: Sequence[WGTankStat], force: bool = False
+        self, tank_stats: Sequence[TankStat], force: bool = False
     ) -> tuple[int, int]:
         """Store tank stats to the backend. Returns number of stats inserted and not inserted"""
         raise NotImplementedError
@@ -1097,21 +1095,21 @@ class Backend(ABC):
         release: BSBlitzRelease | None = None,
         regions: set[Region] = Region.API_regions(),
         accounts: Sequence[BSAccount] | None = None,
-        tanks: Sequence[Tank] | None = None,
+        tanks: Sequence[BSTank] | None = None,
         missing: str | None = None,
         since: int = 0,
         sample: float = 0,
-    ) -> AsyncGenerator[WGTankStat, None]:
+    ) -> AsyncGenerator[TankStat, None]:
         """Return tank stats from the backend"""
         raise NotImplementedError
-        yield WGTankStat()
+        yield TankStat()
 
     @abstractmethod
     async def tank_stats_export_career(
         self,
         account: BSAccount,
         release: BSBlitzRelease,
-    ) -> AsyncGenerator[list[WGTankStat], None]:
+    ) -> AsyncGenerator[list[TankStat], None]:
         """Return tank stats from the backend"""
         raise NotImplementedError
         yield list()
@@ -1122,7 +1120,7 @@ class Backend(ABC):
         release: BSBlitzRelease | None = None,
         regions: set[Region] = Region.API_regions(),
         accounts: Sequence[BSAccount] | None = None,
-        tanks: Sequence[Tank] | None = None,
+        tanks: Sequence[BSTank] | None = None,
         since: int = 0,
         sample: float = 0,
     ) -> int:
@@ -1132,30 +1130,30 @@ class Backend(ABC):
     @abstractmethod
     async def tank_stat_export(
         self, sample: float = 0
-    ) -> AsyncGenerator[WGTankStat, None]:
+    ) -> AsyncGenerator[TankStat, None]:
         """Export tank stats from Mongo DB"""
         raise NotImplementedError
-        yield WGTankStat()
+        yield TankStat()
 
     @abstractmethod
     async def tank_stats_export(
         self, sample: float = 0, batch: int = 0
-    ) -> AsyncGenerator[list[WGTankStat], None]:
+    ) -> AsyncGenerator[list[TankStat], None]:
         """Export tank stats from Mongo DB"""
         raise NotImplementedError
-        yield [WGTankStat()]
+        yield [TankStat()]
 
     @abstractmethod
     async def tank_stats_duplicates(
         self,
-        tank: Tank,
+        tank: BSTank,
         release: BSBlitzRelease,
         regions: set[Region] = Region.API_regions(),
         sample: int = 0,
-    ) -> AsyncGenerator[WGTankStat, None]:
+    ) -> AsyncGenerator[TankStat, None]:
         """Find duplicate tank stats from the backend"""
         raise NotImplementedError
-        yield WGTankStat()
+        yield TankStat()
 
     @abstractmethod
     async def tank_stats_unique(
@@ -1165,7 +1163,7 @@ class Backend(ABC):
         release: BSBlitzRelease | None = None,
         regions: set[Region] = Region.API_regions(),
         account: BSAccount | None = None,
-        tank: Tank | None = None,
+        tank: BSTank | None = None,
     ) -> AsyncGenerator[A, None]:
         """Return unique values of field"""
         raise NotImplementedError
@@ -1178,13 +1176,13 @@ class Backend(ABC):
         release: BSBlitzRelease | None = None,
         regions: set[Region] = Region.API_regions(),
         account: BSAccount | None = None,
-        tank: Tank | None = None,
+        tank: BSTank | None = None,
     ) -> int:
         """Return count of unique values of field. **args see tank_stats_unique()"""
         raise NotImplementedError
 
     async def tank_stats_get_worker(
-        self, tank_statsQ: Queue[WGTankStat], **getargs
+        self, tank_statsQ: Queue[TankStat], **getargs
     ) -> EventCounter:
         debug("starting")
         stats: EventCounter = EventCounter("tank stats")
@@ -1208,7 +1206,7 @@ class Backend(ABC):
         return stats
 
     async def tank_stats_insert_worker(
-        self, tank_statsQ: Queue[list[WGTankStat]], force: bool = False
+        self, tank_statsQ: Queue[list[TankStat]], force: bool = False
     ) -> EventCounter:
         debug(f"starting, force={force}")
         stats: EventCounter = EventCounter("tank-stats insert")
@@ -1248,7 +1246,7 @@ class Backend(ABC):
 
     @abstractmethod
     async def player_achievement_insert(
-        self, player_achievement: WGPlayerAchievementsMaxSeries, force: bool = False
+        self, player_achievement: PlayerAchievementsMaxSeries, force: bool = False
     ) -> bool:
         """Store player achievements to the backend.
         force=True will overwrite existing item"""
@@ -1257,7 +1255,7 @@ class Backend(ABC):
     @abstractmethod
     async def player_achievement_get(
         self, account: BSAccount, added: int
-    ) -> WGPlayerAchievementsMaxSeries | None:
+    ) -> PlayerAchievementsMaxSeries | None:
         """Store player achievements to the backend. Returns number of stats inserted and not inserted"""
         raise NotImplementedError
 
@@ -1268,7 +1266,7 @@ class Backend(ABC):
 
     @abstractmethod
     async def player_achievements_insert(
-        self, player_achievements: Sequence[WGPlayerAchievementsMaxSeries]
+        self, player_achievements: Sequence[PlayerAchievementsMaxSeries]
     ) -> tuple[int, int]:
         """Store player achievements to the backend. Returns number of stats inserted and not inserted"""
         raise NotImplementedError
@@ -1281,10 +1279,10 @@ class Backend(ABC):
         accounts: Sequence[BSAccount] | None = None,
         since: int = 0,
         sample: float = 0,
-    ) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
+    ) -> AsyncGenerator[PlayerAchievementsMaxSeries, None]:
         """Return player achievements from the backend"""
         raise NotImplementedError
-        yield WGPlayerAchievementsMaxSeries()
+        yield PlayerAchievementsMaxSeries()
 
     @abstractmethod
     async def player_achievements_count(
@@ -1301,20 +1299,20 @@ class Backend(ABC):
     async def player_achievement_export(
         self,
         sample: float = 0,
-    ) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
+    ) -> AsyncGenerator[PlayerAchievementsMaxSeries, None]:
         """Export player achievements from Mongo DB"""
         raise NotImplementedError
-        yield WGPlayerAchievementsMaxSeries()
+        yield PlayerAchievementsMaxSeries()
 
     @abstractmethod
     async def player_achievements_export(
         self,
         sample: float = 0,
         batch: int = 0,
-    ) -> AsyncGenerator[list[WGPlayerAchievementsMaxSeries], None]:
+    ) -> AsyncGenerator[list[PlayerAchievementsMaxSeries], None]:
         """Export player achievements in a batch from Mongo DB"""
         raise NotImplementedError
-        yield [WGPlayerAchievementsMaxSeries()]
+        yield [PlayerAchievementsMaxSeries()]
 
     @abstractmethod
     async def player_achievements_duplicates(
@@ -1322,14 +1320,14 @@ class Backend(ABC):
         release: BSBlitzRelease,
         regions: set[Region] = Region.API_regions(),
         sample: int = 0,
-    ) -> AsyncGenerator[WGPlayerAchievementsMaxSeries, None]:
+    ) -> AsyncGenerator[PlayerAchievementsMaxSeries, None]:
         """Find duplicate player achievements from the backend"""
         raise NotImplementedError
-        yield WGPlayerAchievementsMaxSeries()
+        yield PlayerAchievementsMaxSeries()
 
     async def player_achievements_insert_worker(
         self,
-        player_achievementsQ: Queue[list[WGPlayerAchievementsMaxSeries]],
+        player_achievementsQ: Queue[list[PlayerAchievementsMaxSeries]],
         force: bool = False,
     ) -> EventCounter:
         debug(f"starting, force={force}")
@@ -1408,30 +1406,30 @@ class Backend(ABC):
     # ----------------------------------------
 
     @abstractmethod
-    async def tankopedia_insert(self, tank: Tank, force: bool = True) -> bool:
+    async def tankopedia_insert(self, tank: BSTank, force: bool = True) -> bool:
         """ "insert tank into Tankopedia"""
         raise NotImplementedError
 
     @abstractmethod
-    async def tankopedia_get(self, tank_id: int) -> Tank | None:
+    async def tankopedia_get(self, tank_id: int) -> BSTank | None:
         raise NotImplementedError
 
     @abstractmethod
     async def tankopedia_get_many(
         self,
-        tanks: list[Tank] | None = None,
+        tanks: list[BSTank] | None = None,
         tier: EnumVehicleTier | None = None,
         tank_type: EnumVehicleTypeInt | None = None,
         nation: EnumNation | None = None,
         is_premium: bool | None = None,
-    ) -> AsyncGenerator[Tank, None]:
+    ) -> AsyncGenerator[BSTank, None]:
         raise NotImplementedError
-        yield Tank()
+        yield BSTank()
 
     @abstractmethod
     async def tankopedia_count(
         self,
-        tanks: list[Tank] | None = None,
+        tanks: list[BSTank] | None = None,
         tier: EnumVehicleTier | None = None,
         tank_type: EnumVehicleTypeInt | None = None,
         nation: EnumNation | None = None,
@@ -1440,15 +1438,17 @@ class Backend(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def tankopedia_export(self, sample: float = 0) -> AsyncGenerator[Tank, None]:
+    async def tankopedia_export(
+        self, sample: float = 0
+    ) -> AsyncGenerator[BSTank, None]:
         """Export tankopedia"""
         raise NotImplementedError
-        yield Tank()
+        yield BSTank()
 
     @abstractmethod
     async def tankopedia_update(
         self,
-        tank: Tank,
+        tank: BSTank,
         update: dict[str, Any] | None = None,
         fields: list[str] | None = None,
     ) -> bool:
@@ -1457,18 +1457,18 @@ class Backend(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def tankopedia_delete(self, tank: Tank) -> bool:
+    async def tankopedia_delete(self, tank: BSTank) -> bool:
         """Delete a tank from Tankopedia"""
         raise NotImplementedError
 
     async def tankopedia_insert_worker(
-        self, tankQ: Queue[Tank], force: bool = False
+        self, tankQ: Queue[BSTank], force: bool = False
     ) -> EventCounter:
         debug(f"starting, force={force}")
         stats: EventCounter = EventCounter("tankopedia insert")
         try:
             while True:
-                tank: Tank = await tankQ.get()
+                tank: BSTank = await tankQ.get()
                 try:
                     debug(
                         "Trying to " + "update"
@@ -1493,8 +1493,8 @@ class Backend(ABC):
 
     async def tankopedia_get_worker(
         self,
-        tankQ: Queue[Tank],
-        tanks: list[Tank] | None = None,
+        tankQ: Queue[BSTank],
+        tanks: list[BSTank] | None = None,
         tier: EnumVehicleTier | None = None,
         tank_type: EnumVehicleTypeInt | None = None,
         nation: EnumNation | None = None,
@@ -1517,7 +1517,7 @@ class Backend(ABC):
         return stats
 
     # ----------------------------------------
-    # Tank Strings
+    # BSTank Strings
     # ----------------------------------------
 
     @abstractmethod

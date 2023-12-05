@@ -14,8 +14,8 @@ from pydantic import BaseModel
 from pyutils import EventCounter, JSONExportable, AsyncQueue
 from pyutils.utils import is_alphanum
 
-# from blitzutils.replay 			import WoTBlitzReplayJSON, WoTBlitzReplayData
-from blitzutils import Region, WoTinspector, WoTBlitzReplayJSON, WoTBlitzReplayData
+# from blitzutils.replay 			import ReplayJSON, ReplayData
+from blitzutils import Region, WoTinspector, ReplayJSON, ReplayData
 
 from .backend import Backend, BSTableType, get_sub_type
 from .models import BSBlitzReplay
@@ -81,15 +81,28 @@ def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> b
     return False
 
 
-def add_args_fetch(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
-    parser.add_argument("--force", action="store_true", default=False, help="Ignore existing accounts exporting")
+def add_args_fetch(
+    parser: ArgumentParser, config: Optional[ConfigParser] = None
+) -> bool:
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="Ignore existing accounts exporting",
+    )
     return add_args_accounts_fetch_wi(parser=parser, config=config)
 
 
-def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_export(
+    parser: ArgumentParser, config: Optional[ConfigParser] = None
+) -> bool:
     try:
         parser.add_argument(
-            "--file", action="store_true", default=False, dest="replay_export_file", help="Export replay(s) to file(s)"
+            "--file",
+            action="store_true",
+            default=False,
+            dest="replay_export_file",
+            help="Export replay(s) to file(s)",
         )
         replays_export_parsers = parser.add_subparsers(
             dest="replays_export_query_type",
@@ -99,7 +112,9 @@ def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = Non
         )
         replays_export_parsers.required = True
 
-        replays_export_id_parser = replays_export_parsers.add_parser("id", help="replays export id help")
+        replays_export_id_parser = replays_export_parsers.add_parser(
+            "id", help="replays export id help"
+        )
         if not add_args_export_id(replays_export_id_parser, config=config):
             raise Exception("Failed to define argument parser for: replays export id")
 
@@ -114,17 +129,26 @@ def add_args_export(parser: ArgumentParser, config: Optional[ConfigParser] = Non
     return False
 
 
-def add_args_export_id(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_export_id(
+    parser: ArgumentParser, config: Optional[ConfigParser] = None
+) -> bool:
     """Add argparse arguments for replays export id -subcommand"""
     try:
-        parser.add_argument("replay_export_id", type=str, metavar="REPLAY-ID", help="Replay ID to export")
+        parser.add_argument(
+            "replay_export_id",
+            type=str,
+            metavar="REPLAY-ID",
+            help="Replay ID to export",
+        )
         return True
     except Exception as err:
         error(f"add_args_export_id() : {err}")
     return False
 
 
-def add_args_export_find(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_export_find(
+    parser: ArgumentParser, config: Optional[ConfigParser] = None
+) -> bool:
     """Add argparse arguments for replays export find -subcommand"""
     ## NOT IMPLEMENTED
     try:
@@ -134,7 +158,9 @@ def add_args_export_find(parser: ArgumentParser, config: Optional[ConfigParser] 
     return False
 
 
-def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_import(
+    parser: ArgumentParser, config: Optional[ConfigParser] = None
+) -> bool:
     try:
         import_parsers = parser.add_subparsers(
             dest="import_backend",
@@ -145,24 +171,34 @@ def add_args_import(parser: ArgumentParser, config: Optional[ConfigParser] = Non
         import_parsers.required = True
 
         for backend in Backend.get_registered():
-            import_parser = import_parsers.add_parser(backend.driver, help=f"replays import {backend.driver} help")
+            import_parser = import_parsers.add_parser(
+                backend.driver, help=f"replays import {backend.driver} help"
+            )
             if not backend.add_args_import(import_parser, config=config):
-                raise Exception(f"Failed to define argument parser for: replays import {backend.driver}")
+                raise Exception(
+                    f"Failed to define argument parser for: replays import {backend.driver}"
+                )
         parser.add_argument(
-            "--workers", type=int, default=0, help="Set number of worker processes (default=0 i.e. auto)"
+            "--workers",
+            type=int,
+            default=0,
+            help="Set number of worker processes (default=0 i.e. auto)",
         )
         parser.add_argument(
             "--import-model",
             metavar="IMPORT-TYPE",
             type=str,
             required=True,
-            choices=["WoTBlitzReplayData", "WoTBlitzReplayJSON"],
+            choices=["ReplayData", "ReplayJSON"],
             help="Data format to import. Default is blitz-stats native format.",
         )
 
         parser.add_argument("--sample", type=float, default=0, help="Sample size")
         parser.add_argument(
-            "--force", action="store_true", default=False, help="Overwrite existing file(s) when exporting"
+            "--force",
+            action="store_true",
+            default=False,
+            help="Overwrite existing file(s) when exporting",
         )
 
         return True
@@ -243,7 +279,9 @@ async def cmd_export_find(db: Backend, args: Namespace) -> bool:
 async def cmd_import(db: Backend, args: Namespace) -> bool:
     """Import replays from other backend"""
     try:
-        assert is_alphanum(args.import_model), f"invalid --import-model: {args.import_model}"
+        assert is_alphanum(
+            args.import_model
+        ), f"invalid --import-model: {args.import_model}"
 
         stats: EventCounter = EventCounter("replays import")
         replayQ: Queue[JSONExportable] = Queue(REPLAY_Q_MAX)
@@ -255,7 +293,9 @@ async def cmd_import(db: Backend, args: Namespace) -> bool:
         if (import_model := get_sub_type(args.import_model, BaseModel)) is None:
             raise ValueError("--import-model has to be subclass of BaseModel")
 
-        importer: Task = create_task(db.replays_insert_worker(replayQ=replayQ, force=args.force))
+        importer: Task = create_task(
+            db.replays_insert_worker(replayQ=replayQ, force=args.force)
+        )
 
         if (
             import_db := Backend.create_import_backend(
@@ -277,7 +317,9 @@ async def cmd_import(db: Backend, args: Namespace) -> bool:
 
         await replayQ.join()
         importer.cancel()
-        worker_res: tuple[EventCounter | BaseException] = await gather(importer, return_exceptions=True)
+        worker_res: tuple[EventCounter | BaseException] = await gather(
+            importer, return_exceptions=True
+        )
         if type(worker_res[0]) is EventCounter:
             stats.merge_child(worker_res[0])
         elif type(worker_res[0]) is BaseException:
@@ -303,7 +345,9 @@ async def cmd_importMP(db: Backend, args: Namespace) -> bool:
             WORKERS = max([cpu_count() - 1, 1])
 
         if (import_model := get_sub_type(args.import_model, BaseModel)) is None:
-            raise ValueError("--import-model not defined or not is a subclass of BaseModel")
+            raise ValueError(
+                "--import-model not defined or not is a subclass of BaseModel"
+            )
 
         if (
             import_db := Backend.create_import_backend(
@@ -322,25 +366,35 @@ async def cmd_importMP(db: Backend, args: Namespace) -> bool:
             options["force"] = args.force
 
             with Pool(
-                processes=WORKERS, initializer=import_mp_init, initargs=[db.config, readQ, import_model, options]
+                processes=WORKERS,
+                initializer=import_mp_init,
+                initargs=[db.config, readQ, import_model, options],
             ) as pool:
                 debug(f"starting {WORKERS} workers")
-                results: AsyncResult = pool.map_async(import_mp_worker_start, range(WORKERS))
+                results: AsyncResult = pool.map_async(
+                    import_mp_worker_start, range(WORKERS)
+                )
                 pool.close()
 
                 message("Counting replays to import ...")
                 N: int = await import_db.replays_count(sample=args.sample)
 
-                with alive_bar(N, title="Importing replays ", enrich_print=False, refresh_secs=1) as bar:
+                with alive_bar(
+                    N, title="Importing replays ", enrich_print=False, refresh_secs=1
+                ) as bar:
                     async for objs in import_db.objs_export(
-                        table_type=BSTableType.Replays, sample=args.sample, batch=REPLAYS_BATCH
+                        table_type=BSTableType.Replays,
+                        sample=args.sample,
+                        batch=REPLAYS_BATCH,
                     ):
                         read: int = len(objs)
                         readQ.put(objs)
                         stats.log(f"{db.driver}:stats read", read)
                         bar(read)
 
-                debug(f"Finished exporting {import_model} from {import_db.table_uri(BSTableType.Replays)}")
+                debug(
+                    f"Finished exporting {import_model} from {import_db.table_uri(BSTableType.Replays)}"
+                )
                 for _ in range(WORKERS):
                     readQ.put(None)  # add sentinel
 
@@ -393,7 +447,9 @@ async def import_mp_worker(id: int = 0) -> EventCounter:
         force: bool = mp_options["force"]
 
         for _ in range(THREADS):
-            workers.append(create_task(db.replays_insert_worker(replayQ=writeQ, force=force)))
+            workers.append(
+                create_task(db.replays_insert_worker(replayQ=writeQ, force=force))
+            )
         errors: int = 0
 
         while (objs := await readQ.get()) is not None:

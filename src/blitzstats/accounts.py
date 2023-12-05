@@ -19,13 +19,13 @@ from pyutils import (
     QueueDone,
 )
 from pyutils.exportable import export
-from pyutils.utils import alive_bar_monitor, get_url_JSON_model, chunker
+from pyutils.utils import alive_bar_monitor, get_url_model, chunker
 
 from blitzutils import (
-    WoTBlitzReplayJSON,
+    ReplayJSON,
     Region,
     Account,
-    WGAccountInfo,
+    AccountInfo,
     WGApi,
     WoTinspector,
     add_args_wg,
@@ -880,7 +880,7 @@ async def update_account_info_worker(
     """Update accounts with data from WG API accounts/info"""
     debug("starting")
     stats: EventCounter = EventCounter(f"{region}")
-    infos: list[WGAccountInfo] | None
+    infos: list[AccountInfo] | None
     accounts: dict[int, BSAccount]
     account: BSAccount
     ids: list[int] = list()
@@ -1202,7 +1202,7 @@ async def fetch_account_info_worker(
     debug("starting")
     stats: EventCounter = EventCounter(f"{region}")
     left: int = null_responses
-    infos: list[WGAccountInfo] | None
+    infos: list[AccountInfo] | None
     ids: Sequence[int]
 
     try:
@@ -1433,8 +1433,8 @@ async def fetch_wi_fetch_replays(
             replay_id = await replay_idQ.get()
             try:
                 url: str = wi.get_url_replay_JSON(replay_id)
-                replay: WoTBlitzReplayJSON | None = await get_url_JSON_model(
-                    wi.session, url, WoTBlitzReplayJSON
+                replay: ReplayJSON | None = await get_url_model(
+                    wi.session, url, ReplayJSON
                 )
                 if replay is None:
                     verbose(f"Could not fetch replay id: {replay_id}")

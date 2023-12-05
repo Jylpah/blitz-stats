@@ -16,11 +16,11 @@ from blitzutils import (
     EnumVehicleTypeInt,
 )
 from blitzutils import (
-    WGTank,
+    Tank,
     Region,
     add_args_wg,
     WGApi,
-    WGApiTankopedia,
+    WGApiWoTBlitzTankopedia,
     WoTBlitzTankString,
 )
 
@@ -32,7 +32,7 @@ from .backend import (
     MIN_UPDATE_INTERVAL,
     get_sub_type,
 )
-from .models import BSAccount, BSBlitzRelease, StatsTypes, Tank
+from .models import BSAccount, BSBlitzRelease, StatsTypes, BSTank
 
 logger = logging.getLogger()
 error = logger.error
@@ -221,7 +221,7 @@ def add_args_edit(
 ) -> bool:
     try:
         debug("starting")
-        parser.add_argument("tank_id", type=int, help="Tank to edit: tank_id > 0")
+        parser.add_argument("tank_id", type=int, help="BSTank to edit: tank_id > 0")
         parser.add_argument(
             "--name",
             type=str,
@@ -301,7 +301,7 @@ def add_args_import(
             metavar="IMPORT-TYPE",
             type=str,
             required=True,
-            choices=["Tank", "WGTank"],
+            choices=["BSTank", "Tank"],
             help="Data format to import. Default is blitz-stats native format.",
         )
         parser.add_argument("--sample", type=float, default=0, help="Sample size")
@@ -472,7 +472,7 @@ async def cmd_add(db: Backend, args: Namespace) -> bool:
                 tank_type = EnumVehicleTypeInt[args.tank_type]
             except Exception as err:
                 raise ValueError(f"could not set nation from '{args.tank_type}': {err}")
-        tank: Tank = Tank(
+        tank: BSTank = BSTank(
             tank_id=tank_id,
             name=tank_name,
             nation=tank_nation,
@@ -507,7 +507,7 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
         tier: EnumVehicleTier | None = None
         tank_type: EnumVehicleTypeInt | None = None
         is_premium: bool | None = None
-        tanks: list[Tank] | None = None
+        tanks: list[BSTank] | None = None
         std_out: bool = filename == "-"
 
         if args.nation is not None:
@@ -522,12 +522,12 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
         if args.tanks is not None:
             tanks = list()
             for tank_id in args.tanks:
-                tanks.append(Tank(tank_id=tank_id))
+                tanks.append(BSTank(tank_id=tank_id))
 
         export_worker: Task
 
         if args.format in ["txt", "csv"]:
-            tankQ: IterableQueue[Tank] = IterableQueue(maxsize=100)
+            tankQ: IterableQueue[BSTank] = IterableQueue(maxsize=100)
 
             export_worker = create_task(
                 export(
@@ -554,7 +554,7 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
             await tankQ.join()
             await stats.gather_stats([export_worker], cancel=False)
         elif args.format == "json":
-            tankopedia = WGApiTankopedia()
+            tankopedia = WGApiWoTBlitzTankopedia()
             tankopedia.data = dict()
             async for tank in db.tankopedia_get_many(
                 tanks=tanks,
@@ -564,7 +564,7 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
                 is_premium=is_premium,
             ):
                 stats.log("tanks read")
-                if (wgtank := WGTank.transform(tank)) is not None:
+                if (wgtank := Tank.transform(tank)) is not None:
                     tankopedia.add(wgtank)
                 else:
                     error(f"could not transform tank_id={tank.tank_id}: {tank}")
@@ -598,7 +598,7 @@ async def cmd_import(db: Backend, args: Namespace) -> bool:
         debug("starting")
         debug(f"{args}")
         stats: EventCounter = EventCounter("tankopedia import")
-        tankQ: Queue[Tank] = Queue(100)
+        tankQ: Queue[BSTank] = Queue(100)
         import_db: Backend | None = None
         import_backend: str = args.import_backend
 
@@ -649,7 +649,7 @@ async def cmd_update(db: Backend, args: Namespace) -> bool:
         dry_run: bool = args.dry_run
         stats.log("added", 0)
         stats.log("updated", 0)
-        tankopedia_new: WGApiTankopedia | None
+        tankopedia_new: WGApiWoTBlitzTankopedia | None
         if args.tankopedia_update_source == "file":
             debug("wi")
             if (tankopedia_new := await cmd_update_file(db, args)) is None:
@@ -667,7 +667,7 @@ async def cmd_update(db: Backend, args: Namespace) -> bool:
                 f"tankopedia update: unknown or missing subcommand: {args.setup_cmd}"
             )
 
-        tankopedia: WGApiTankopedia | None
+        tankopedia: WGApiWoTBlitzTankopedia | None
         if (tankopedia := await get_tankopedia(db)) is None:
             error(f"could not read Tankopedia from backend: {db.backend}")
             return False
@@ -681,9 +681,9 @@ async def cmd_update(db: Backend, args: Namespace) -> bool:
             raise
 
         for tank_id in added:
-            if (tank := Tank.transform(tankopedia[tank_id])) is None:
+            if (tank := BSTank.transform(tankopedia[tank_id])) is None:
                 error(
-                    f"Could not transform {tankopedia[tank_id].name} (tank_id={tank_id}) to Tank format"
+                    f"Could not transform {tankopedia[tank_id].name} (tank_id={tank_id}) to BSTank format"
                 )
                 stats.log("errors")
                 continue
@@ -699,9 +699,9 @@ async def cmd_update(db: Backend, args: Namespace) -> bool:
                     stats.log("not added")
 
         for tank_id in updated:
-            if (tank := Tank.transform(tankopedia[tank_id])) is None:
+            if (tank := BSTank.transform(tankopedia[tank_id])) is None:
                 error(
-                    f"Could not transform {tankopedia[tank_id].name} (tank_id={tank_id}) to Tank format"
+                    f"Could not transform {tankopedia[tank_id].name} (tank_id={tank_id}) to BSTank format"
                 )
                 continue
 
@@ -722,17 +722,17 @@ async def cmd_update(db: Backend, args: Namespace) -> bool:
     return False
 
 
-async def get_tankopedia(db: Backend) -> WGApiTankopedia | None:
+async def get_tankopedia(db: Backend) -> WGApiWoTBlitzTankopedia | None:
     """return Tankopedia from backend"""
     debug("starting")
-    tankopedia = WGApiTankopedia()
+    tankopedia = WGApiWoTBlitzTankopedia()
     try:
         async for tank in db.tankopedia_get_many():
             debug("read: tank_id=%d %s", tank.tank_id, tank.name)
-            if (wgtank := WGTank.transform(tank)) is not None:
+            if (wgtank := Tank.transform(tank)) is not None:
                 tankopedia.add(wgtank)
             else:
-                debug(f"failed to transform tank to WGTank format: {tank}")
+                debug(f"failed to transform tank to Tank format: {tank}")
         debug("read %d tanks from backend", len(tankopedia))
         return tankopedia
     except Exception as err:
@@ -740,14 +740,16 @@ async def get_tankopedia(db: Backend) -> WGApiTankopedia | None:
     return None
 
 
-async def cmd_update_file(db: Backend, args: Namespace) -> WGApiTankopedia | None:
+async def cmd_update_file(
+    db: Backend, args: Namespace
+) -> WGApiWoTBlitzTankopedia | None:
     """Update tankopedia in the database from a file"""
     debug("starting")
     filename: str = args.file
-    return await WGApiTankopedia.open_json(filename)
+    return await WGApiWoTBlitzTankopedia.open_json(filename)
 
 
-async def cmd_update_wg(db: Backend, args: Namespace) -> WGApiTankopedia | None:
+async def cmd_update_wg(db: Backend, args: Namespace) -> WGApiWoTBlitzTankopedia | None:
     """Update tankopedia in the database from a WG API"""
     debug("starting")
     region: Region = Region[args.wg_region]

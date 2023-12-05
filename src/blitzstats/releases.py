@@ -18,7 +18,7 @@ from pyutils import (
 )
 from pyutils.exportable import export
 from pyutils.utils import is_alphanum
-from blitzutils import WGBlitzRelease
+from blitzutils import Release
 
 from .backend import Backend, BSTableType, get_sub_type
 from .models import BSBlitzRelease

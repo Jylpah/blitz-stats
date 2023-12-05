@@ -1,6 +1,6 @@
 [project]
 name = "blitz-stats"
-version = "0.9.20"
+version = "0.9.21"
 authors = [ 
     { name="Jylpah", email="jylpah@gmail.com"} 
     ]
@@ -32,8 +32,8 @@ dependencies = [
     "lz4>=4.3.2",
     "sortedcollections>=2.1.0",
     # Fixed commit until Pydantic V2 refactoring done
-    "pyutils @ git+https://github.com/Jylpah/pyutils.git@9e8d5a772e32bfa0b6623da3d0190e3ea5565409",  
-    "blitz-utils @ git+https://github.com/Jylpah/blitz-utils.git@ee248ebaf59f8cb8d3d73c730e8c30dd7f9722e8",
+    "pyutils @ git+https://github.com/Jylpah/pyutils.git@main-v1",  
+    "blitz-utils @ git+https://github.com/Jylpah/blitz-utils.git@main-v1",
     ]
 
 [project.optional-dependencies]

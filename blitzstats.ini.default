@@ -51,14 +51,13 @@ cache_valid             = 7
 ; t_player_achievements= PlayerAchievements
 # model defaults
 ; m_accounts            = BSAccount
-; m_tankopedia          = Tank
+; m_tankopedia          = BSTank
 ; m_releases            = BSBlitzRelease
-; m_replays             = WoTBlitzReplayJSON
-; m_replays             = WoTBlitzReplayData
+; m_replays             = BSBlitzReplay
 ; m_account_log         = ErrorLog
 ; m_error_log           = ErrorLog
-; m_tank_stats          = WGTankStat
-; m_player_achievements = WGPlayerAchievementsMaxSeries
+; m_tank_stats          = TankStat
+; m_player_achievements = PlayerAchievementsMaxSeries
 
 
 [MONGODB]
@@ -73,6 +72,7 @@ cert            = /home/USER/.ssl/client_cert.pem
 ca              = /home/USER/.ssl/CA.crt
 ; tls_invalid_certs     = False
 ; tls_invalid_host      = False
+# tables
 ; t_accounts            = Accounts
 ; t_tankopedia          = Tankopedia
 ; t_replays             = Replays
@@ -81,3 +81,12 @@ ca              = /home/USER/.ssl/CA.crt
 ; t_player_achievements= PlayerAchievements
 ; t_account_log           = BSAccountLog
 ; t_error_log             = BSErrorLog
+# models
+; m_accounts            = BSAccount
+; m_tankopedia          = BSTank
+; m_releases            = BSBlitzRelease
+; m_replays             = BSBlitzReplay
+; m_account_log         = ErrorLog
+; m_error_log           = ErrorLog
+; m_tank_stats          = TankStat
+; m_player_achievements = PlayerAchievementsMaxSeries
