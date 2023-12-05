@@ -20,7 +20,7 @@ from blitzutils import (
     Region,
     add_args_wg,
     WGApi,
-    WGApiTankopedia,
+    WGApiWoTBlitzTankopedia,
     WoTBlitzTankString,
 )
 
@@ -554,7 +554,7 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
             await tankQ.join()
             await stats.gather_stats([export_worker], cancel=False)
         elif args.format == "json":
-            tankopedia = WGApiTankopedia()
+            tankopedia = WGApiWoTBlitzTankopedia()
             tankopedia.data = dict()
             async for tank in db.tankopedia_get_many(
                 tanks=tanks,
@@ -649,7 +649,7 @@ async def cmd_update(db: Backend, args: Namespace) -> bool:
         dry_run: bool = args.dry_run
         stats.log("added", 0)
         stats.log("updated", 0)
-        tankopedia_new: WGApiTankopedia | None
+        tankopedia_new: WGApiWoTBlitzTankopedia | None
         if args.tankopedia_update_source == "file":
             debug("wi")
             if (tankopedia_new := await cmd_update_file(db, args)) is None:
@@ -667,7 +667,7 @@ async def cmd_update(db: Backend, args: Namespace) -> bool:
                 f"tankopedia update: unknown or missing subcommand: {args.setup_cmd}"
             )
 
-        tankopedia: WGApiTankopedia | None
+        tankopedia: WGApiWoTBlitzTankopedia | None
         if (tankopedia := await get_tankopedia(db)) is None:
             error(f"could not read Tankopedia from backend: {db.backend}")
             return False
@@ -722,10 +722,10 @@ async def cmd_update(db: Backend, args: Namespace) -> bool:
     return False
 
 
-async def get_tankopedia(db: Backend) -> WGApiTankopedia | None:
+async def get_tankopedia(db: Backend) -> WGApiWoTBlitzTankopedia | None:
     """return Tankopedia from backend"""
     debug("starting")
-    tankopedia = WGApiTankopedia()
+    tankopedia = WGApiWoTBlitzTankopedia()
     try:
         async for tank in db.tankopedia_get_many():
             debug("read: tank_id=%d %s", tank.tank_id, tank.name)
@@ -740,14 +740,16 @@ async def get_tankopedia(db: Backend) -> WGApiTankopedia | None:
     return None
 
 
-async def cmd_update_file(db: Backend, args: Namespace) -> WGApiTankopedia | None:
+async def cmd_update_file(
+    db: Backend, args: Namespace
+) -> WGApiWoTBlitzTankopedia | None:
     """Update tankopedia in the database from a file"""
     debug("starting")
     filename: str = args.file
-    return await WGApiTankopedia.open_json(filename)
+    return await WGApiWoTBlitzTankopedia.open_json(filename)
 
 
-async def cmd_update_wg(db: Backend, args: Namespace) -> WGApiTankopedia | None:
+async def cmd_update_wg(db: Backend, args: Namespace) -> WGApiWoTBlitzTankopedia | None:
     """Update tankopedia in the database from a WG API"""
     debug("starting")
     region: Region = Region[args.wg_region]

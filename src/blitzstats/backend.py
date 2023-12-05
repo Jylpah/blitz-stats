@@ -19,7 +19,7 @@ from blitzutils.wg_api import (
 )
 
 from blitzutils.tank import Tank, EnumVehicleTier, EnumNation
-from blitzutils.replay import ReplayJSON, WoTBlitzReplayData
+from blitzutils.replay import ReplayJSON, ReplayData
 from blitzutils.region import Region
 
 from pyutils import EventCounter, IterableQueue, JSONExportable, QueueDone

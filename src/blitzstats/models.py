@@ -26,10 +26,10 @@ from pyutils import (
 
 from blitzutils import (
     Account,
-    WGBlitzRelease,
-    WGAccountInfo,
-    WoTBlitzReplaySummary,
-    WoTBlitzReplayData,
+    Release,
+    AccountInfo,
+    ReplaySummary,
+    ReplayData,
     ReplayJSON,
     Tank,
     EnumNation,
@@ -177,7 +177,7 @@ class BSAccount(Account):
             MAX_UPDATE_INTERVAL, (stats_updated - self.last_battle_time) / 3
         )
 
-    def update(self, update: WGAccountInfo) -> bool:
+    def update(self, update: AccountInfo) -> bool:
         """Update BSAccount() from WGACcountInfo i.e. from WG API"""
         updated: bool = False
         try:
@@ -206,8 +206,8 @@ class BSAccount(Account):
         return None
 
     @classmethod
-    def transform_WGAccountInfo(cls, in_obj: WGAccountInfo) -> Optional["BSAccount"]:
-        """Transform WGAccountInfo object to BSAccount"""
+    def transform_WGAccountInfo(cls, in_obj: AccountInfo) -> Optional["BSAccount"]:
+        """Transform AccountInfo object to BSAccount"""
         try:
             account: Account | None = Account.transform(in_obj)
             return BSAccount.transform(account)
@@ -216,11 +216,11 @@ class BSAccount(Account):
         return None
 
 
-BSAccount.register_transformation(WGAccountInfo, BSAccount.transform_WGAccountInfo)
+BSAccount.register_transformation(AccountInfo, BSAccount.transform_WGAccountInfo)
 BSAccount.register_transformation(Account, BSAccount.transform_Account)
 
 
-class BSBlitzRelease(WGBlitzRelease):
+class BSBlitzRelease(Release):
     _max_epoch: int = 2**63 - 1  # MAX_INT64 (signed)
     cut_off: int = Field(default=_max_epoch)
 
@@ -258,7 +258,7 @@ class BSBlitzRelease(WGBlitzRelease):
         return super().txt_row(format) + extra
 
 
-class BSBlitzReplay(WoTBlitzReplaySummary):
+class BSBlitzReplay(ReplaySummary):
     id: str | None = Field(default=None, alias="_id")
 
     _ViewUrlBase: str = "https://replays.wotinspector.com/en/view/"
@@ -317,7 +317,7 @@ class BSBlitzReplay(WoTBlitzReplaySummary):
 
     @classmethod
     def transform_WoTBlitzReplayData(
-        cls, in_obj: WoTBlitzReplayData
+        cls, in_obj: ReplayData
     ) -> Optional["BSBlitzReplay"]:
         res: BSBlitzReplay | None = None
         try:
@@ -334,13 +334,13 @@ class BSBlitzReplay(WoTBlitzReplaySummary):
     def transform_WoTBlitzReplayJSON(
         cls, in_obj: ReplayJSON
     ) -> Optional["BSBlitzReplay"]:
-        if (replay_data := WoTBlitzReplayData.transform(in_obj)) is not None:
+        if (replay_data := ReplayData.transform(in_obj)) is not None:
             return cls.transform_WoTBlitzReplayData(replay_data)
         return None
 
 
 BSBlitzReplay.register_transformation(
-    WoTBlitzReplayData, BSBlitzReplay.transform_WoTBlitzReplayData
+    ReplayData, BSBlitzReplay.transform_WoTBlitzReplayData
 )
 BSBlitzReplay.register_transformation(
     ReplayJSON, BSBlitzReplay.transform_WoTBlitzReplayJSON

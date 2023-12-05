@@ -14,8 +14,8 @@ from pydantic import BaseModel
 from pyutils import EventCounter, JSONExportable, AsyncQueue
 from pyutils.utils import is_alphanum
 
-# from blitzutils.replay 			import ReplayJSON, WoTBlitzReplayData
-from blitzutils import Region, WoTinspector, ReplayJSON, WoTBlitzReplayData
+# from blitzutils.replay 			import ReplayJSON, ReplayData
+from blitzutils import Region, WoTinspector, ReplayJSON, ReplayData
 
 from .backend import Backend, BSTableType, get_sub_type
 from .models import BSBlitzReplay
@@ -189,7 +189,7 @@ def add_args_import(
             metavar="IMPORT-TYPE",
             type=str,
             required=True,
-            choices=["WoTBlitzReplayData", "ReplayJSON"],
+            choices=["ReplayData", "ReplayJSON"],
             help="Data format to import. Default is blitz-stats native format.",
         )
 
