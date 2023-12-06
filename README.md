@@ -5,9 +5,7 @@ mobile game. Requires [MongoDB](https://mongodb.com) as backend.
 
 # Status
 
-**`main`** has a dependency conflict. Fixing soon... 
-
-(Otherwise) working and functional. Your mileage may vary :-) 
+Working and functional. Your mileage may vary :-) 
 
 [Status and "roadmap"](https://github.com/Jylpah/blitz-stats/issues/61)
 
