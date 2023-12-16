@@ -1,14 +1,17 @@
-from argparse import ArgumentParser, Namespace
+# from argparse import ArgumentParser, Namespace
+
 from configparser import ConfigParser
-from typing import Optional, cast, Type, Any, TypeVar, Sequence
+from typing import Optional, cast, Type, Any, TypeVar, Sequence, List, Annotated, Set
 from datetime import datetime, timedelta
 from time import time
 import logging
-from asyncio import create_task, gather, wait, Queue, CancelledError, Task, sleep
+from asyncio import create_task, gather, wait, Queue, CancelledError, Task, sleep, run
 from aiofiles import open
 from asyncstdlib import enumerate
+from pathlib import Path
 from alive_progress import alive_bar  # type: ignore
 from pydantic import ValidationError
+import typer
 
 from pyutils import (
     EventCounter,
@@ -18,8 +21,9 @@ from pyutils import (
     IterableQueue,
     QueueDone,
 )
+from pyutils.asynctyper import AsyncTyper
 from pyutils.exportable import export
-from pyutils.utils import alive_bar_monitor, get_url_model, chunker
+from pyutils.utils import alive_bar_monitor, get_url_model, chunker, set_config
 
 from blitzutils import (
     ReplayJSON,
@@ -43,12 +47,17 @@ from .backend import (
 from .models import BSAccount, BSBlitzReplay, StatsTypes, BSBlitzRelease
 from .models_import import WG_Account
 
-
 logger = logging.getLogger()
 error = logger.error
 message = logger.warning
 verbose = logger.info
 debug = logger.debug
+
+app = AsyncTyper()
+update_app = AsyncTyper()
+fetch_app = AsyncTyper()
+
+app.add_typer(update_app, name="update")
 
 # wotinspector.com
 WI_MAX_PAGES: int = 100
@@ -56,10 +65,6 @@ WI_MAX_OLD_REPLAYS: int = 30
 WI_RATE_LIMIT: Optional[float] = None
 WI_AUTH_TOKEN: Optional[str] = None
 
-# yastati.st
-YS_CLIENT_ID: str = "none"
-YS_CLIENT_SECRET: str = "missing"
-YS_DAYS_SINCE: int = 30
 
 EXPORT_SUPPORTED_FORMATS: list[str] = ["json", "txt", "csv"]
 
@@ -739,59 +744,90 @@ def add_args_remove(
 ###########################################
 
 
-async def cmd(db: Backend, args: Namespace) -> bool:
-    try:
-        debug("starting")
+# async def cmd(ctx: Context,  db: Backend, args: Namespace) -> bool:
+#     try:
+#         debug("starting")
 
-        if args.accounts_cmd == "fetch":
-            return await cmd_fetch(db, args)
+#         if args.accounts_cmd == "fetch":
+#             return await cmd_fetch(db, args)
 
-        elif args.accounts_cmd == "update":
-            return await cmd_update(db, args)
+#         elif args.accounts_cmd == "update":
+#             return await cmd_update(db, args)
 
-        elif args.accounts_cmd == "export":
-            return await cmd_export(db, args)
+#         elif args.accounts_cmd == "export":
+#             return await cmd_export(db, args)
 
-        elif args.accounts_cmd == "import":
-            return await cmd_import(db, args)
+#         elif args.accounts_cmd == "import":
+#             return await cmd_import(db, args)
 
-        elif args.accounts_cmd == "remove":
-            return await cmd_remove(db, args)
+#         elif args.accounts_cmd == "remove":
+#             return await cmd_remove(db, args)
 
-    except Exception as err:
-        error(f"{err}")
-    return False
+#     except Exception as err:
+#         error(f"{err}")
+#     return False
 
 
-async def cmd_update(db: Backend, args: Namespace) -> bool:
-    try:
-        debug("starting")
+def update_close(ctx: typer.Context, stats_update: EventCounter) -> None:
+    """result_callback to wait the results and print stats"""
+    debug("starting")
+    stats = EventCounter("accounts update", totals="total")
+    updateQ: IterableQueue[BSAccount] = ctx.obj["updateQ"]
+    db_worker: Task = ctx.obj["db_worker"]
+    run(updateQ.join())
+    run(stats.gather_stats([db_worker]))
+    stats.merge_child(stats_update)
+    stats.print()
 
-        stats = EventCounter("accounts update", totals="total")
-        updateQ: IterableQueue[BSAccount] = IterableQueue(maxsize=10000)
-        db_worker = create_task(
-            db.accounts_insert_worker(updateQ, force=True)
-        )  # without force=True update fails
 
-        try:
-            if args.accounts_update_source == "wg":
-                debug("wg")
-                stats.merge_child(await cmd_update_wg(db, args, updateQ))
-            else:
-                raise ValueError(
-                    f"unknown accounts update source: {args.accounts_update_source}"
-                )
+@update_app.callback(result_callback=update_close)
+def update(
+    ctx: typer.Context,
+    force: Annotated[
+        bool, typer.Option(help="add accounts not found in the backend")
+    ] = False,
+):
+    """
+    update accounts to the backend
+    """
+    debug("starting")
+    ctx.obj["force"] = force
+    updateQ: IterableQueue[BSAccount] = IterableQueue(maxsize=10000)
+    db: Backend = ctx.obj["db"]
+    ctx.obj["db_worker"] = create_task(
+        db.accounts_insert_worker(updateQ, force=True)
+    )  # without force=True update fails
+    ctx.obj["updateQ"] = updateQ
 
-        except Exception as err:
-            error(f"{err}")
+    # try:
+    #     debug("starting")
 
-        await updateQ.join()
-        await stats.gather_stats([db_worker])
-        stats.print()
+    #     stats = EventCounter("accounts update", totals="total")
+    #     updateQ: IterableQueue[BSAccount] = IterableQueue(maxsize=10000)
+    #     db: Backend = ctx.obj["db"]
+    #     db_worker = create_task(
+    #         db.accounts_insert_worker(updateQ, force=True)
+    #     )  # without force=True update fails
 
-    except Exception as err:
-        error(f"{err}")
-    return False
+    #     try:
+    #         if args.accounts_update_source == "wg":
+    #             debug("wg")
+    #             stats.merge_child(await cmd_update_wg(db, args, updateQ))
+    #         else:
+    #             raise ValueError(
+    #                 f"unknown accounts update source: {args.accounts_update_source}"
+    #             )
+
+    #     except Exception as err:
+    #         error(f"{err}")
+
+    #     await updateQ.join()
+    #     await stats.gather_stats([db_worker])
+    #     stats.print()
+
+    # except Exception as err:
+    #     error(f"{err}")
+    # return False
 
 
 ###########################################
@@ -801,21 +837,49 @@ async def cmd_update(db: Backend, args: Namespace) -> bool:
 ###########################################
 
 
-async def cmd_update_wg(
-    db: Backend, args: Namespace, updateQ: IterableQueue[BSAccount]
+@update_app.async_command("wg")
+async def update_wg(
+    ctx: typer.Context,
+    regions: Annotated[
+        Set[Region], typer.Option("--region", help="region(s) to update")
+    ] = Region.API_regions(),
 ) -> EventCounter:
     """Update accounts from WG API"""
     debug("starting")
     stats: EventCounter = EventCounter("WG API", totals="Total")
+    wg_app_id: str = "NO APP ID GIVEN"
+    wg_rate_limit: float = 10.0
+    wg_workers: int = 2
+    db: Backend | None = None
+    updateQ: IterableQueue[BSAccount] = IterableQueue()
     try:
-        regions: set[Region] = {Region(r) for r in args.regions}
-        wg: WGApi = WGApi(
-            app_id=args.wg_app_id,
-            ru_app_id=args.ru_app_id,
-            rate_limit=args.wg_rate_limit,
-            ru_rate_limit=args.ru_rate_limit,
+        config: ConfigParser = ctx.obj["config"]
+        wg_app_id = set_config(
+            config,
+            "",
+            "WG",
+            "app_id",
+            ctx.obj["wg_app_id"],
         )
-        WORKERS: int = max([args.wg_workers, 1])
+
+        wg_rate_limit = set_config(
+            config, 10, "WG", "rate_limit", ctx.obj["wg_rate_limit"]
+        )
+
+        wg_workers = set_config(config, 2, "WG", "api_workers", ctx.obj["wg_workers"])
+        db = ctx.obj["db"]
+        updateQ = ctx.obj["updateQ"]
+
+    except Exception as err:
+        error(f"could not read all parameters: {err}")
+        typer.Exit(code=1)
+    assert isinstance(db, Backend), f"'db' is not instance of 'Backend()"
+    try:
+        wg: WGApi = WGApi(
+            app_id=wg_app_id,
+            rate_limit=wg_rate_limit,
+        )
+        WORKERS: int = max([wg_workers, 1])
         workQ_creators: list[Task] = list()
         api_workers: list[Task] = list()
         workQs: dict[Region, IterableQueue[list[BSAccount]]] = dict()
@@ -1798,21 +1862,22 @@ async def create_accountQ(
 
 async def create_accountQ_batch(
     db: Backend,
-    args: Namespace,
+    # args: Namespace,
     region: Region,
     accountQ: IterableQueue[list[BSAccount]],
     stats_type: StatsTypes | None = None,
     batch: int = 100,
+    accounts: list[BSAccount] | None = None,
+    file: Path | None = None,
 ) -> EventCounter:
     """Helper to make accountQ from arguments"""
     stats: EventCounter = EventCounter(f"{db.driver}: accounts")
     debug(f"starting: {region}")
     try:
-        accounts: list[BSAccount] | None = None
-        try:
-            accounts = read_args_accounts(args.accounts)
-        except:
-            debug("could not read --accounts")
+        # try:
+        #     accounts = read_args_accounts(args.accounts)
+        # except:
+        #     debug("could not read --accounts")
 
         await accountQ.add_producer()
 
@@ -1827,12 +1892,12 @@ async def create_accountQ_batch(
                     error(f"{err}")
                     stats.log("errors", len(accounts))
 
-        elif args.file is not None:
+        elif file is not None:
             accounts = list()
-            async for account in BSAccount.import_file(args.file):
+            async for account in BSAccount.import_file(file):
                 try:
                     if account.region == region:
-                        if args.file.lower().endswith(".txt"):
+                        if file.name.lower().endswith(".txt"):
                             if (a := await db.account_get(account.id)) is not None:
                                 account = a
                         accounts.append(account)
