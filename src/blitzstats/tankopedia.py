@@ -194,13 +194,18 @@ def add_args_update_file(
     parser: ArgumentParser, config: Optional[ConfigParser] = None
 ) -> bool:
     try:
+        tankopedia_file: str = TANKOPEDIA_FILE
+        if config is not None:
+            tankopedia_file = config.get(
+                "METADATA", "tankopedia_json", fallback=TANKOPEDIA_FILE
+            )
         debug("starting")
         parser.add_argument(
             "file",
             type=str,
-            default=TANKOPEDIA_FILE,
+            default=tankopedia_file,
             metavar="FILE",
-            help="read tankopedia update from FILE",
+            help=f"read tankopedia update from FILE (default: {tankopedia_file})",
         )
 
         return True
