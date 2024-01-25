@@ -1,7 +1,6 @@
 from configparser import ConfigParser
 from argparse import Namespace, ArgumentParser
-from datetime import date, datetime
-from os.path import isfile
+from datetime import datetime
 from typing import (
     Optional,
     Any,
@@ -22,12 +21,10 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncI
 from pymongo.results import (
     InsertManyResult,
     InsertOneResult,
-    UpdateResult,
     DeleteResult,
 )
 from pymongo.errors import BulkWriteError, CollectionInvalid, ConnectionFailure
-from pydantic import BaseModel, ValidationError, Field
-from asyncstdlib import enumerate
+from pydantic import ValidationError, Field
 
 from pyutils import (
     JSONExportable,
@@ -37,7 +34,7 @@ from pyutils import (
     BackendIndex,
     awrap,
 )
-from pyutils.exportable import DESCENDING, ASCENDING, TEXT
+from pyutils.exportable import DESCENDING, ASCENDING
 from pyutils.utils import epoch_now
 
 from blitzutils import (
@@ -54,13 +51,8 @@ from .backend import (
     OptAccountsDistributed,
     OptAccountsInactive,
     BSTableType,
-    MAX_UPDATE_INTERVAL,
-    WG_ACCOUNT_ID_MAX,
-    MIN_UPDATE_INTERVAL,
     ErrorLog,
-    ErrorLogType,
     A,
-    batch_gen,
 )
 from .models import (
     BSAccount,
@@ -216,7 +208,7 @@ class MongoBackend(Backend):
 
             # debug(f'Mongo DB: {self.backend}')
             debug(
-                f"config: "
+                "config: "
                 + ", ".join(["{0}={1}".format(k, str(v)) for k, v in kwargs.items()])
             )
         except FileNotFoundError as err:
@@ -263,7 +255,7 @@ class MongoBackend(Backend):
             return True
         except ConnectionFailure:
             error(f"Server not available: {self.backend}")
-        except Exception as err:
+        except Exception:
             error(f"Error connection: {self.backend}")
         return False
 
@@ -658,7 +650,7 @@ class MongoBackend(Backend):
         alias_fields: dict[str, Any] = AliasMapper(model).map(update.items())
 
         if (
-            res := await dbc.find_one_and_update({"_id": idx}, {"$set": alias_fields})
+            _ := await dbc.find_one_and_update({"_id": idx}, {"$set": alias_fields})
         ) is None:
             # debug(f'Failed to update _id={idx} into {self.backend}.{dbc.name}')
             return False
@@ -818,7 +810,7 @@ class MongoBackend(Backend):
     ) -> AsyncGenerator[Any, None]:
         """Export raw documents from Mongo DB"""
         try:
-            debug(f"starting")
+            debug("starting")
             dbc: AsyncIOMotorCollection = self.get_collection(table_type)
             debug(f"export from: {self.table_uri(table_type)}")
 
@@ -843,7 +835,7 @@ class MongoBackend(Backend):
     ) -> AsyncGenerator[list[Any], None]:
         """Export raw documents as a list from Mongo DB"""
         try:
-            debug(f"starting")
+            debug("starting")
             dbc: AsyncIOMotorCollection = self.get_collection(table_type)
             debug(f"export from: {self.table_uri(table_type)}")
             if batch == 0:
@@ -1478,7 +1470,6 @@ class MongoBackend(Backend):
     async def release_get_latest(self) -> BSBlitzRelease | None:
         """Get the latest release in the backend"""
         debug("starting")
-        rel: BSBlitzRelease | None = None
         try:
             dbc: AsyncIOMotorCollection = self.collection_releases
             async for obj in dbc.find().sort("launch_date", DESCENDING):
@@ -2536,7 +2527,6 @@ class MongoBackend(Backend):
 
 
 # Register backend
-
 
 debug("Registering mongodb")
 Backend.register(driver=MongoBackend.driver, backend=MongoBackend)

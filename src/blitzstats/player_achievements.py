@@ -1,35 +1,29 @@
 from argparse import ArgumentParser, Namespace, SUPPRESS
 from configparser import ConfigParser
-from typing import Optional, Any, Iterable, cast
+from typing import Optional, Any
 import logging
 from asyncio import (
     create_task,
     run,
-    gather,
     Queue,
     CancelledError,
     Task,
     sleep,
-    Condition,
 )
-from aiofiles import open
-from os.path import isfile
 from os import getpid
 from math import ceil
 from sortedcollections import NearestDict  # type: ignore
 from pydantic import BaseModel
-from asyncstdlib import enumerate
 from alive_progress import alive_bar  # type: ignore
 
 from multiprocessing import Manager, cpu_count
 from multiprocessing.pool import Pool, AsyncResult
 import queue
 
-from pyutils import IterableQueue, QueueDone, EventCounter, JSONExportable, AsyncQueue
+from pyutils import IterableQueue, QueueDone, EventCounter, AsyncQueue
 from pyutils.utils import epoch_now, alive_bar_monitor, is_alphanum
 from blitzutils import (
     Region,
-    PlayerAchievementsMain,
     PlayerAchievementsMaxSeries,
     WGApi,
     add_args_wg,
@@ -40,14 +34,11 @@ from .backend import (
     OptAccountsInactive,
     BSTableType,
     ACCOUNTS_Q_MAX,
-    MIN_UPDATE_INTERVAL,
     get_sub_type,
 )
 from .models import BSAccount, BSBlitzRelease, StatsTypes
 from .accounts import (
-    split_accountQ,
     split_accountQ_batch,
-    create_accountQ,
     create_accountQ_batch,
     accounts_parse_args,
 )
@@ -574,8 +565,8 @@ async def fetch_backend_worker(
                     f"{added} player achievements added, {not_added} old player achievements found"
                 )
                 statsQ.task_done()
-    except CancelledError as err:
-        debug(f"Cancelled")
+    except CancelledError:
+        debug("Cancelled")
     except Exception as err:
         error(f"{err}")
     return stats

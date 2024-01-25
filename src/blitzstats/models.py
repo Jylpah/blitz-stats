@@ -1,20 +1,13 @@
 import logging
 from enum import StrEnum
-from time import time
-import json
-from typing import Optional, ClassVar, Any
-from math import ceil
-from bson.objectid import ObjectId
-from pydantic import validator, root_validator, Field, HttpUrl, ValidationError, Extra
+from typing import Optional, Any
+from pydantic import validator, root_validator, Field, ValidationError, Extra
 
 from pyutils.utils import epoch_now
 from pyutils import (
     JSONExportable,
     CSVExportable,
     TXTExportable,
-    TXTImportable,
-    TypeExcludeDict,
-    I,
     Idx,
     BackendIndexType,
     BackendIndex,
@@ -117,7 +110,6 @@ class BSAccount(Account):
 
     @classmethod
     def get_update_field(cls, stats_type: str | None) -> str | None:
-        UPDATED: str = "updated_"
         try:
             if stats_type is not None:
                 return StatsTypes(stats_type).value

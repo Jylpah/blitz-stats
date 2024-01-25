@@ -1,8 +1,7 @@
 from argparse import ArgumentParser, Namespace
 from configparser import ConfigParser
-from typing import Optional, cast, Type, Any, TypeVar, Sequence
+from typing import Optional, Any, Sequence
 from datetime import datetime, timedelta
-from time import time
 import logging
 from asyncio import create_task, gather, wait, Queue, CancelledError, Task, sleep
 from aiofiles import open
@@ -12,9 +11,6 @@ from pydantic import ValidationError
 
 from pyutils import (
     EventCounter,
-    TXTExportable,
-    CSVExportable,
-    JSONExportable,
     IterableQueue,
     QueueDone,
 )
@@ -24,7 +20,7 @@ from pyutils.utils import alive_bar_monitor, get_url_model, chunker
 from blitzutils import (
     ReplayJSON,
     Region,
-    Account,
+    Account,  # noqa
     AccountInfo,
     WGApi,
     WoTinspector,
@@ -38,10 +34,8 @@ from .backend import (
     batch_gen,
     BSTableType,
     ACCOUNTS_Q_MAX,
-    get_sub_type,
 )
 from .models import BSAccount, BSBlitzReplay, StatsTypes, BSBlitzRelease
-from .models_import import WG_Account
 
 
 logger = logging.getLogger()
@@ -162,7 +156,7 @@ def add_args_update_files(
     parser: ArgumentParser, config: Optional[ConfigParser] = None
 ) -> bool:
     """Update accounts from file(s)"""
-    debug(f"add_args_update_files(): not implemented")
+    debug("add_args_update_files(): not implemented")
     return True
 
 
@@ -1169,7 +1163,7 @@ async def account_idQ_maker(
 ) -> EventCounter:
     """Create account_id queue"""
     debug("starting")
-    stats: EventCounter = EventCounter(f"account_ids")
+    stats: EventCounter = EventCounter("account_ids")
     last: int = start
     await idQ.add_producer()
     try:
@@ -1185,7 +1179,7 @@ async def account_idQ_maker(
         error(f"{err}")
     finally:
         stats.log("queued", last - start)
-        debug(f"closing idQ")
+        debug("closing idQ")
         await idQ.finish()
     return stats
 
@@ -1412,7 +1406,7 @@ async def fetch_wi_get_replay_ids(
                     error(f"{err}")
                 finally:
                     bar()
-    except CancelledError as err:
+    except CancelledError:
         # debug(f'Cancelled')
         message(f"{max_old_replays} found. Stopping spidering for more")
     except Exception as err:
@@ -1543,14 +1537,14 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
         ## not implemented...
         # query_args : dict[str, str | int | float | bool ] = dict()
         stats: EventCounter = EventCounter("accounts export")
-        disabled: bool = args.disabled
+        # disabled: bool = args.disabled
         inactive: OptAccountsInactive = OptAccountsInactive.default()
         regions: set[Region] = {Region(r) for r in args.regions}
         distributed: OptAccountsDistributed
         filename: str = args.filename
         force: bool = args.force
         export_stdout: bool = filename == "-"
-        sample: float = args.sample
+        # sample: float = args.sample
         accountQs: dict[str, IterableQueue[BSAccount]] = dict()
         account_workers: list[Task] = list()
         export_workers: list[Task] = list()
@@ -1565,7 +1559,7 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
                 inactive == OptAccountsInactive.auto
             ):  # auto mode requires specication of stats type
                 inactive = OptAccountsInactive.no
-        except ValueError as err:
+        except ValueError:
             assert False, f"Incorrect value for argument 'inactive': {args.inactive}"
 
         total: int = await db.accounts_count(**accounts_args)
@@ -1706,7 +1700,7 @@ async def count_accounts(
                 inactive: OptAccountsInactive = OptAccountsInactive.default()
                 try:
                     inactive = OptAccountsInactive(args.inactive)
-                except ValueError as err:
+                except ValueError:
                     assert (
                         False
                     ), f"Incorrect value for argument 'inactive': {args.inactive}"
@@ -1744,7 +1738,7 @@ async def create_accountQ(
         accounts: list[BSAccount] | None = None
         try:
             accounts = read_args_accounts(args.accounts)
-        except:
+        except Exception:
             debug("could not read --accounts")
 
         await accountQ.add_producer()
@@ -1784,7 +1778,7 @@ async def create_accountQ(
                         stats.log("errors")
             else:
                 error(f"could not parse args: {args}")
-    except CancelledError as err:
+    except CancelledError:
         debug("Cancelled")
     except KeyboardInterrupt:
         debug("Keyboard interrupt received")
@@ -1811,7 +1805,7 @@ async def create_accountQ_batch(
         accounts: list[BSAccount] | None = None
         try:
             accounts = read_args_accounts(args.accounts)
-        except:
+        except Exception:
             debug("could not read --accounts")
 
         await accountQ.add_producer()
@@ -1875,8 +1869,8 @@ async def create_accountQ_batch(
                         stats.log("errors")
             else:
                 error(f"could not parse args: {args}")
-    except CancelledError as err:
-        debug(f"Cancelled")
+    except CancelledError:
+        debug("Cancelled")
     except Exception as err:
         error(f"{err}")
     finally:
@@ -1894,7 +1888,7 @@ async def create_accountQ_active(
 ) -> EventCounter:
     """Add accounts active during a release to accountQ"""
     debug("starting")
-    stats: EventCounter = EventCounter(f"accounts")
+    stats: EventCounter = EventCounter("accounts")
     try:
         if randomize:
             workers: list[Task] = list()
@@ -1953,8 +1947,8 @@ async def split_accountQ(
 
     # except QueueDone:
     #     debug("Marking regionQs finished")
-    except CancelledError as err:
-        debug(f"Cancelled")
+    except CancelledError:
+        debug("Cancelled")
     except Exception as err:
         error(f"{err}")
     for Q in regionQs.values():
@@ -2001,8 +1995,8 @@ async def split_accountQ_batch(
             if len(batches[region]) > 0:
                 await regionQs[region].put(batches[region])
                 stats.log(f"{region} accounts", len(batches[region]))
-    except CancelledError as err:
-        debug(f"Cancelled")
+    except CancelledError:
+        debug("Cancelled")
     except Exception as err:
         error(f"{err}")
     for Q in regionQs.values():
@@ -2049,39 +2043,39 @@ async def accounts_parse_args(
         for region in args.regions:
             try:
                 regions.add(Region(region))
-            except:
+            except Exception:
                 error(f"could not read --regions={region}")
         res["regions"] = regions
 
         try:
             res["accounts"] = read_args_accounts(args.accounts)
-        except:
+        except Exception:
             debug("could not read --accounts")
 
         try:
             res["inactive"] = OptAccountsInactive(args.inactive)
-        except:
+        except Exception:
             debug("could not read --inactive")
 
         try:
             res["disabled"] = args.disabled
-        except:
+        except Exception:
             debug("could not read --disabled")
 
         try:
             res["sample"] = args.sample
-        except:
+        except Exception:
             debug("could not read --sample")
 
         try:
             res["cache_valid"] = args.cache_valid
-        except:
+        except Exception:
             debug("could not read --cache-valid")
 
         try:
             if (dist := OptAccountsDistributed.parse(args.distributed)) is not None:
                 res["dist"] = dist
-        except:
+        except Exception:
             debug("could not read --distributed")
 
         days: int
