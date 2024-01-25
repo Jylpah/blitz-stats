@@ -2,7 +2,7 @@
 
 ## THIS IS BROKEN ##################
 
-FROM python:3.11-slim-buster
+FROM python:3.11-slim
 
 ENV PATH /app/blitz-stats:/usr/local/bin:$PATH
 # extra dependencies (over what buildpack-deps already includes)
