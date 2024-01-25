@@ -8,7 +8,6 @@ import logging
 
 from os import makedirs
 from os.path import isfile, dirname
-from aiofiles import open
 from typing import Any
 from enum import Enum, IntEnum
 import os.path
@@ -98,7 +97,7 @@ async def data_writer(
     assert (
         export_format in EXPORT_DATA_FORMATS
     ), f"export format has to be one of: {', '.join(EXPORT_DATA_FORMATS)}"
-    stats: EventCounter = EventCounter(f"writer")
+    stats: EventCounter = EventCounter("writer")
 
     try:
         makedirs(dirname(basedir), exist_ok=True)
@@ -141,7 +140,7 @@ async def dataset_writer(
     assert (
         export_format in EXPORT_DATA_FORMATS
     ), f"export format has to be one of: {', '.join(EXPORT_DATA_FORMATS)}"
-    stats: EventCounter = EventCounter(f"writer")
+    stats: EventCounter = EventCounter("writer")
 
     try:
         makedirs(dirname(basedir), exist_ok=True)

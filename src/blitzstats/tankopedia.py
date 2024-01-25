@@ -1,9 +1,8 @@
 import logging
-from aiofiles import open
-from argparse import ArgumentParser, Namespace, SUPPRESS
+from argparse import ArgumentParser, Namespace
 from configparser import ConfigParser
-from typing import Optional, cast
-from asyncio import create_task, Queue, CancelledError, Task
+from typing import Optional
+from asyncio import create_task, Queue, Task
 import json
 
 # from yappi import profile 					# type: ignore
@@ -12,7 +11,6 @@ from pyutils import export, IterableQueue, EventCounter
 from blitzutils import (
     EnumNation,
     EnumVehicleTier,
-    EnumVehicleTypeStr,
     EnumVehicleTypeInt,
 )
 from blitzutils import (
@@ -21,18 +19,13 @@ from blitzutils import (
     add_args_wg,
     WGApi,
     WGApiWoTBlitzTankopedia,
-    WoTBlitzTankString,
 )
 
 from .backend import (
     Backend,
-    OptAccountsInactive,
     BSTableType,
-    ACCOUNTS_Q_MAX,
-    MIN_UPDATE_INTERVAL,
-    get_sub_type,
 )
-from .models import BSAccount, BSBlitzRelease, StatsTypes, BSTank
+from .models import BSTank
 
 logger = logging.getLogger()
 error = logger.error
@@ -194,13 +187,18 @@ def add_args_update_file(
     parser: ArgumentParser, config: Optional[ConfigParser] = None
 ) -> bool:
     try:
+        tankopedia_file: str = TANKOPEDIA_FILE
+        if config is not None:
+            tankopedia_file = config.get(
+                "METADATA", "tankopedia_json", fallback=TANKOPEDIA_FILE
+            )
         debug("starting")
         parser.add_argument(
             "file",
             type=str,
-            default=TANKOPEDIA_FILE,
+            default=tankopedia_file,
             metavar="FILE",
-            help="read tankopedia update from FILE",
+            help=f"read tankopedia update from FILE (default: {tankopedia_file})",
         )
 
         return True
@@ -659,7 +657,7 @@ async def cmd_update(db: Backend, args: Namespace) -> bool:
         elif args.tankopedia_update_source == "wg":
             debug("wg")
             if (tankopedia_new := await cmd_update_wg(db, args)) is None:
-                raise ValueError(f"failed to read tankopedia from WG API")
+                raise ValueError("failed to read tankopedia from WG API")
             stats.log("tanks read from WG API", len(tankopedia_new))
 
         else:

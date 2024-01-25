@@ -1,28 +1,23 @@
 from argparse import ArgumentParser, Namespace
 from configparser import ConfigParser
-from typing import Optional, cast, Iterable, Any
+from typing import Optional, Any
 import logging
-from asyncio import create_task, gather, wait, Queue, CancelledError, Task, sleep
+from asyncio import create_task, gather, wait, Queue, Task, sleep
 from sortedcollections import NearestDict  # type: ignore
 from math import ceil
-from aiohttp import ClientResponse
 from datetime import date, datetime
-from os.path import isfile
 
 from pyutils import (
     EventCounter,
-    JSONExportable,
-    CSVExportable,
-    TXTExportable,
     IterableQueue,
 )
 from pyutils.exportable import export
 from pyutils.utils import is_alphanum
-from blitzutils import Release
+from blitzutils import Release  # noqa
 
-from .backend import Backend, BSTableType, get_sub_type
+from .backend import Backend, BSTableType
 from .models import BSBlitzRelease
-from .models_import import WG_Release
+from .models_import import WG_Release   # noqa
 
 logger = logging.getLogger()
 error = logger.error
@@ -140,7 +135,7 @@ def add_args_edit(
             "--round-cut-off",
             "--round",
             type=int,
-            default=0,
+            default=-1,
             metavar="MINUTES",
             help="round cut-off time to the next full MINUTES",
         )
@@ -340,8 +335,9 @@ async def cmd_add(db: Backend, args: Namespace) -> bool:
         )
         release.cut_off = round_epoch(release.cut_off, args.round_cut_off * 60)
         return await db.release_insert(release=release)
-    except:
-        error(f"No valid release given as argument")
+    except Exception as err:
+        debug("%s: %s", type(err), err)
+        error("No valid release given as argument")
 
     # if release is None:
     #     release = await db.release_get_latest()
@@ -359,15 +355,26 @@ async def cmd_add(db: Backend, args: Namespace) -> bool:
 async def cmd_edit(db: Backend, args: Namespace) -> bool:
     try:
         debug("starting")
-        release = BSBlitzRelease(
-            release=args.release,
-            launch_date=args.launch,
-            cut_off=args.cut_off,
-        )
-        release.cut_off = round_epoch(release.cut_off, args.round_cut_off * 60)
-        update: dict[str, Any] = release.dict(exclude_unset=True, exclude_none=True)
-        del update["release"]
-        return await db.release_update(release, update=update)
+        release : BSBlitzRelease | None 
+        updated : bool = False
+        if (release := await db.release_get(args.release)) is not None:
+            if args.cut_off > 0:
+                release.cut_off = round_epoch(args.cut_off, args.round_cut_off * 60)
+                updated = True
+            if args.launch_date is not None:
+                release.launch_date = datetime.fromisoformat(args.launch_date)
+                updated = True
+            if updated:
+
+        # release = BSBlitzRelease(
+        #     release=args.release,
+        #     launch_date=args.launch,
+        #     cut_off=args.cut_off,
+        # )
+        # release.cut_off = round_epoch(release.cut_off, args.round_cut_off * 60)
+                update: dict[str, Any] = release.dict(exclude_unset=True, exclude_none=True)
+                del update["release"]
+                return await db.release_update(release, update=update)
     except Exception as err:
         error(f"{err}")
     return False

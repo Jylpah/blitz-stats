@@ -1,7 +1,7 @@
 from argparse import ArgumentParser, Namespace, SUPPRESS
 from configparser import ConfigParser
 from datetime import datetime
-from typing import Optional, Literal, Any, cast
+from typing import Optional, Any
 import logging
 from asyncio import run, create_task, gather, sleep, wait, Queue, CancelledError, Task
 from sortedcollections import NearestDict  # type: ignore
@@ -44,10 +44,6 @@ from blitzutils import (
     WGApi,
     Region,
     TankStat,
-    WGTankStatAll,
-    EnumVehicleTier,
-    EnumNation,
-    EnumVehicleTypeInt,
     add_args_wg,
 )
 
@@ -56,7 +52,6 @@ from .backend import (
     OptAccountsInactive,
     BSTableType,
     ACCOUNTS_Q_MAX,
-    MIN_UPDATE_INTERVAL,
     get_sub_type,
 )
 from .models import BSAccount, BSBlitzRelease, StatsTypes, BSTank
@@ -1066,8 +1061,8 @@ async def fetch_api_worker(
                 accountQ.task_done()
     except QueueDone:
         debug("accountQ has been processed")
-    except CancelledError as err:
-        debug(f"Cancelled")
+    except CancelledError:
+        debug("Cancelled")
     except Exception as err:
         error(f"{err}")
     finally:
@@ -1144,8 +1139,8 @@ async def fetch_backend_worker(
                 stats.log("old tank stats found", not_added)
                 debug(f"{added} tank stats added, {not_added} old tank stats found")
                 statsQ.task_done()
-    except CancelledError as err:
-        debug(f"Cancelled")
+    except CancelledError:
+        debug("Cancelled")
     except Exception as err:
         error(f"{err}")
     return stats
@@ -1386,8 +1381,8 @@ async def cmd_edit_rel_remap(
                     bar()
     except QueueDone:
         debug("tank stat queue processed")
-    except CancelledError as err:
-        debug(f"Cancelled")
+    except CancelledError:
+        debug("Cancelled")
     except Exception as err:
         error(f"{err}")
     return stats
@@ -1475,7 +1470,7 @@ async def prune_worker(
     sample: int = 0,
 ) -> EventCounter:
     """Worker to delete duplicates"""
-    debug(f"starting")
+    debug("starting")
     stats: EventCounter = EventCounter("duplicates")
     try:
         while True:
@@ -2295,8 +2290,8 @@ async def split_tank_statQ_by_region(
                     # if progress and Q_all.qsize() == 0:
                     #     break
 
-    except CancelledError as err:
-        debug(f"Cancelled")
+    except CancelledError:
+        debug("Cancelled")
     except Exception as err:
         error(f"{err}")
     finally:

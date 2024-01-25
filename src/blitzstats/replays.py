@@ -4,7 +4,6 @@ from typing import Optional, Iterable, Any
 import logging
 import queue
 from asyncio import create_task, gather, run, Queue, CancelledError, Task
-from os.path import isfile
 from os import getpid
 from alive_progress import alive_bar  # type: ignore
 from multiprocessing import Manager, cpu_count
@@ -15,7 +14,7 @@ from pyutils import EventCounter, JSONExportable, AsyncQueue
 from pyutils.utils import is_alphanum
 
 # from blitzutils.replay 			import ReplayJSON, ReplayData
-from blitzutils import Region, WoTinspector, ReplayJSON, ReplayData
+from blitzutils import ReplayJSON, ReplayData # noqa
 
 from .backend import Backend, BSTableType, get_sub_type
 from .models import BSBlitzReplay
@@ -288,9 +287,9 @@ async def cmd_import(db: Backend, args: Namespace) -> bool:
         sample: float = args.sample
         import_db: Backend | None = None
         import_backend: str = args.import_backend
-        import_model: type[BaseModel] | None = None
+        # import_model: type[BaseModel] | None = None
 
-        if (import_model := get_sub_type(args.import_model, BaseModel)) is None:
+        if (_ := get_sub_type(args.import_model, BaseModel)) is None:
             raise ValueError("--import-model has to be subclass of BaseModel")
 
         importer: Task = create_task(

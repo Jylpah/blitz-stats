@@ -2,7 +2,7 @@
 
 # Script fetch Blitz player stats and tank stats
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 from pyutils.multilevelformatter import MultilevelFormatter
 
@@ -16,16 +16,15 @@ except (ImportError, ModuleNotFoundError):
 from configparser import ConfigParser
 import logging
 from argparse import ArgumentParser
-from sys import argv, stdout
-from os import chdir, linesep
+from sys import stdout
+from os import linesep
 from os.path import isfile, dirname, realpath, expanduser
 from asyncio import run
-import sys
 
-sys.path.insert(0, dirname(dirname(realpath(__file__))))
+# sys.path.insert(0, dirname(dirname(realpath(__file__))))
 
 from blitzstats.backend import Backend
-from blitzstats.mongobackend import MongoBackend
+from blitzstats.mongobackend import MongoBackend # noqa
 from blitzstats import accounts
 from blitzstats import replays
 from blitzstats import releases

@@ -1,6 +1,6 @@
 from pydantic import Field, root_validator, validator
 from typing import Any
-from datetime import datetime, date
+from datetime import datetime
 from sys import maxsize
 from bson import ObjectId
 import logging

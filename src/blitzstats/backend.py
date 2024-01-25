@@ -1,29 +1,27 @@
-import queue
 import logging
 from configparser import ConfigParser
 from argparse import Namespace, ArgumentParser
 from abc import ABC, abstractmethod
 from os.path import isfile
-from typing import Optional, Any, Sequence, AsyncGenerator, TypeVar, cast, Type
+from typing import Optional, Any, Sequence, AsyncGenerator, TypeVar, Type
 from datetime import datetime
 from enum import StrEnum, IntEnum
 from asyncio import Queue, CancelledError
 from pydantic import Field
 
-from blitzutils.region import Region
 from blitzutils.wg_api import (
     TankStat,
     PlayerAchievementsMaxSeries,
-    PlayerAchievementsMain,
+    PlayerAchievementsMain,    # noqa
     WoTBlitzTankString,
 )
 
-from blitzutils.tank import Tank, EnumVehicleTier, EnumNation
-from blitzutils.replay import ReplayJSON, ReplayData
+from blitzutils.tank import Tank, EnumVehicleTier, EnumNation # noqa
+from blitzutils.replay import ReplayJSON, ReplayData  # noqa
 from blitzutils.region import Region
 
 from pyutils import EventCounter, IterableQueue, JSONExportable, QueueDone
-from pyutils.utils import epoch_now, is_alphanum
+from pyutils.utils import is_alphanum
 
 from .models import (
     BSAccount,
@@ -107,8 +105,8 @@ class OptAccountsInactive(StrEnum):
 
 class OptAccountsDistributed:
     def __init__(self, mod: int, div: int):
-        assert type(mod) is int and mod >= 0, "Modulus has to be integer >= 0"
-        assert type(div) is int and div > 0, "Divisor has to be positive integer"
+        assert isinstance(mod, int) and mod >= 0, "Modulus has to be integer >= 0"
+        assert isinstance(div, int) and div > 0, "Divisor has to be positive integer"
         self.div: int = div
         self.mod: int = mod % div
 
@@ -128,7 +126,7 @@ class OptAccountsDistributed:
         return None
 
     def match(self, value: int) -> bool:
-        assert type(value) is int, "value has to be integere"
+        assert isinstance(value, int), "value has to be integere"
         return value % self.div == self.mod
 
 
@@ -317,7 +315,8 @@ class Backend(ABC):
     def get(cls, backend: str) -> Optional[type["Backend"]]:
         try:
             return cls._backends[backend]
-        except:
+        except KeyError:
+            error(f"no such a backend registered: {backend}")
             return None
 
     @classmethod
@@ -816,8 +815,8 @@ class Backend(ABC):
             async for account in self.accounts_get(**getargs):
                 await accountQ.put(account)
                 stats.log("queued")
-        except CancelledError as err:
-            debug(f"Cancelled")
+        except CancelledError:
+            debug("Cancelled")
         except Exception as err:
             error(f"{err}")
         return stats
@@ -854,8 +853,8 @@ class Backend(ABC):
         except QueueDone:
             # IterableQueue() support
             pass
-        except CancelledError as err:
-            debug(f"Cancelled")
+        except CancelledError:
+            debug("Cancelled")
         except Exception as err:
             error(f"{err}")
         return stats
@@ -965,8 +964,8 @@ class Backend(ABC):
                     stats.log("errors")
                 finally:
                     releaseQ.task_done()
-        except CancelledError as err:
-            debug(f"Cancelled")
+        except CancelledError:
+            debug("Cancelled")
         except Exception as err:
             error(f"{err}")
         return stats
@@ -1035,8 +1034,8 @@ class Backend(ABC):
                     stats.log("errors")
                 finally:
                     replayQ.task_done()
-        except CancelledError as err:
-            debug(f"Cancelled")
+        except CancelledError:
+            debug("Cancelled")
         except Exception as err:
             error(f"{err}")
         return stats
@@ -1199,8 +1198,8 @@ class Backend(ABC):
                 await tank_statsQ.finish()
                 debug("tank_stats_get_worker(): finished")
 
-        except CancelledError as err:
-            debug(f"Cancelled")
+        except CancelledError:
+            debug("Cancelled")
         except Exception as err:
             error(f"{err}")
         return stats
@@ -1234,8 +1233,8 @@ class Backend(ABC):
                     stats.log("errors", read)
                 finally:
                     tank_statsQ.task_done()
-        except CancelledError as err:
-            debug(f"Cancelled")
+        except CancelledError:
+            debug("Cancelled")
         except Exception as err:
             error(f"{err}")
         return stats
@@ -1365,8 +1364,8 @@ class Backend(ABC):
                     stats.log("errors", read)
                 finally:
                     player_achievementsQ.task_done()
-        except CancelledError as err:
-            debug(f"Cancelled")
+        except CancelledError:
+            debug("Cancelled")
         except Exception as err:
             error(f"{err}")
         return stats
@@ -1485,8 +1484,8 @@ class Backend(ABC):
                     stats.log("errors")
                 finally:
                     tankQ.task_done()
-        except CancelledError as err:
-            debug(f"Cancelled")
+        except CancelledError:
+            debug("Cancelled")
         except Exception as err:
             error(f"{err}")
         return stats
