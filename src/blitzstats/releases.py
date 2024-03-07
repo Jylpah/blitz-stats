@@ -82,6 +82,7 @@ def add_args_add(parser: ArgumentParser, config: Optional[ConfigParser] = None) 
             "release", type=str, default=None, metavar="RELEASE", help="RELEASE to add"
         )
         parser.add_argument(
+            "--launch-date",
             "--launch",
             type=str,
             default=None,
@@ -91,7 +92,7 @@ def add_args_add(parser: ArgumentParser, config: Optional[ConfigParser] = None) 
         parser.add_argument(
             "--cut-off",
             type=str,
-            default=None,
+            default=0,
             metavar="EPOCH",
             help="release cut-off time",
         )
@@ -120,11 +121,12 @@ def add_args_edit(
         parser.add_argument(
             "--cut-off",
             type=str,
-            default=None,
+            default=0,
             metavar="EPOCH",
             help="new release cut-off time",
         )
         parser.add_argument(
+            "--launch-date",
             "--launch",
             type=str,
             default=None,
@@ -330,7 +332,7 @@ async def cmd_add(db: Backend, args: Namespace) -> bool:
     try:
         release = BSBlitzRelease(
             release=args.release,
-            launch_date=args.launch,
+            launch_date=args.launch_date,
             cut_off=args.cut_off,
         )
         release.cut_off = round_epoch(release.cut_off, args.round_cut_off * 60)
@@ -357,9 +359,10 @@ async def cmd_edit(db: Backend, args: Namespace) -> bool:
         debug("starting")
         release : BSBlitzRelease | None 
         updated : bool = False
+        cut_off : int = int(args.cut_off)
         if (release := await db.release_get(args.release)) is not None:
-            if args.cut_off > 0:
-                release.cut_off = round_epoch(args.cut_off, args.round_cut_off * 60)
+            if cut_off > 0:
+                release.cut_off = round_epoch(cut_off, args.round_cut_off * 60)
                 updated = True
             if args.launch_date is not None:
                 release.launch_date = datetime.fromisoformat(args.launch_date)
@@ -369,7 +372,7 @@ async def cmd_edit(db: Backend, args: Namespace) -> bool:
         # release = BSBlitzRelease(
         #     release=args.release,
         #     launch_date=args.launch,
-        #     cut_off=args.cut_off,
+        #     cut_off=cut_off,
         # )
         # release.cut_off = round_epoch(release.cut_off, args.round_cut_off * 60)
                 update: dict[str, Any] = release.dict(exclude_unset=True, exclude_none=True)
