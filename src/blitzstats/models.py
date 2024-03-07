@@ -1,6 +1,6 @@
 import logging
 from enum import StrEnum
-from typing import Optional, Any
+from typing import Optional, Any, ClassVar
 from pydantic import validator, root_validator, Field, ValidationError, Extra
 
 from pyutils.utils import epoch_now
@@ -213,7 +213,7 @@ BSAccount.register_transformation(Account, BSAccount.transform_Account)
 
 
 class BSBlitzRelease(Release):
-    _max_epoch: int = 2**63 - 1  # MAX_INT64 (signed)
+    _max_epoch: ClassVar[int] = 2**63 - 1  # MAX_INT64 (signed)
     cut_off: int = Field(default=_max_epoch)
 
     _exclude_defaults = False

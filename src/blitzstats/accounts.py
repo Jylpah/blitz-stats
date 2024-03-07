@@ -761,7 +761,7 @@ async def cmd_update(db: Backend, args: Namespace) -> bool:
     try:
         debug("starting")
 
-        stats = EventCounter("accounts update", totals="total")
+        stats = EventCounter("accounts update")
         updateQ: IterableQueue[BSAccount] = IterableQueue(maxsize=10000)
         db_worker = create_task(
             db.accounts_insert_worker(updateQ, force=True)
@@ -800,7 +800,7 @@ async def cmd_update_wg(
 ) -> EventCounter:
     """Update accounts from WG API"""
     debug("starting")
-    stats: EventCounter = EventCounter("WG API", totals="Total")
+    stats: EventCounter = EventCounter("WG API")
     try:
         regions: set[Region] = {Region(r) for r in args.regions}
         wg: WGApi = WGApi(

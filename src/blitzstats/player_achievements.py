@@ -350,7 +350,7 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
     )
 
     try:
-        stats: EventCounter = EventCounter("player-achievements fetch", totals="total")
+        stats: EventCounter = EventCounter("player-achievements fetch")
         regions: set[Region] = {Region(r) for r in args.regions}
         regionQs: dict[str, IterableQueue[list[BSAccount]]] = dict()
         retryQ: IterableQueue[BSAccount] = IterableQueue()
