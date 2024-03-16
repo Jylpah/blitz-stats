@@ -10,14 +10,14 @@ from multiprocessing import Manager, cpu_count
 from multiprocessing.pool import Pool, AsyncResult
 from pydantic import BaseModel
 
-from pyutils import EventCounter, JSONExportable, AsyncQueue
+from pyutils import EventCounter, AsyncQueue
 from pyutils.utils import is_alphanum
+from pydantic_exportables import JSONExportable
 
-# from blitzutils.replay 			import ReplayJSON, ReplayData
-from blitzutils import ReplayJSON, ReplayData # noqa
+# from blitzmodels.replay import ReplayJSON, ReplayData
+from blitzmodels.wotinspector.wi_apiv2 import Replay
 
 from .backend import Backend, BSTableType, get_sub_type
-from .models import Replay
 from .accounts import add_args_fetch_wi as add_args_accounts_fetch_wi
 from .accounts import cmd_fetch_wi as cmd_accounts_fetch_wi
 
@@ -188,7 +188,7 @@ def add_args_import(
             metavar="IMPORT-TYPE",
             type=str,
             required=True,
-            choices=["ReplayData", "ReplayJSON"],
+            choices=["Replay"],
             help="Data format to import. Default is blitz-stats native format.",
         )
 

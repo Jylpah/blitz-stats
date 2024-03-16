@@ -58,8 +58,8 @@ class BSAccount(Account):
     _exclude_defaults = False
 
     class Config:
-        allow_population_by_field_name = True
-        allow_mutation = True
+        populate_by_name = True
+
         validate_assignment = True
 
     @classmethod
@@ -136,13 +136,16 @@ class BSAccount(Account):
 
     @model_validator(mode="after")
     def set_inactive(self) -> Self:
-        """"
-        Set 'inactive' field based in players inactivity. 
-        If 'last_battle_time' == 0, set the player ACTIVE since to avoid 
+        """ "
+        Set 'inactive' field based in players inactivity.
+        If 'last_battle_time' == 0, set the player ACTIVE since to avoid
         inactivating players when creating player objects with default field values
-        """        
+        """
         if self.last_battle_time > 0:
-            self._set_skip_validation("inactive", epoch_now() - self.last_battle_time > self._min_inactivity_secs)
+            self._set_skip_validation(
+                "inactive",
+                epoch_now() - self.last_battle_time > self._min_inactivity_secs,
+            )
         else:
             self._set_skip_validation("inactive", False)
         return self
@@ -223,9 +226,8 @@ class BSBlitzRelease(Release):
     _exclude_defaults = False
 
     class Config:
-        allow_mutation = True
         validate_assignment = True
-        allow_population_by_field_name = True
+        populate_by_name = True
 
     @field_validator("cut_off")
     def check_cut_off_now(cls, v):
@@ -254,8 +256,6 @@ class BSBlitzRelease(Release):
         return super().txt_row(format) + extra
 
 
-    
-
 # class BSReplay(ReplaySummary):
 #     id: str | None = Field(default=None, alias="_id")
 
@@ -264,9 +264,9 @@ class BSBlitzRelease(Release):
 
 #     class Config:
 #         arbitrary_types_allowed = True
-#         allow_mutation = True
+#
 #         validate_assignment = True
-#         allow_population_by_field_name = True
+#         populate_by_name = True
 
 #     @property
 #     def index(self) -> Idx:
@@ -360,9 +360,9 @@ class BSTank(JSONExportable, CSVExportable, TXTExportable):
     _exclude_defaults = False
 
     class Config:
-        allow_mutation = True
+        
         validate_assignment = True
-        allow_population_by_field_name = True
+        populate_by_name = True
         # use_enum_values			= True
         extra = Extra.allow
 
@@ -385,8 +385,8 @@ class BSTank(JSONExportable, CSVExportable, TXTExportable):
         indexes.append([('tier', ASCENDING),
                         ('nation', ASCENDING)
                         ])
-        indexes.append([('name', TEXT)
-                        ])
+        indexes.append([('name', TEXT), ('code', TEXT)])
+        
         return indexes
 
     @field_validator('next_tanks')
@@ -414,38 +414,41 @@ class BSTank(JSONExportable, CSVExportable, TXTExportable):
 
     def __str__(self) -> str:
         return f'{self.name}'
-
-    @classmethod
-    def transform_WGTank(cls, in_obj: 'Tank') -> Optional['BSTank']:
-        """Transform Tank object to BSTank"""
-        try:
-            # debug(f'type={type(in_obj)}')
-            # debug(f'in_obj={in_obj}')
-            tank_type: EnumVehicleTypeInt | None = None
-            if in_obj.type is not None:
-                tank_type = in_obj.type.as_int
-            return BSTank(tank_id=in_obj.tank_id,
-                        name=in_obj.name,
-                        tier=in_obj.tier,
-                        type=tank_type,
-                        is_premium=in_obj.is_premium,
-                        nation=in_obj.nation,
-                        # code=in_obj.code,
-                        )
-        except Exception as err:
-            error(f'{err}')
-        return None
-
-
+    
+    
     def txt_row(self, format: str = '') -> str:
         """export data as single row of text"""
         if format == 'rich':
             return f'({self.tank_id}) {self.name} tier {self.tier} {self.type} {self.nation}'
         else:
             return f'({self.tank_id}) {self.name}'
+        
+        
+
+def Tank2BSTank(in_obj: Tank) -> Optional[BSTank]:
+    """Transform Tank object to BSTank"""
+    try:
+        # debug(f'type={type(in_obj)}')
+        # debug(f'in_obj={in_obj}')
+        tank_type: EnumVehicleTypeInt | None = None
+        if in_obj.type is not None:
+            tank_type = in_obj.type.as_int
+        return BSTank(tank_id=in_obj.tank_id,
+                    name=in_obj.name,
+                    tier=in_obj.tier,
+                    type=tank_type,
+                    is_premium=in_obj.is_premium,
+                    nation=in_obj.nation,
+                    code=in_obj.code,
+                    )
+    except Exception as err:
+        error(f'{err}')
+    return None
 
 
-def WGTank2Tank(in_obj: "BSTank") -> Optional["Tank"]:
+
+
+def BSTank2Tank(in_obj: "BSTank") -> Optional["Tank"]:
     """Transform BSTank object to Tank"""
     try:
         # debug(f'type={type(in_obj)}')
@@ -461,6 +464,7 @@ def WGTank2Tank(in_obj: "BSTank") -> Optional["Tank"]:
             type=tank_type,
             is_premium=in_obj.is_premium,
             nation=in_obj.nation,
+            code=in_obj.code,
         )
     except Exception as err:
         error(f"{err}")
@@ -468,5 +472,5 @@ def WGTank2Tank(in_obj: "BSTank") -> Optional["Tank"]:
 
 
 # register model transformations
-BSTank.register_transformation(Tank, BSTank.transform_WGTank)
-Tank.register_transformation(BSTank, WGTank2Tank)
+BSTank.register_transformation(Tank, Tank2BSTank)
+Tank.register_transformation(BSTank, BSTank2Tank)

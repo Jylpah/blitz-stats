@@ -11,7 +11,7 @@ from pydantic import Field
 
 from pydantic_exportables import JSONExportable
 
-from blitzmodels import Tank, EnumVehicleTier, EnumVehicleTypeInt, EnumNation, Region
+from blitzmodels import EnumVehicleTier, EnumVehicleTypeInt, EnumNation, Region
 from blitzmodels.wg_api import TankStat, PlayerAchievementsMaxSeries
 
 from blitzmodels.wotinspector.wi_apiv2 import Replay
@@ -126,12 +126,12 @@ class OptAccountsDistributed:
 class BSTableType(StrEnum):
     Accounts = "Accounts"
     Tankopedia = "Tankopedia"
-    TankStrings = "TankStrings"
+    # TankStrings = "TankStrings"
     Releases = "Releases"
     Replays = "Replays"
     TankStats = "TankStats"
     PlayerAchievements = "PlayerAchievements"
-    ErrorLog = "ErrorLog"
+    EventLog = "EventLog"
     AccountLog = "AccountLog"
 
 
@@ -150,14 +150,14 @@ class ErrorLogType(IntEnum):
 
 
 # ----------------------------------------
-# ErrorLog - entry for error log entries
+# EventLog - entry for error log entries
 # ----------------------------------------
 # WORK IN PROGRESS ##############################
-class ErrorLog(JSONExportable, ABC):
-    """Class for error log entries.
-    * Should it be abstract at all?
-    * How to deal with different backends with different indexes?
-    * Should 'doc_id' field use JSONExportable.indexes field?"""
+class EventLog(JSONExportable):
+    """Class for error log entries."""
+
+    # TODO: How to deal with different backends with different indexes?
+    # TODO: Should 'doc_id' field use JSONExportable.indexes field?
 
     table: str = Field(alias="t")
     doc_id: Any | None = Field(default=None, alias="did")
@@ -167,9 +167,8 @@ class ErrorLog(JSONExportable, ABC):
 
     class Config:
         arbitrary_types_allowed = True
-        allow_mutation = True
         validate_assignment = True
-        allow_population_by_field_name = True
+        populate_by_name = True
         # json_encoders = { ObjectId: str }
 
 
@@ -214,23 +213,23 @@ class Backend(ABC):
         # default tables
         self.set_table(BSTableType.Accounts, "Accounts")
         self.set_table(BSTableType.Tankopedia, "Tankopedia")
-        self.set_table(BSTableType.TankStrings, "TankStrings")
+        # self.set_table(BSTableType.TankStrings, "TankStrings")
         self.set_table(BSTableType.Releases, "Releases")
         self.set_table(BSTableType.Replays, "Replays")
         self.set_table(BSTableType.AccountLog, "AccountLog")
-        self.set_table(BSTableType.ErrorLog, "ErrorLog")
+        self.set_table(BSTableType.EventLog, "EventLog")
         self.set_table(BSTableType.TankStats, "TankStats")
         self.set_table(BSTableType.PlayerAchievements, "PlayerAchievements")
 
         # set default models
         self.set_model(BSTableType.Accounts, BSAccount)
-        self.set_model(BSTableType.Tankopedia, Tank)
+        self.set_model(BSTableType.Tankopedia, BSTank)
         # TODO: remove WoTBlitzTankString, not needed with new Tank model
         # self.set_model(BSTableType.TankStrings, WoTBlitzTankString)
         self.set_model(BSTableType.Releases, BSBlitzRelease)
         self.set_model(BSTableType.Replays, Replay)
-        self.set_model(BSTableType.AccountLog, ErrorLog)
-        self.set_model(BSTableType.ErrorLog, ErrorLog)
+        self.set_model(BSTableType.AccountLog, EventLog)
+        self.set_model(BSTableType.EventLog, EventLog)
         self.set_model(BSTableType.TankStats, TankStat)
         self.set_model(BSTableType.PlayerAchievements, PlayerAchievementsMaxSeries)
 
@@ -239,7 +238,7 @@ class Backend(ABC):
             self._cache_valid = configBackend.getint("cache_valid", MIN_UPDATE_INTERVAL)
             self.set_table(BSTableType.Accounts, configBackend.get("t_accounts"))
             self.set_table(BSTableType.Tankopedia, configBackend.get("t_tankopedia"))
-            self.set_table(BSTableType.TankStrings, configBackend.get("t_tank_strings"))
+            # self.set_table(BSTableType.TankStrings, configBackend.get("t_tank_strings"))
             self.set_table(BSTableType.Releases, configBackend.get("t_releases"))
             self.set_table(BSTableType.Replays, configBackend.get("t_replays"))
             self.set_table(BSTableType.TankStats, configBackend.get("t_tank_stats"))
@@ -248,11 +247,11 @@ class Backend(ABC):
                 configBackend.get("t_player_achievements"),
             )
             self.set_table(BSTableType.AccountLog, configBackend.get("t_account_log"))
-            self.set_table(BSTableType.ErrorLog, configBackend.get("t_error_log"))
+            self.set_table(BSTableType.EventLog, configBackend.get("t_error_log"))
 
             self.set_model(BSTableType.Accounts, configBackend.get("m_accounts"))
             self.set_model(BSTableType.Tankopedia, configBackend.get("m_tankopedia"))
-            self.set_model(BSTableType.TankStrings, configBackend.get("m_tank_strings"))
+            # self.set_model(BSTableType.TankStrings, configBackend.get("m_tank_strings"))
             self.set_model(BSTableType.Releases, configBackend.get("m_releases"))
             self.set_model(BSTableType.Replays, configBackend.get("m_replays"))
             self.set_model(BSTableType.TankStats, configBackend.get("m_tank_stats"))
@@ -261,7 +260,7 @@ class Backend(ABC):
                 configBackend.get("m_player_achievements"),
             )
             self.set_model(BSTableType.AccountLog, configBackend.get("m_account_log"))
-            self.set_model(BSTableType.ErrorLog, configBackend.get("m_error_log"))
+            self.set_model(BSTableType.EventLog, configBackend.get("m_event_log"))
 
     @abstractmethod
     def debug(self) -> None:
@@ -485,7 +484,12 @@ class Backend(ABC):
 
         return True
 
-    async def test_config(self, tables: List[str] = [tt.value for tt in BSTableType], tests: int = 1000) -> bool:  # type: ignore
+    # to keep Mypy happy...
+    _tables_default: List[str] = [tt.value for tt in BSTableType]
+
+    async def test_config(
+        self, tables: List[str] = _tables_default, tests: int = 1000
+    ) -> bool:  # type: ignore
         """Init backend and indexes"""
 
         # table_types: List[BSTableType] = [BSTableType(table) for table in tables]
@@ -642,9 +646,9 @@ class Backend(ABC):
     def table_tankopedia(self) -> str:
         return self.get_table(BSTableType.Tankopedia)
 
-    @property
-    def table_tank_strings(self) -> str:
-        return self.get_table(BSTableType.TankStrings)
+    # @property
+    # def table_tank_strings(self) -> str:
+    #     return self.get_table(BSTableType.TankStrings)
 
     @property
     def table_releases(self) -> str:
@@ -668,7 +672,7 @@ class Backend(ABC):
 
     @property
     def table_error_log(self) -> str:
-        return self.get_table(BSTableType.ErrorLog)
+        return self.get_table(BSTableType.EventLog)
 
     @property
     def model_accounts(self) -> type[JSONExportable]:
@@ -678,9 +682,9 @@ class Backend(ABC):
     def model_tankopedia(self) -> type[JSONExportable]:
         return self.get_model(BSTableType.Tankopedia)
 
-    @property
-    def model_tank_strings(self) -> type[JSONExportable]:
-        return self.get_model(BSTableType.TankStrings)
+    # @property
+    # def model_tank_strings(self) -> type[JSONExportable]:
+    #     return self.get_model(BSTableType.TankStrings)
 
     @property
     def model_releases(self) -> type[JSONExportable]:
@@ -704,7 +708,7 @@ class Backend(ABC):
 
     @property
     def model_error_log(self) -> type[JSONExportable]:
-        return self.get_model(BSTableType.ErrorLog)
+        return self.get_model(BSTableType.EventLog)
 
     # ----------------------------------------
     # Objects
@@ -1034,9 +1038,7 @@ class Backend(ABC):
             error(f"{err}")
         return stats
 
-    async def replays_export(
-        self, sample: float = 0
-    ) -> AsyncGenerator[Replay, None]:
+    async def replays_export(self, sample: float = 0) -> AsyncGenerator[Replay, None]:
         """Export replays from Mongo DB"""
         raise NotImplementedError
         yield Replay()
@@ -1365,12 +1367,12 @@ class Backend(ABC):
         return stats
 
     # ----------------------------------------
-    # ErrorLog
+    # EventLog
     # ----------------------------------------
 
     @abstractmethod
-    async def error_log(self, error: ErrorLog) -> bool:
-        """Log an error into the backend's ErrorLog"""
+    async def error_log(self, error: EventLog) -> bool:
+        """Log an error into the backend's EventLog"""
         raise NotImplementedError
 
     @abstractmethod
@@ -1379,10 +1381,10 @@ class Backend(ABC):
         table_type: BSTableType | None = None,
         doc_id: Any | None = None,
         after: datetime | None = None,
-    ) -> AsyncGenerator[ErrorLog, None]:
-        """Return errors from backend ErrorLog"""
+    ) -> AsyncGenerator[EventLog, None]:
+        """Return errors from backend EventLog"""
         raise NotImplementedError
-        yield ErrorLog(table="foo", error="bar")
+        yield EventLog(table="foo", error="bar")
 
     @abstractmethod
     async def errors_clear(
@@ -1391,7 +1393,7 @@ class Backend(ABC):
         doc_id: Any | None = None,
         after: datetime | None = None,
     ) -> int:
-        """Clear errors from backend ErrorLog"""
+        """Clear errors from backend EventLog"""
         raise NotImplementedError
 
     # ----------------------------------------

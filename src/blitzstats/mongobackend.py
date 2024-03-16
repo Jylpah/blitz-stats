@@ -11,15 +11,19 @@ from typing import (
     TypeVar,
     cast,
     Callable,
-    Dict, 
-    List, 
+    Dict,
+    List,
 )
 import logging
-import re
 
 from asyncio import Task, create_task, gather
 from bson import ObjectId
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCursor, AsyncIOMotorCollection  # type: ignore
+from motor.motor_asyncio import (  # type: ignore
+    AsyncIOMotorClient,
+    AsyncIOMotorDatabase,
+    AsyncIOMotorCursor,
+    AsyncIOMotorCollection,
+)  # type: ignore
 from pymongo.results import (
     InsertManyResult,
     InsertOneResult,
@@ -33,9 +37,9 @@ from pydantic_exportables import (
     AliasMapper,
     Idx,
     BackendIndex,
-    DESCENDING, 
-    ASCENDING, 
-    PyObjectId
+    DESCENDING,
+    ASCENDING,
+    PyObjectId,
 )
 from pyutils.utils import epoch_now
 from pyutils import awrap
@@ -44,7 +48,7 @@ from blitzmodels import (
     Region,
     TankStat,
     PlayerAchievementsMaxSeries,
-    WoTBlitzTankString,
+    # WoTBlitzTankString,
     EnumNation,
     EnumVehicleTier,
 )
@@ -55,7 +59,7 @@ from .backend import (
     OptAccountsDistributed,
     OptAccountsInactive,
     BSTableType,
-    ErrorLog,
+    EventLog,
     A,
 )
 from .models import (
@@ -78,14 +82,14 @@ TANK_STATS_BATCH: int = 1000
 MONGO_BATCH_SIZE: int = 1000
 
 
-class MongoErrorLog(ErrorLog):
+class MongoErrorLog(EventLog):
     doc_id: ObjectId | int | str | None = Field(default=None, alias="did")
 
     class Config:
         arbitrary_types_allowed = True
-        allow_mutation = True
+
         validate_assignment = True
-        allow_population_by_field_name = True
+        populate_by_name = True
         json_encoders = {ObjectId: str}
 
 
@@ -164,9 +168,9 @@ class MongoBackend(Backend):
 
                 self.set_table(BSTableType.Accounts, configMongo.get("t_accounts"))
                 self.set_table(BSTableType.Tankopedia, configMongo.get("t_tankopedia"))
-                self.set_table(
-                    BSTableType.TankStrings, configMongo.get("t_tank_strings")
-                )
+                # self.set_table(
+                #     BSTableType.TankStrings, configMongo.get("t_tank_strings")
+                # )
                 self.set_table(BSTableType.Releases, configMongo.get("t_releases"))
                 self.set_table(BSTableType.Replays, configMongo.get("t_replays"))
                 self.set_table(BSTableType.TankStats, configMongo.get("t_tank_stats"))
@@ -175,13 +179,13 @@ class MongoBackend(Backend):
                     configMongo.get("t_player_achievements"),
                 )
                 self.set_table(BSTableType.AccountLog, configMongo.get("t_account_log"))
-                self.set_table(BSTableType.ErrorLog, configMongo.get("t_error_log"))
+                self.set_table(BSTableType.EventLog, configMongo.get("t_error_log"))
 
                 self.set_model(BSTableType.Accounts, configMongo.get("m_accounts"))
                 self.set_model(BSTableType.Tankopedia, configMongo.get("m_tankopedia"))
-                self.set_model(
-                    BSTableType.TankStrings, configMongo.get("m_tank_strings")
-                )
+                # self.set_model(
+                #     BSTableType.TankStrings, configMongo.get("m_tank_strings")
+                # )
                 self.set_model(BSTableType.Releases, configMongo.get("m_releases"))
                 self.set_model(BSTableType.Replays, configMongo.get("m_replays"))
                 self.set_model(BSTableType.TankStats, configMongo.get("m_tank_stats"))
@@ -190,7 +194,7 @@ class MongoBackend(Backend):
                     configMongo.get("m_player_achievements"),
                 )
                 self.set_model(BSTableType.AccountLog, configMongo.get("m_account_log"))
-                self.set_model(BSTableType.ErrorLog, configMongo.get("m_error_log"))
+                self.set_model(BSTableType.EventLog, configMongo.get("m_event_log"))
 
             if db_config is not None:
                 kwargs = db_config | kwargs
@@ -278,9 +282,9 @@ class MongoBackend(Backend):
     def collection_tankopedia(self) -> AsyncIOMotorCollection:
         return self.get_collection(BSTableType.Tankopedia)
 
-    @property
-    def collection_tank_strings(self) -> AsyncIOMotorCollection:
-        return self.get_collection(BSTableType.TankStrings)
+    # @property
+    # def collection_tank_strings(self) -> AsyncIOMotorCollection:
+    #     return self.get_collection(BSTableType.TankStrings)
 
     @property
     def collection_player_achievements(self) -> AsyncIOMotorCollection:
@@ -292,7 +296,7 @@ class MongoBackend(Backend):
 
     @property
     def collection_error_log(self) -> AsyncIOMotorCollection:
-        return self.get_collection(BSTableType.ErrorLog)
+        return self.get_collection(BSTableType.EventLog)
 
     @property
     def collection_account_log(self) -> AsyncIOMotorCollection:
@@ -1756,9 +1760,7 @@ class MongoBackend(Backend):
             )
         return -1
 
-    async def replays_export(
-        self, sample: float = 0
-    ) -> AsyncGenerator[Replay, None]:
+    async def replays_export(self, sample: float = 0) -> AsyncGenerator[Replay, None]:
         """Export replays from Mongo DB"""
         debug("starting")
         async for replay in self._datas_export(
@@ -2400,46 +2402,46 @@ class MongoBackend(Backend):
     #
     ########################################################
 
-    async def tank_string_insert(
-        self, tank_str: WoTBlitzTankString, force: bool = True
-    ) -> bool:
-        """ "insert a tank string"""
-        if force:
-            return await self._data_replace(
-                BSTableType.TankStrings, obj=tank_str, upsert=True
-            )
-        else:
-            return await self._data_insert(BSTableType.TankStrings, tank_str)
+    # async def tank_string_insert(
+    #     self, tank_str: WoTBlitzTankString, force: bool = True
+    # ) -> bool:
+    #     """ "insert a tank string"""
+    #     if force:
+    #         return await self._data_replace(
+    #             BSTableType.TankStrings, obj=tank_str, upsert=True
+    #         )
+    #     else:
+    #         return await self._data_insert(BSTableType.TankStrings, tank_str)
 
-    async def tank_string_get(self, code: str) -> WoTBlitzTankString | None:
-        """Get a tank string from the backend"""
-        debug("starting")
-        if (
-            tank_str := await self._data_get(BSTableType.TankStrings, idx=code)
-        ) is not None:
-            return WoTBlitzTankString.from_obj(tank_str, self.model_tank_strings)
-        return None
+    # async def tank_string_get(self, code: str) -> WoTBlitzTankString | None:
+    #     """Get a tank string from the backend"""
+    #     debug("starting")
+    #     if (
+    #         tank_str := await self._data_get(BSTableType.TankStrings, idx=code)
+    #     ) is not None:
+    #         return WoTBlitzTankString.from_obj(tank_str, self.model_tank_strings)
+    #     return None
 
-    async def tank_strings_get(
-        self, search: str | None
-    ) -> AsyncGenerator[WoTBlitzTankString, None]:
-        debug("starting")
-        try:
-            model: type[JSONExportable] = self.model_tank_strings
-            mapper: AliasMapper = AliasMapper(model)
-            alias: Callable = mapper.alias
-            if search is not None and bool(re.match(r"^[a-zA-Z\s]+$", search)):
-                async for obj in self.collection_tank_strings.find(
-                    {alias("name"): {"$regex": search, "$options": "i"}}
-                ):
-                    if (res := WoTBlitzTankString.from_obj(obj, model)) is not None:
-                        yield res
-            else:
-                async for obj in self.collection_tank_strings.find():
-                    if (res := WoTBlitzTankString.from_obj(obj, model)) is not None:
-                        yield res
-        except Exception as err:
-            error(f"Could't get tank strings for search string: {search}: {err}")
+    # async def tank_strings_get(
+    #     self, search: str | None
+    # ) -> AsyncGenerator[WoTBlitzTankString, None]:
+    #     debug("starting")
+    #     try:
+    #         model: type[JSONExportable] = self.model_tank_strings
+    #         mapper: AliasMapper = AliasMapper(model)
+    #         alias: Callable = mapper.alias
+    #         if search is not None and bool(re.match(r"^[a-zA-Z\s]+$", search)):
+    #             async for obj in self.collection_tank_strings.find(
+    #                 {alias("name"): {"$regex": search, "$options": "i"}}
+    #             ):
+    #                 if (res := WoTBlitzTankString.from_obj(obj, model)) is not None:
+    #                     yield res
+    #         else:
+    #             async for obj in self.collection_tank_strings.find():
+    #                 if (res := WoTBlitzTankString.from_obj(obj, model)) is not None:
+    #                     yield res
+    #     except Exception as err:
+    #         error(f"Could't get tank strings for search string: {search}: {err}")
 
     ########################################################
     #
@@ -2447,8 +2449,8 @@ class MongoBackend(Backend):
     #
     ########################################################
 
-    async def error_log(self, error: ErrorLog) -> bool:
-        """Log an error into the backend's ErrorLog"""
+    async def error_log(self, error: EventLog) -> bool:
+        """Log an error into the backend's EventLog"""
         try:
             debug("starting")
             debug(f"Logging error: {error.table}: {error.msg}")
@@ -2457,7 +2459,7 @@ class MongoBackend(Backend):
             return True
         except Exception as err:
             debug(
-                f'Could not log error: {error.table}: "{error.msg}" into {self.table_uri(BSTableType.ErrorLog)}: {err}'
+                f'Could not log error: {error.table}: "{error.msg}" into {self.table_uri(BSTableType.EventLog)}: {err}'
             )
         return False
 
@@ -2466,8 +2468,8 @@ class MongoBackend(Backend):
         table_type: BSTableType | None = None,
         doc_id: Any | None = None,
         after: datetime | None = None,
-    ) -> AsyncGenerator[ErrorLog, None]:
-        """Return errors from backend ErrorLog"""
+    ) -> AsyncGenerator[EventLog, None]:
+        """Return errors from backend EventLog"""
         try:
             debug("starting")
             dbc: AsyncIOMotorCollection = self.collection_error_log
@@ -2485,7 +2487,7 @@ class MongoBackend(Backend):
                 try:
                     err = MongoErrorLog.parse_obj(error_obj)
                     debug(
-                        f'Read "{err.msg}" from {self.table_uri(BSTableType.ErrorLog)}'
+                        f'Read "{err.msg}" from {self.table_uri(BSTableType.EventLog)}'
                     )
 
                     yield err
@@ -2494,7 +2496,7 @@ class MongoBackend(Backend):
                     continue
         except Exception as e:
             error(
-                f"Error getting errors from {self.table_uri(BSTableType.ErrorLog)}: {e}"
+                f"Error getting errors from {self.table_uri(BSTableType.EventLog)}: {e}"
             )
 
     async def errors_clear(
@@ -2503,7 +2505,7 @@ class MongoBackend(Backend):
         doc_id: Any | None = None,
         after: datetime | None = None,
     ) -> int:
-        """Clear errors from backend ErrorLog"""
+        """Clear errors from backend EventLog"""
         try:
             debug("starting")
 
@@ -2520,7 +2522,7 @@ class MongoBackend(Backend):
             return res.deleted_count
         except Exception as e:
             error(
-                f"Error clearing errors from {self.table_uri(BSTableType.ErrorLog)}: {e}"
+                f"Error clearing errors from {self.table_uri(BSTableType.EventLog)}: {e}"
             )
         return 0
 

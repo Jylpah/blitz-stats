@@ -1,6 +1,6 @@
 from argparse import ArgumentParser, Namespace
 from configparser import ConfigParser
-from typing import Optional, Any
+from typing import Optional, Any, List, Dict
 import logging
 from asyncio import create_task, gather, wait, Queue, Task, sleep
 from sortedcollections import NearestDict  # type: ignore
@@ -11,13 +11,12 @@ from pyutils import (
     EventCounter,
     IterableQueue,
 )
-from pyutils.exportable import export
+from pydantic_exportables import export
 from pyutils.utils import is_alphanum
-from blitzutils import Release  # noqa
+from blitzmodels import Release  # noqa
 
 from .backend import Backend, BSTableType
 from .models import BSBlitzRelease
-from .models_import import WG_Release   # noqa
 
 logger = logging.getLogger()
 error = logger.error
@@ -194,7 +193,7 @@ def add_args_import(
             metavar="IMPORT-TYPE",
             type=str,
             required=True,
-            choices=["BSBlitzRelease", "WG_Release"],
+            choices=["BSBlitzRelease"],
             help="data format to import. Default is blitz-stats native format.",
         )
         parser.add_argument(

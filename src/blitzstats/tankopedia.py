@@ -7,13 +7,14 @@ import json
 
 # from yappi import profile 					# type: ignore
 
-from pyutils import export, IterableQueue, EventCounter
-from blitzutils import (
+from pyutils import IterableQueue, EventCounter
+from pydantic_exportables import export
+from blitzmodels import (
     EnumNation,
     EnumVehicleTier,
     EnumVehicleTypeInt,
 )
-from blitzutils import (
+from blitzmodels import (
     Tank,
     Region,
     add_args_wg,
@@ -197,6 +198,7 @@ def add_args_update_file(
             "file",
             type=str,
             default=tankopedia_file,
+            nargs="?",
             metavar="FILE",
             help=f"read tankopedia update from FILE (default: {tankopedia_file})",
         )
@@ -673,7 +675,7 @@ async def cmd_update(db: Backend, args: Namespace) -> bool:
         added: set[int]
         updated: set[int]
         try:
-            (added, updated) = tankopedia.update(tankopedia_new)
+            (added, updated) = tankopedia.update_tanks(new=tankopedia_new)
         except Exception as err:
             error(f"failed to update tankopedia: {err}")
             raise
@@ -753,8 +755,6 @@ async def cmd_update_wg(db: Backend, args: Namespace) -> WGApiWoTBlitzTankopedia
     region: Region = Region[args.wg_region]
     async with WGApi(
         app_id=args.wg_app_id,
-        ru_app_id=args.ru_app_id,
         rate_limit=args.wg_rate_limit,
-        ru_rate_limit=args.ru_rate_limit,
     ) as wg:
         return await wg.get_tankopedia(region=region)

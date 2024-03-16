@@ -22,7 +22,7 @@ import queue
 
 from pyutils import IterableQueue, QueueDone, EventCounter, AsyncQueue
 from pyutils.utils import epoch_now, alive_bar_monitor, is_alphanum
-from blitzutils import (
+from blitzmodels import (
     Region,
     PlayerAchievementsMaxSeries,
     WGApi,
@@ -344,9 +344,7 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
     debug("starting")
     wg: WGApi = WGApi(
         app_id=args.wg_app_id,
-        ru_app_id=args.ru_app_id,
         rate_limit=args.wg_rate_limit,
-        ru_rate_limit=args.ru_rate_limit,
     )
 
     try:

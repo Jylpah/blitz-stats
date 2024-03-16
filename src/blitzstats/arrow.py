@@ -8,7 +8,7 @@ import logging
 
 from os import makedirs
 from os.path import isfile, dirname
-from typing import Any
+from typing import Any, List, Dict
 from enum import Enum, IntEnum
 import os.path
 from bson.objectid import ObjectId

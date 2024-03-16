@@ -30,17 +30,17 @@ import pyarrow.dataset as ds  # type: ignore
 # from pandas.io.json import json_normalize	# type: ignore
 
 from pyutils import (
-    JSONExportable,
     IterableQueue,
     QueueDone,
     EventCounter,
     AsyncQueue,
     QCounter,
 )
-from pyutils.exportable import export
+
 from pyutils.utils import alive_bar_monitor
 
-from blitzutils import (
+from pydantic_exportables import JSONExportable, export
+from blitzmodels import (
     WGApi,
     Region,
     TankStat,
@@ -809,9 +809,7 @@ async def fetch_mp_worker(region: Region) -> EventCounter:
     THREADS: int = args.wg_workers
     wg: WGApi = WGApi(
         app_id=args.wg_app_id,
-        ru_app_id=args.ru_app_id,
         rate_limit=args.wg_rate_limit,
-        ru_rate_limit=args.ru_rate_limit,
     )
     try:
         args.regions = {region}
@@ -890,9 +888,7 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
     debug("starting")
     wg: WGApi = WGApi(
         app_id=args.wg_app_id,
-        ru_app_id=args.ru_app_id,
         rate_limit=args.wg_rate_limit,
-        ru_rate_limit=args.ru_rate_limit,
     )
 
     try:
