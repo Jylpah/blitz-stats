@@ -1,6 +1,6 @@
 from argparse import ArgumentParser, Namespace
 from configparser import ConfigParser
-from typing import Optional, Any, Sequence
+from typing import Optional, Any, Sequence, List, Dict
 from datetime import datetime, timedelta
 import logging
 from asyncio import create_task, gather, wait, Queue, CancelledError, Task, sleep
@@ -14,18 +14,18 @@ from pyutils import (
     IterableQueue,
     QueueDone,
 )
-from pyutils.exportable import export
-from pyutils.utils import alive_bar_monitor, get_url_model, chunker
+from pydantic_exportables.exportable import export
+from pyutils.utils import alive_bar_monitor, chunker
 
-from blitzutils import (
-    ReplayJSON,
+from blitzmodels import (
     Region,
     Account,  # noqa
     AccountInfo,
     WGApi,
-    WoTinspector,
     add_args_wg,
 )
+
+from blitzmodels.wotinspector.wi_apiv2 import Replay, ReplaySummary, WoTinspector
 
 from .backend import (
     Backend,
@@ -35,7 +35,7 @@ from .backend import (
     BSTableType,
     ACCOUNTS_Q_MAX,
 )
-from .models import BSAccount, BSBlitzReplay, StatsTypes, BSBlitzRelease
+from .models import BSAccount, StatsTypes, BSBlitzRelease
 
 
 logger = logging.getLogger()
@@ -55,7 +55,7 @@ YS_CLIENT_ID: str = "none"
 YS_CLIENT_SECRET: str = "missing"
 YS_DAYS_SINCE: int = 30
 
-EXPORT_SUPPORTED_FORMATS: list[str] = ["json", "txt", "csv"]
+EXPORT_SUPPORTED_FORMATS: List[str] = ["json", "txt", "csv"]
 
 ACCOUNT_INFO_CACHE_VALID: int = 7  # days
 
@@ -661,8 +661,8 @@ def add_args_import(
             "--region",
             type=str,
             nargs="*",
-            choices=[r.value for r in Region.has_stats()],
-            default=[r.value for r in Region.has_stats()],
+            choices=[r.value for r in Region.API_regions()],
+            default=[r.value for r in Region.API_regions()],
             help="Filter by region (default is API = eu + com + asia)",
         )
         parser.add_argument(
@@ -805,14 +805,12 @@ async def cmd_update_wg(
         regions: set[Region] = {Region(r) for r in args.regions}
         wg: WGApi = WGApi(
             app_id=args.wg_app_id,
-            ru_app_id=args.ru_app_id,
             rate_limit=args.wg_rate_limit,
-            ru_rate_limit=args.ru_rate_limit,
         )
         WORKERS: int = max([args.wg_workers, 1])
-        workQ_creators: list[Task] = list()
-        api_workers: list[Task] = list()
-        workQs: dict[Region, IterableQueue[list[BSAccount]]] = dict()
+        workQ_creators: List[Task] = list()
+        api_workers: List[Task] = list()
+        workQs: Dict[Region, IterableQueue[List[BSAccount]]] = dict()
 
         for region in regions:
             workQs[region] = IterableQueue(maxsize=100)
@@ -868,16 +866,16 @@ async def cmd_update_wg(
 async def update_account_info_worker(
     wg: WGApi,
     region: Region,
-    workQ: IterableQueue[list[BSAccount]],
+    workQ: IterableQueue[List[BSAccount]],
     updateQ: IterableQueue[BSAccount],
 ) -> EventCounter:
     """Update accounts with data from WG API accounts/info"""
     debug("starting")
     stats: EventCounter = EventCounter(f"{region}")
-    infos: list[AccountInfo] | None
-    accounts: dict[int, BSAccount]
+    infos: List[AccountInfo] | None
+    accounts: Dict[int, BSAccount]
     account: BSAccount
-    ids: list[int] = list()
+    ids: List[int] = list()
 
     await updateQ.add_producer()
     try:
@@ -892,7 +890,7 @@ async def update_account_info_worker(
                     raise ValueError(f"Incorrect number of account_ids give {N}")
 
                 ids = list(accounts.keys())
-                ids_stats: list[int] = list()
+                ids_stats: List[int] = list()
                 if (infos := await wg.get_account_info(ids, region)) is not None:
                     stats.log("stats found", len(infos))
 
@@ -902,7 +900,7 @@ async def update_account_info_worker(
                             account = accounts[info.account_id]
                             ids_stats.append(info.account_id)
                             # error(f'updating account_id={a.id}: {info}')
-                            if account.update(info):
+                            if account.update_info(info):
                                 debug(
                                     "account_id=%d region=%s: updated",
                                     account.id,
@@ -994,16 +992,16 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
     return False
 
 
-# async def add_worker(db: Backend, accountQ: Queue[list[BSAccount]]) -> EventCounter:
+# async def add_worker(db: Backend, accountQ: Queue[List[BSAccount]]) -> EventCounter:
 # 	"""worker to read accounts from queue and add those to backend"""
-# 	## REFACTOR: use Queue[list[BSAccount]] instead
+# 	## REFACTOR: use Queue[List[BSAccount]] instead
 # 	debug('starting')
 # 	stats 		: EventCounter = EventCounter(f'{db.driver}')
 # 	added 		: int
 # 	not_added 	: int
 # 	try:
 # 		while True:
-# 			accounts : list[BSAccount] = await accountQ.get()
+# 			accounts : List[BSAccount] = await accountQ.get()
 # 			try:
 # 				debug(f'Read {len(accounts)} from queue')
 # 				stats.log('accounts total', len(accounts))
@@ -1049,13 +1047,11 @@ async def cmd_fetch_wg(
     stats: EventCounter = EventCounter("WG API")
     wg: WGApi = WGApi(
         app_id=args.wg_app_id,
-        ru_app_id=args.ru_app_id,
         rate_limit=args.wg_rate_limit,
-        ru_rate_limit=args.ru_rate_limit,
     )
-    id_creators: list[Task] = list()
-    api_workers: list[Task] = list()
-    latest: dict[Region, BSAccount] = dict()
+    id_creators: List[Task] = list()
+    api_workers: List[Task] = list()
+    latest: Dict[Region, BSAccount] = dict()
     try:
         regions: set[Region] = {Region(r) for r in args.regions}
         start: int = args.wg_start_id
@@ -1069,7 +1065,7 @@ async def cmd_fetch_wg(
 
         WORKERS: int = max([int(args.wg_workers), 1])
 
-        idQs: dict[Region, IterableQueue[Sequence[int]]] = dict()
+        idQs: Dict[Region, IterableQueue[Sequence[int]]] = dict()
 
         if start == 0 and not force and args.file is None:
             message("finding latest accounts by region")
@@ -1112,7 +1108,7 @@ async def cmd_fetch_wg(
                         )
                     )
                 else:
-                    ids: list[int] = list()
+                    ids: List[int] = list()
                     await idQs[region].add_producer()
                     async for account in BSAccount.import_file(args.file):
                         if account.region != region:
@@ -1196,7 +1192,7 @@ async def fetch_account_info_worker(
     debug("starting")
     stats: EventCounter = EventCounter(f"{region}")
     left: int = null_responses
-    infos: list[AccountInfo] | None
+    infos: List[AccountInfo] | None
     ids: Sequence[int]
 
     try:
@@ -1257,7 +1253,7 @@ async def cmd_fetch_wi(
     debug("starting")
     stats: EventCounter = EventCounter("WoTinspector")
     workersN: int = args.wi_workers
-    workers: list[Task] = list()
+    workers: List[Task] = list()
     max_pages: int = args.wi_max_pages
     start_page: int = args.wi_start_page
     rate_limit: float = args.wi_rate_limit
@@ -1342,7 +1338,7 @@ async def cmd_fetch_wi(
 # 					if len(replay_ids) == 0:
 # 						break
 # 					for replay_id in replay_ids:
-# 						res: BSBlitzReplay | None = await db.replay_get(replay_id=replay_id)
+# 						res: Replay | None = await db.replay_get(replay_id=replay_id)
 # 						if res is not None:
 # 							debug(f'Replay already in the {db.backend}: {replay_id}')
 # 							stats.log('old replays found')
@@ -1385,20 +1381,26 @@ async def fetch_wi_get_replay_ids(
                         raise CancelledError
                         #  break
                     debug(f"spidering page {page}")
-
-                    for replay_id in await wi.get_replay_ids(page):
-                        res: BSBlitzReplay | None = await db.replay_get(
-                            replay_id=replay_id
-                        )
-                        if res is not None:
-                            debug(f"Replay already in the {db.backend}: {replay_id}")
-                            stats.log("old replays found")
-                            if not force:
-                                old_replays += 1
-                            continue
-                        else:
-                            await replay_idQ.put(replay_id)
-                            stats.log("new replays")
+                    replay_summaries : List[ReplaySummary] | None
+                    replay_summary : ReplaySummary
+                    if (replay_summaries := await wi.get_replay_list(page)) is not None:
+                        for replay_summary in replay_summaries:
+                            res: Replay | None = await db.replay_get(
+                                replay_id=replay_summary.id
+                            )
+                            if res is not None:
+                                debug(f"Replay already in the {db.backend}: {replay_summary.id}")
+                                stats.log("old replays found")
+                                if not force:
+                                    old_replays += 1
+                                    continue
+                                else:
+                                    stats.log("old replays to re-fetch")
+                            else:                                
+                                stats.log("new replays")
+                            await replay_idQ.put(replay_summary.id)
+                    else:
+                        debug(f"No replays found for page {page}")
                 except KeyboardInterrupt:
                     debug("CTRL+C pressed, stopping...")
                     raise CancelledError
@@ -1426,15 +1428,13 @@ async def fetch_wi_fetch_replays(
         while not replay_idQ.empty():
             replay_id = await replay_idQ.get()
             try:
-                url: str = wi.get_url_replay_JSON(replay_id)
-                replay: ReplayJSON | None = await get_url_model(
-                    wi.session, url, ReplayJSON
-                )
-                if replay is None:
+                replay : Replay | None
+                if (replay := await wi.get_replay(replay_id)) is None:
                     verbose(f"Could not fetch replay id: {replay_id}")
+                    stats.log("errors")
                     continue
                 if accountQ is not None:
-                    account_ids: list[int] = replay.get_players()
+                    account_ids: List[int] = replay.allies + replay.enemies
                     stats.log("players found", len(account_ids))
                     for account_id in account_ids:
                         await accountQ.put(BSAccount(id=account_id))
@@ -1535,7 +1535,7 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
         debug("starting")
 
         ## not implemented...
-        # query_args : dict[str, str | int | float | bool ] = dict()
+        # query_args : Dict[str, str | int | float | bool ] = dict()
         stats: EventCounter = EventCounter("accounts export")
         # disabled: bool = args.disabled
         inactive: OptAccountsInactive = OptAccountsInactive.default()
@@ -1545,11 +1545,11 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
         force: bool = args.force
         export_stdout: bool = filename == "-"
         # sample: float = args.sample
-        accountQs: dict[str, IterableQueue[BSAccount]] = dict()
-        account_workers: list[Task] = list()
-        export_workers: list[Task] = list()
+        accountQs: Dict[str, IterableQueue[BSAccount]] = dict()
+        account_workers: List[Task] = list()
+        export_workers: List[Task] = list()
 
-        accounts_args: dict[str, Any] | None
+        accounts_args: Dict[str, Any] | None
         if (accounts_args := await accounts_parse_args(db, args)) is None:
             raise ValueError(f"could not parse args: {args}")
 
@@ -1735,7 +1735,7 @@ async def create_accountQ(
     debug("starting")
     regions: set[Region] = set(args.region)
     try:
-        accounts: list[BSAccount] | None = None
+        accounts: List[BSAccount] | None = None
         try:
             accounts = read_args_accounts(args.accounts)
         except Exception:
@@ -1765,7 +1765,7 @@ async def create_accountQ(
                     stats.log("read")
 
         else:
-            accounts_args: dict[str, Any] | None
+            accounts_args: Dict[str, Any] | None
             if (accounts_args := await accounts_parse_args(db, args)) is not None:
                 async for account in db.accounts_get(
                     stats_type=stats_type, **accounts_args
@@ -1794,7 +1794,7 @@ async def create_accountQ_batch(
     db: Backend,
     args: Namespace,
     region: Region,
-    accountQ: IterableQueue[list[BSAccount]],
+    accountQ: IterableQueue[List[BSAccount]],
     stats_type: StatsTypes | None = None,
     batch: int = 100,
 ) -> EventCounter:
@@ -1802,7 +1802,7 @@ async def create_accountQ_batch(
     stats: EventCounter = EventCounter(f"{db.driver}: accounts")
     debug(f"starting: {region}")
     try:
-        accounts: list[BSAccount] | None = None
+        accounts: List[BSAccount] | None = None
         try:
             accounts = read_args_accounts(args.accounts)
         except Exception:
@@ -1855,7 +1855,7 @@ async def create_accountQ_batch(
             # end = time()
             # message(f'{total} accounts, counting took {end - start}')
 
-            accounts_args: dict[str, Any] | None
+            accounts_args: Dict[str, Any] | None
             if (accounts_args := await accounts_parse_args(db, args)) is not None:
                 accounts_args["regions"] = {region}
                 async for accounts in batch_gen(
@@ -1891,7 +1891,7 @@ async def create_accountQ_active(
     stats: EventCounter = EventCounter("accounts")
     try:
         if randomize:
-            workers: list[Task] = list()
+            workers: List[Task] = list()
             for r in regions:
                 workers.append(
                     create_task(
@@ -1917,7 +1917,7 @@ async def create_accountQ_active(
 
 
 async def split_accountQ(
-    inQ: IterableQueue[BSAccount], regionQs: dict[str, IterableQueue[BSAccount]]
+    inQ: IterableQueue[BSAccount], regionQs: Dict[str, IterableQueue[BSAccount]]
 ) -> EventCounter:
     """split accountQ by region"""
     debug("starting")
@@ -1958,12 +1958,12 @@ async def split_accountQ(
 
 async def split_accountQ_batch(
     inQ: IterableQueue[BSAccount],
-    regionQs: dict[str, IterableQueue[list[BSAccount]]],
+    regionQs: Dict[str, IterableQueue[List[BSAccount]]],
     batch: int = 100,
 ) -> EventCounter:
     """Make accountQ batches by region"""
     stats: EventCounter = EventCounter("batch maker")
-    batches: dict[str, list[BSAccount]] = dict()
+    batches: Dict[str, List[BSAccount]] = dict()
     region: str
     try:
         for region, Q in regionQs.items():
@@ -2004,8 +2004,8 @@ async def split_accountQ_batch(
     return stats
 
 
-def read_args_accounts(accounts: Sequence[str]) -> list[BSAccount] | None:
-    res: list[BSAccount] = list()
+def read_args_accounts(accounts: Sequence[str]) -> List[BSAccount] | None:
+    res: List[BSAccount] = list()
     for a in accounts:
         try:
             if (acc := BSAccount(id=a)) is not None:
@@ -2019,9 +2019,9 @@ def read_args_accounts(accounts: Sequence[str]) -> list[BSAccount] | None:
 
 async def accounts_read_from_db(
     db: Backend, accounts: Sequence[BSAccount], db_only: bool = False
-) -> list[BSAccount]:
+) -> List[BSAccount]:
     """Read DB versions of "skeleton" accounts from DB"""
-    res: list[BSAccount] = list()
+    res: List[BSAccount] = list()
     for acc in accounts:
         if (account_db := await db.account_get(account_id=acc.id)) is not None:
             res.append(account_db)
@@ -2033,10 +2033,10 @@ async def accounts_read_from_db(
 async def accounts_parse_args(
     db: Backend,
     args: Namespace,
-) -> dict[str, Any] | None:
+) -> Dict[str, Any] | None:
     """parse accounts args"""
     debug("starting")
-    res: dict[str, Any] = dict()
+    res: Dict[str, Any] = dict()
 
     try:
         regions: set[Region] = set()

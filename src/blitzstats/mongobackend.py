@@ -11,6 +11,8 @@ from typing import (
     TypeVar,
     cast,
     Callable,
+    Dict, 
+    List, 
 )
 import logging
 import re
@@ -26,18 +28,19 @@ from pymongo.results import (
 from pymongo.errors import BulkWriteError, CollectionInvalid, ConnectionFailure
 from pydantic import ValidationError, Field
 
-from pyutils import (
+from pydantic_exportables import (
     JSONExportable,
     AliasMapper,
     Idx,
-    BackendIndexType,
     BackendIndex,
-    awrap,
+    DESCENDING, 
+    ASCENDING, 
+    PyObjectId
 )
-from pyutils.exportable import DESCENDING, ASCENDING
 from pyutils.utils import epoch_now
+from pyutils import awrap
 
-from blitzutils import (
+from blitzmodels import (
     Region,
     TankStat,
     PlayerAchievementsMaxSeries,
@@ -45,6 +48,7 @@ from blitzutils import (
     EnumNation,
     EnumVehicleTier,
 )
+from blitzmodels.wotinspector.wi_apiv2 import Replay
 
 from .backend import (
     Backend,
@@ -57,7 +61,6 @@ from .backend import (
 from .models import (
     BSAccount,
     BSBlitzRelease,
-    BSBlitzReplay,
     StatsTypes,
     BSTank,
     EnumVehicleTypeInt,
@@ -94,10 +97,7 @@ class MongoErrorLog(ErrorLog):
 
 D = TypeVar("D", bound="JSONExportable")
 J = TypeVar("J", bound="JSONExportable")
-O = TypeVar("O", bound="JSONExportable")
-
-MongoIndexAscDesc = BackendIndexType
-MongoIndex = BackendIndex
+OutJSONExportable = TypeVar("OutJSONExportable", bound="JSONExportable")
 
 
 class MongoBackend(Backend):
@@ -107,10 +107,10 @@ class MongoBackend(Backend):
     def __init__(
         self,
         config: ConfigParser | None = None,
-        db_config: dict[str, Any] | None = None,
+        db_config: Dict[str, Any] | None = None,
         database: str | None = None,
-        table_config: dict[BSTableType, str] | None = None,
-        model_config: dict[BSTableType, type[JSONExportable]] | None = None,
+        table_config: Dict[BSTableType, str] | None = None,
+        model_config: Dict[BSTableType, type[JSONExportable]] | None = None,
         **kwargs,
     ):
         """Init MongoDB backend from config file and CLI args
@@ -122,7 +122,7 @@ class MongoBackend(Backend):
                 config=config, db_config=db_config, database=database, **kwargs
             )
 
-            mongodb_rc: dict[str, Any] = dict()
+            mongodb_rc: Dict[str, Any] = dict()
             self._client: AsyncIOMotorClient
             self.db: AsyncIOMotorDatabase
 
@@ -302,21 +302,21 @@ class MongoBackend(Backend):
         self,
         table_type: BSTableType,
         mapper: AliasMapper,
-        index: Sequence[MongoIndex],
-        db_fields: list[str] | None = None,
+        index: Sequence[BackendIndex],
+        db_fields: List[str] | None = None,
     ) -> bool:
         """Helper to create index to a collection"""
         try:
             debug(f"starting: collection={self.get_table(table_type)}")
             dbc: AsyncIOMotorCollection = self.get_collection(table_type)
-            index_str: list[str] = list()
+            index_str: List[str] = list()
             field: Final = 0
             direction: Final = 1
             for idx_elem in index:
                 index_str.append(f"{idx_elem[field]}: {idx_elem[direction]}")
             message(f"Adding index: {', '.join(index_str)}")
 
-            db_index: list[MongoIndex]
+            db_index: List[BackendIndex]
             if db_fields is None:
                 db_index = list(mapper.map(index).items())
             else:
@@ -370,11 +370,11 @@ class MongoBackend(Backend):
     @classmethod
     def read_args(
         cls, args: Namespace, driver: str, importdb: bool = False
-    ) -> dict[str, Any]:
+    ) -> Dict[str, Any]:
         debug("starting")
         if driver != cls.driver:
             raise ValueError(f"calling {cls}.read_args() for {driver} backend")
-        kwargs: dict[str, Any] = Backend.read_args_helper(
+        kwargs: Dict[str, Any] = Backend.read_args_helper(
             args, ["host", "database"], importdb=importdb
         )
         kwargs = {k: v for k, v in kwargs.items() if v is not None}
@@ -400,7 +400,7 @@ class MongoBackend(Backend):
         )
 
     async def init_collection(
-        self, table_type: BSTableType, indexes: list[list[BackendIndex]] | None = None
+        self, table_type: BSTableType, indexes: List[List[BackendIndex]] | None = None
     ) -> bool:
         """Helper to create index to a collection"""
         debug("starting")
@@ -428,7 +428,7 @@ class MongoBackend(Backend):
         return False
 
     # type: ignore
-    async def init(self, tables: list[str] = [tt.name for tt in BSTableType]) -> bool:  # type: ignore
+    async def init(self, tables: List[str] = [tt.name for tt in BSTableType]) -> bool:  # type: ignore
         """Init MongoDB backend: create tables and set indexes"""
         try:
             debug("starting")
@@ -450,7 +450,7 @@ class MongoBackend(Backend):
     ########################################################
 
     async def _datas_get(
-        self, table_type: BSTableType, pipeline: list[dict[str, Any]], **options
+        self, table_type: BSTableType, pipeline: List[Dict[str, Any]], **options
     ) -> AsyncGenerator[JSONExportable, None]:
         try:
             debug("starting")
@@ -473,16 +473,16 @@ class MongoBackend(Backend):
     async def _datas_get_batch(
         self,
         table_type: BSTableType,
-        pipeline: list[dict[str, Any]],
+        pipeline: List[Dict[str, Any]],
         batch: int = 100,
         **options,
-    ) -> AsyncGenerator[list[JSONExportable], None]:
+    ) -> AsyncGenerator[List[JSONExportable], None]:
         """get data in batches"""
         try:
             debug("starting")
             dbc: AsyncIOMotorCollection = self.get_collection(table_type)
             model: type[JSONExportable] = self.get_model(table_type)
-            datas: list[JSONExportable] = list()
+            datas: List[JSONExportable] = list()
             async for obj in dbc.aggregate(pipeline, allowDiskUse=True, **options):
                 try:
                     datas.append(model.parse_obj(obj))
@@ -504,15 +504,15 @@ class MongoBackend(Backend):
         self,
         table_type: BSTableType,
         in_type: type[D],
-        out_type: type[O],
+        out_type: type[OutJSONExportable],
         sample: float = 0,
         **options,
-    ) -> AsyncGenerator[O, None]:
+    ) -> AsyncGenerator[OutJSONExportable, None]:
         """Export data from Mongo DB"""
         try:
             debug(f"starting export from: {self.table_uri(table_type)}")
             dbc: AsyncIOMotorCollection = self.get_collection(table_type)
-            pipeline: list[dict[str, Any]] = list()
+            pipeline: List[Dict[str, Any]] = list()
 
             if sample > 0 and sample < 1:
                 N: int = await dbc.estimated_document_count()
@@ -623,7 +623,7 @@ class MongoBackend(Backend):
         idx: Idx | None = None,
         obj: JSONExportable | None = None,
         update: dict | None = None,
-        fields: list[str] | None = None,
+        fields: List[str] | None = None,
     ) -> bool:
         """Generic method to update an object of data_type"""
         debug("starting")
@@ -647,7 +647,7 @@ class MongoBackend(Backend):
         elif idx is None or update is None:
             raise ValueError("'update' is required with 'idx'")
 
-        alias_fields: dict[str, Any] = AliasMapper(model).map(update.items())
+        alias_fields: Dict[str, Any] = AliasMapper(model).map(update.items())
 
         if (
             _ := await dbc.find_one_and_update({"_id": idx}, {"$set": alias_fields})
@@ -688,7 +688,7 @@ class MongoBackend(Backend):
             model: type[JSONExportable] = self.get_model(table_type)
             if len(objs) == 0:
                 raise ValueError("No data to insert")
-            datas: list[JSONExportable | None] = [
+            datas: List[JSONExportable | None] = [
                 model.transform(obj) for obj in objs
             ]  # transform_many()
 
@@ -713,7 +713,7 @@ class MongoBackend(Backend):
         return added, not_added
 
     async def _datas_count(
-        self, table_type: BSTableType, pipeline: list[dict[str, Any]]
+        self, table_type: BSTableType, pipeline: List[Dict[str, Any]]
     ) -> int:
         try:
             debug("starting")
@@ -728,8 +728,8 @@ class MongoBackend(Backend):
         return -1
 
     def _mk_pipeline_unique(
-        self, table_type: BSTableType, field: str, pipeline: list[dict[str, Any]]
-    ) -> list[dict[str, Any]] | None:
+        self, table_type: BSTableType, field: str, pipeline: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]] | None:
         """Create pipeline to return unique values of 'field' in
         documents { 'field': unique_value }"""
         try:
@@ -756,7 +756,7 @@ class MongoBackend(Backend):
         table_type: BSTableType,
         field: str,
         field_type: type[A],
-        pipeline: list[dict[str, Any]],
+        pipeline: List[Dict[str, Any]],
     ) -> AsyncGenerator[A, None]:
         """Return unique values of 'field' in documents { 'field': unique_value }"""
         try:
@@ -779,7 +779,7 @@ class MongoBackend(Backend):
             error(f"Error counting documents in {self.table_uri(table_type)}: {err}")
 
     async def _datas_unique_count(
-        self, table_type: BSTableType, field: str, pipeline: list[dict[str, Any]]
+        self, table_type: BSTableType, field: str, pipeline: List[Dict[str, Any]]
     ) -> int:
         """Return unique values of 'field' in documents { 'field': unique_value }"""
         try:
@@ -805,7 +805,7 @@ class MongoBackend(Backend):
     async def obj_export(
         self,
         table_type: BSTableType,
-        pipeline: list[dict[str, Any]] = list(),
+        pipeline: List[Dict[str, Any]] = list(),
         sample: float = 0,
     ) -> AsyncGenerator[Any, None]:
         """Export raw documents from Mongo DB"""
@@ -829,10 +829,10 @@ class MongoBackend(Backend):
     async def objs_export(
         self,
         table_type: BSTableType,
-        pipeline: list[dict[str, Any]] = list(),
+        pipeline: List[Dict[str, Any]] = list(),
         sample: float = 0,
         batch: int = 0,
-    ) -> AsyncGenerator[list[Any], None]:
+    ) -> AsyncGenerator[List[Any], None]:
         """Export raw documents as a list from Mongo DB"""
         try:
             debug("starting")
@@ -882,8 +882,8 @@ class MongoBackend(Backend):
     async def account_update(
         self,
         account: BSAccount,
-        update: dict[str, Any] | None = None,
-        fields: list[str] | None = None,
+        update: Dict[str, Any] | None = None,
+        fields: List[str] | None = None,
     ) -> bool:
         """Update an account in the backend. Returns False
         if the account was not updated"""
@@ -916,7 +916,7 @@ class MongoBackend(Backend):
         inactive_since: int = 0,
         sample: float = 0,
         cache_valid: float = 0,
-    ) -> list[dict[str, Any]] | None:
+    ) -> List[Dict[str, Any]] | None:
         assert sample >= 0, f"'sample' must be >= 0, was {sample}"
         try:
             debug("starting")
@@ -924,8 +924,8 @@ class MongoBackend(Backend):
             a = AliasMapper(db_model)
             alias: Callable = a.alias
             dbc: AsyncIOMotorCollection = self.collection_accounts
-            match: list[dict[str, str | int | float | dict | list]] = list()
-            pipeline: list[dict[str, Any]] = list()
+            match: List[Dict[str, str | int | float | dict | list]] = list()
+            pipeline: List[Dict[str, Any]] = list()
 
             cache_valid *= 24 * 3600
             update_field: str | None = None
@@ -936,7 +936,7 @@ class MongoBackend(Backend):
             # https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
 
             if accounts is not None:
-                db_accounts: list[JSONExportable] = db_model.transform_many(accounts)
+                db_accounts: List[JSONExportable] = db_model.transform_many(accounts)
                 match.append(
                     {
                         alias("id"): {
@@ -993,10 +993,10 @@ class MongoBackend(Backend):
             error(f"{err}")
         return None
 
-    def _get_query(self, pipeline: list[dict[str, Any]]) -> Any | None:
+    def _get_query(self, pipeline: List[Dict[str, Any]]) -> Any | None:
         """convert aggregation pipeline's $match into a find(query)"""
         debug("starting")
-        stage: dict[str, Any]
+        stage: Dict[str, Any]
         try:
             for stage in pipeline:
                 if "$match" in stage.keys():
@@ -1022,7 +1022,7 @@ class MongoBackend(Backend):
         inactive: true = only inactive, false = not inactive, none = AUTO"""
         try:
             debug("starting")
-            pipeline: list[dict[str, Any]] | None
+            pipeline: List[Dict[str, Any]] | None
             pipeline = await self._mk_pipeline_accounts(
                 stats_type=stats_type,
                 regions=regions,
@@ -1089,7 +1089,7 @@ class MongoBackend(Backend):
                 return int(sample) * len(regions)
             elif (
                 stats_type is None
-                and regions == Region.has_stats()
+                and regions == Region.API_regions()
                 and inactive == OptAccountsInactive.both
                 and disabled is None
                 and active_since == 0
@@ -1097,7 +1097,7 @@ class MongoBackend(Backend):
             ):
                 total = cast(int, await dbc.estimated_document_count())
             else:
-                pipeline: list[dict[str, Any]] | None
+                pipeline: List[Dict[str, Any]] | None
                 pipeline = await self._mk_pipeline_accounts(
                     stats_type=stats_type,
                     regions=regions,
@@ -1140,23 +1140,23 @@ class MongoBackend(Backend):
         debug("starting")
         return await self._datas_insert(BSTableType.Accounts, accounts)
 
-    async def accounts_latest(self, regions: set[Region]) -> dict[Region, BSAccount]:
+    async def accounts_latest(self, regions: set[Region]) -> Dict[Region, BSAccount]:
         """Return the latest accounts (=highest account_id) per region"""
         debug("starting")
-        res: dict[Region, BSAccount] = dict()
+        res: Dict[Region, BSAccount] = dict()
         try:
             model: type[JSONExportable] = self.model_accounts
             dbc: AsyncIOMotorCollection = self.collection_accounts
             a = AliasMapper(model)
             alias: Callable = a.alias
-            pipeline: list[dict[str, Any]] | None
+            pipeline: List[Dict[str, Any]] | None
 
             account: BSAccount | None
             for region in regions:
                 if (
                     pipeline := await self._mk_pipeline_accounts(
                         regions={region},
-                        id_range=region.id_range_players,
+                        id_range=region.id_range,
                         inactive=OptAccountsInactive.both,
                         disabled=None,
                     )
@@ -1198,7 +1198,7 @@ class MongoBackend(Backend):
         """Return a player_achievement from the backend"""
         debug("starting")
         try:
-            idx: ObjectId = PlayerAchievementsMaxSeries.mk_index(
+            idx: PyObjectId = PlayerAchievementsMaxSeries.mk_index(
                 account_id=account.id, region=account.region, added=added
             )
             if (
@@ -1214,7 +1214,7 @@ class MongoBackend(Backend):
         try:
             debug("starting")
             debug(f"account={account}, added={added}")
-            idx: ObjectId = PlayerAchievementsMaxSeries.mk_index(
+            idx: PyObjectId = PlayerAchievementsMaxSeries.mk_index(
                 account.id, region=account.region, added=added
             )
             return await self._data_delete(BSTableType.PlayerAchievements, idx=idx)
@@ -1238,7 +1238,7 @@ class MongoBackend(Backend):
         accounts: Iterable[BSAccount] | None = None,
         since: int = 0,
         sample: float = 0,
-    ) -> list[dict[str, Any]] | None:
+    ) -> List[Dict[str, Any]] | None:
         assert sample >= 0, f"'sample' must be >= 0, was {sample}"
         try:
             debug("starting")
@@ -1255,15 +1255,15 @@ class MongoBackend(Backend):
             alias: Callable = a.alias
 
             dbc: AsyncIOMotorCollection = self.collection_player_achievements
-            pipeline: list[dict[str, Any]] = list()
-            match: list[dict[str, str | int | float | dict | list]] = list()
+            pipeline: List[Dict[str, Any]] = list()
+            match: List[Dict[str, str | int | float | dict | list]] = list()
 
             # Pipeline build based on ESR rule
             # https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
 
             if release is not None:
                 match.append({alias("release"): release.release})
-            if regions != Region.has_stats():
+            if regions != Region.API_regions():
                 match.append({alias("region"): {"$in": [r.value for r in regions]}})
             if accounts is not None:
                 match.append({alias("account_id"): {"$in": [a.id for a in accounts]}})
@@ -1294,7 +1294,7 @@ class MongoBackend(Backend):
         """Return player achievements from the backend"""
         try:
             debug("starting")
-            pipeline: list[dict[str, Any]] | None
+            pipeline: List[Dict[str, Any]] | None
             pipeline = await self._mk_pipeline_player_achievements(
                 release=release,
                 regions=regions,
@@ -1330,7 +1330,7 @@ class MongoBackend(Backend):
             debug("starting")
             dbc: AsyncIOMotorCollection = self.collection_player_achievements
 
-            if release is None and regions == Region.has_stats():
+            if release is None and regions == Region.API_regions():
                 total: int = cast(int, await dbc.estimated_document_count())
                 # print(f'player achievements: total={total}, sample={sample}')
                 if sample == 0:
@@ -1340,7 +1340,7 @@ class MongoBackend(Backend):
                 else:
                     return int(min(total, sample))
             else:
-                pipeline: list[dict[str, Any]] | None
+                pipeline: List[Dict[str, Any]] | None
                 pipeline = await self._mk_pipeline_player_achievements(
                     release=release, regions=regions, accounts=accounts, sample=sample
                 )
@@ -1353,7 +1353,7 @@ class MongoBackend(Backend):
             error(f"counting player achievements failed: {err}")
         return -1
 
-    # async def player_achievements_update(self, player_achievements: list[PlayerAchievementsMaxSeries], upsert: bool = False) -> tuple[int, int]:
+    # async def player_achievements_update(self, player_achievements: List[PlayerAchievementsMaxSeries], upsert: bool = False) -> tuple[int, int]:
     # 	"""Update or upsert player achievements to the backend. Returns number of stats updated and not updated"""
     # 	debug('starting')
     # 	return await self._datas_update(BSTableType.PlayerAchievements,
@@ -1376,7 +1376,7 @@ class MongoBackend(Backend):
         self,
         sample: float = 0,
         batch: int = 0,
-    ) -> AsyncGenerator[list[PlayerAchievementsMaxSeries], None]:
+    ) -> AsyncGenerator[List[PlayerAchievementsMaxSeries], None]:
         """Export player achievements as a list from Mongo DB"""
         debug("starting")
         if batch == 0:
@@ -1399,7 +1399,7 @@ class MongoBackend(Backend):
         try:
             a: AliasMapper = AliasMapper(self.model_player_achievements)
             alias: Callable = a.alias
-            pipeline: list[dict[str, Any]] | None
+            pipeline: List[Dict[str, Any]] | None
             if (
                 pipeline := await self._mk_pipeline_player_achievements(
                     release=release, regions=regions
@@ -1457,7 +1457,6 @@ class MongoBackend(Backend):
         debug("starting")
         try:
             debug(f"release={release}")
-            release = BSBlitzRelease.validate_release(release)
             if (
                 obj := await self._data_get(BSTableType.Releases, idx=release)
             ) is not None:
@@ -1559,8 +1558,8 @@ class MongoBackend(Backend):
     async def release_update(
         self,
         release: BSBlitzRelease,
-        update: dict[str, Any] | None = None,
-        fields: list[str] | None = None,
+        update: Dict[str, Any] | None = None,
+        fields: List[str] | None = None,
     ) -> bool:
         """Update an release in the backend. Returns False
         if the release was not updated"""
@@ -1589,12 +1588,12 @@ class MongoBackend(Backend):
         release_match: str | None = None,
         since: int = 0,
         first: BSBlitzRelease | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> List[Dict[str, Any]]:
         """Build aggregation pipeline for releases"""
         try:
             debug("starting")
-            match: list[dict[str, str | int | float | datetime | dict | list]] = list()
-            pipeline: list[dict[str, Any]] = list()
+            match: List[Dict[str, str | int | float | datetime | dict | list]] = list()
+            pipeline: List[Dict[str, Any]] = list()
             a = AliasMapper(self.model_releases)
             alias: Callable = a.alias
             if since > 0:
@@ -1624,12 +1623,12 @@ class MongoBackend(Backend):
         assert since == 0 or first is None, "Only one can be defined: since, first"
         debug("starting")
         try:
-            pipeline: list[dict[str, Any]]
+            pipeline: List[Dict[str, Any]]
             pipeline = await self._mk_pipeline_releases(
                 release_match=release_match, since=since, first=first
             )
 
-            releases: list[BSBlitzRelease] = list()
+            releases: List[BSBlitzRelease] = list()
             async for data in self._datas_get(BSTableType.Releases, pipeline=pipeline):
                 if (release := BSBlitzRelease.transform(data)) is not None:
                     releases.append(release)
@@ -1663,13 +1662,13 @@ class MongoBackend(Backend):
         # return await self._data_insert(self.collection_replays, replay)
         return await self._data_insert(BSTableType.Replays, obj=replay)
 
-    async def replay_get(self, replay_id: str) -> BSBlitzReplay | None:
+    async def replay_get(self, replay_id: str) -> Replay | None:
         """Get replay from backend"""
         debug("starting")
         if (
             rep := await self._data_get(BSTableType.Replays, idx=replay_id)
         ) is not None:
-            return BSBlitzReplay.from_obj(rep, self.model_replays)
+            return Replay.from_obj(rep, self.model_replays)
         return None
 
     async def replay_delete(self, replay_id: str) -> bool:
@@ -1687,12 +1686,12 @@ class MongoBackend(Backend):
 
     async def _mk_pipeline_replays(
         self, since: int = 0, sample: float = 0, **summary_fields
-    ) -> list[dict[str, Any]]:
+    ) -> List[Dict[str, Any]]:
         """Build pipeline for replays"""
         assert sample >= 0, f"'sample' must be >= 0, was {sample}"
         debug("starting")
-        match: list[dict[str, str | int | float | dict | list]] = list()
-        pipeline: list[dict[str, Any]] = list()
+        match: List[Dict[str, str | int | float | dict | list]] = list()
+        pipeline: List[Dict[str, Any]] = list()
         dbc: AsyncIOMotorCollection = self.collection_replays
         a: AliasMapper = AliasMapper(self.model_replays)
         alias: Callable = a.alias
@@ -1723,17 +1722,17 @@ class MongoBackend(Backend):
 
     async def replays_get(
         self, since: int = 0, sample: float = 0, **summary_fields
-    ) -> AsyncGenerator[BSBlitzReplay, None]:
+    ) -> AsyncGenerator[Replay, None]:
         """Get replays from mongodb backend"""
         debug("starting")
         try:
             debug("starting")
-            pipeline: list[dict[str, Any]]
+            pipeline: List[Dict[str, Any]]
             pipeline = await self._mk_pipeline_replays(
                 since=since, sample=sample, **summary_fields
             )
             async for data in self._datas_get(BSTableType.Replays, pipeline):
-                if (replay := BSBlitzReplay.transform(data)) is not None:
+                if (replay := Replay.transform(data)) is not None:
                     yield replay
         except Exception as err:
             error(
@@ -1746,7 +1745,7 @@ class MongoBackend(Backend):
         """Count replays in backed"""
         try:
             debug("starting")
-            pipeline: list[dict[str, Any]] = await self._mk_pipeline_replays(
+            pipeline: List[Dict[str, Any]] = await self._mk_pipeline_replays(
                 since=since, sample=sample, **summary_fields
             )
             return await self._datas_count(BSTableType.Replays, pipeline)
@@ -1759,13 +1758,13 @@ class MongoBackend(Backend):
 
     async def replays_export(
         self, sample: float = 0
-    ) -> AsyncGenerator[BSBlitzReplay, None]:
+    ) -> AsyncGenerator[Replay, None]:
         """Export replays from Mongo DB"""
         debug("starting")
         async for replay in self._datas_export(
             BSTableType.Replays,
             in_type=self.model_replays,
-            out_type=BSBlitzReplay,
+            out_type=Replay,
             sample=sample,
         ):
             yield replay
@@ -1792,7 +1791,7 @@ class MongoBackend(Backend):
         """Return tank stats from the backend"""
         try:
             debug("starting")
-            idx: ObjectId = TankStat.mk_id(account_id, last_battle_time, tank_id)
+            idx: PyObjectId = TankStat.mk_id(account_id, last_battle_time, tank_id)
             if (
                 res := await self._data_get(BSTableType.TankStats, idx=idx)
             ) is not None:
@@ -1804,8 +1803,8 @@ class MongoBackend(Backend):
     async def tank_stat_update(
         self,
         tank_stat: TankStat,
-        update: dict[str, Any] | None = None,
-        fields: list[str] | None = None,
+        update: Dict[str, Any] | None = None,
+        fields: List[str] | None = None,
     ) -> bool:
         """Update an tank stat in the backend. Returns False
         if the tank stat was not updated"""
@@ -1829,7 +1828,7 @@ class MongoBackend(Backend):
     ) -> bool:
         try:
             debug("starting")
-            idx: ObjectId = TankStat.mk_id(account_id, last_battle_time, tank_id)
+            idx: PyObjectId = TankStat.mk_id(account_id, last_battle_time, tank_id)
             return await self._data_delete(BSTableType.TankStats, idx=idx)
         except Exception as err:
             error(f"Unknown error: {err}")
@@ -1859,7 +1858,7 @@ class MongoBackend(Backend):
         missing: str | None = None,
         since: int = 0,
         sample: float = 0,
-    ) -> list[dict[str, Any]] | None:
+    ) -> List[Dict[str, Any]] | None:
         assert sample >= 0, f"'sample' must be >= 0, was {sample}"
         try:
             debug("starting")
@@ -1882,8 +1881,8 @@ class MongoBackend(Backend):
             a = AliasMapper(self.model_tank_stats)
             alias: Callable = a.alias
             dbc: AsyncIOMotorCollection = self.collection_tank_stats
-            pipeline: list[dict[str, Any]] = list()
-            match: list[dict[str, str | int | float | dict | list]] = list()
+            pipeline: List[Dict[str, Any]] = list()
+            match: List[Dict[str, str | int | float | dict | list]] = list()
 
             # Pipeline build based on ESR rule
             # https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
@@ -1919,7 +1918,7 @@ class MongoBackend(Backend):
         account: BSAccount,
         release: BSBlitzRelease,
         # tanks: 		Sequence[BSTank] | None = None,
-    ) -> list[dict[str, Any]] | None:
+    ) -> List[Dict[str, Any]] | None:
         try:
             debug("starting")
 
@@ -1941,8 +1940,8 @@ class MongoBackend(Backend):
 
             a = AliasMapper(self.model_tank_stats)
             alias: Callable = a.alias
-            pipeline: list[dict[str, Any]] = list()
-            match: list[dict[str, str | int | float | dict | list]] = list()
+            pipeline: List[Dict[str, Any]] = list()
+            match: List[Dict[str, str | int | float | dict | list]] = list()
 
             # Pipeline build based on ESR rule
             # https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
@@ -1977,7 +1976,7 @@ class MongoBackend(Backend):
         """Return tank stats from the backend"""
         try:
             debug("starting")
-            pipeline: list[dict[str, Any]] | None
+            pipeline: List[Dict[str, Any]] | None
             pipeline = await self._mk_pipeline_tank_stats(
                 release=release,
                 regions=regions,
@@ -2006,11 +2005,11 @@ class MongoBackend(Backend):
         self,
         account: BSAccount,
         release: BSBlitzRelease,
-    ) -> AsyncGenerator[list[TankStat], None]:
+    ) -> AsyncGenerator[List[TankStat], None]:
         """Return tank stats from the backend"""
         try:
             debug("starting")
-            pipeline: list[dict[str, Any]] | None
+            pipeline: List[Dict[str, Any]] | None
 
             pipeline = await self._mk_pipeline_tank_stats_latest(
                 account=account, release=release
@@ -2049,7 +2048,7 @@ class MongoBackend(Backend):
             debug("starting")
             dbc: AsyncIOMotorCollection = self.collection_tank_stats
 
-            if release is None and regions == Region.has_stats():
+            if release is None and regions == Region.API_regions():
                 total: int = cast(int, await dbc.estimated_document_count())
                 if sample == 0:
                     return total
@@ -2058,7 +2057,7 @@ class MongoBackend(Backend):
                 else:
                     return int(min(total, sample))
             else:
-                pipeline: list[dict[str, Any]] | None
+                pipeline: List[Dict[str, Any]] | None
                 pipeline = await self._mk_pipeline_tank_stats(
                     release=release,
                     regions=regions,
@@ -2092,7 +2091,7 @@ class MongoBackend(Backend):
 
     async def tank_stats_export(
         self, sample: float = 0, batch: int = 0
-    ) -> AsyncGenerator[list[TankStat], None]:
+    ) -> AsyncGenerator[List[TankStat], None]:
         """Export tank stats as list from Mongo DB"""
         debug("starting")
         if batch == 0:
@@ -2114,7 +2113,7 @@ class MongoBackend(Backend):
         try:
             a = AliasMapper(self.model_tank_stats)
             alias: Callable = a.alias
-            pipeline: list[dict[str, Any]] | None
+            pipeline: List[Dict[str, Any]] | None
             if (
                 pipeline := await self._mk_pipeline_tank_stats(
                     release=release, regions=regions, tanks=[tank]
@@ -2169,7 +2168,7 @@ class MongoBackend(Backend):
         """Return unique values of field"""
         debug("starting")
         try:
-            pipeline: list[dict[str, Any]] | None
+            pipeline: List[Dict[str, Any]] | None
             accounts: Sequence[BSAccount] | None = None
             tanks: Sequence[BSTank] | None = None
 
@@ -2205,7 +2204,7 @@ class MongoBackend(Backend):
         debug("starting")
 
         try:
-            pipeline: list[dict[str, Any]] | None
+            pipeline: List[Dict[str, Any]] | None
             accounts: Sequence[BSAccount] | None = None
             tanks: Sequence[BSTank] | None = None
 
@@ -2215,7 +2214,7 @@ class MongoBackend(Backend):
                 tanks = [tank]
             count: int = 0
             # loop is faster since the collection has too much data
-            workers: list[Task] = list()
+            workers: List[Task] = list()
             for r in regions:
                 if (
                     pipeline := await self._mk_pipeline_tank_stats(
@@ -2247,18 +2246,18 @@ class MongoBackend(Backend):
 
     def _mk_tankopedia_pipeline(
         self,
-        tanks: list[BSTank] | None = None,
+        tanks: List[BSTank] | None = None,
         tier: EnumVehicleTier | None = None,
         tank_type: EnumVehicleTypeInt | None = None,
         nation: EnumNation | None = None,
         is_premium: bool | None = None,
-    ) -> list[dict[str, Any]] | None:
+    ) -> List[Dict[str, Any]] | None:
         debug("starting")
         try:
             a: AliasMapper = AliasMapper(self.model_tankopedia)
             alias: Callable = a.alias
-            match: list[dict[str, str | int | float | dict | list]] = list()
-            pipeline: list[dict[str, Any]] = list()
+            match: List[Dict[str, str | int | float | dict | list]] = list()
+            pipeline: List[Dict[str, Any]] = list()
             if is_premium is not None:
                 match.append({alias("is_premium"): is_premium})
             if tier is not None:
@@ -2290,7 +2289,7 @@ class MongoBackend(Backend):
 
     async def tankopedia_get_many(
         self,
-        tanks: list[BSTank] | None = None,
+        tanks: List[BSTank] | None = None,
         tier: EnumVehicleTier | None = None,
         tank_type: EnumVehicleTypeInt | None = None,
         nation: EnumNation | None = None,
@@ -2298,7 +2297,7 @@ class MongoBackend(Backend):
     ) -> AsyncGenerator[BSTank, None]:
         debug("starting")
         try:
-            pipeline: list[dict[str, Any]] | None
+            pipeline: List[Dict[str, Any]] | None
             if (
                 pipeline := self._mk_tankopedia_pipeline(
                     tanks=tanks,
@@ -2323,7 +2322,7 @@ class MongoBackend(Backend):
 
     async def tankopedia_count(
         self,
-        tanks: list[BSTank] | None = None,
+        tanks: List[BSTank] | None = None,
         tier: EnumVehicleTier | None = None,
         tank_type: EnumVehicleTypeInt | None = None,
         nation: EnumNation | None = None,
@@ -2331,7 +2330,7 @@ class MongoBackend(Backend):
     ) -> int:
         """Count tanks in Tankopedia"""
         try:
-            pipeline: list[dict[str, Any]] | None
+            pipeline: List[Dict[str, Any]] | None
             if (
                 pipeline := self._mk_tankopedia_pipeline(
                     tanks=tanks,
@@ -2362,8 +2361,8 @@ class MongoBackend(Backend):
     async def tankopedia_update(
         self,
         tank: BSTank,
-        update: dict[str, Any] | None = None,
-        fields: list[str] | None = None,
+        update: Dict[str, Any] | None = None,
+        fields: List[str] | None = None,
     ) -> bool:
         """Update a tank in the backend's tankopedia. Returns False
         if the tank was not updated"""
@@ -2472,7 +2471,7 @@ class MongoBackend(Backend):
         try:
             debug("starting")
             dbc: AsyncIOMotorCollection = self.collection_error_log
-            query: dict[str, Any] = dict()
+            query: Dict[str, Any] = dict()
 
             if after is not None:
                 query["d"] = {"$gte": after}
@@ -2509,7 +2508,7 @@ class MongoBackend(Backend):
             debug("starting")
 
             dbc: AsyncIOMotorCollection = self.collection_error_log
-            query: dict[str, Any] = dict()
+            query: Dict[str, Any] = dict()
 
             query["t"] = self.get_table(table_type)
             if after is not None:

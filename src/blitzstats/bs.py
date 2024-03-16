@@ -3,7 +3,7 @@
 # Script fetch Blitz player stats and tank stats
 
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List, Dict
 from pyutils.multilevelformatter import MultilevelFormatter
 
 try:
@@ -83,7 +83,7 @@ async def main() -> int:
     config: Optional[ConfigParser] = None
     CONFIG_FILE: Optional[str] = None
 
-    CONFIG_FILES: list[str] = [
+    CONFIG_FILES: List[str] = [
         "./" + CONFIG,
         dirname(realpath(__file__)) + "/" + CONFIG,
         "~/." + CONFIG,
@@ -123,7 +123,7 @@ async def main() -> int:
     try:
         # setup logging
         logger.setLevel(args.LOG_LEVEL)
-        logger_conf: dict[int, str] = {
+        logger_conf: Dict[int, str] = {
             logging.INFO: "%(message)s",
             logging.WARNING: "%(message)s",
             # logging.ERROR: 		'%(levelname)s: %(message)s'

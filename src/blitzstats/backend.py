@@ -3,33 +3,26 @@ from configparser import ConfigParser
 from argparse import Namespace, ArgumentParser
 from abc import ABC, abstractmethod
 from os.path import isfile
-from typing import Optional, Any, Sequence, AsyncGenerator, TypeVar, Type
+from typing import Optional, Any, Sequence, AsyncGenerator, TypeVar, Type, List, Dict
 from datetime import datetime
 from enum import StrEnum, IntEnum
 from asyncio import Queue, CancelledError
 from pydantic import Field
 
-from blitzutils.wg_api import (
-    TankStat,
-    PlayerAchievementsMaxSeries,
-    PlayerAchievementsMain,    # noqa
-    WoTBlitzTankString,
-)
+from pydantic_exportables import JSONExportable
 
-from blitzutils.tank import Tank, EnumVehicleTier, EnumNation # noqa
-from blitzutils.replay import ReplayJSON, ReplayData  # noqa
-from blitzutils.region import Region
+from blitzmodels import Tank, EnumVehicleTier, EnumVehicleTypeInt, EnumNation, Region
+from blitzmodels.wg_api import TankStat, PlayerAchievementsMaxSeries
 
-from pyutils import EventCounter, IterableQueue, JSONExportable, QueueDone
+from blitzmodels.wotinspector.wi_apiv2 import Replay
+from pyutils import EventCounter, IterableQueue, QueueDone
 from pyutils.utils import is_alphanum
 
 from .models import (
     BSAccount,
     BSBlitzRelease,
-    BSBlitzReplay,
     StatsTypes,
     BSTank,
-    EnumVehicleTypeInt,
 )
 
 
@@ -115,7 +108,7 @@ class OptAccountsDistributed:
         try:
             if input is None:
                 return None
-            res: list[str] = input.split(":")
+            res: List[str] = input.split(":")
             if len(res) != 2:
                 raise ValueError(f'Input ({input} does not match format "I:N")')
             mod: int = int(res[0])
@@ -182,8 +175,8 @@ class ErrorLog(JSONExportable, ABC):
 
 async def batch_gen(
     aget: AsyncGenerator[T, None], batch: int = 100
-) -> AsyncGenerator[list[T], None]:
-    res: list[T] = list()
+) -> AsyncGenerator[List[T], None]:
+    res: List[T] = list()
     async for item in aget:
         res.append(item)
         if len(res) >= batch:
@@ -198,25 +191,25 @@ class Backend(ABC):
 
     driver: str = "Backend"
     _cache_valid: int = MIN_UPDATE_INTERVAL
-    _backends: dict[str, type["Backend"]] = dict()
+    _backends: Dict[str, type["Backend"]] = dict()
 
     def __init__(
         self,
         config: ConfigParser | None = None,
-        db_config: dict[str, Any] | None = None,
+        db_config: Dict[str, Any] | None = None,
         database: str | None = None,
-        table_config: dict[BSTableType, str] | None = None,
-        model_config: dict[BSTableType, type[JSONExportable]] | None = None,
+        table_config: Dict[BSTableType, str] | None = None,
+        model_config: Dict[BSTableType, type[JSONExportable]] | None = None,
         **kwargs,
     ):
         """Init MongoDB backend from config file and CLI args
         CLI arguments overide settings in the config file"""
 
         self._database: str = "BlitzStats"
-        self._db_config: dict[str, Any]
-        self._T: dict[BSTableType, str] = dict()
-        self._Tr: dict[str, BSTableType] = dict()
-        self._M: dict[BSTableType, type[JSONExportable]] = dict()
+        self._db_config: Dict[str, Any]
+        self._T: Dict[BSTableType, str] = dict()
+        self._Tr: Dict[str, BSTableType] = dict()
+        self._M: Dict[BSTableType, type[JSONExportable]] = dict()
 
         # default tables
         self.set_table(BSTableType.Accounts, "Accounts")
@@ -231,10 +224,11 @@ class Backend(ABC):
 
         # set default models
         self.set_model(BSTableType.Accounts, BSAccount)
-        self.set_model(BSTableType.Tankopedia, BSTank)
-        self.set_model(BSTableType.TankStrings, WoTBlitzTankString)
+        self.set_model(BSTableType.Tankopedia, Tank)
+        # TODO: remove WoTBlitzTankString, not needed with new Tank model
+        # self.set_model(BSTableType.TankStrings, WoTBlitzTankString)
         self.set_model(BSTableType.Releases, BSBlitzRelease)
-        self.set_model(BSTableType.Replays, BSBlitzReplay)
+        self.set_model(BSTableType.Replays, Replay)
         self.set_model(BSTableType.AccountLog, ErrorLog)
         self.set_model(BSTableType.ErrorLog, ErrorLog)
         self.set_model(BSTableType.TankStats, TankStat)
@@ -274,7 +268,7 @@ class Backend(ABC):
         """Print out debug info"""
         raise NotImplementedError
 
-    def config_tables(self, table_config: dict[BSTableType, str] | None = None) -> None:
+    def config_tables(self, table_config: Dict[BSTableType, str] | None = None) -> None:
         try:
             if table_config is not None:
                 for table_type, table in table_config.items():
@@ -284,7 +278,7 @@ class Backend(ABC):
         return None
 
     def config_models(
-        self, model_config: dict[BSTableType, type[JSONExportable]] | None = None
+        self, model_config: Dict[BSTableType, type[JSONExportable]] | None = None
     ) -> None:
         try:
             if model_config is not None:
@@ -308,7 +302,7 @@ class Backend(ABC):
         return False
 
     @classmethod
-    def get_registered(cls) -> list[type["Backend"]]:
+    def get_registered(cls) -> List[type["Backend"]]:
         return list(cls._backends.values())
 
     @classmethod
@@ -357,7 +351,7 @@ class Backend(ABC):
                 config = ConfigParser()
                 config.read(config_file)
 
-            kwargs: dict[str, Any] = Backend.read_args(args, driver, importdb=True)
+            kwargs: Dict[str, Any] = Backend.read_args(args, driver, importdb=True)
             if (
                 import_db := Backend.create(
                     driver, config=config, copy_from=copy_from, **kwargs
@@ -404,7 +398,7 @@ class Backend(ABC):
     @classmethod
     def read_args(
         cls, args: Namespace, driver: str, importdb: bool = False
-    ) -> dict[str, Any]:
+    ) -> Dict[str, Any]:
         """Read Argparse args for creating a Backend()"""
         debug("starting")
         if driver in cls._backends:
@@ -420,9 +414,9 @@ class Backend(ABC):
         args: Namespace,
         params: Sequence[str | tuple[str, str]],
         importdb: bool = False,
-    ) -> dict[str, Any]:
-        kwargs: dict[str, Any] = dict()
-        arg_dict: dict[str, Any] = vars(args)
+    ) -> Dict[str, Any]:
+        kwargs: Dict[str, Any] = dict()
+        arg_dict: Dict[str, Any] = vars(args)
         prefix: str = ""
         if importdb:
             prefix = "import_"
@@ -445,7 +439,7 @@ class Backend(ABC):
         return kwargs
 
     @classmethod
-    def list_available(cls) -> list[str]:
+    def list_available(cls) -> List[str]:
         return ["mongodb"]
 
     @property
@@ -462,11 +456,11 @@ class Backend(ABC):
         )
 
     @abstractmethod
-    async def init(self, tables: list[str] = [tt.value for tt in BSTableType]) -> bool:  # type: ignore
+    async def init(self, tables: List[str] = [tt.value for tt in BSTableType]) -> bool:  # type: ignore
         """Init backend and indexes"""
         raise NotImplementedError
 
-    def list_config(self, tables: list[str] = [tt.value for tt in BSTableType]) -> bool:  # type: ignore
+    def list_config(self, tables: List[str] = [tt.value for tt in BSTableType]) -> bool:  # type: ignore
         """List backend config. Call super().list_config() in implementation backend"""
 
         # driver
@@ -491,16 +485,16 @@ class Backend(ABC):
 
         return True
 
-    async def test_config(self, tables: list[str] = [tt.value for tt in BSTableType], tests: int = 1000) -> bool:  # type: ignore
+    async def test_config(self, tables: List[str] = [tt.value for tt in BSTableType], tests: int = 1000) -> bool:  # type: ignore
         """Init backend and indexes"""
 
-        # table_types: list[BSTableType] = [BSTableType(table) for table in tables]
+        # table_types: List[BSTableType] = [BSTableType(table) for table in tables]
 
         # if BSTableType.Accounts in table_types:
         #     message(
         #         f"Testing Accounts: table={self.get_table(BSTableType.Accounts)}, model={self.get_model(BSTableType.Accounts)}"
         #     )
-        #     accounts = list[BSAccount] = list()
+        #     accounts = List[BSAccount] = list()
         #     async for account in self.accounts_get(sample=100):
         for table in tables:
             table_type = BSTableType(table)
@@ -565,11 +559,11 @@ class Backend(ABC):
         return self._database
 
     @property
-    def db_config(self) -> dict[str, Any]:
+    def db_config(self) -> Dict[str, Any]:
         return self._db_config
 
     @property
-    def config(self) -> dict[str, Any]:
+    def config(self) -> Dict[str, Any]:
         return {
             "driver": self.driver,
             "config": None,
@@ -580,11 +574,11 @@ class Backend(ABC):
         }
 
     @property
-    def table_config(self) -> dict[BSTableType, str]:
+    def table_config(self) -> Dict[BSTableType, str]:
         return self._T
 
     @property
-    def model_config(self) -> dict[BSTableType, type[JSONExportable]]:
+    def model_config(self) -> Dict[BSTableType, type[JSONExportable]]:
         return self._M
 
     def set_database(self, database: str | None) -> None:
@@ -720,7 +714,7 @@ class Backend(ABC):
     async def obj_export(
         self,
         table_type: BSTableType,
-        pipeline: list[dict[str, Any]] = list(),
+        pipeline: List[Dict[str, Any]] = list(),
         sample: float = 0,
     ) -> AsyncGenerator[Any, None]:
         """Export raw object from backend"""
@@ -731,10 +725,10 @@ class Backend(ABC):
     async def objs_export(
         self,
         table_type: BSTableType,
-        pipeline: list[dict[str, Any]] = list(),
+        pipeline: List[Dict[str, Any]] = list(),
         sample: float = 0,
         batch: int = 0,
-    ) -> AsyncGenerator[list[Any], None]:
+    ) -> AsyncGenerator[List[Any], None]:
         """Export raw objects from backend"""
         raise NotImplementedError
         yield [Any]
@@ -758,8 +752,8 @@ class Backend(ABC):
     async def account_update(
         self,
         account: BSAccount,
-        update: dict[str, Any] | None = None,
-        fields: list[str] | None = None,
+        update: Dict[str, Any] | None = None,
+        fields: List[str] | None = None,
     ) -> bool:
         """Update an account in the backend. Returns False
         if the account was not updated"""
@@ -868,7 +862,7 @@ class Backend(ABC):
         yield BSAccount()
 
     @abstractmethod
-    async def accounts_latest(self, regions: set[Region]) -> dict[Region, BSAccount]:
+    async def accounts_latest(self, regions: set[Region]) -> Dict[Region, BSAccount]:
         """Return the latest accounts (=highest account_id) per region"""
         raise NotImplementedError
 
@@ -891,8 +885,8 @@ class Backend(ABC):
     async def release_update(
         self,
         release: BSBlitzRelease,
-        update: dict[str, Any] | None = None,
-        fields: list[str] | None = None,
+        update: Dict[str, Any] | None = None,
+        fields: List[str] | None = None,
     ) -> bool:
         """Update an release in the backend. Returns False
         if the release was not updated"""
@@ -981,7 +975,7 @@ class Backend(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def replay_get(self, replay_id: str) -> BSBlitzReplay | None:
+    async def replay_get(self, replay_id: str) -> Replay | None:
         """Get a replay from backend based on replayID"""
         raise NotImplementedError
 
@@ -994,10 +988,10 @@ class Backend(ABC):
     @abstractmethod
     async def replays_get(
         self, since: int = 0, **summary_fields
-    ) -> AsyncGenerator[BSBlitzReplay, None]:
+    ) -> AsyncGenerator[Replay, None]:
         """Get replays from backed"""
         raise NotImplementedError
-        yield BSBlitzReplay()
+        yield Replay()
 
     @abstractmethod
     async def replays_count(
@@ -1042,10 +1036,10 @@ class Backend(ABC):
 
     async def replays_export(
         self, sample: float = 0
-    ) -> AsyncGenerator[BSBlitzReplay, None]:
+    ) -> AsyncGenerator[Replay, None]:
         """Export replays from Mongo DB"""
         raise NotImplementedError
-        yield BSBlitzReplay()
+        yield Replay()
 
     # ----------------------------------------
     # tank stats
@@ -1067,8 +1061,8 @@ class Backend(ABC):
     async def tank_stat_update(
         self,
         tank_stat: TankStat,
-        update: dict[str, Any] | None = None,
-        fields: list[str] | None = None,
+        update: Dict[str, Any] | None = None,
+        fields: List[str] | None = None,
     ) -> bool:
         """Update an tank stat in the backend. Returns False
         if the tank stat was not updated"""
@@ -1108,7 +1102,7 @@ class Backend(ABC):
         self,
         account: BSAccount,
         release: BSBlitzRelease,
-    ) -> AsyncGenerator[list[TankStat], None]:
+    ) -> AsyncGenerator[List[TankStat], None]:
         """Return tank stats from the backend"""
         raise NotImplementedError
         yield list()
@@ -1137,7 +1131,7 @@ class Backend(ABC):
     @abstractmethod
     async def tank_stats_export(
         self, sample: float = 0, batch: int = 0
-    ) -> AsyncGenerator[list[TankStat], None]:
+    ) -> AsyncGenerator[List[TankStat], None]:
         """Export tank stats from Mongo DB"""
         raise NotImplementedError
         yield [TankStat()]
@@ -1205,7 +1199,7 @@ class Backend(ABC):
         return stats
 
     async def tank_stats_insert_worker(
-        self, tank_statsQ: Queue[list[TankStat]], force: bool = False
+        self, tank_statsQ: Queue[List[TankStat]], force: bool = False
     ) -> EventCounter:
         debug(f"starting, force={force}")
         stats: EventCounter = EventCounter("tank-stats insert")
@@ -1308,7 +1302,7 @@ class Backend(ABC):
         self,
         sample: float = 0,
         batch: int = 0,
-    ) -> AsyncGenerator[list[PlayerAchievementsMaxSeries], None]:
+    ) -> AsyncGenerator[List[PlayerAchievementsMaxSeries], None]:
         """Export player achievements in a batch from Mongo DB"""
         raise NotImplementedError
         yield [PlayerAchievementsMaxSeries()]
@@ -1326,7 +1320,7 @@ class Backend(ABC):
 
     async def player_achievements_insert_worker(
         self,
-        player_achievementsQ: Queue[list[PlayerAchievementsMaxSeries]],
+        player_achievementsQ: Queue[List[PlayerAchievementsMaxSeries]],
         force: bool = False,
     ) -> EventCounter:
         debug(f"starting, force={force}")
@@ -1416,7 +1410,7 @@ class Backend(ABC):
     @abstractmethod
     async def tankopedia_get_many(
         self,
-        tanks: list[BSTank] | None = None,
+        tanks: List[BSTank] | None = None,
         tier: EnumVehicleTier | None = None,
         tank_type: EnumVehicleTypeInt | None = None,
         nation: EnumNation | None = None,
@@ -1428,7 +1422,7 @@ class Backend(ABC):
     @abstractmethod
     async def tankopedia_count(
         self,
-        tanks: list[BSTank] | None = None,
+        tanks: List[BSTank] | None = None,
         tier: EnumVehicleTier | None = None,
         tank_type: EnumVehicleTypeInt | None = None,
         nation: EnumNation | None = None,
@@ -1448,8 +1442,8 @@ class Backend(ABC):
     async def tankopedia_update(
         self,
         tank: BSTank,
-        update: dict[str, Any] | None = None,
-        fields: list[str] | None = None,
+        update: Dict[str, Any] | None = None,
+        fields: List[str] | None = None,
     ) -> bool:
         """Update a tank in the backend's tankopedia. Returns False
         if the tank was not updated"""
@@ -1493,7 +1487,7 @@ class Backend(ABC):
     async def tankopedia_get_worker(
         self,
         tankQ: Queue[BSTank],
-        tanks: list[BSTank] | None = None,
+        tanks: List[BSTank] | None = None,
         tier: EnumVehicleTier | None = None,
         tank_type: EnumVehicleTypeInt | None = None,
         nation: EnumNation | None = None,
@@ -1519,20 +1513,20 @@ class Backend(ABC):
     # BSTank Strings
     # ----------------------------------------
 
-    @abstractmethod
-    async def tank_string_insert(
-        self, tank_str: WoTBlitzTankString, force: bool = False
-    ) -> bool:
-        """ "insert a tank string"""
-        raise NotImplementedError
+    # @abstractmethod
+    # async def tank_string_insert(
+    #     self, tank_str: WoTBlitzTankString, force: bool = False
+    # ) -> bool:
+    #     """ "insert a tank string"""
+    #     raise NotImplementedError
 
-    @abstractmethod
-    async def tank_string_get(self, code: str) -> WoTBlitzTankString | None:
-        raise NotImplementedError
+    # @abstractmethod
+    # async def tank_string_get(self, code: str) -> WoTBlitzTankString | None:
+    #     raise NotImplementedError
 
-    @abstractmethod
-    async def tank_strings_get(
-        self, search: str | None
-    ) -> AsyncGenerator[WoTBlitzTankString, None]:
-        raise NotImplementedError
-        yield WoTBlitzTankString()
+    # @abstractmethod
+    # async def tank_strings_get(
+    #     self, search: str | None
+    # ) -> AsyncGenerator[WoTBlitzTankString, None]:
+    #     raise NotImplementedError
+    #     yield WoTBlitzTankString()

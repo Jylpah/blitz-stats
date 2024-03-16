@@ -1,29 +1,26 @@
 import logging
 from enum import StrEnum
-from typing import Optional, Any, ClassVar
-from pydantic import validator, root_validator, Field, ValidationError, Extra
+from typing import Optional, Any, Dict, List, ClassVar, Self
+from pydantic import field_validator, model_validator, Field, Extra
 
 from pyutils.utils import epoch_now
-from pyutils import (
+from pydantic_exportables import (
     JSONExportable,
     CSVExportable,
     TXTExportable,
     Idx,
-    BackendIndexType,
     BackendIndex,
+    IndexSortOrder,
     DESCENDING,
     ASCENDING,
     TEXT,
 )
 
 
-from blitzutils import (
+from blitzmodels import (
     Account,
     Release,
     AccountInfo,
-    ReplaySummary,
-    ReplayData,
-    ReplayJSON,
     Tank,
     EnumNation,
     EnumVehicleTypeInt,
@@ -57,7 +54,7 @@ class BSAccount(Account):
     disabled					: bool = Field(default=False, alias="d")
     # fmt: on
 
-    _min_inactivity_days: int = MIN_INACTIVITY_DAYS
+    _min_inactivity_secs: ClassVar[int] = MIN_INACTIVITY_DAYS * 24 * 3600
     _exclude_defaults = False
 
     class Config:
@@ -66,16 +63,15 @@ class BSAccount(Account):
         validate_assignment = True
 
     @classmethod
-    def backend_indexes(cls) -> list[list[tuple[str, BackendIndexType]]]:
+    def backend_indexes(cls) -> List[List[tuple[str, IndexSortOrder]]]:
         """return backend search indexes"""
-        indexes: list[list[tuple[str, BackendIndexType]]] = list()
+        indexes: List[List[BackendIndex]] = list()
         indexes.append(
             [
                 ("disabled", ASCENDING),
                 ("inactive", ASCENDING),
                 ("region", ASCENDING),
                 ("last_battle_time", DESCENDING),
-                # ('id', 		ASCENDING),
             ]
         )
         indexes.append(
@@ -102,11 +98,11 @@ class BSAccount(Account):
 
     @classmethod
     def inactivity_limit(cls) -> int:
-        return cls._min_inactivity_days
+        return cls._min_inactivity_secs
 
     @classmethod
     def set_inactivity_limit(cls, days: int) -> None:
-        cls._min_inactivity_days = days
+        cls._min_inactivity_secs = days * 24 * 3600
 
     @classmethod
     def get_update_field(cls, stats_type: str | None) -> str | None:
@@ -117,7 +113,7 @@ class BSAccount(Account):
             error(f"Unknown stats_type: {stats_type}")
         return None
 
-    @validator("updated_tank_stats", "updated_player_achievements")
+    @field_validator("updated_tank_stats", "updated_player_achievements")
     def check_epoch_ge_zero(cls, v):
         if v is None:
             return None
@@ -126,8 +122,11 @@ class BSAccount(Account):
         else:
             raise ValueError("time field must be >= 0")
 
-    @validator("added")
+    @field_validator("added")
     def set_current_time(cls, v):
+        """
+        Set 'added' field to current UTC time if the field has not been set
+        """
         if v is None:
             return epoch_now()
         elif v >= 0:
@@ -135,13 +134,18 @@ class BSAccount(Account):
         else:
             ValueError("time field must be >= 0")
 
-    @root_validator()
-    def set_inactive(cls, values: dict[str, Any]) -> dict[str, Any]:
-        lbt: int | None
-        if (lbt := values.get("last_battle_time")) is not None:
-            inactive: bool = epoch_now() - lbt > cls._min_inactivity_days * 24 * 3600
-            values["inactive"] = inactive
-        return values
+    @model_validator(mode="after")
+    def set_inactive(self) -> Self:
+        """"
+        Set 'inactive' field based in players inactivity. 
+        If 'last_battle_time' == 0, set the player ACTIVE since to avoid 
+        inactivating players when creating player objects with default field values
+        """        
+        if self.last_battle_time > 0:
+            self._set_skip_validation("inactive", epoch_now() - self.last_battle_time > self._min_inactivity_secs)
+        else:
+            self._set_skip_validation("inactive", False)
+        return self
 
     def stats_updated(self, stats: StatsTypes) -> None:
         assert type(stats) is StatsTypes, "'stats' need to be type(StatsTypes)"
@@ -157,7 +161,7 @@ class BSAccount(Account):
             stats_updated = epoch_now()
         return (
             stats_updated - self.last_battle_time
-            > self._min_inactivity_days * 24 * 3600
+            > self._min_inactivity_secs * 24 * 3600
         )
 
     def update_needed(self, stats_type: StatsTypes) -> bool:
@@ -169,11 +173,11 @@ class BSAccount(Account):
             MAX_UPDATE_INTERVAL, (stats_updated - self.last_battle_time) / 3
         )
 
-    def update(self, update: AccountInfo) -> bool:
+    def update_info(self, update: AccountInfo) -> bool:
         """Update BSAccount() from WGACcountInfo i.e. from WG API"""
         updated: bool = False
         try:
-            updated = super().update(update)
+            updated = super().update_info(update)
             self.updated_account_info = epoch_now()
             return updated
         except Exception as err:
@@ -223,7 +227,7 @@ class BSBlitzRelease(Release):
         validate_assignment = True
         allow_population_by_field_name = True
 
-    @validator("cut_off", pre=True)
+    @field_validator("cut_off")
     def check_cut_off_now(cls, v):
         if v is None:
             return cls._max_epoch
@@ -232,7 +236,7 @@ class BSBlitzRelease(Release):
         else:
             return int(v)
 
-    @validator("cut_off")
+    @field_validator("cut_off")
     def validate_cut_off(cls, v: int) -> int:
         # ROUND_TO : int = 10*60
         if v >= 0:
@@ -250,104 +254,108 @@ class BSBlitzRelease(Release):
         return super().txt_row(format) + extra
 
 
-class BSBlitzReplay(ReplaySummary):
-    id: str | None = Field(default=None, alias="_id")
+    
 
-    _ViewUrlBase: str = "https://replays.wotinspector.com/en/view/"
-    _DLurlBase: str = "https://replays.wotinspector.com/en/download/"
+# class BSReplay(ReplaySummary):
+#     id: str | None = Field(default=None, alias="_id")
 
-    class Config:
-        arbitrary_types_allowed = True
-        allow_mutation = True
-        validate_assignment = True
-        allow_population_by_field_name = True
+#     _ViewUrlBase: str = "https://replays.wotinspector.com/en/view/"
+#     _DLurlBase: str = "https://replays.wotinspector.com/en/download/"
 
-    @property
-    def index(self) -> Idx:
-        """return backend index"""
-        if self.id is not None:
-            return self.id
-        raise ValueError("id is missing")
+#     class Config:
+#         arbitrary_types_allowed = True
+#         allow_mutation = True
+#         validate_assignment = True
+#         allow_population_by_field_name = True
 
-    @property
-    def view_url(self) -> str:
-        if self.id is not None:
-            return f"{self._ViewUrlBase}{self.id}"
-        raise ValueError("field 'id' is missing")
+#     @property
+#     def index(self) -> Idx:
+#         """return backend index"""
+#         if self.id is not None:
+#             return self.id
+#         raise ValueError("id is missing")
 
-    @property
-    def dl_url(self) -> str:
-        if self.id is not None:
-            return f"{self._DLurlBase}{self.id}"
-        raise ValueError("field 'id' is missing")
+#     @property
+#     def view_url(self) -> str:
+#         if self.id is not None:
+#             return f"{self._ViewUrlBase}{self.id}"
+#         raise ValueError("field 'id' is missing")
 
-    @property
-    def indexes(self) -> dict[str, Idx]:
-        """return backend indexes"""
-        return {"id": self.index}
+#     @property
+#     def dl_url(self) -> str:
+#         if self.id is not None:
+#             return f"{self._DLurlBase}{self.id}"
+#         raise ValueError("field 'id' is missing")
 
-    @classmethod
-    def backend_indexes(cls) -> list[list[tuple[str, BackendIndexType]]]:
-        """return backend search indexes"""
-        indexes: list[list[tuple[str, BackendIndexType]]] = list()
-        indexes.append(
-            [
-                ("protagonist", ASCENDING),
-                ("room_type", ASCENDING),
-                ("vehicle_tier", ASCENDING),
-                ("battle_start_timestamp", DESCENDING),
-            ]
-        )
-        indexes.append(
-            [
-                ("room_type", ASCENDING),
-                ("vehicle_tier", ASCENDING),
-                ("battle_start_timestamp", DESCENDING),
-            ]
-        )
-        return indexes
+#     @property
+#     def indexes(self) -> Dict[str, Idx]:
+#         """return backend indexes"""
+#         return {"id": self.index}
 
-    @classmethod
-    def transform_WoTBlitzReplayData(
-        cls, in_obj: ReplayData
-    ) -> Optional["BSBlitzReplay"]:
-        res: BSBlitzReplay | None = None
-        try:
-            if (res := BSBlitzReplay.parse_obj(in_obj.summary.dict())) is not None:
-                res.id = in_obj.id
-                return res
-            else:
-                error(f"failed to transform object: {in_obj}")
-        except ValidationError as err:
-            error(f"failed to transform object: {in_obj}: {err}")
-        return res
+#     @classmethod
+#     def backend_indexes(cls) -> List[List[tuple[str, BackendIndexType]]]:
+#         """return backend search indexes"""
+#         indexes: List[List[tuple[str, BackendIndexType]]] = list()
+#         indexes.append(
+#             [
+#                 ("protagonist", ASCENDING),
+#                 ("room_type", ASCENDING),
+#                 ("vehicle_tier", ASCENDING),
+#                 ("battle_start_timestamp", DESCENDING),
+#             ]
+#         )
+#         indexes.append(
+#             [
+#                 ("room_type", ASCENDING),
+#                 ("vehicle_tier", ASCENDING),
+#                 ("battle_start_timestamp", DESCENDING),
+#             ]
+#         )
+#         return indexes
 
-    @classmethod
-    def transform_WoTBlitzReplayJSON(
-        cls, in_obj: ReplayJSON
-    ) -> Optional["BSBlitzReplay"]:
-        if (replay_data := ReplayData.transform(in_obj)) is not None:
-            return cls.transform_WoTBlitzReplayData(replay_data)
-        return None
+#     @classmethod
+#     def transform_WoTBlitzReplayData(
+#         cls, in_obj: ReplayData
+#     ) -> Optional["Replay"]:
+#         res: Replay | None = None
+#         try:
+#             if (res := Replay.parse_obj(in_obj.summary.dict())) is not None:
+#                 res.id = in_obj.id
+#                 return res
+#             else:
+#                 error(f"failed to transform object: {in_obj}")
+#         except ValidationError as err:
+#             error(f"failed to transform object: {in_obj}: {err}")
+#         return res
+
+#     @classmethod
+#     def transform_WoTBlitzReplayJSON(
+#         cls, in_obj: ReplayJSON
+#     ) -> Optional["Replay"]:
+#         if (replay_data := ReplayData.transform(in_obj)) is not None:
+#             return cls.transform_WoTBlitzReplayData(replay_data)
+#         return None
 
 
-BSBlitzReplay.register_transformation(
-    ReplayData, BSBlitzReplay.transform_WoTBlitzReplayData
-)
-BSBlitzReplay.register_transformation(
-    ReplayJSON, BSBlitzReplay.transform_WoTBlitzReplayJSON
-)
+# Replay.register_transformation(
+#     ReplayData, Replay.transform_WoTBlitzReplayData
+# )
+# Replay.register_transformation(
+#     ReplayJSON, Replay.transform_WoTBlitzReplayJSON
+# )
 
 
 # fmt: off
 class BSTank(JSONExportable, CSVExportable, TXTExportable):
     tank_id 	: int						= Field(default=..., alias='_id')
     name 		: str | None				= Field(default=None, alias='n')
+    # TODO: add 'code' 
+    code        : str | None                = Field(default=None)
     nation		: EnumNation | None 		= Field(default=None, alias='c')
     type		: EnumVehicleTypeInt | None	= Field(default=None, alias='v')
     tier		: EnumVehicleTier | None 	= Field(default=None, alias='t')
     is_premium 	: bool 						= Field(default=False, alias='p')
-    next_tanks	: list[int] | None			= Field(default=None, alias='s')
+    next_tanks	: List[int] | None			= Field(default=None, alias='s')
     # fmt: on
     _exclude_defaults = False
 
@@ -364,13 +372,13 @@ class BSTank(JSONExportable, CSVExportable, TXTExportable):
         return self.tank_id
 
     @property
-    def indexes(self) -> dict[str, Idx]:
+    def indexes(self) -> Dict[str, Idx]:
         """return backend indexes"""
         return {'tank_id': self.index}
 
     @classmethod
-    def backend_indexes(cls) -> list[list[tuple[str, BackendIndexType]]]:
-        indexes: list[list[BackendIndex]] = list()
+    def backend_indexes(cls) -> List[List[tuple[str, IndexSortOrder]]]:
+        indexes: List[List[BackendIndex]] = list()
         indexes.append([('tier', ASCENDING),
                         ('type', ASCENDING)
                         ])
@@ -381,7 +389,7 @@ class BSTank(JSONExportable, CSVExportable, TXTExportable):
                         ])
         return indexes
 
-    @validator('next_tanks', pre=True)
+    @field_validator('next_tanks')
     def next_tanks2list(cls, v):
         try:
             if v is not None:
@@ -390,14 +398,14 @@ class BSTank(JSONExportable, CSVExportable, TXTExportable):
             error(f"Error validating 'next_tanks': {err}")
         return None
 
-    @validator('tier', pre=True)
+    @field_validator('tier')
     def prevalidate_tier(cls, v: Any) -> Any:
         if isinstance(v, str):
             return EnumVehicleTier[v.upper()].value
         else:
             return v
 
-    @validator('tier')
+    @field_validator('tier')
     def validate_tier(cls, v):
         if isinstance(v, int):
             return EnumVehicleTier(v)
@@ -422,14 +430,12 @@ class BSTank(JSONExportable, CSVExportable, TXTExportable):
                         type=tank_type,
                         is_premium=in_obj.is_premium,
                         nation=in_obj.nation,
+                        # code=in_obj.code,
                         )
         except Exception as err:
             error(f'{err}')
         return None
 
-    def csv_headers(self) -> list[str]:
-        """Provide CSV headers as list"""
-        return list(BSTank.__fields__.keys())
 
     def txt_row(self, format: str = '') -> str:
         """export data as single row of text"""

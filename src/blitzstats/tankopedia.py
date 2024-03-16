@@ -1,7 +1,7 @@
 import logging
 from argparse import ArgumentParser, Namespace
 from configparser import ConfigParser
-from typing import Optional
+from typing import Optional, List
 from asyncio import create_task, Queue, Task
 import json
 
@@ -34,7 +34,7 @@ verbose = logger.info
 debug = logger.debug
 
 TANKOPEDIA_FILE: str = "tanks.json"
-EXPORT_SUPPORTED_FORMATS: list[str] = ["json", "txt", "csv"]  # , 'csv'
+EXPORT_SUPPORTED_FORMATS: List[str] = ["json", "txt", "csv"]  # , 'csv'
 
 ########################################################
 #
@@ -505,7 +505,7 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
         tier: EnumVehicleTier | None = None
         tank_type: EnumVehicleTypeInt | None = None
         is_premium: bool | None = None
-        tanks: list[BSTank] | None = None
+        tanks: List[BSTank] | None = None
         std_out: bool = filename == "-"
 
         if args.nation is not None:

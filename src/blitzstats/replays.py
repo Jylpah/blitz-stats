@@ -1,6 +1,6 @@
 from argparse import ArgumentParser, Namespace
 from configparser import ConfigParser
-from typing import Optional, Iterable, Any
+from typing import Optional, Iterable, Any, List, Dict
 import logging
 import queue
 from asyncio import create_task, gather, run, Queue, CancelledError, Task
@@ -17,7 +17,7 @@ from pyutils.utils import is_alphanum
 from blitzutils import ReplayJSON, ReplayData # noqa
 
 from .backend import Backend, BSTableType, get_sub_type
-from .models import BSBlitzReplay
+from .models import Replay
 from .accounts import add_args_fetch_wi as add_args_accounts_fetch_wi
 from .accounts import cmd_fetch_wi as cmd_accounts_fetch_wi
 
@@ -38,10 +38,10 @@ REPLAYS_BATCH: int = 50
 
 # FB 	: ForkedBackend
 db: Backend
-readQ: AsyncQueue[list[Any] | None]
+readQ: AsyncQueue[List[Any] | None]
 writeQ: queue.Queue
 in_model: type[BaseModel]
-mp_options: dict[str, Any] = dict()
+mp_options: Dict[str, Any] = dict()
 
 
 ###########################################
@@ -251,7 +251,7 @@ async def cmd_export_id(db: Backend, args: Namespace) -> bool:
     try:
         debug("starting")
         id: str = args.replay_export_id
-        replay: BSBlitzReplay | None = await db.replay_get(id)
+        replay: Replay | None = await db.replay_get(id)
         if replay is None:
             error("Could not find replay id: {id}")
             return False
@@ -265,7 +265,7 @@ async def cmd_export_id(db: Backend, args: Namespace) -> bool:
     return False
 
 
-async def cmd_export_files(args: Namespace, replays: Iterable[BSBlitzReplay]) -> bool:
+async def cmd_export_files(args: Namespace, replays: Iterable[Replay]) -> bool:
     raise NotImplementedError
     return False
 
@@ -360,8 +360,8 @@ async def cmd_importMP(db: Backend, args: Namespace) -> bool:
             raise ValueError(f"Could not init {import_backend} to import replays from")
 
         with Manager() as manager:
-            readQ: queue.Queue[list[Any] | None] = manager.Queue(REPLAY_Q_MAX)
-            options: dict[str, Any] = dict()
+            readQ: queue.Queue[List[Any] | None] = manager.Queue(REPLAY_Q_MAX)
+            options: Dict[str, Any] = dict()
             options["force"] = args.force
 
             with Pool(
@@ -409,10 +409,10 @@ async def cmd_importMP(db: Backend, args: Namespace) -> bool:
 
 
 def import_mp_init(
-    backend_config: dict[str, Any],
-    inputQ: queue.Queue[list[Any] | None],
+    backend_config: Dict[str, Any],
+    inputQ: queue.Queue[List[Any] | None],
     import_model: type[BaseModel],
-    options: dict[str, Any],
+    options: Dict[str, Any],
 ):
     """Initialize static/global backend into a forked process"""
     global db, readQ, in_model, mp_options
@@ -437,7 +437,7 @@ async def import_mp_worker(id: int = 0) -> EventCounter:
     """Forkable replay import worker"""
     debug(f"#{id}: starting")
     stats: EventCounter = EventCounter("importer")
-    workers: list[Task] = list()
+    workers: List[Task] = list()
     try:
         global db, readQ, in_model, mp_options
         THREADS: int = 4
@@ -457,7 +457,7 @@ async def import_mp_worker(id: int = 0) -> EventCounter:
                 read: int = len(objs)
                 debug(f"read {read} documents")
                 stats.log("stats read", read)
-                replays = BSBlitzReplay.from_objs(objs=objs, in_type=import_model)
+                replays = Replay.from_objs(objs=objs, in_type=import_model)
                 errors = len(objs) - len(replays)
                 stats.log("replays read", len(replays))
                 stats.log("conversion errors", errors)

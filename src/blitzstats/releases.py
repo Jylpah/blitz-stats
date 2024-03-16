@@ -276,11 +276,11 @@ def add_args_export(
     return False
 
 
-def read_args_releases(strs: list[str] | None) -> list[BSBlitzRelease] | None:
+def read_args_releases(strs: List[str] | None) -> List[BSBlitzRelease] | None:
     """Read releases from arguments"""
     debug("starting")
     try:
-        releases: list[BSBlitzRelease] = list()
+        releases: List[BSBlitzRelease] = list()
         if strs is not None:
             for r in strs:
                 try:
@@ -375,7 +375,7 @@ async def cmd_edit(db: Backend, args: Namespace) -> bool:
         #     cut_off=cut_off,
         # )
         # release.cut_off = round_epoch(release.cut_off, args.round_cut_off * 60)
-                update: dict[str, Any] = release.dict(exclude_unset=True, exclude_none=True)
+                update: Dict[str, Any] = release.dict(exclude_unset=True, exclude_none=True)
                 del update["release"]
                 return await db.release_update(release, update=update)
     except Exception as err:
@@ -483,9 +483,9 @@ async def cmd_import(db: Backend, args: Namespace) -> bool:
     return False
 
 
-async def get_releases(db: Backend, releases: list[str]) -> list[BSBlitzRelease]:
+async def get_releases(db: Backend, releases: List[str]) -> List[BSBlitzRelease]:
     debug(f"starting, releases={releases}")
-    res: list[BSBlitzRelease] = list()
+    res: List[BSBlitzRelease] = list()
     try:
         for r in releases:
             if (rel := await db.release_get(r)) is not None:

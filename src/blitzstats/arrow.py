@@ -29,18 +29,18 @@ message = logger.warning
 verbose = logger.info
 debug = logger.debug
 
-EXPORT_DATA_FORMATS: list[str] = ["parquet", "arrow"]
+EXPORT_DATA_FORMATS: List[str] = ["parquet", "arrow"]
 DEFAULT_EXPORT_DATA_FORMAT: str = EXPORT_DATA_FORMATS[0]
 
 EXPORT_WRITE_BATCH: int = int(50e6)
 
 
 def create_schema(
-    obj: dict[str, Any], parent: str = "", default=pa.int32()
-) -> list[tuple[str, Any]]:
+    obj: Dict[str, Any], parent: str = "", default=pa.int32()
+) -> List[tuple[str, Any]]:
     """Create Python Arrow schema as list of field, type tuples"""
-    # obj_src: dict[str, Any] = obj.obj_src()
-    schema: list[tuple[str, Any]] = list()
+    # obj_src: Dict[str, Any] = obj.obj_src()
+    schema: List[tuple[str, Any]] = list()
     for key, value in obj.items():
         schema_key: str = parent + key
         print(f"key={key}, value={value}, type={type(value)}")
@@ -149,7 +149,7 @@ async def dataset_writer(
         # schema 	: pa.Schema 	 = batch.schema
         batch: pa.RecordBatch
         # part: ds.Partitioning = ds.partitioning(schema=schema)
-        dfs: list[pa.RecordBatch] = list()
+        dfs: List[pa.RecordBatch] = list()
         rows: int = 0
         i: int = 0
         try:
