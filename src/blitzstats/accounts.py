@@ -406,7 +406,7 @@ def add_args_fetch_wi(
             dest="wi_start_page",
             metavar="START_PAGE",
             type=int,
-            default=0,
+            default=1,
             help="Start page to start spidering of WoTinspector.com",
         )
         parser.add_argument(
@@ -1041,14 +1041,14 @@ async def cmd_fetch_files(
 #
 ###########################################
 
-# TODO: --start -1 to start automatic
-# TODO: --start 0 to start from the region's beginning
+# DONE: --start -1 to start automatic
+# DONE: --start 0 to start from the region's beginning
 
 
 async def cmd_fetch_wg(
     db: Backend, args: Namespace, accountQ: IterableQueue[BSAccount]
 ) -> EventCounter:
-    """Fetch account_ids from WG API"""
+    """Fetch account_ids from WG API /account/info"""
     debug("starting")
     stats: EventCounter = EventCounter("WG API")
     wg: WGApi = WGApi(
@@ -1268,7 +1268,7 @@ async def cmd_fetch_wi(
     rate_limit: float = args.wi_rate_limit
     # force 		: bool  = args.force
     token: str = args.wi_auth_token  # temp fix...
-    replay_idQ: Queue[str] = Queue()
+    replay_idQ: IterableQueue[str] = IterableQueue()
     # pageQ		: Queue[int] = Queue()
     wi: WoTinspector = WoTinspector(rate_limit=rate_limit, auth_token=token)
     if accountQ is not None:
@@ -1283,27 +1283,29 @@ async def cmd_fetch_wi(
 
         pages: range = range(start_page, (start_page + max_pages), step)
 
-        stats.merge_child(
-            await fetch_wi_get_replay_ids(db, wi, args, replay_idQ, pages)
-        )
-
-        replays: int = replay_idQ.qsize()
-        replays_left: int = replays
-        with alive_bar(
-            replays, title="Fetching replays ", manual=True, enrich_print=False
-        ) as bar:
-            for _ in range(workersN):
-                workers.append(
-                    create_task(fetch_wi_fetch_replays(db, wi, replay_idQ, accountQ))
+        workers.append(
+            create_task(
+                fetch_wi_get_replay_ids(
+                    db, wi, args, replay_idQ, pages, disable_bar=True
                 )
-            while True:
-                await sleep(1)
-                replays_left = replay_idQ.qsize()
-                bar(1 - replays_left / replays)
-                if replays_left == 0:
-                    break
+            )
+        )
+        for _ in range(workersN):
+            workers.append(
+                create_task(fetch_wi_fetch_replays(db, wi, replay_idQ, accountQ))
+            )
 
-        await replay_idQ.join()
+        replays_done: int = 0
+        with alive_bar(
+            total=None, title="Fetching replays ", manual=True, enrich_print=False
+        ) as bar:
+            while not replay_idQ.is_done:
+                replays: int = replay_idQ.qsize()
+                bar(replays - replays_done)
+                replays_done = replays
+                await sleep(0.5)
+
+        # await replay_idQ.join()
 
         for worker in await gather(*workers, return_exceptions=True):
             stats.merge_child(worker)
@@ -1370,7 +1372,12 @@ async def cmd_fetch_wi(
 
 
 async def fetch_wi_get_replay_ids(
-    db: Backend, wi: WoTinspector, args: Namespace, replay_idQ: Queue[str], pages: range
+    db: Backend,
+    wi: WoTinspector,
+    args: Namespace,
+    replay_idQ: IterableQueue[str],
+    pages: range,
+    disable_bar: bool = False,
 ) -> EventCounter:
     """Spider replays.WoTinspector.com and feed found replay IDs into replayQ. Return stats"""
     debug("starting")
@@ -1381,8 +1388,12 @@ async def fetch_wi_get_replay_ids(
 
     try:
         debug(f"Starting ({len(pages)} pages)")
+        await replay_idQ.add_producer()
         with alive_bar(
-            len(pages), title="Spidering replays", enrich_print=False
+            len(pages),
+            title="Spidering replays",
+            enrich_print=False,
+            disable=disable_bar,
         ) as bar:
             for page in pages:
                 try:
@@ -1418,26 +1429,28 @@ async def fetch_wi_get_replay_ids(
                 except Exception as err:
                     error(f"{err}")
                 finally:
-                    bar()
+                    if not disable_bar:
+                        bar()
     except CancelledError:
         # debug(f'Cancelled')
         message(f"{max_old_replays} found. Stopping spidering for more")
     except Exception as err:
         error(f"{err}")
+    finally:
+        await replay_idQ.finish()
     return stats
 
 
 async def fetch_wi_fetch_replays(
     db: Backend,
     wi: WoTinspector,
-    replay_idQ: Queue[str],
+    replay_idQ: IterableQueue[str],
     accountQ: Queue[BSAccount] | None,
 ) -> EventCounter:
     debug("starting")
     stats: EventCounter = EventCounter("Fetch replays")
     try:
-        while not replay_idQ.empty():
-            replay_id = await replay_idQ.get()
+        async for replay_id in replay_idQ:
             try:
                 replay: Replay | None
                 if (replay := await wi.get_replay(replay_id)) is None:
@@ -1453,8 +1466,9 @@ async def fetch_wi_fetch_replays(
                     stats.log("replays added")
                 else:
                     stats.log("replays not added")
-            finally:
-                replay_idQ.task_done()
+            except Exception as err:
+                error(f"error fetching replay_id={replay_id}")
+                debug(f"{err}")
     except Exception as err:
         error(f"{err}")
     return stats
