@@ -509,8 +509,9 @@ class Backend(ABC):
                 tries += 1
                 if (_ := model.from_obj(obj)) is None:
                     error(
-                        f"failed to parse {model} from table={self.get_table(table_type)}: {obj}"
+                        f"failed to parse {model} from table={self.get_table(table_type)}"
                     )
+                    debug(f"{obj}")
                 else:
                     ok += 1
             if tries == 0:
