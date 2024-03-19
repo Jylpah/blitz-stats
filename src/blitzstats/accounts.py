@@ -9,6 +9,8 @@ from asyncstdlib import enumerate
 from alive_progress import alive_bar  # type: ignore
 from pydantic import ValidationError
 
+# from icecream import ic  # type: ignore
+
 from pyutils import (
     EventCounter,
     IterableQueue,
@@ -330,9 +332,10 @@ def add_args_fetch_wg(
             dest="wg_start_id",
             metavar="ACCOUNT_ID",
             type=int,
-            default=0,
-            help="start fetching account_ids from ACCOUNT_ID (default = 0 \
-                                start from highest ACCOUNT_ID in backend)",
+            default=-1,
+            help="start fetching account_ids from ACCOUNT_ID \
+                    default = -1 start from highest ACCOUNT_ID in backend\
+                    0 starts from the region(s) first ID",
         )
         parser.add_argument(
             "--force",
@@ -1038,6 +1041,9 @@ async def cmd_fetch_files(
 #
 ###########################################
 
+# TODO: --start -1 to start automatic
+# TODO: --start 0 to start from the region's beginning
+
 
 async def cmd_fetch_wg(
     db: Backend, args: Namespace, accountQ: IterableQueue[BSAccount]
@@ -1056,7 +1062,7 @@ async def cmd_fetch_wg(
         regions: set[Region] = {Region(r) for r in args.regions}
         start: int = args.wg_start_id
         if start > 0 and len(regions) > 1:
-            raise ValueError("if --start > 0, only one region can be chosen")
+            raise ValueError("if --start >= 0, only one region can be chosen")
         if args.file is not None and len(regions) > 1:
             raise ValueError("if --file set, only one region can be chosen")
         force: bool = args.force
@@ -1064,10 +1070,11 @@ async def cmd_fetch_wg(
         max_accounts: int = args.max_accounts
 
         WORKERS: int = max([int(args.wg_workers), 1])
+        # ic(start, args.regions, regions)
 
         idQs: Dict[Region, IterableQueue[Sequence[int]]] = dict()
 
-        if start == 0 and not force and args.file is None:
+        if start == -1 and not force and args.file is None:
             message("finding latest accounts by region")
             latest = await db.accounts_latest(regions)
         for region in regions:
@@ -1087,8 +1094,10 @@ async def cmd_fetch_wg(
                     )
                 if args.file is None:
                     id_range: range = region.id_range
-                    if start == 0 and not force:
+                    if start == -1 and not force:
                         id_range = range(latest[region].id + 1, id_range.stop)
+                    elif start == 0:
+                        id_range = region.id_range
                     else:
                         id_range = range(start, id_range.stop)
                     if max_accounts > 0:
@@ -1381,22 +1390,24 @@ async def fetch_wi_get_replay_ids(
                         raise CancelledError
                         #  break
                     debug(f"spidering page {page}")
-                    replay_summaries : List[ReplaySummary] | None
-                    replay_summary : ReplaySummary
+                    replay_summaries: List[ReplaySummary] | None
+                    replay_summary: ReplaySummary
                     if (replay_summaries := await wi.get_replay_list(page)) is not None:
                         for replay_summary in replay_summaries:
                             res: Replay | None = await db.replay_get(
                                 replay_id=replay_summary.id
                             )
                             if res is not None:
-                                debug(f"Replay already in the {db.backend}: {replay_summary.id}")
+                                debug(
+                                    f"Replay already in the {db.backend}: {replay_summary.id}"
+                                )
                                 stats.log("old replays found")
                                 if not force:
                                     old_replays += 1
                                     continue
                                 else:
                                     stats.log("old replays to re-fetch")
-                            else:                                
+                            else:
                                 stats.log("new replays")
                             await replay_idQ.put(replay_summary.id)
                     else:
@@ -1428,7 +1439,7 @@ async def fetch_wi_fetch_replays(
         while not replay_idQ.empty():
             replay_id = await replay_idQ.get()
             try:
-                replay : Replay | None
+                replay: Replay | None
                 if (replay := await wi.get_replay(replay_id)) is None:
                     verbose(f"Could not fetch replay id: {replay_id}")
                     stats.log("errors")
