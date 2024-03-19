@@ -32,6 +32,8 @@ from pymongo.results import (
 from pymongo.errors import BulkWriteError, CollectionInvalid, ConnectionFailure
 from pydantic import ValidationError, Field
 
+# from icecream import ic  # type: ignore
+
 from pydantic_exportables import (
     JSONExportable,
     AliasMapper,
@@ -122,6 +124,7 @@ class MongoBackend(Backend):
 
         debug("starting")
         try:
+            # ic(config, db_config, database, table_config, model_config, **kwargs)
             super().__init__(
                 config=config, db_config=db_config, database=database, **kwargs
             )
@@ -202,6 +205,7 @@ class MongoBackend(Backend):
             # remove unset kwargs
             kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
+            # ic("about to create mongodb", kwargs)
             self.set_database(database)
             self._client = AsyncIOMotorClient(**kwargs)
             debug(f"{self._client}")
