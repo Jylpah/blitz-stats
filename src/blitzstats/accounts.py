@@ -1270,7 +1270,7 @@ async def cmd_fetch_wi(
     token: str = args.wi_auth_token  # temp fix...
     replay_idQ: IterableQueue[str] = IterableQueue()
     # pageQ		: Queue[int] = Queue()
-    debug("rate_limit=%d, auth_token=%s", rate_limit, token)
+
     wi: WoTinspector = WoTinspector(rate_limit=rate_limit, auth_token=token)
     if accountQ is not None:
         await accountQ.add_producer()
