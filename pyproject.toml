@@ -1,6 +1,6 @@
 [project]
 name = "blitz-stats"
-version = "0.9.23"
+version = "1.0.0a1"
 authors = [{ name = "Jylpah", email = "jylpah@gmail.com" }]
 description = "Tool to fetch, manage and export stats for Wargaming's World of Tanks Blitz game "
 readme = "README.md"
@@ -24,14 +24,15 @@ dependencies = [
     "isort>=5.12.0",
     "pyarrow>=11.0.0",
     "pandas>=2.0.0",
-    "pydantic>=1.10.7, ==1.*",
+    "pydantic>=2.6.0, ==2.*",
     "motor>=3.1.2",
     "pymongo>=4.3.3",
     "lz4>=4.3.2",
     "sortedcollections>=2.1.0",
     # Fixed commit until Pydantic V2 refactoring done
-    "pyutils @ git+https://github.com/Jylpah/pyutils.git@main-v1",
-    "blitz-utils @ git+https://github.com/Jylpah/blitz-utils.git@main-v1",
+    "pyutils @ git+https://github.com/Jylpah/pyutils.git@main-1.0",
+    "blitz-models @ git+https://github.com/Jylpah/blitz-models.git",
+    
 ]
 
 [project.optional-dependencies]

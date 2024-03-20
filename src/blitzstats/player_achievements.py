@@ -1,6 +1,6 @@
 from argparse import ArgumentParser, Namespace, SUPPRESS
 from configparser import ConfigParser
-from typing import Optional, Any
+from typing import Optional, Any, List, Dict
 import logging
 from asyncio import (
     create_task,
@@ -22,7 +22,7 @@ import queue
 
 from pyutils import IterableQueue, QueueDone, EventCounter, AsyncQueue
 from pyutils.utils import epoch_now, alive_bar_monitor, is_alphanum
-from blitzutils import (
+from blitzmodels import (
     Region,
     PlayerAchievementsMaxSeries,
     WGApi,
@@ -59,9 +59,9 @@ PLAYER_ACHIEVEMENTS_Q_MAX: int = 5000
 # Globals
 
 db: Backend
-readQ: AsyncQueue[list[Any] | None]
+readQ: AsyncQueue[List[Any] | None]
 in_model: type[BaseModel]
-mp_options: dict[str, Any] = dict()
+mp_options: Dict[str, Any] = dict()
 
 ########################################################
 #
@@ -344,21 +344,19 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
     debug("starting")
     wg: WGApi = WGApi(
         app_id=args.wg_app_id,
-        ru_app_id=args.ru_app_id,
         rate_limit=args.wg_rate_limit,
-        ru_rate_limit=args.ru_rate_limit,
     )
 
     try:
         stats: EventCounter = EventCounter("player-achievements fetch")
         regions: set[Region] = {Region(r) for r in args.regions}
-        regionQs: dict[str, IterableQueue[list[BSAccount]]] = dict()
+        regionQs: Dict[str, IterableQueue[List[BSAccount]]] = dict()
         retryQ: IterableQueue[BSAccount] = IterableQueue()
-        statsQ: Queue[list[PlayerAchievementsMaxSeries]] = Queue(
+        statsQ: Queue[List[PlayerAchievementsMaxSeries]] = Queue(
             maxsize=PLAYER_ACHIEVEMENTS_Q_MAX
         )
 
-        tasks: list[Task] = list()
+        tasks: List[Task] = list()
         tasks.append(create_task(fetch_backend_worker(db, statsQ)))
 
         # Process accountQ
@@ -366,7 +364,7 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
         if len(args.accounts) > 0:
             accounts = len(args.accounts)
         else:
-            accounts_args: dict[str, Any] | None
+            accounts_args: Dict[str, Any] | None
             if (accounts_args := await accounts_parse_args(db, args)) is None:
                 raise ValueError(f"could not parse account args: {args}")
             message("counting accounts...")
@@ -470,8 +468,8 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
 async def fetch_api_region_worker(
     wg_api: WGApi,
     region: Region,
-    accountQ: IterableQueue[list[BSAccount]],
-    statsQ: Queue[list[PlayerAchievementsMaxSeries]],
+    accountQ: IterableQueue[List[BSAccount]],
+    statsQ: Queue[List[PlayerAchievementsMaxSeries]],
     retryQ: IterableQueue[BSAccount] | None = None,
 ) -> EventCounter:
     """Fetch stats from a single region"""
@@ -486,8 +484,8 @@ async def fetch_api_region_worker(
 
     try:
         while True:
-            accounts: dict[int, BSAccount] = dict()
-            account_ids: list[int] = list()
+            accounts: Dict[int, BSAccount] = dict()
+            account_ids: List[int] = list()
 
             for account in await accountQ.get():
                 accounts[account.id] = account
@@ -527,7 +525,7 @@ async def fetch_api_region_worker(
 
 
 async def fetch_backend_worker(
-    db: Backend, statsQ: Queue[list[PlayerAchievementsMaxSeries]]
+    db: Backend, statsQ: Queue[List[PlayerAchievementsMaxSeries]]
 ) -> EventCounter:
     """Async worker to add player achievements to backend. Assumes batch is for the same account"""
     debug("starting")
@@ -540,7 +538,7 @@ async def fetch_backend_worker(
         while True:
             added = 0
             not_added = 0
-            player_achievements: list[PlayerAchievementsMaxSeries] = await statsQ.get()
+            player_achievements: List[PlayerAchievementsMaxSeries] = await statsQ.get()
             try:
                 if len(player_achievements) > 0:
                     debug(f"Read {len(player_achievements)} from queue")
@@ -586,7 +584,7 @@ async def cmd_import(db: Backend, args: Namespace) -> bool:
             args.import_model
         ), f"invalid --import-model: {args.import_model}"
         debug("starting")
-        player_achievementsQ: Queue[list[PlayerAchievementsMaxSeries]] = Queue(
+        player_achievementsQ: Queue[List[PlayerAchievementsMaxSeries]] = Queue(
             PLAYER_ACHIEVEMENTS_Q_MAX
         )
         rel_mapQ: Queue[PlayerAchievementsMaxSeries] = Queue()
@@ -597,7 +595,7 @@ async def cmd_import(db: Backend, args: Namespace) -> bool:
         map_releases: bool = not args.no_release_map
 
         releases: NearestDict[int, BSBlitzRelease] = await release_mapper(db)
-        workers: list[Task] = list()
+        workers: List[Task] = list()
         debug("args parsed")
 
         if (
@@ -690,10 +688,10 @@ async def cmd_importMP(db: Backend, args: Namespace) -> bool:
             )
 
         with Manager() as manager:
-            readQ: queue.Queue[list[Any] | None] = manager.Queue(
+            readQ: queue.Queue[List[Any] | None] = manager.Queue(
                 PLAYER_ACHIEVEMENTS_Q_MAX
             )
-            options: dict[str, Any] = dict()
+            options: Dict[str, Any] = dict()
             options["force"] = args.force
             # options['map_releases'] 				= not args.no_release_map
 
@@ -744,10 +742,10 @@ async def cmd_importMP(db: Backend, args: Namespace) -> bool:
 
 
 def import_mp_init(
-    backend_config: dict[str, Any],
+    backend_config: Dict[str, Any],
     inputQ: queue.Queue,
     import_model: type[BaseModel],
-    options: dict[str, Any],
+    options: Dict[str, Any],
 ):
     """Initialize static/global backend into a forked process"""
     global db, readQ, in_model, mp_options
@@ -772,15 +770,15 @@ async def import_mp_worker(id: int = 0) -> EventCounter:
     """Forkable player achievements import worker"""
     debug(f"#{id}: starting")
     stats: EventCounter = EventCounter("importer")
-    workers: list[Task] = list()
+    workers: List[Task] = list()
     try:
         global db, readQ, in_model, mp_options
         THREADS: int = 4
         force: bool = mp_options["force"]
         import_model: type[BaseModel] = in_model
         releases: NearestDict[int, BSBlitzRelease] = await release_mapper(db)
-        player_achievementsQ: Queue[list[PlayerAchievementsMaxSeries]] = Queue(100)
-        player_achievements: list[PlayerAchievementsMaxSeries]
+        player_achievementsQ: Queue[List[PlayerAchievementsMaxSeries]] = Queue(100)
+        player_achievements: List[PlayerAchievementsMaxSeries]
         # rel_map		: bool								= mp_options['map_releases']
 
         for _ in range(THREADS):
@@ -830,13 +828,13 @@ async def import_mp_worker(id: int = 0) -> EventCounter:
 
 
 def map_releases(
-    player_achievements: list[PlayerAchievementsMaxSeries],
+    player_achievements: List[PlayerAchievementsMaxSeries],
     releases: NearestDict[int, BSBlitzRelease],
-) -> tuple[list[PlayerAchievementsMaxSeries], int, int]:
+) -> tuple[List[PlayerAchievementsMaxSeries], int, int]:
     debug("starting")
     mapped: int = 0
     errors: int = 0
-    res: list[PlayerAchievementsMaxSeries] = list()
+    res: List[PlayerAchievementsMaxSeries] = list()
     for player_achievement in player_achievements:
         try:
             if (release := releases[player_achievement.added]) is not None:
@@ -852,17 +850,17 @@ def map_releases(
 async def player_releases_worker(
     releases: NearestDict[int, BSBlitzRelease],
     inputQ: Queue[PlayerAchievementsMaxSeries],
-    outputQ: Queue[list[PlayerAchievementsMaxSeries]],
+    outputQ: Queue[List[PlayerAchievementsMaxSeries]],
     map_releases: bool = True,
 ) -> EventCounter:
-    """Map player achievements to releases and pack those to list[PlayerAchievementsMaxSeries] queue.
+    """Map player achievements to releases and pack those to List[PlayerAchievementsMaxSeries] queue.
     map_all is None means no release mapping is done"""
 
     debug(f"starting: map_releases={map_releases}")
     stats: EventCounter = EventCounter("Release mapper")
     IMPORT_BATCH: int = 500
     release: BSBlitzRelease | None
-    pa_list: list[PlayerAchievementsMaxSeries] = list()
+    pa_list: List[PlayerAchievementsMaxSeries] = list()
 
     try:
         # await outputQ.add_producer()

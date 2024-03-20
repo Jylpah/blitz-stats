@@ -1,7 +1,7 @@
 from argparse import ArgumentParser, Namespace, SUPPRESS
 from configparser import ConfigParser
 from datetime import datetime
-from typing import Optional, Any
+from typing import Optional, Any, List, Dict
 import logging
 from asyncio import run, create_task, gather, sleep, wait, Queue, CancelledError, Task
 from sortedcollections import NearestDict  # type: ignore
@@ -15,7 +15,8 @@ from math import ceil
 # from asyncstdlib import enumerate
 from alive_progress import alive_bar  # type: ignore
 
-# from yappi import profile 					# type: ignore
+# from icecream import ic  # type: ignore
+# from yappi import profile 	# type: ignore
 
 # multiprocessing
 from multiprocessing import Manager, cpu_count
@@ -30,17 +31,17 @@ import pyarrow.dataset as ds  # type: ignore
 # from pandas.io.json import json_normalize	# type: ignore
 
 from pyutils import (
-    JSONExportable,
     IterableQueue,
     QueueDone,
     EventCounter,
     AsyncQueue,
     QCounter,
 )
-from pyutils.exportable import export
+
 from pyutils.utils import alive_bar_monitor
 
-from blitzutils import (
+from pydantic_exportables import JSONExportable, export
+from blitzmodels import (
     WGApi,
     Region,
     TankStat,
@@ -89,15 +90,15 @@ TANK_STATS_BATCH: int = 50000
 # export_total_rows : int = 0
 db: Backend
 mp_wg: WGApi
-readQ: AsyncQueue[list[Any] | None]
+readQ: AsyncQueue[List[Any] | None]
 progressQ: AsyncQueue[int | None]
 workQ_t: AsyncQueue[int | None]
 workQ_a: AsyncQueue[BSAccount | None]
-tank_statQ: AsyncQueue[list[TankStat]]
+tank_statQ: AsyncQueue[List[TankStat]]
 counterQas: AsyncQueue[int]
 writeQ: AsyncQueue[pd.DataFrame]
 in_model: type[JSONExportable]
-mp_options: dict[str, Any] = dict()
+mp_options: Dict[str, Any] = dict()
 mp_args: Namespace
 
 ########################################################
@@ -322,8 +323,8 @@ def add_args_edit_common(
         "--region",
         type=str,
         nargs="*",
-        choices=[r.value for r in Region.has_stats()],
-        default=[r.value for r in Region.has_stats()],
+        choices=[r.value for r in Region.API_regions()],
+        default=[r.value for r in Region.API_regions()],
         help=f"Filter by region (default is API = {' + '.join([r.value for r in Region.API_regions()])})",
     )
     parser.add_argument(
@@ -495,7 +496,7 @@ def add_args_export(
         debug("starting")
         EXPORT_FORMAT = "json"
         EXPORT_FILE = "tank_stats"
-        EXPORT_SUPPORTED_FORMATS: list[str] = ["json"]  # , 'csv'
+        EXPORT_SUPPORTED_FORMATS: List[str] = ["json"]  # , 'csv'
 
         if config is not None and "TANK_STATS" in config.sections():
             configTS = config["TANK_STATS"]
@@ -725,8 +726,8 @@ async def cmd_fetchMP(db: Backend, args: Namespace) -> bool:
         with Manager() as manager:
             counterQ: queue.Queue[int] = manager.Queue(ACCOUNTS_Q_MAX)
             counterQas: AsyncQueue[int] = AsyncQueue(counterQ)
-            # writeQ 	: queue.Queue[list[TankStat]]	= manager.Queue(TANK_STATS_Q_MAX)
-            # statsQ	: AsyncQueue[list[TankStat]]	= AsyncQueue(writeQ)
+            # writeQ 	: queue.Queue[List[TankStat]]	= manager.Queue(TANK_STATS_Q_MAX)
+            # statsQ	: AsyncQueue[List[TankStat]]	= AsyncQueue(writeQ)
             WORKERS: int = len(regions)
 
             with Pool(
@@ -734,7 +735,7 @@ async def cmd_fetchMP(db: Backend, args: Namespace) -> bool:
                 initializer=fetch_mp_init,
                 initargs=[db.config, args, counterQ],
             ) as pool:
-                accounts_args: dict[str, Any] | None
+                accounts_args: Dict[str, Any] | None
                 if (accounts_args := await accounts_parse_args(db, args)) is None:
                     raise ValueError(f"could not parse account args: {args}")
 
@@ -774,7 +775,7 @@ async def cmd_fetchMP(db: Backend, args: Namespace) -> bool:
 
 
 def fetch_mp_init(
-    backend_config: dict[str, Any],
+    backend_config: Dict[str, Any],
     args: Namespace,
     counterQ: queue.Queue[int],
 ):
@@ -804,14 +805,12 @@ async def fetch_mp_worker(region: Region) -> EventCounter:
     stats: EventCounter = EventCounter(f"fetch {region}")
     accountQ: IterableQueue[BSAccount] = IterableQueue(maxsize=100)
     retryQ: IterableQueue[BSAccount] | None = None
-    statsQ: Queue[list[TankStat]] = Queue(TANK_STATS_Q_MAX)
+    statsQ: Queue[List[TankStat]] = Queue(TANK_STATS_Q_MAX)
     args: Namespace = mp_args
     THREADS: int = args.wg_workers
     wg: WGApi = WGApi(
         app_id=args.wg_app_id,
-        ru_app_id=args.ru_app_id,
         rate_limit=args.wg_rate_limit,
-        ru_rate_limit=args.ru_rate_limit,
     )
     try:
         args.regions = {region}
@@ -819,7 +818,7 @@ async def fetch_mp_worker(region: Region) -> EventCounter:
         if not args.disabled:
             retryQ = IterableQueue()  # must not use maxsize
 
-        workers: list[Task] = list()
+        workers: List[Task] = list()
         workers.append(create_task(fetch_backend_worker(db, statsQ, force=args.force)))
 
         for _ in range(THREADS):
@@ -890,22 +889,20 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
     debug("starting")
     wg: WGApi = WGApi(
         app_id=args.wg_app_id,
-        ru_app_id=args.ru_app_id,
         rate_limit=args.wg_rate_limit,
-        ru_rate_limit=args.ru_rate_limit,
     )
 
     try:
         stats: EventCounter = EventCounter("tank-stats fetch")
         regions: set[Region] = {Region(r) for r in args.regions}
-        accountQs: dict[Region, IterableQueue[BSAccount]] = dict()
+        accountQs: Dict[Region, IterableQueue[BSAccount]] = dict()
         retryQ: IterableQueue[BSAccount] | None = None
-        statsQ: Queue[list[TankStat]] = Queue(maxsize=TANK_STATS_Q_MAX)
+        statsQ: Queue[List[TankStat]] = Queue(maxsize=TANK_STATS_Q_MAX)
 
         if not args.disabled:
             retryQ = IterableQueue()  # must not use maxsize
 
-        workers: list[Task] = list()
+        workers: List[Task] = list()
         workers.append(create_task(fetch_backend_worker(db, statsQ, force=args.force)))
 
         # Process accountQ
@@ -915,7 +912,7 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
         elif args.file is not None:
             accounts = await BSAccount.count_file(args.file)
         else:
-            accounts_args: dict[str, Any] | None
+            accounts_args: Dict[str, Any] | None
             if (accounts_args := await accounts_parse_args(db, args)) is None:
                 raise ValueError(f"could not parse account args: {args}")
 
@@ -1003,14 +1000,14 @@ async def fetch_api_worker(
     db: Backend,
     wg_api: WGApi,
     accountQ: IterableQueue[BSAccount],
-    statsQ: Queue[list[TankStat]],
+    statsQ: Queue[List[TankStat]],
     retryQ: IterableQueue[BSAccount] | None = None,
     disabled: bool = False,
 ) -> EventCounter:
     """Async worker to fetch tank stats from WG API"""
     debug("starting")
     stats: EventCounter
-    tank_stats: list[TankStat] | None
+    tank_stats: List[TankStat] | None
     if retryQ is None:
         stats = EventCounter("re-try")
     else:
@@ -1076,7 +1073,7 @@ async def fetch_api_worker(
 
 
 async def fetch_backend_worker(
-    db: Backend, statsQ: Queue[list[TankStat]], force: bool = False
+    db: Backend, statsQ: Queue[List[TankStat]], force: bool = False
 ) -> EventCounter:
     """Async worker to add tank stats to backend. Assumes batch is for the same account"""
     debug("starting")
@@ -1095,7 +1092,7 @@ async def fetch_backend_worker(
             not_added = 0
             last_battle_time = -1
             account = None
-            tank_stats: list[TankStat] = await statsQ.get()
+            tank_stats: List[TankStat] = await statsQ.get()
 
             try:
                 if len(tank_stats) > 0:
@@ -1165,11 +1162,11 @@ async def cmd_edit(db: Backend, args: Namespace) -> bool:
         since: int = 0
         if args.since is not None:
             since = int(datetime.fromisoformat(args.since).timestamp())
-        accounts: list[BSAccount] | None = read_args_accounts(args.accounts)
+        accounts: List[BSAccount] | None = read_args_accounts(args.accounts)
         sample: float = args.sample
         commit: bool = args.commit
         tank_statQ: IterableQueue[TankStat] = IterableQueue(maxsize=TANK_STATS_Q_MAX)
-        edit_tasks: list[Task] = list()
+        edit_tasks: List[Task] = list()
         message("Counting tank-stats to scan for edits")
 
         if args.tank_stats_edit_cmd == "remap-release":
@@ -1205,7 +1202,7 @@ async def cmd_edit(db: Backend, args: Namespace) -> bool:
         # elif args.tank_stats_edit_cmd == 'fix-missing':
         # 	BATCH: int = 100
         # 	message(f'Fixing {args.field} for release {release}')
-        # 	writeQ : CounterQueue[list[TankStat]]  = CounterQueue(maxsize=TANK_STATS_Q_MAX,
+        # 	writeQ : CounterQueue[List[TankStat]]  = CounterQueue(maxsize=TANK_STATS_Q_MAX,
         # 					   										batch=BATCH)
         # 	for _ in range(args.workers):
         # 		edit_tasks.append(create_task(cmd_edit_fix_missing(db, tank_statQ,
@@ -1251,7 +1248,7 @@ async def cmd_edit(db: Backend, args: Namespace) -> bool:
 
 # async def cmd_edit_fix_missing(db: Backend,
 # 								tank_statQ : IterableQueue[TankStat],
-# 								writeQ: Queue[list[TankStat]],
+# 								writeQ: Queue[List[TankStat]],
 # 								commit: bool = False,
 # 								batch : int = 1000
 # 								) -> EventCounter:
@@ -1259,7 +1256,7 @@ async def cmd_edit(db: Backend, args: Namespace) -> bool:
 # 		those from later stats"""
 # 	debug('starting')
 # 	stats : EventCounter = EventCounter('fix missing')
-# 	tank_stats : list[TankStat] = list()
+# 	tank_stats : List[TankStat] = list()
 # 	try:
 # 		while True:
 # 			ts : TankStat = await tank_statQ.get()
@@ -1406,7 +1403,7 @@ async def cmd_prune(db: Backend, args: Namespace) -> bool:
         stats: EventCounter = EventCounter(f"tank-stats prune {release}")
         commit: bool = args.commit
         tankQ: Queue[BSTank] = Queue()
-        workers: list[Task] = list()
+        workers: List[Task] = list()
         WORKERS: int = args.workers
         if sample > 0:
             WORKERS = 1
@@ -1529,15 +1526,15 @@ async def cmd_export_text(db: Backend, args: Namespace) -> bool:
         force: bool = args.force
         export_stdout: bool = filename == "-"
         sample: float = args.sample
-        accounts: list[BSAccount] | None = read_args_accounts(args.accounts)
-        tanks: list[BSTank] | None = read_args_tanks(args.tanks)
+        accounts: List[BSAccount] | None = read_args_accounts(args.accounts)
+        tanks: List[BSTank] | None = read_args_tanks(args.tanks)
         release: BSBlitzRelease | None = None
         if args.release is not None:
             release = (await get_releases(db, [args.release]))[0]
 
-        tank_statQs: dict[str, IterableQueue[TankStat]] = dict()
+        tank_statQs: Dict[str, IterableQueue[TankStat]] = dict()
         backend_worker: Task
-        export_workers: list[Task] = list()
+        export_workers: List[Task] = list()
 
         total: int = await db.tank_stats_count(
             regions=regions,
@@ -1661,7 +1658,7 @@ async def cmd_export_career(db: Backend, args: Namespace) -> bool:
             release.release,
             "career_" + ("after" if args.after else "before"),
         )
-        options: dict[str, Any] = dict()
+        options: Dict[str, Any] = dict()
         options["release"] = release
         options["after"] = args.after
 
@@ -1740,10 +1737,10 @@ async def cmd_export_career(db: Backend, args: Namespace) -> bool:
 
 
 def export_career_mp_init(
-    backend_config: dict[str, Any],
+    backend_config: Dict[str, Any],
     accountQ: queue.Queue[BSAccount | None],
     dataQ: queue.Queue[pd.DataFrame],
-    options: dict[str, Any],
+    options: Dict[str, Any],
 ):
     """Initialize static/global backend into a forked process"""
     global db, workQ_a, writeQ, mp_options
@@ -1775,7 +1772,7 @@ async def export_career_stats_mp_worker(worker: int = 0) -> EventCounter:
     try:
         release: BSBlitzRelease = mp_options["release"]
         after: bool = mp_options["after"]
-        workers: list[Task] = list()
+        workers: List[Task] = list()
         if not after:
             if (rel := await db.release_get_previous(release)) is None:
                 raise ValueError(f"could not find previous release: {release}")
@@ -1806,8 +1803,8 @@ async def export_career_fetcher(
     """Fetch tanks stats data from backend and convert to Pandas data frames"""
     debug("starting")
     stats: EventCounter = EventCounter(f"fetch {db.driver}")
-    datas: list[dict[str, Any]] = list()
-    tank_stats: list[TankStat]
+    datas: List[Dict[str, Any]] = list()
+    tank_stats: List[TankStat]
     try:
         while (account := await accountQ.get()) is not None:
             try:
@@ -1860,7 +1857,7 @@ async def cmd_export_update(db: Backend, args: Namespace) -> bool:
         export_format: str = args.format
         basedir: str = os.path.join(args.basedir, release.release, "update_total")
         # filename 		: str			= args.filename
-        options: dict[str, Any] = dict()
+        options: Dict[str, Any] = dict()
         options["regions"] = regions
         options["release"] = release.release
         tank_id: int
@@ -1937,10 +1934,10 @@ async def cmd_export_update(db: Backend, args: Namespace) -> bool:
 
 
 def export_update_mp_init(
-    backend_config: dict[str, Any],
+    backend_config: Dict[str, Any],
     tankQ: queue.Queue[int | None],
     dataQ: queue.Queue[pd.DataFrame],
-    options: dict[str, Any],
+    options: Dict[str, Any],
 ):
     """Initialize static/global backend into a forked process"""
     global db, workQ_t, writeQ, mp_options
@@ -1967,7 +1964,7 @@ async def export_data_update_mp_worker(worker: int = 0) -> EventCounter:
 
     debug(f"#{worker}: starting")
     stats: EventCounter = EventCounter("importer")
-    workers: list[Task] = list()
+    workers: List[Task] = list()
     THREADS: int = 4
 
     try:
@@ -2001,7 +1998,7 @@ async def export_update_fetcher(
     """Fetch tanks stats data from backend and convert to Pandas data frames"""
     debug("starting")
     stats: EventCounter = EventCounter(f"fetch {db.driver}")
-    tank_stats: list[dict[str, Any]] = list()
+    tank_stats: List[Dict[str, Any]] = list()
 
     try:
         while (tank_id := await tankQ.get()) is not None:
@@ -2060,8 +2057,8 @@ async def cmd_importMP(db: Backend, args: Namespace) -> bool:
             raise ValueError(f"Could not init {import_backend} to import releases from")
 
         with Manager() as manager:
-            readQ: queue.Queue[list[Any] | None] = manager.Queue(TANK_STATS_Q_MAX)
-            options: dict[str, Any] = dict()
+            readQ: queue.Queue[List[Any] | None] = manager.Queue(TANK_STATS_Q_MAX)
+            options: Dict[str, Any] = dict()
             options["force"] = args.force
             options["map_releases"] = not args.no_release_map
 
@@ -2109,10 +2106,10 @@ async def cmd_importMP(db: Backend, args: Namespace) -> bool:
 
 
 def import_mp_init(
-    backend_config: dict[str, Any],
+    backend_config: Dict[str, Any],
     inputQ: queue.Queue,
     import_model: type[JSONExportable],
-    options: dict[str, Any],
+    options: Dict[str, Any],
 ):
     """Initialize static/global backend into a forked process"""
     global db, readQ, in_model, mp_options
@@ -2137,16 +2134,16 @@ async def import_mp_worker(id: int = 0) -> EventCounter:
     """Forkable tank stats import worker"""
     debug(f"#{id}: starting")
     stats: EventCounter = EventCounter("importer")
-    workers: list[Task] = list()
+    workers: List[Task] = list()
     try:
         global db, readQ, in_model, mp_options
         THREADS: int = 4
         import_model: type[JSONExportable] = in_model
         releases: NearestDict[int, BSBlitzRelease] | None = None
-        tank_statsQ: Queue[list[TankStat]] = Queue(100)
+        tank_statsQ: Queue[List[TankStat]] = Queue(100)
         force: bool = mp_options["force"]
         rel_map: bool = mp_options["map_releases"]
-        tank_stats: list[TankStat]
+        tank_stats: List[TankStat]
 
         if rel_map:
             debug("mapping releases")
@@ -2192,12 +2189,12 @@ async def import_mp_worker(id: int = 0) -> EventCounter:
 
 
 def map_releases(
-    tank_stats: list[TankStat], releases: NearestDict[int, BSBlitzRelease]
-) -> tuple[list[TankStat], int, int]:
+    tank_stats: List[TankStat], releases: NearestDict[int, BSBlitzRelease]
+) -> tuple[List[TankStat], int, int]:
     debug("starting")
     mapped: int = 0
     errors: int = 0
-    res: list[TankStat] = list()
+    res: List[TankStat] = list()
     for tank_stat in tank_stats:
         try:
             if (release := releases[tank_stat.last_battle_time]) is not None:
@@ -2212,10 +2209,10 @@ def map_releases(
 
 async def map_releases_worker(
     releases: NearestDict[int, BSBlitzRelease] | None,
-    inputQ: Queue[list[TankStat]],
-    outputQ: Queue[list[TankStat]],
+    inputQ: Queue[List[TankStat]],
+    outputQ: Queue[List[TankStat]],
 ) -> EventCounter:
-    """Map tank stats to releases and pack those to list[TankStat] queue.
+    """Map tank stats to releases and pack those to List[TankStat] queue.
     map_all is None means no release mapping is done"""
     stats: EventCounter = EventCounter("Release mapper")
     release: BSBlitzRelease | None
@@ -2251,7 +2248,7 @@ async def map_releases_worker(
 
 async def split_tank_statQ_by_region(
     Q_all: IterableQueue[TankStat],
-    regionQs: dict[str, IterableQueue[TankStat]],
+    regionQs: Dict[str, IterableQueue[TankStat]],
     progress: bool = False,
     bar_title: str = "Splitting tank stats queue",
 ) -> EventCounter:
@@ -2300,8 +2297,8 @@ async def split_tank_statQ_by_region(
     return stats
 
 
-def read_args_tanks(tank_ids: list[int]) -> list[BSTank] | None:
-    tanks: list[BSTank] = list()
+def read_args_tanks(tank_ids: List[int]) -> List[BSTank] | None:
+    tanks: List[BSTank] = list()
     for id in tank_ids:
         tanks.append(BSTank(tank_id=id))
     if len(tanks) == 0:

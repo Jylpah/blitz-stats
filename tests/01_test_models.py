@@ -1,4 +1,4 @@
-## from blitzutils
+## from blitzmodels
 
 # @pytest.mark.asyncio
 # @TANKS_JSON_FILES

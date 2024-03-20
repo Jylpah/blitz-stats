@@ -1,6 +1,6 @@
 from argparse import ArgumentParser, Namespace
 from configparser import ConfigParser
-from typing import Optional
+from typing import Optional, List
 import logging
 
 from .backend import Backend, BSTableType
@@ -47,10 +47,12 @@ def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> b
     return False
 
 
-def add_args_init(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_init(
+    parser: ArgumentParser, config: Optional[ConfigParser] = None
+) -> bool:
     try:
         debug("starting")
-        tables: list[str] = ["all"] + sorted([tt.name for tt in BSTableType])
+        tables: List[str] = ["all"] + sorted([tt.value for tt in BSTableType])
         parser.add_argument(
             "setup_init_tables",
             nargs="*",
@@ -65,10 +67,12 @@ def add_args_init(parser: ArgumentParser, config: Optional[ConfigParser] = None)
     return False
 
 
-def add_args_list(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_list(
+    parser: ArgumentParser, config: Optional[ConfigParser] = None
+) -> bool:
     try:
         debug("starting")
-        tables: list[str] = ["all"] + sorted([tt.name for tt in BSTableType])
+        tables: List[str] = ["all"] + sorted([tt.value for tt in BSTableType])
         parser.add_argument(
             "setup_list_tables",
             nargs="*",
@@ -83,10 +87,12 @@ def add_args_list(parser: ArgumentParser, config: Optional[ConfigParser] = None)
     return False
 
 
-def add_args_test(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+def add_args_test(
+    parser: ArgumentParser, config: Optional[ConfigParser] = None
+) -> bool:
     try:
         debug("starting")
-        tables: list[str] = ["all"] + sorted([tt.name for tt in BSTableType])
+        tables: List[str] = ["all"] + sorted([tt.value for tt in BSTableType])
         parser.add_argument(
             "setup_test_tables",
             nargs="*",
@@ -141,10 +147,10 @@ async def cmd(db: Backend, args: Namespace) -> bool:
 async def cmd_init(db: Backend, args: Namespace) -> bool:
     try:
         debug("starting")
-        tables: list[str] = args.setup_init_tables
+        tables: List[str] = args.setup_init_tables
 
         if "all" in tables:
-            tables = [tt.name for tt in BSTableType]
+            tables = [tt.value for tt in BSTableType]
         await db.init(tables=tables)
         return True
     except Exception as err:
@@ -155,10 +161,10 @@ async def cmd_init(db: Backend, args: Namespace) -> bool:
 async def cmd_list(db: Backend, args: Namespace) -> bool:
     try:
         debug("starting")
-        tables: list[str] = args.setup_list_tables
+        tables: List[str] = args.setup_list_tables
 
         if "all" in tables:
-            tables = [tt.name for tt in BSTableType]
+            tables = [tt.value for tt in BSTableType]
         return db.list_config(tables=tables)
     except Exception as err:
         error(f"{err}")
@@ -168,10 +174,10 @@ async def cmd_list(db: Backend, args: Namespace) -> bool:
 async def cmd_test(db: Backend, args: Namespace) -> bool:
     try:
         debug("starting")
-        tables: list[str] = args.setup_test_tables
+        tables: List[str] = args.setup_test_tables
 
         if "all" in tables:
-            tables = [tt.name for tt in BSTableType]
+            tables = [tt.value for tt in BSTableType]
         await db.test_config(tables=tables, tests=args.setup_test_tests)
         return True
     except Exception as err:

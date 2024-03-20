@@ -1,35 +1,33 @@
 import logging
 from enum import StrEnum
-from typing import Optional, Any, ClassVar
-from pydantic import validator, root_validator, Field, ValidationError, Extra
+from typing import Optional, Any, Dict, List, ClassVar, Self
+from pydantic import field_validator, model_validator, Field, Extra
 
 from pyutils.utils import epoch_now
-from pyutils import (
+from pydantic_exportables import (
     JSONExportable,
     CSVExportable,
     TXTExportable,
     Idx,
-    BackendIndexType,
     BackendIndex,
+    IndexSortOrder,
     DESCENDING,
     ASCENDING,
     TEXT,
 )
 
 
-from blitzutils import (
+from blitzmodels import (
     Account,
     Release,
     AccountInfo,
-    ReplaySummary,
-    ReplayData,
-    ReplayJSON,
     Tank,
     EnumNation,
     EnumVehicleTypeInt,
     EnumVehicleTier,
     EnumVehicleTypeStr,
 )
+from blitzmodels.wotinspector.wi_apiv2 import Replay
 
 logger = logging.getLogger()
 error = logger.error
@@ -57,25 +55,24 @@ class BSAccount(Account):
     disabled					: bool = Field(default=False, alias="d")
     # fmt: on
 
-    _min_inactivity_days: int = MIN_INACTIVITY_DAYS
+    _min_inactivity_secs: ClassVar[int] = MIN_INACTIVITY_DAYS * 24 * 3600
     _exclude_defaults = False
 
     class Config:
-        allow_population_by_field_name = True
-        allow_mutation = True
+        populate_by_name = True
+
         validate_assignment = True
 
     @classmethod
-    def backend_indexes(cls) -> list[list[tuple[str, BackendIndexType]]]:
+    def backend_indexes(cls) -> List[List[tuple[str, IndexSortOrder]]]:
         """return backend search indexes"""
-        indexes: list[list[tuple[str, BackendIndexType]]] = list()
+        indexes: List[List[BackendIndex]] = list()
         indexes.append(
             [
                 ("disabled", ASCENDING),
                 ("inactive", ASCENDING),
                 ("region", ASCENDING),
                 ("last_battle_time", DESCENDING),
-                # ('id', 		ASCENDING),
             ]
         )
         indexes.append(
@@ -102,11 +99,11 @@ class BSAccount(Account):
 
     @classmethod
     def inactivity_limit(cls) -> int:
-        return cls._min_inactivity_days
+        return cls._min_inactivity_secs
 
     @classmethod
     def set_inactivity_limit(cls, days: int) -> None:
-        cls._min_inactivity_days = days
+        cls._min_inactivity_secs = days * 24 * 3600
 
     @classmethod
     def get_update_field(cls, stats_type: str | None) -> str | None:
@@ -117,7 +114,7 @@ class BSAccount(Account):
             error(f"Unknown stats_type: {stats_type}")
         return None
 
-    @validator("updated_tank_stats", "updated_player_achievements")
+    @field_validator("updated_tank_stats", "updated_player_achievements")
     def check_epoch_ge_zero(cls, v):
         if v is None:
             return None
@@ -126,8 +123,11 @@ class BSAccount(Account):
         else:
             raise ValueError("time field must be >= 0")
 
-    @validator("added")
+    @field_validator("added")
     def set_current_time(cls, v):
+        """
+        Set 'added' field to current UTC time if the field has not been set
+        """
         if v is None:
             return epoch_now()
         elif v >= 0:
@@ -135,13 +135,21 @@ class BSAccount(Account):
         else:
             ValueError("time field must be >= 0")
 
-    @root_validator()
-    def set_inactive(cls, values: dict[str, Any]) -> dict[str, Any]:
-        lbt: int | None
-        if (lbt := values.get("last_battle_time")) is not None:
-            inactive: bool = epoch_now() - lbt > cls._min_inactivity_days * 24 * 3600
-            values["inactive"] = inactive
-        return values
+    @model_validator(mode="after")
+    def set_inactive(self) -> Self:
+        """ "
+        Set 'inactive' field based in players inactivity.
+        If 'last_battle_time' == 0, set the player ACTIVE since to avoid
+        inactivating players when creating player objects with default field values
+        """
+        if self.last_battle_time > 0:
+            self._set_skip_validation(
+                "inactive",
+                epoch_now() - self.last_battle_time > self._min_inactivity_secs,
+            )
+        else:
+            self._set_skip_validation("inactive", False)
+        return self
 
     def stats_updated(self, stats: StatsTypes) -> None:
         assert type(stats) is StatsTypes, "'stats' need to be type(StatsTypes)"
@@ -157,7 +165,7 @@ class BSAccount(Account):
             stats_updated = epoch_now()
         return (
             stats_updated - self.last_battle_time
-            > self._min_inactivity_days * 24 * 3600
+            > self._min_inactivity_secs * 24 * 3600
         )
 
     def update_needed(self, stats_type: StatsTypes) -> bool:
@@ -169,11 +177,11 @@ class BSAccount(Account):
             MAX_UPDATE_INTERVAL, (stats_updated - self.last_battle_time) / 3
         )
 
-    def update(self, update: AccountInfo) -> bool:
+    def update_info(self, update: AccountInfo) -> bool:
         """Update BSAccount() from WGACcountInfo i.e. from WG API"""
         updated: bool = False
         try:
-            updated = super().update(update)
+            updated = super().update_info(update)
             self.updated_account_info = epoch_now()
             return updated
         except Exception as err:
@@ -219,11 +227,10 @@ class BSBlitzRelease(Release):
     _exclude_defaults = False
 
     class Config:
-        allow_mutation = True
         validate_assignment = True
-        allow_population_by_field_name = True
+        populate_by_name = True
 
-    @validator("cut_off", pre=True)
+    @field_validator("cut_off")
     def check_cut_off_now(cls, v):
         if v is None:
             return cls._max_epoch
@@ -232,7 +239,7 @@ class BSBlitzRelease(Release):
         else:
             return int(v)
 
-    @validator("cut_off")
+    @field_validator("cut_off")
     def validate_cut_off(cls, v: int) -> int:
         # ROUND_TO : int = 10*60
         if v >= 0:
@@ -250,111 +257,133 @@ class BSBlitzRelease(Release):
         return super().txt_row(format) + extra
 
 
-class BSBlitzReplay(ReplaySummary):
-    id: str | None = Field(default=None, alias="_id")
+class BSReplay(Replay):
+    """ "
+    Replay model for Blitz-Stats
+    """
 
-    _ViewUrlBase: str = "https://replays.wotinspector.com/en/view/"
-    _DLurlBase: str = "https://replays.wotinspector.com/en/download/"
-
-    class Config:
-        arbitrary_types_allowed = True
-        allow_mutation = True
-        validate_assignment = True
-        allow_population_by_field_name = True
-
-    @property
-    def index(self) -> Idx:
-        """return backend index"""
-        if self.id is not None:
-            return self.id
-        raise ValueError("id is missing")
-
-    @property
-    def view_url(self) -> str:
-        if self.id is not None:
-            return f"{self._ViewUrlBase}{self.id}"
-        raise ValueError("field 'id' is missing")
-
-    @property
-    def dl_url(self) -> str:
-        if self.id is not None:
-            return f"{self._DLurlBase}{self.id}"
-        raise ValueError("field 'id' is missing")
-
-    @property
-    def indexes(self) -> dict[str, Idx]:
-        """return backend indexes"""
-        return {"id": self.index}
-
+    @field_validator("last_accessed_time", "download_url", "details_url")
     @classmethod
-    def backend_indexes(cls) -> list[list[tuple[str, BackendIndexType]]]:
-        """return backend search indexes"""
-        indexes: list[list[tuple[str, BackendIndexType]]] = list()
-        indexes.append(
-            [
-                ("protagonist", ASCENDING),
-                ("room_type", ASCENDING),
-                ("vehicle_tier", ASCENDING),
-                ("battle_start_timestamp", DESCENDING),
-            ]
-        )
-        indexes.append(
-            [
-                ("room_type", ASCENDING),
-                ("vehicle_tier", ASCENDING),
-                ("battle_start_timestamp", DESCENDING),
-            ]
-        )
-        return indexes
-
-    @classmethod
-    def transform_WoTBlitzReplayData(
-        cls, in_obj: ReplayData
-    ) -> Optional["BSBlitzReplay"]:
-        res: BSBlitzReplay | None = None
-        try:
-            if (res := BSBlitzReplay.parse_obj(in_obj.summary.dict())) is not None:
-                res.id = in_obj.id
-                return res
-            else:
-                error(f"failed to transform object: {in_obj}")
-        except ValidationError as err:
-            error(f"failed to transform object: {in_obj}: {err}")
-        return res
-
-    @classmethod
-    def transform_WoTBlitzReplayJSON(
-        cls, in_obj: ReplayJSON
-    ) -> Optional["BSBlitzReplay"]:
-        if (replay_data := ReplayData.transform(in_obj)) is not None:
-            return cls.transform_WoTBlitzReplayData(replay_data)
+    def _set_none(cls, value: Any) -> None:
         return None
 
 
-BSBlitzReplay.register_transformation(
-    ReplayData, BSBlitzReplay.transform_WoTBlitzReplayData
-)
-BSBlitzReplay.register_transformation(
-    ReplayJSON, BSBlitzReplay.transform_WoTBlitzReplayJSON
-)
+def Replay2BSReplay(replay: Replay) -> BSReplay | None:
+    """
+    Transform Replay to BSReplay
+    """
+    return BSReplay.model_validate(replay)
+
+
+BSReplay.register_transformation(Replay, Replay2BSReplay)
+
+# class BSReplay(ReplaySummary):
+#     id: str | None = Field(default=None, alias="_id")
+
+#     _ViewUrlBase: str = "https://replays.wotinspector.com/en/view/"
+#     _DLurlBase: str = "https://replays.wotinspector.com/en/download/"
+
+#     class Config:
+#         arbitrary_types_allowed = True
+#
+#         validate_assignment = True
+#         populate_by_name = True
+
+#     @property
+#     def index(self) -> Idx:
+#         """return backend index"""
+#         if self.id is not None:
+#             return self.id
+#         raise ValueError("id is missing")
+
+#     @property
+#     def view_url(self) -> str:
+#         if self.id is not None:
+#             return f"{self._ViewUrlBase}{self.id}"
+#         raise ValueError("field 'id' is missing")
+
+#     @property
+#     def dl_url(self) -> str:
+#         if self.id is not None:
+#             return f"{self._DLurlBase}{self.id}"
+#         raise ValueError("field 'id' is missing")
+
+#     @property
+#     def indexes(self) -> Dict[str, Idx]:
+#         """return backend indexes"""
+#         return {"id": self.index}
+
+#     @classmethod
+#     def backend_indexes(cls) -> List[List[tuple[str, BackendIndexType]]]:
+#         """return backend search indexes"""
+#         indexes: List[List[tuple[str, BackendIndexType]]] = list()
+#         indexes.append(
+#             [
+#                 ("protagonist", ASCENDING),
+#                 ("room_type", ASCENDING),
+#                 ("vehicle_tier", ASCENDING),
+#                 ("battle_start_timestamp", DESCENDING),
+#             ]
+#         )
+#         indexes.append(
+#             [
+#                 ("room_type", ASCENDING),
+#                 ("vehicle_tier", ASCENDING),
+#                 ("battle_start_timestamp", DESCENDING),
+#             ]
+#         )
+#         return indexes
+
+#     @classmethod
+#     def transform_WoTBlitzReplayData(
+#         cls, in_obj: ReplayData
+#     ) -> Optional["Replay"]:
+#         res: Replay | None = None
+#         try:
+#             if (res := Replay.parse_obj(in_obj.summary.dict())) is not None:
+#                 res.id = in_obj.id
+#                 return res
+#             else:
+#                 error(f"failed to transform object: {in_obj}")
+#         except ValidationError as err:
+#             error(f"failed to transform object: {in_obj}: {err}")
+#         return res
+
+#     @classmethod
+#     def transform_WoTBlitzReplayJSON(
+#         cls, in_obj: ReplayJSON
+#     ) -> Optional["Replay"]:
+#         if (replay_data := ReplayData.transform(in_obj)) is not None:
+#             return cls.transform_WoTBlitzReplayData(replay_data)
+#         return None
+
+
+# Replay.register_transformation(
+#     ReplayData, Replay.transform_WoTBlitzReplayData
+# )
+# Replay.register_transformation(
+#     ReplayJSON, Replay.transform_WoTBlitzReplayJSON
+# )
 
 
 # fmt: off
 class BSTank(JSONExportable, CSVExportable, TXTExportable):
     tank_id 	: int						= Field(default=..., alias='_id')
     name 		: str | None				= Field(default=None, alias='n')
+    # TODO: add 'code' 
+    code        : str | None                = Field(default=None)
     nation		: EnumNation | None 		= Field(default=None, alias='c')
     type		: EnumVehicleTypeInt | None	= Field(default=None, alias='v')
     tier		: EnumVehicleTier | None 	= Field(default=None, alias='t')
     is_premium 	: bool 						= Field(default=False, alias='p')
-    next_tanks	: list[int] | None			= Field(default=None, alias='s')
+    next_tanks	: List[int] | None			= Field(default=None, alias='s')
     # fmt: on
     _exclude_defaults = False
 
     class Config:
-        allow_mutation = True
+        
         validate_assignment = True
-        allow_population_by_field_name = True
+        populate_by_name = True
         # use_enum_values			= True
         extra = Extra.allow
 
@@ -364,24 +393,24 @@ class BSTank(JSONExportable, CSVExportable, TXTExportable):
         return self.tank_id
 
     @property
-    def indexes(self) -> dict[str, Idx]:
+    def indexes(self) -> Dict[str, Idx]:
         """return backend indexes"""
         return {'tank_id': self.index}
 
     @classmethod
-    def backend_indexes(cls) -> list[list[tuple[str, BackendIndexType]]]:
-        indexes: list[list[BackendIndex]] = list()
+    def backend_indexes(cls) -> List[List[tuple[str, IndexSortOrder]]]:
+        indexes: List[List[BackendIndex]] = list()
         indexes.append([('tier', ASCENDING),
                         ('type', ASCENDING)
                         ])
         indexes.append([('tier', ASCENDING),
                         ('nation', ASCENDING)
                         ])
-        indexes.append([('name', TEXT)
-                        ])
+        indexes.append([('name', TEXT), ('code', TEXT)])
+        
         return indexes
 
-    @validator('next_tanks', pre=True)
+    @field_validator('next_tanks')
     def next_tanks2list(cls, v):
         try:
             if v is not None:
@@ -390,14 +419,14 @@ class BSTank(JSONExportable, CSVExportable, TXTExportable):
             error(f"Error validating 'next_tanks': {err}")
         return None
 
-    @validator('tier', pre=True)
+    @field_validator('tier')
     def prevalidate_tier(cls, v: Any) -> Any:
         if isinstance(v, str):
             return EnumVehicleTier[v.upper()].value
         else:
             return v
 
-    @validator('tier')
+    @field_validator('tier')
     def validate_tier(cls, v):
         if isinstance(v, int):
             return EnumVehicleTier(v)
@@ -406,40 +435,41 @@ class BSTank(JSONExportable, CSVExportable, TXTExportable):
 
     def __str__(self) -> str:
         return f'{self.name}'
-
-    @classmethod
-    def transform_WGTank(cls, in_obj: 'Tank') -> Optional['BSTank']:
-        """Transform Tank object to BSTank"""
-        try:
-            # debug(f'type={type(in_obj)}')
-            # debug(f'in_obj={in_obj}')
-            tank_type: EnumVehicleTypeInt | None = None
-            if in_obj.type is not None:
-                tank_type = in_obj.type.as_int
-            return BSTank(tank_id=in_obj.tank_id,
-                        name=in_obj.name,
-                        tier=in_obj.tier,
-                        type=tank_type,
-                        is_premium=in_obj.is_premium,
-                        nation=in_obj.nation,
-                        )
-        except Exception as err:
-            error(f'{err}')
-        return None
-
-    def csv_headers(self) -> list[str]:
-        """Provide CSV headers as list"""
-        return list(BSTank.__fields__.keys())
-
+    
+    
     def txt_row(self, format: str = '') -> str:
         """export data as single row of text"""
         if format == 'rich':
             return f'({self.tank_id}) {self.name} tier {self.tier} {self.type} {self.nation}'
         else:
             return f'({self.tank_id}) {self.name}'
+        
+        
+
+def Tank2BSTank(in_obj: Tank) -> Optional[BSTank]:
+    """Transform Tank object to BSTank"""
+    try:
+        # debug(f'type={type(in_obj)}')
+        # debug(f'in_obj={in_obj}')
+        tank_type: EnumVehicleTypeInt | None = None
+        if in_obj.type is not None:
+            tank_type = in_obj.type.as_int
+        return BSTank(tank_id=in_obj.tank_id,
+                    name=in_obj.name,
+                    tier=in_obj.tier,
+                    type=tank_type,
+                    is_premium=in_obj.is_premium,
+                    nation=in_obj.nation,
+                    code=in_obj.code,
+                    )
+    except Exception as err:
+        error(f'{err}')
+    return None
 
 
-def WGTank2Tank(in_obj: "BSTank") -> Optional["Tank"]:
+
+
+def BSTank2Tank(in_obj: "BSTank") -> Optional["Tank"]:
     """Transform BSTank object to Tank"""
     try:
         # debug(f'type={type(in_obj)}')
@@ -455,6 +485,7 @@ def WGTank2Tank(in_obj: "BSTank") -> Optional["Tank"]:
             type=tank_type,
             is_premium=in_obj.is_premium,
             nation=in_obj.nation,
+            code=in_obj.code,
         )
     except Exception as err:
         error(f"{err}")
@@ -462,5 +493,5 @@ def WGTank2Tank(in_obj: "BSTank") -> Optional["Tank"]:
 
 
 # register model transformations
-BSTank.register_transformation(Tank, BSTank.transform_WGTank)
-Tank.register_transformation(BSTank, WGTank2Tank)
+BSTank.register_transformation(Tank, Tank2BSTank)
+Tank.register_transformation(BSTank, BSTank2Tank)
