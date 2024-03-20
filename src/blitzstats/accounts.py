@@ -1270,6 +1270,7 @@ async def cmd_fetch_wi(
     token: str = args.wi_auth_token  # temp fix...
     replay_idQ: IterableQueue[str] = IterableQueue()
     # pageQ		: Queue[int] = Queue()
+    debug("rate_limit=%d, auth_token=%s", rate_limit, token)
     wi: WoTinspector = WoTinspector(rate_limit=rate_limit, auth_token=token)
     if accountQ is not None:
         await accountQ.add_producer()
@@ -1284,11 +1285,7 @@ async def cmd_fetch_wi(
         pages: range = range(start_page, (start_page + max_pages), step)
 
         workers.append(
-            create_task(
-                fetch_wi_get_replay_ids(
-                    db, wi, args, replay_idQ, pages, disable_bar=True
-                )
-            )
+            create_task(fetch_wi_get_replay_ids(db, wi, args, replay_idQ, pages))
         )
         for _ in range(workersN):
             workers.append(
@@ -1377,7 +1374,7 @@ async def fetch_wi_get_replay_ids(
     args: Namespace,
     replay_idQ: IterableQueue[str],
     pages: range,
-    disable_bar: bool = False,
+    # disable_bar: bool = False,
 ) -> EventCounter:
     """Spider replays.WoTinspector.com and feed found replay IDs into replayQ. Return stats"""
     debug("starting")
@@ -1389,48 +1386,40 @@ async def fetch_wi_get_replay_ids(
     try:
         debug(f"Starting ({len(pages)} pages)")
         await replay_idQ.add_producer()
-        with alive_bar(
-            len(pages),
-            title="Spidering replays",
-            enrich_print=False,
-            disable=disable_bar,
-        ) as bar:
-            for page in pages:
-                try:
-                    if old_replays > max_old_replays:
-                        raise CancelledError
-                        #  break
-                    debug(f"spidering page {page}")
-                    replay_summaries: List[ReplaySummary] | None
-                    replay_summary: ReplaySummary
-                    if (replay_summaries := await wi.get_replay_list(page)) is not None:
-                        for replay_summary in replay_summaries:
-                            res: Replay | None = await db.replay_get(
-                                replay_id=replay_summary.id
-                            )
-                            if res is not None:
-                                debug(
-                                    f"Replay already in the {db.backend}: {replay_summary.id}"
-                                )
-                                stats.log("old replays found")
-                                if not force:
-                                    old_replays += 1
-                                    continue
-                                else:
-                                    stats.log("old replays to re-fetch")
-                            else:
-                                stats.log("new replays")
-                            await replay_idQ.put(replay_summary.id)
-                    else:
-                        debug(f"No replays found for page {page}")
-                except KeyboardInterrupt:
-                    debug("CTRL+C pressed, stopping...")
+
+        for page in pages:
+            try:
+                if old_replays > max_old_replays:
                     raise CancelledError
-                except Exception as err:
-                    error(f"{err}")
-                finally:
-                    if not disable_bar:
-                        bar()
+                    #  break
+                debug(f"spidering page {page}")
+                replay_summaries: List[ReplaySummary] | None
+                replay_summary: ReplaySummary
+                if (replay_summaries := await wi.get_replay_list(page)) is not None:
+                    for replay_summary in replay_summaries:
+                        res: Replay | None = await db.replay_get(
+                            replay_id=replay_summary.id
+                        )
+                        if res is not None:
+                            debug(
+                                f"Replay already in the {db.backend}: {replay_summary.id}"
+                            )
+                            stats.log("old replays found")
+                            if not force:
+                                old_replays += 1
+                                continue
+                            else:
+                                stats.log("old replays to re-fetch")
+                        else:
+                            stats.log("new replays")
+                        await replay_idQ.put(replay_summary.id)
+                else:
+                    debug(f"No replays found for page {page}")
+            except KeyboardInterrupt:
+                debug("CTRL+C pressed, stopping...")
+                raise CancelledError
+            except Exception as err:
+                error(f"{err}")
     except CancelledError:
         # debug(f'Cancelled')
         message(f"{max_old_replays} found. Stopping spidering for more")
