@@ -15,8 +15,8 @@ from pyutils.utils import is_alphanum
 from pydantic_exportables import JSONExportable
 
 # from blitzmodels.replay import ReplayJSON, ReplayData
-from blitzmodels.wotinspector.wi_apiv2 import Replay
-
+# from blitzmodels.wotinspector.wi_apiv2 import Replay
+from .models import BSReplay
 from .backend import Backend, BSTableType, get_sub_type
 from .accounts import add_args_fetch_wi as add_args_accounts_fetch_wi
 from .accounts import cmd_fetch_wi as cmd_accounts_fetch_wi
@@ -188,7 +188,7 @@ def add_args_import(
             metavar="IMPORT-TYPE",
             type=str,
             required=True,
-            choices=["Replay"],
+            choices=["BSReplay"],
             help="Data format to import. Default is blitz-stats native format.",
         )
 
@@ -251,7 +251,7 @@ async def cmd_export_id(db: Backend, args: Namespace) -> bool:
     try:
         debug("starting")
         id: str = args.replay_export_id
-        replay: Replay | None = await db.replay_get(id)
+        replay: BSReplay | None = await db.replay_get(id)
         if replay is None:
             error("Could not find replay id: {id}")
             return False
@@ -265,7 +265,7 @@ async def cmd_export_id(db: Backend, args: Namespace) -> bool:
     return False
 
 
-async def cmd_export_files(args: Namespace, replays: Iterable[Replay]) -> bool:
+async def cmd_export_files(args: Namespace, replays: Iterable[BSReplay]) -> bool:
     raise NotImplementedError
     return False
 
@@ -457,7 +457,7 @@ async def import_mp_worker(id: int = 0) -> EventCounter:
                 read: int = len(objs)
                 debug(f"read {read} documents")
                 stats.log("stats read", read)
-                replays = Replay.from_objs(objs=objs, in_type=import_model)
+                replays = BSReplay.from_objs(objs=objs, in_type=import_model)
                 errors = len(objs) - len(replays)
                 stats.log("replays read", len(replays))
                 stats.log("conversion errors", errors)

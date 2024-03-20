@@ -27,6 +27,7 @@ from blitzmodels import (
     EnumVehicleTier,
     EnumVehicleTypeStr,
 )
+from blitzmodels.wotinspector.wi_apiv2 import Replay
 
 logger = logging.getLogger()
 error = logger.error
@@ -255,6 +256,26 @@ class BSBlitzRelease(Release):
             extra = f"\t{self.cut_off}"
         return super().txt_row(format) + extra
 
+
+class BSReplay(Replay):
+    """ "
+    Replay model for Blitz-Stats
+    """
+
+    @field_validator("last_accessed_time", "download_url", "details_url")
+    @classmethod
+    def _set_none(cls, value: Any) -> None:
+        return None
+
+
+def Replay2BSReplay(replay: Replay) -> BSReplay | None:
+    """
+    Transform Replay to BSReplay
+    """
+    return BSReplay.model_validate(replay)
+
+
+BSReplay.register_transformation(Replay, Replay2BSReplay)
 
 # class BSReplay(ReplaySummary):
 #     id: str | None = Field(default=None, alias="_id")

@@ -14,7 +14,7 @@ from pydantic_exportables import JSONExportable
 from blitzmodels import EnumVehicleTier, EnumVehicleTypeInt, EnumNation, Region
 from blitzmodels.wg_api import TankStat, PlayerAchievementsMaxSeries
 
-from blitzmodels.wotinspector.wi_apiv2 import Replay
+# from blitzmodels.wotinspector.wi_apiv2 import Replay
 from pyutils import EventCounter, IterableQueue, QueueDone
 from pyutils.utils import is_alphanum
 
@@ -22,6 +22,7 @@ from .models import (
     BSAccount,
     BSBlitzRelease,
     StatsTypes,
+    BSReplay,
     BSTank,
 )
 
@@ -227,7 +228,7 @@ class Backend(ABC):
         # TODO: remove WoTBlitzTankString, not needed with new Tank model
         # self.set_model(BSTableType.TankStrings, WoTBlitzTankString)
         self.set_model(BSTableType.Releases, BSBlitzRelease)
-        self.set_model(BSTableType.Replays, Replay)
+        self.set_model(BSTableType.Replays, BSReplay)
         self.set_model(BSTableType.AccountLog, EventLog)
         self.set_model(BSTableType.EventLog, EventLog)
         self.set_model(BSTableType.TankStats, TankStat)
@@ -980,7 +981,7 @@ class Backend(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def replay_get(self, replay_id: str) -> Replay | None:
+    async def replay_get(self, replay_id: str) -> BSReplay | None:
         """Get a replay from backend based on replayID"""
         raise NotImplementedError
 
@@ -993,10 +994,10 @@ class Backend(ABC):
     @abstractmethod
     async def replays_get(
         self, since: int = 0, **summary_fields
-    ) -> AsyncGenerator[Replay, None]:
+    ) -> AsyncGenerator[BSReplay, None]:
         """Get replays from backed"""
         raise NotImplementedError
-        yield Replay()
+        yield BSReplay()
 
     @abstractmethod
     async def replays_count(
@@ -1039,10 +1040,10 @@ class Backend(ABC):
             error(f"{err}")
         return stats
 
-    async def replays_export(self, sample: float = 0) -> AsyncGenerator[Replay, None]:
+    async def replays_export(self, sample: float = 0) -> AsyncGenerator[BSReplay, None]:
         """Export replays from Mongo DB"""
         raise NotImplementedError
-        yield Replay()
+        yield BSReplay()
 
     # ----------------------------------------
     # tank stats

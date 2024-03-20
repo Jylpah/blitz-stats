@@ -54,7 +54,7 @@ from blitzmodels import (
     EnumNation,
     EnumVehicleTier,
 )
-from blitzmodels.wotinspector.wi_apiv2 import Replay
+# from blitzmodels.wotinspector.wi_apiv2 import Replay
 
 from .backend import (
     Backend,
@@ -68,6 +68,7 @@ from .models import (
     BSAccount,
     BSBlitzRelease,
     StatsTypes,
+    BSReplay,
     BSTank,
     EnumVehicleTypeInt,
 )
@@ -1670,13 +1671,13 @@ class MongoBackend(Backend):
         # return await self._data_insert(self.collection_replays, replay)
         return await self._data_insert(BSTableType.Replays, obj=replay)
 
-    async def replay_get(self, replay_id: str) -> Replay | None:
+    async def replay_get(self, replay_id: str) -> BSReplay | None:
         """Get replay from backend"""
         debug("starting")
         if (
             rep := await self._data_get(BSTableType.Replays, idx=replay_id)
         ) is not None:
-            return Replay.from_obj(rep, self.model_replays)
+            return BSReplay.from_obj(rep, self.model_replays)
         return None
 
     async def replay_delete(self, replay_id: str) -> bool:
@@ -1730,7 +1731,7 @@ class MongoBackend(Backend):
 
     async def replays_get(
         self, since: int = 0, sample: float = 0, **summary_fields
-    ) -> AsyncGenerator[Replay, None]:
+    ) -> AsyncGenerator[BSReplay, None]:
         """Get replays from mongodb backend"""
         debug("starting")
         try:
@@ -1740,7 +1741,7 @@ class MongoBackend(Backend):
                 since=since, sample=sample, **summary_fields
             )
             async for data in self._datas_get(BSTableType.Replays, pipeline):
-                if (replay := Replay.transform(data)) is not None:
+                if (replay := BSReplay.transform(data)) is not None:
                     yield replay
         except Exception as err:
             error(
@@ -1764,13 +1765,13 @@ class MongoBackend(Backend):
             )
         return -1
 
-    async def replays_export(self, sample: float = 0) -> AsyncGenerator[Replay, None]:
+    async def replays_export(self, sample: float = 0) -> AsyncGenerator[BSReplay, None]:
         """Export replays from Mongo DB"""
         debug("starting")
         async for replay in self._datas_export(
             BSTableType.Replays,
             in_type=self.model_replays,
-            out_type=Replay,
+            out_type=BSReplay,
             sample=sample,
         ):
             yield replay
