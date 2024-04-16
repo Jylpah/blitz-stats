@@ -258,7 +258,7 @@ class BSBlitzRelease(Release):
 
 
 class BSReplay(Replay):
-    """ "
+    """
     Replay model for Blitz-Stats
     """
 
