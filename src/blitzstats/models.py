@@ -258,7 +258,7 @@ class BSBlitzRelease(Release):
 
 
 class BSReplay(Replay):
-    """ "
+    """
     Replay model for Blitz-Stats
     """
 
@@ -370,7 +370,6 @@ BSReplay.register_transformation(Replay, Replay2BSReplay)
 class BSTank(JSONExportable, CSVExportable, TXTExportable):
     tank_id 	: int						= Field(default=..., alias='_id')
     name 		: str | None				= Field(default=None, alias='n')
-    # TODO: add 'code' 
     code        : str | None                = Field(default=None)
     nation		: EnumNation | None 		= Field(default=None, alias='c')
     type		: EnumVehicleTypeInt | None	= Field(default=None, alias='v')

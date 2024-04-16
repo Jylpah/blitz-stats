@@ -287,10 +287,6 @@ class MongoBackend(Backend):
     def collection_tankopedia(self) -> AsyncIOMotorCollection:
         return self.get_collection(BSTableType.Tankopedia)
 
-    # @property
-    # def collection_tank_strings(self) -> AsyncIOMotorCollection:
-    #     return self.get_collection(BSTableType.TankStrings)
-
     @property
     def collection_player_achievements(self) -> AsyncIOMotorCollection:
         return self.get_collection(BSTableType.PlayerAchievements)

@@ -214,7 +214,6 @@ class Backend(ABC):
         # default tables
         self.set_table(BSTableType.Accounts, "Accounts")
         self.set_table(BSTableType.Tankopedia, "Tankopedia")
-        # self.set_table(BSTableType.TankStrings, "TankStrings")
         self.set_table(BSTableType.Releases, "Releases")
         self.set_table(BSTableType.Replays, "Replays")
         self.set_table(BSTableType.AccountLog, "AccountLog")
@@ -225,8 +224,6 @@ class Backend(ABC):
         # set default models
         self.set_model(BSTableType.Accounts, BSAccount)
         self.set_model(BSTableType.Tankopedia, BSTank)
-        # TODO: remove WoTBlitzTankString, not needed with new Tank model
-        # self.set_model(BSTableType.TankStrings, WoTBlitzTankString)
         self.set_model(BSTableType.Releases, BSBlitzRelease)
         self.set_model(BSTableType.Replays, BSReplay)
         self.set_model(BSTableType.AccountLog, EventLog)
@@ -239,7 +236,6 @@ class Backend(ABC):
             self._cache_valid = configBackend.getint("cache_valid", MIN_UPDATE_INTERVAL)
             self.set_table(BSTableType.Accounts, configBackend.get("t_accounts"))
             self.set_table(BSTableType.Tankopedia, configBackend.get("t_tankopedia"))
-            # self.set_table(BSTableType.TankStrings, configBackend.get("t_tank_strings"))
             self.set_table(BSTableType.Releases, configBackend.get("t_releases"))
             self.set_table(BSTableType.Replays, configBackend.get("t_replays"))
             self.set_table(BSTableType.TankStats, configBackend.get("t_tank_stats"))
@@ -252,7 +248,6 @@ class Backend(ABC):
 
             self.set_model(BSTableType.Accounts, configBackend.get("m_accounts"))
             self.set_model(BSTableType.Tankopedia, configBackend.get("m_tankopedia"))
-            # self.set_model(BSTableType.TankStrings, configBackend.get("m_tank_strings"))
             self.set_model(BSTableType.Releases, configBackend.get("m_releases"))
             self.set_model(BSTableType.Replays, configBackend.get("m_replays"))
             self.set_model(BSTableType.TankStats, configBackend.get("m_tank_stats"))
@@ -1512,25 +1507,3 @@ class Backend(ABC):
         except Exception as err:
             error(f"{err}")
         return stats
-
-    # ----------------------------------------
-    # BSTank Strings
-    # ----------------------------------------
-
-    # @abstractmethod
-    # async def tank_string_insert(
-    #     self, tank_str: WoTBlitzTankString, force: bool = False
-    # ) -> bool:
-    #     """ "insert a tank string"""
-    #     raise NotImplementedError
-
-    # @abstractmethod
-    # async def tank_string_get(self, code: str) -> WoTBlitzTankString | None:
-    #     raise NotImplementedError
-
-    # @abstractmethod
-    # async def tank_strings_get(
-    #     self, search: str | None
-    # ) -> AsyncGenerator[WoTBlitzTankString, None]:
-    #     raise NotImplementedError
-    #     yield WoTBlitzTankString()
