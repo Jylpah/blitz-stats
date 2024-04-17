@@ -18,6 +18,10 @@ from blitzmodels import Release  # noqa
 from .backend import Backend, BSTableType
 from .models import BSBlitzRelease
 
+MAX_EPOCH: int = (
+    2**36
+)  ##  Sunday, August 20, 4147 7:32:16, I doubt Python3 is supported anymore then
+
 logger = logging.getLogger()
 error = logger.error
 message = logger.warning
@@ -119,8 +123,8 @@ def add_args_edit(
         )
         parser.add_argument(
             "--cut-off",
-            type=str,
-            default=0,
+            type=int,
+            default=-1,
             metavar="EPOCH",
             help="new release cut-off time",
         )
@@ -136,7 +140,7 @@ def add_args_edit(
             "--round-cut-off",
             "--round",
             type=int,
-            default=-1,
+            default=10,
             metavar="MINUTES",
             help="round cut-off time to the next full MINUTES",
         )
@@ -356,27 +360,25 @@ async def cmd_add(db: Backend, args: Namespace) -> bool:
 async def cmd_edit(db: Backend, args: Namespace) -> bool:
     try:
         debug("starting")
-        release : BSBlitzRelease | None 
-        updated : bool = False
-        cut_off : int = int(args.cut_off)
+        release: BSBlitzRelease | None
+        cut_off: int = int(args.cut_off)
+        fields: List[str] = list()
         if (release := await db.release_get(args.release)) is not None:
-            if cut_off > 0:
-                release.cut_off = round_epoch(cut_off, args.round_cut_off * 60)
-                updated = True
+            if cut_off >= 0:
+                fields.append("cut_off")
+                if cut_off == 0:
+                    release.cut_off = MAX_EPOCH
+                else:
+                    release.cut_off = round_epoch(cut_off, args.round_cut_off * 60)
             if args.launch_date is not None:
+                fields.append("launch_date")
                 release.launch_date = datetime.fromisoformat(args.launch_date)
-                updated = True
-            if updated:
-
-        # release = BSBlitzRelease(
-        #     release=args.release,
-        #     launch_date=args.launch,
-        #     cut_off=cut_off,
-        # )
-        # release.cut_off = round_epoch(release.cut_off, args.round_cut_off * 60)
-                update: Dict[str, Any] = release.dict(exclude_unset=True, exclude_none=True)
+            if len(fields) > 0:
+                update: Dict[str, Any] = release.dict(
+                    exclude_unset=True, exclude_none=True
+                )
                 del update["release"]
-                return await db.release_update(release, update=update)
+                return await db.release_update(release, update=update, fields=fields)
     except Exception as err:
         error(f"{err}")
     return False
