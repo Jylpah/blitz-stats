@@ -235,6 +235,7 @@ async def cmd(db: Backend, args: Namespace) -> bool:
     return False
 
 
+# BUG: something is wrong: "could not retrieve valid replay list" error. Maybe related to rate-limiter?
 async def cmd_fetch(db: Backend, args: Namespace) -> bool:
     try:
         debug("starting")
