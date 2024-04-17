@@ -1266,10 +1266,8 @@ async def cmd_fetch_wi(
     max_pages: int = args.wi_max_pages
     start_page: int = args.wi_start_page
     rate_limit: float = args.wi_rate_limit
-    # force 		: bool  = args.force
     token: str = args.wi_auth_token  # temp fix...
     replay_idQ: IterableQueue[str] = IterableQueue()
-    # pageQ		: Queue[int] = Queue()
 
     wi: WoTinspector = WoTinspector(rate_limit=rate_limit, auth_token=token)
     if accountQ is not None:
