@@ -58,9 +58,13 @@ def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> b
             title="replays commands",
             description="valid commands",
             help="replays help",
-            metavar="fetch | export | import",
+            metavar="add | fetch | export | import",
         )
         replays_parsers.required = True
+
+        add_parser = replays_parsers.add_parser("add", help="replays add help")
+        if not add_args_add(add_parser, config=config):
+            raise Exception("Failed to define argument parser for: replays add")
 
         fetch_parser = replays_parsers.add_parser("fetch", help="replays fetch help")
         if not add_args_fetch(fetch_parser, config=config):
@@ -78,6 +82,18 @@ def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> b
     except Exception as err:
         error(f"add_args(): {err}")
     return False
+
+
+def add_args_add(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
+    parser.add_argument(
+        "files",
+        nargs="+",
+        type=str,
+        metavar="REPLAY [REPLAY1 ...]",
+        default=False,
+        help="Replay files to add to DB",
+    )
+    return True
 
 
 def add_args_fetch(
