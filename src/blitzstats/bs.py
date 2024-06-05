@@ -24,7 +24,7 @@ from asyncio import run
 # sys.path.insert(0, dirname(dirname(realpath(__file__))))
 
 from blitzstats.backend import Backend
-from blitzstats.mongobackend import MongoBackend # noqa
+from blitzstats.mongobackend import MongoBackend  # noqa
 from blitzstats import accounts
 from blitzstats import replays
 from blitzstats import releases
@@ -98,21 +98,49 @@ async def main() -> int:
     if CONFIG_FILE is None:
         error("config file not found in: " + ", ".join(CONFIG_FILES))
 
-    parser = ArgumentParser(description="Fetch and manage WoT Blitz stats", add_help=False)
+    parser = ArgumentParser(
+        description="Fetch and manage WoT Blitz stats", add_help=False
+    )
     arggroup_verbosity = parser.add_mutually_exclusive_group()
     arggroup_verbosity.add_argument(
-        "--debug", "-d", dest="LOG_LEVEL", action="store_const", const=logging.DEBUG, help="Debug mode"
+        "--debug",
+        "-d",
+        dest="LOG_LEVEL",
+        action="store_const",
+        const=logging.DEBUG,
+        help="Debug mode",
     )
     arggroup_verbosity.add_argument(
-        "--verbose", "-v", dest="LOG_LEVEL", action="store_const", const=logging.INFO, help="Verbose mode"
+        "--verbose",
+        "-v",
+        dest="LOG_LEVEL",
+        action="store_const",
+        const=logging.INFO,
+        help="Verbose mode",
     )
     arggroup_verbosity.add_argument(
-        "--silent", "-s", dest="LOG_LEVEL", action="store_const", const=logging.CRITICAL, help="Silent mode"
+        "--silent",
+        "-s",
+        dest="LOG_LEVEL",
+        action="store_const",
+        const=logging.CRITICAL,
+        help="Silent mode",
     )
     parser.add_argument(
-        "--log", type=str, nargs="?", default=None, const=f"{LOG}_{get_datestr()}", help="Enable file logging"
+        "--log",
+        type=str,
+        nargs="?",
+        default=None,
+        const=f"{LOG}_{get_datestr()}",
+        help="Enable file logging",
     )
-    parser.add_argument("--config", type=str, default=CONFIG_FILE, metavar="CONFIG", help="Read config from CONFIG")
+    parser.add_argument(
+        "--config",
+        type=str,
+        default=CONFIG_FILE,
+        metavar="CONFIG",
+        help="Read config from CONFIG",
+    )
     parser.set_defaults(LOG_LEVEL=logging.WARNING)
 
     args, argv = parser.parse_known_args()
@@ -129,7 +157,10 @@ async def main() -> int:
             # logging.ERROR: 		'%(levelname)s: %(message)s'
         }
         MultilevelFormatter.setLevels(
-            logger, fmts=logger_conf, fmt="%(levelname)s: %(funcName)s(): %(message)s", log_file=args.log
+            logger,
+            fmts=logger_conf,
+            fmt="%(levelname)s: %(funcName)s(): %(message)s",
+            log_file=args.log,
         )
         error = logger.error
         message = logger.warning
@@ -154,10 +185,18 @@ async def main() -> int:
         parser.add_argument("-h", "--help", action="store_true", help="Show help")
         if yappi is not None:
             parser.add_argument(
-                "--profile", type=int, default=0, metavar="N", help="Profile performance for N slowest function calls"
+                "--profile",
+                type=int,
+                default=0,
+                metavar="N",
+                help="Profile performance for N slowest function calls",
             )
         parser.add_argument(
-            "--backend", type=str, choices=Backend.list_available(), default=BACKEND, help="Choose backend to use"
+            "--backend",
+            type=str,
+            choices=Backend.list_available(),
+            default=BACKEND,
+            help="Choose backend to use",
         )
 
         cmd_parsers = parser.add_subparsers(
@@ -168,8 +207,12 @@ async def main() -> int:
         )
         cmd_parsers.required = True
 
-        accounts_parser = cmd_parsers.add_parser("accounts", aliases=["ac"], help="accounts help")
-        tank_stats_parser = cmd_parsers.add_parser("tank-stats", aliases=["ts"], help="tank-stats help")
+        accounts_parser = cmd_parsers.add_parser(
+            "accounts", aliases=["ac"], help="accounts help"
+        )
+        tank_stats_parser = cmd_parsers.add_parser(
+            "tank-stats", aliases=["ts"], help="tank-stats help"
+        )
         player_achievements_parser = cmd_parsers.add_parser(
             "player-achievements", aliases=["pa"], help="player-achievements help"
         )
@@ -208,6 +251,14 @@ async def main() -> int:
             yappi.set_clock_type("cpu")
             yappi.start(builtins=True)
 
+        if args.main_cmd in [
+            "accounts",
+            "tank-stats",
+            "player-achievements",
+            "replays",
+        ]:
+            message(f"program started: {time_str()}")
+
         if args.main_cmd == "accounts":
             await accounts.cmd(backend, args)
         elif args.main_cmd == "tank-stats":
@@ -242,7 +293,9 @@ def print_all(stats, out, limit: int | None = None) -> None:
     if stats.empty() or yappi is None:
         return
     sizes = [150, 12, 8, 8, 8]
-    columns = dict(zip(range(len(yappi.COLUMNS_FUNCSTATS)), zip(yappi.COLUMNS_FUNCSTATS, sizes)))
+    columns = dict(
+        zip(range(len(yappi.COLUMNS_FUNCSTATS)), zip(yappi.COLUMNS_FUNCSTATS, sizes))
+    )
     show_stats = stats
     if limit:
         show_stats = stats[:limit]
