@@ -52,10 +52,6 @@ WI_MAX_OLD_REPLAYS: int = 30
 WI_RATE_LIMIT: Optional[float] = None
 WI_AUTH_TOKEN: Optional[str] = None
 
-# yastati.st
-YS_CLIENT_ID: str = "none"
-YS_CLIENT_SECRET: str = "missing"
-YS_DAYS_SINCE: int = 30
 
 EXPORT_SUPPORTED_FORMATS: List[str] = ["json", "txt", "csv"]
 
@@ -285,10 +281,6 @@ def add_args_fetch(
         if not add_args_fetch_wi(fetch_wi_parser, config=config):
             raise Exception("Failed to define argument parser for: accounts fetch wi")
 
-        # fetch_ys_parser = fetch_parsers.add_parser('ys', help='accounts fetch ys help')
-        # if not add_args_fetch_ys(fetch_ys_parser, config=config):
-        # 	raise Exception("Failed to define argument parser for: accounts fetch ys")
-
         fetch_files_parser = fetch_parsers.add_parser(
             "files", help="accounts fetch files help"
         )
@@ -439,52 +431,6 @@ def add_args_fetch_wi(
             default=WI_RATE_LIMIT,
             metavar="RATE_LIMIT",
             help="Rate limit for WoTinspector.com",
-        )
-
-        return True
-    except Exception as err:
-        error(f"{err}")
-    return False
-
-
-def add_args_fetch_ys(
-    parser: ArgumentParser, config: Optional[ConfigParser] = None
-) -> bool:
-    try:
-        debug("starting")
-        global YS_CLIENT_ID, YS_CLIENT_SECRET, YS_DAYS_SINCE
-
-        if config is not None and "YASTATIST" in config.sections():
-            configYS = config["YASTATIST"]
-            # YS_RATE_LIMIT	= configYS.getfloat('rate_limit', YS_RATE_LIMIT)
-            YS_CLIENT_ID = configYS.get("client_id", YS_CLIENT_ID)
-            YS_CLIENT_SECRET = configYS.get("client_secret", YS_CLIENT_SECRET)
-            YS_DAYS_SINCE = configYS.getint("days_since", YS_DAYS_SINCE)
-
-        parser.add_argument(
-            "--since",
-            "--days-since",
-            dest="ys_days_since",
-            metavar="DAYS",
-            type=int,
-            default=YS_DAYS_SINCE,
-            help="fetch accounts that have been active since DAYS",
-        )
-        parser.add_argument(
-            "--client-id",
-            dest="ys_client_id",
-            type=str,
-            default=YS_CLIENT_ID,
-            metavar="CLIENT_ID",
-            help="client ID for Yastati.st",
-        )
-        parser.add_argument(
-            "--client-secret",
-            dest="ys_client_secret",
-            type=str,
-            default=YS_CLIENT_SECRET,
-            metavar="CLIENT_SECRET",
-            help="client secret for Yastati.st",
         )
 
         return True
@@ -976,10 +922,6 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
                 debug("wi")
                 stats.merge_child(await cmd_fetch_wi(db, args, accountQ))
 
-            # elif args.accounts_fetch_source == 'ys':
-            # 	debug('ys')
-            # 	stats.merge_child(await cmd_fetch_ys(db, args, accountQ))
-
             elif args.accounts_fetch_source == "files":
                 debug("files")
                 stats.merge_child(await cmd_fetch_files(db, args, accountQ))
@@ -1314,58 +1256,6 @@ async def cmd_fetch_wi(
     return stats
 
 
-# async def update_wi_spider_replays(db: Backend, wi: WoTinspector, args: Namespace,
-# 											replay_idQ: Queue[str], pages: range) -> EventCounter:
-# 	"""Spider replays.WoTinspector.com and feed found replay IDs into replayQ. Return stats"""
-# 	debug('starting')
-# 	stats			: EventCounter = EventCounter('Crawler')
-# 	max_old_replays	: int 	= args.wi_max_old_replays
-# 	force			: bool 	= args.force
-# 	old_replays		: int 	= 0
-
-# 	try:
-# 		debug(f'Starting ({len(pages)} pages)')
-# 		with alive_bar(len(pages), title= "Spidering replays", enrich_print=False) as bar:
-# 			for page in pages:
-# 				try:
-# 					if old_replays > max_old_replays:
-# 						raise CancelledError
-# 						#  break
-# 					debug(f'spidering page {page}')
-# 					url: str = wi.get_url_replay_listing(page)
-# 					resp: str | None = await get_url(wi.session, url)
-# 					if resp is None:
-# 						error('could not spider replays.WoTinspector.com page {page}')
-# 						stats.log('errors')
-# 						continue
-# 					debug(f'HTTP request OK')
-# 					replay_ids: set[str] = wi.parse_replay_ids(resp)
-# 					debug(f'Page {page}: {len(replay_ids)} found')
-# 					if len(replay_ids) == 0:
-# 						break
-# 					for replay_id in replay_ids:
-# 						res: Replay | None = await db.replay_get(replay_id=replay_id)
-# 						if res is not None:
-# 							debug(f'Replay already in the {db.backend}: {replay_id}')
-# 							stats.log('old replays found')
-# 							if not force:
-# 								old_replays += 1
-# 							continue
-# 						else:
-# 							await replay_idQ.put(replay_id)
-# 							stats.log('new replays')
-# 				except Exception as err:
-# 					error(f'{err}')
-# 				finally:
-# 					bar()
-# 	except CancelledError as err:
-# 		# debug(f'Cancelled')
-# 		message(f'{max_old_replays} found. Stopping spidering for more')
-# 	except Exception as err:
-# 		error(f'{err}')
-# 	return stats
-
-
 async def fetch_wi_get_replay_ids(
     db: Backend,
     wi: WoTinspector,
@@ -1459,33 +1349,6 @@ async def fetch_wi_fetch_replays(
     except Exception as err:
         error(f"{err}")
     return stats
-
-
-# async def cmd_fetch_ys(db: Backend,
-# 						args : Namespace,
-# 						accountQ : IterableQueue[BSAccount]) -> EventCounter:
-# 	"""Fetch account_ids fromy yastati.st"""
-# 	debug('starting')
-# 	stats		: EventCounter = EventCounter('Yastati.st')
-# 	try:
-# 		since 			: int = args.ys_days_since
-# 		client_id 		: str = args.ys_client_id
-# 		client_secret 	: str = args.ys_client_secret
-
-# 		await accountQ.add_producer()
-# 		with alive_bar(None, title='Getting accounts from yastati.st ') as bar:
-# 			for region in [Region.eu, Region.ru]:
-# 				async for account in get_accounts_since(region, days= since,
-# 														client_id = client_id,
-# 														secret = client_secret):
-# 					await accountQ.put(account)
-# 					stats.log('accounts read')
-# 					bar()
-
-# 	except Exception as err:
-# 		error(f'{err}')
-# 	await accountQ.finish()
-# 	return stats
 
 
 async def cmd_import(db: Backend, args: Namespace) -> bool:
