@@ -84,6 +84,7 @@ def add_args(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> b
     return False
 
 
+# TODO: Implement bs replays add
 def add_args_add(parser: ArgumentParser, config: Optional[ConfigParser] = None) -> bool:
     parser.add_argument(
         "files",
