@@ -1,6 +1,6 @@
 [project]
 name = "blitz-stats"
-version = "1.0.0a3"
+version = "1.0.0a4"
 authors = [{ name = "Jylpah", email = "jylpah@gmail.com" }]
 description = "Tool to fetch, manage and export stats for Wargaming's World of Tanks Blitz game "
 readme = "README.md"
