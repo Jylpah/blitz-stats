@@ -230,21 +230,26 @@ class BSBlitzRelease(Release):
         validate_assignment = True
         populate_by_name = True
 
-    @field_validator("cut_off")
-    def check_cut_off_now(cls, v):
-        if v is None:
-            return cls._max_epoch
-        elif isinstance(v, str) and v == "now":
-            return epoch_now()
-        else:
-            return int(v)
+    # @field_validator("cut_off")
+    # def check_cut_off_now(cls, v):
+    #     if v is None:
+    #         return cls._max_epoch
+    #     elif isinstance(v, str):
+    #         if v == "now":
+    #             return epoch_now()
+    #         else:
+    #             return int(v)
+    #     elif isinstance(v, int):
+    #         if v == 0:
+    #             return cls._max_epoch
+    #         return v
 
     @field_validator("cut_off")
     def validate_cut_off(cls, v: int) -> int:
-        # ROUND_TO : int = 10*60
-        if v >= 0:
-            # return ceil(v / ROUND_TO) * ROUND_TO
+        if v > 0:
             return v
+        elif v == 0:
+            return cls._max_epoch
         raise ValueError("cut_off has to be >= 0")
 
     def cut_off_now(self) -> None:
