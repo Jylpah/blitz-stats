@@ -1365,7 +1365,7 @@ async def cmd_edit_rel_remap(
                                 debug(f"failed to remap release for {ts}")
                                 stats.log("failed to update")
                         else:
-                            message(
+                            verbose(
                                 f"would update release {ts.release} to {release.release} for {ts}"
                             )
                     else:
