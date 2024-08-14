@@ -21,6 +21,7 @@ from os import linesep
 from os.path import isfile, dirname, realpath, expanduser
 from asyncio import run
 
+from importlib.metadata import version
 # sys.path.insert(0, dirname(dirname(realpath(__file__))))
 
 from blitzstats.backend import Backend
@@ -32,6 +33,7 @@ from blitzstats import tank_stats
 from blitzstats import player_achievements
 from blitzstats import setup
 from blitzstats import tankopedia
+
 
 # logging.getLogger("asyncio").setLevel(logging.DEBUG)
 logger = logging.getLogger()
@@ -99,7 +101,9 @@ async def main() -> int:
         error("config file not found in: " + ", ".join(CONFIG_FILES))
 
     parser = ArgumentParser(
-        description="Fetch and manage WoT Blitz stats", add_help=False
+        description="Fetch and manage WoT Blitz stats",
+        add_help=False,
+        epilog=f"Version {version('blitzstats')}",
     )
     arggroup_verbosity = parser.add_mutually_exclusive_group()
     arggroup_verbosity.add_argument(
