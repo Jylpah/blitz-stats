@@ -16,12 +16,12 @@ except (ImportError, ModuleNotFoundError):
 from configparser import ConfigParser
 import logging
 from argparse import ArgumentParser
-from sys import stdout
+from sys import stdout, stderr, exit
 from os import linesep
 from os.path import isfile, dirname, realpath, expanduser
 from asyncio import run
 
-# from importlib.metadata import version
+from importlib.metadata import version, PackageNotFoundError
 # sys.path.insert(0, dirname(dirname(realpath(__file__))))
 
 from blitzstats.backend import Backend
@@ -33,6 +33,13 @@ from blitzstats import tank_stats
 from blitzstats import player_achievements
 from blitzstats import setup
 from blitzstats import tankopedia
+
+
+class BSParser(ArgumentParser):
+    def error(self, message):
+        stderr.write("error: %s\n" % message)
+        self.print_help()
+        exit(2)
 
 
 # logging.getLogger("asyncio").setLevel(logging.DEBUG)
@@ -100,10 +107,16 @@ async def main() -> int:
     if CONFIG_FILE is None:
         error("config file not found in: " + ", ".join(CONFIG_FILES))
 
-    parser = ArgumentParser(
+    version_str: str = "[dev]"
+    try:
+        version_str = version("blitz-stats")
+    except PackageNotFoundError:
+        pass
+
+    parser = BSParser(
         description="Fetch and manage WoT Blitz stats",
         add_help=False,
-        # epilog=f"Version {version('blitzstats')}",
+        epilog=f"Version {version_str}",
     )
     arggroup_verbosity = parser.add_mutually_exclusive_group()
     arggroup_verbosity.add_argument(
