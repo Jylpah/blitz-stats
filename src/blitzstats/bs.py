@@ -21,7 +21,7 @@ from os import linesep
 from os.path import isfile, dirname, realpath, expanduser
 from asyncio import run
 
-# from importlib.metadata import version
+from importlib.metadata import version, PackageNotFoundError
 # sys.path.insert(0, dirname(dirname(realpath(__file__))))
 
 from blitzstats.backend import Backend
@@ -100,10 +100,16 @@ async def main() -> int:
     if CONFIG_FILE is None:
         error("config file not found in: " + ", ".join(CONFIG_FILES))
 
+    version_str: str = "--dev--"
+    try:
+        version_str = version("blitz-stats")
+    except PackageNotFoundError:
+        pass
+
     parser = ArgumentParser(
         description="Fetch and manage WoT Blitz stats",
         add_help=False,
-        # epilog=f"Version {version('blitzstats')}",
+        epilog=f"Version {version_str}",
     )
     arggroup_verbosity = parser.add_mutually_exclusive_group()
     arggroup_verbosity.add_argument(
