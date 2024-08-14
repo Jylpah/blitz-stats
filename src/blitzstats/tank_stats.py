@@ -1231,9 +1231,9 @@ async def cmd_edit(db: Backend, args: Namespace) -> bool:
         else:
             raise NotImplementedError
 
-        await stats.gather_stats(edit_tasks)
+        await stats.gather_stats(edit_tasks, cancel=False)
 
-        message(stats.print(do_print=False, clean=True))
+        message(stats.print(do_print=False, clean=False))
 
     except Exception as err:
         error(f"{err}")
@@ -1341,6 +1341,10 @@ async def cmd_edit_rel_remap(
     try:
         release: BSBlitzRelease | None
         releases: NearestDict[int, BSBlitzRelease] = await release_mapper(db)
+        if commit:
+            stats.log("updated", 0)
+        else:
+            stats.log("would update", 0)
         with alive_bar(
             total,
             title="Remapping tank stats' releases ",
@@ -1365,6 +1369,7 @@ async def cmd_edit_rel_remap(
                                 debug(f"failed to remap release for {ts}")
                                 stats.log("failed to update")
                         else:
+                            stats.log("would update")
                             verbose(
                                 f"would update release {ts.release} to {release.release} for {ts}"
                             )
