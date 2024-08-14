@@ -21,7 +21,7 @@ from os import linesep
 from os.path import isfile, dirname, realpath, expanduser
 from asyncio import run
 
-from importlib.metadata import version
+# from importlib.metadata import version
 # sys.path.insert(0, dirname(dirname(realpath(__file__))))
 
 from blitzstats.backend import Backend
@@ -103,7 +103,7 @@ async def main() -> int:
     parser = ArgumentParser(
         description="Fetch and manage WoT Blitz stats",
         add_help=False,
-        epilog=f"Version {version('blitzstats')}",
+        # epilog=f"Version {version('blitzstats')}",
     )
     arggroup_verbosity = parser.add_mutually_exclusive_group()
     arggroup_verbosity.add_argument(
