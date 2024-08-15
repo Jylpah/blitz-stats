@@ -159,7 +159,7 @@ def add_args_fetch(
             help="Fetch stats for accounts that have been inactive since RELEASE/DAYS",
         )
         parser.add_argument(
-            "--cache_valid",
+            "--cache-valid",
             type=float,
             default=1,
             metavar="DAYS",
