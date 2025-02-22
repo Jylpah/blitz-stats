@@ -1241,8 +1241,7 @@ async def cmd_fetch_wi(
 
         # await replay_idQ.join()
 
-        for worker in await gather(*workers, return_exceptions=True):
-            stats.merge_child(worker)
+        await stats.gather_stats(workers, merge_child=True)
 
     except Exception as err:
         error(f"{err}")
@@ -1573,9 +1572,9 @@ async def count_accounts(
                 try:
                     inactive = OptAccountsInactive(args.inactive)
                 except ValueError:
-                    assert (
-                        False
-                    ), f"Incorrect value for argument 'inactive': {args.inactive}"
+                    assert False, (
+                        f"Incorrect value for argument 'inactive': {args.inactive}"
+                    )
 
                 accounts_N = await db.accounts_count(
                     stats_type=stats_type,
