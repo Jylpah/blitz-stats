@@ -21,7 +21,7 @@ from bson import ObjectId
 from motor.motor_asyncio import (  # type: ignore
     AsyncIOMotorClient,
     AsyncIOMotorDatabase,
-    AsyncIOMotorCursor,
+    AsyncIOMotorCommandCursor,
     AsyncIOMotorCollection,
 )  # type: ignore
 from pymongo.results import (
@@ -390,8 +390,9 @@ class MongoBackend(Backend):
     def backend(self: "MongoBackend") -> str:
         host: str = "UNKNOWN"
         try:
-            host, port = self._client.address
-            return f"{self.driver}://{host}:{port}/{self.database}"
+            if (server := self._client.address()) is not None:
+                host, port = server
+                return f"{self.driver}://{host}:{port}/{self.database}"
         except Exception as err:
             debug(f"Error determing host: {err}")
         return f"{self.driver}://{host}/{self.database}"
@@ -852,7 +853,9 @@ class MongoBackend(Backend):
             elif sample >= 1:
                 pipeline.append({"$sample": {"size": int(sample)}})
 
-            cursor: AsyncIOMotorCursor = dbc.aggregate(pipeline, allowDiskUse=True)
+            cursor: AsyncIOMotorCommandCursor = dbc.aggregate(
+                pipeline, allowDiskUse=True
+            )
             while objs := await cursor.to_list(batch):
                 yield objs
             debug(f"finished exporting {table_type}")
