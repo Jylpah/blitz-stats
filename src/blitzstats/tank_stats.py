@@ -1361,7 +1361,7 @@ async def cmd_edit_rel_remap(
                         else:
                             stats.log("would update")
                             verbose(
-                                f"would update release {ts.release} to {release.release} for {ts}"
+                                f"would update release {ts.release:<7} to {release.release:<7} for {ts}"
                             )
                     else:
                         debug(f"No need to remap: {ts}")
