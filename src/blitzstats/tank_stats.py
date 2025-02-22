@@ -590,13 +590,11 @@ def add_args_export_data(
     try:
         debug("starting")
         EXPORT_FORMAT: str = DEFAULT_EXPORT_DATA_FORMAT
-        # EXPORT_FILE: str = "update_totals"
         EXPORT_DIR: str = "export"
 
         if config is not None and "EXPORT" in config.sections():
             configEXP = config["EXPORT"]
             EXPORT_FORMAT = configEXP.get("data_format", DEFAULT_EXPORT_DATA_FORMAT)
-            # EXPORT_FILE = configEXP.get("file", EXPORT_FILE)
             EXPORT_DIR = configEXP.get("dir", EXPORT_DIR)
 
         parser.add_argument(
@@ -720,8 +718,6 @@ async def cmd_fetchMP(db: Backend, args: Namespace) -> bool:
         with Manager() as manager:
             counterQ: queue.Queue[int] = manager.Queue(ACCOUNTS_Q_MAX)
             counterQas: AsyncQueue[int] = AsyncQueue(counterQ)
-            # writeQ 	: queue.Queue[List[TankStat]]	= manager.Queue(TANK_STATS_Q_MAX)
-            # statsQ	: AsyncQueue[List[TankStat]]	= AsyncQueue(writeQ)
             WORKERS: int = len(regions)
 
             with Pool(
