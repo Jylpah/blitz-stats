@@ -15,7 +15,8 @@ from blitzmodels import EnumVehicleTier, EnumVehicleTypeInt, EnumNation, Region
 from blitzmodels.wg_api import TankStat, PlayerAchievementsMaxSeries
 
 # from blitzmodels.wotinspector.wi_apiv2 import Replay
-from pyutils import EventCounter, IterableQueue, QueueDone
+from pyutils import EventCounter
+from queutils import IterableQueue, QueueDone
 from pyutils.utils import is_alphanum
 
 from .models import (

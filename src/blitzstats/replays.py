@@ -10,7 +10,8 @@ from multiprocessing import Manager, cpu_count
 from multiprocessing.pool import Pool, AsyncResult
 from pydantic import BaseModel
 
-from pyutils import EventCounter, AsyncQueue
+from queutils import AsyncQueue
+from pyutils import EventCounter
 from pyutils.utils import is_alphanum
 from pydantic_exportables import JSONExportable
 
@@ -257,6 +258,9 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
     try:
         debug("starting")
         stats = EventCounter("replays fetch")
+        message(
+            f"Fetching replays... start={args.wi_start_page}, pages={args.wi_max_pages}"
+        )
         stats.merge(await cmd_accounts_fetch_wi(db, args, accountQ=None))
         stats.print()
         return True

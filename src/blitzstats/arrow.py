@@ -21,7 +21,8 @@ import pyarrow as pa  # type: ignore
 import pyarrow.dataset as ds  # type: ignore
 import pyarrow.parquet as pq  # type: ignore
 
-from pyutils import AsyncQueue, EventCounter
+from pyutils import EventCounter
+from queutils import AsyncQueue
 
 logger = logging.getLogger()
 error = logger.error

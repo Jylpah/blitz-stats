@@ -7,7 +7,8 @@ import json
 
 # from yappi import profile 					# type: ignore
 
-from pyutils import IterableQueue, EventCounter
+from pyutils import EventCounter
+from queutils import IterableQueue
 from pydantic_exportables import export
 from blitzmodels import (
     EnumNation,

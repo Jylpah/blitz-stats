@@ -11,11 +11,8 @@ from pydantic import ValidationError
 
 # from icecream import ic  # type: ignore
 
-from pyutils import (
-    EventCounter,
-    IterableQueue,
-    QueueDone,
-)
+from pyutils import EventCounter
+from queutils import IterableQueue, QueueDone
 from pydantic_exportables.exportable import export
 from pyutils.utils import alive_bar_monitor, chunker
 
