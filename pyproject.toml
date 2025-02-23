@@ -30,6 +30,7 @@ dependencies = [
     "pymongo>=4.3.3",
     "lz4>=4.3.2",
     "sortedcollections>=2.1.0",
+    "tqdm>=4.67",
     # Fixed commit until Pydantic V2 refactoring done
     "pyutils @ git+https://github.com/Jylpah/pyutils.git@main-1.0",
     "blitz-models @ git+https://github.com/Jylpah/blitz-models.git",
@@ -45,6 +46,7 @@ dev = [
     "pytest-asyncio",
     "pytest-datafiles",
     "ruff",
+    "types-tqdm>=4.67",
     "yappi>=1.4.0",
     "types-aiofiles>=23.1.0.1",
     "types-requests>=2.28.11.17",

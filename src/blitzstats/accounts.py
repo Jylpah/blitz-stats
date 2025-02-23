@@ -8,6 +8,7 @@ from aiofiles import open
 from asyncstdlib import enumerate
 from alive_progress import alive_bar  # type: ignore
 from pydantic import ValidationError
+from tqdm import tqdm
 
 # from icecream import ic  # type: ignore
 
@@ -1201,7 +1202,7 @@ async def cmd_fetch_wi(
     debug("starting")
     stats: EventCounter = EventCounter("WoTinspector")
     workersN: int = args.wi_workers
-    workers: List[Task] = list()
+    workers: List[Task[EventCounter | BaseException]] = list()
     max_pages: int = args.wi_max_pages
     start_page: int = args.wi_start_page
     rate_limit: float = args.wi_rate_limit
@@ -1209,6 +1210,11 @@ async def cmd_fetch_wi(
     replay_idQ: IterableQueue[str] = IterableQueue()
 
     wi: WoTinspector = WoTinspector(rate_limit=rate_limit, auth_token=token)
+
+    pbar_pages = tqdm(total=max_pages, desc="Pages", position=2)
+    pbar_replays = tqdm(total=max_pages * 20, desc="Replays", position=0)
+    pbar_errors = tqdm(total=max_pages * 20, desc="Errors", position=1)
+
     if accountQ is not None:
         await accountQ.add_producer()
     try:
@@ -1222,30 +1228,48 @@ async def cmd_fetch_wi(
         pages: range = range(start_page, (start_page + max_pages), step)
 
         workers.append(
-            create_task(fetch_wi_get_replay_ids(db, wi, args, replay_idQ, pages))
+            create_task(
+                fetch_wi_get_replay_ids(
+                    db, wi, args, replay_idQ, pages, pbar=pbar_pages
+                )
+            )
         )
         for _ in range(workersN):
             workers.append(
-                create_task(fetch_wi_fetch_replays(db, wi, replay_idQ, accountQ))
+                create_task(
+                    fetch_wi_fetch_replays(
+                        db,
+                        wi,
+                        replay_idQ,
+                        accountQ,
+                        pbar=pbar_replays,
+                        pbar_errors=pbar_errors,
+                    )
+                )
             )
 
-        replays_done: int = 0
-        with alive_bar(
-            total=None, title="Fetching replays ", manual=True, enrich_print=False
-        ) as bar:
-            while not replay_idQ.is_done:
-                replays: int = replay_idQ.qsize()
-                bar(replays - replays_done)
-                replays_done = replays
-                await sleep(0.5)
-
-        # await replay_idQ.join()
-
+        # replays_done: int = 0
+        # with alive_bar(
+        #     total=None, title="Fetching replays ", manual=True, enrich_print=False
+        # ) as bar:
+        # while not replay_idQ.is_done:
+        #     replays: int = replay_idQ.qsize()
+        #     pbar_replays.update(replays - replays_done)
+        #     replays_done = replays
+        #     await sleep(0.5)
+        await replay_idQ.join()
         await stats.gather_stats(workers, merge_child=True)
+
+    except KeyboardInterrupt:
+        debug("CTRL+C pressed, stopping...")
+        pbar_pages.close()
+        await replay_idQ.finish(empty=True, all=True)
 
     except Exception as err:
         error(f"{err}")
     finally:
+        pbar_errors.close()
+        pbar_replays.close()
         if accountQ is not None:
             await accountQ.finish()
         await wi.close()
@@ -1258,6 +1282,7 @@ async def fetch_wi_get_replay_ids(
     args: Namespace,
     replay_idQ: IterableQueue[str],
     pages: range,
+    pbar: tqdm,
     # disable_bar: bool = False,
 ) -> EventCounter:
     """Spider replays.WoTinspector.com and feed found replay IDs into replayQ. Return stats"""
@@ -1272,6 +1297,7 @@ async def fetch_wi_get_replay_ids(
         await replay_idQ.add_producer()
 
         for page in pages:
+            pbar.update(1)
             try:
                 if old_replays > max_old_replays:
                     raise CancelledError
@@ -1300,17 +1326,19 @@ async def fetch_wi_get_replay_ids(
                 else:
                     debug(f"No replays found for page {page}")
             except KeyboardInterrupt:
-                debug("CTRL+C pressed, stopping...")
-                raise CancelledError
+                raise
             except Exception as err:
                 error(f"{err}")
+    except KeyboardInterrupt:
+        debug("CTRL+C pressed, stopping...")
+        await replay_idQ.finish(empty=True, all=True)
     except CancelledError:
-        # debug(f'Cancelled')
-        message(f"{max_old_replays} found. Stopping spidering for more")
+        message(f"{old_replays} found. Stopping spidering for more")
     except Exception as err:
         error(f"{err}")
     finally:
         await replay_idQ.finish()
+        pbar.close()
     return stats
 
 
@@ -1319,6 +1347,8 @@ async def fetch_wi_fetch_replays(
     wi: WoTinspector,
     replay_idQ: IterableQueue[str],
     accountQ: Queue[BSAccount] | None,
+    pbar: tqdm,
+    pbar_errors: tqdm,
 ) -> EventCounter:
     debug("starting")
     stats: EventCounter = EventCounter("Fetch replays")
@@ -1329,6 +1359,7 @@ async def fetch_wi_fetch_replays(
                 if (replay := await wi.get_replay(replay_id)) is None:
                     verbose(f"Could not fetch replay id: {replay_id}")
                     stats.log("errors")
+                    pbar_errors.update(1)
                     continue
                 if accountQ is not None:
                     account_ids: List[int] = replay.allies + replay.enemies
@@ -1337,11 +1368,13 @@ async def fetch_wi_fetch_replays(
                         await accountQ.put(BSAccount(id=account_id))
                 if await db.replay_insert(replay):
                     stats.log("replays added")
+                    pbar.update(1)
                 else:
                     stats.log("replays not added")
             except Exception as err:
                 error(f"error fetching replay_id={replay_id}")
                 debug(f"{err}")
+
     except Exception as err:
         error(f"{err}")
     return stats
