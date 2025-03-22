@@ -31,8 +31,7 @@ dependencies = [
     "lz4>=4.3.2",
     "sortedcollections>=2.1.0",
     "tqdm>=4.67",
-    # Fixed commit until Pydantic V2 refactoring done
-    "pyutils @ git+https://github.com/Jylpah/pyutils.git@main-1.0",
+    "pyutils @ git+https://github.com/Jylpah/pyutils.git",
     "blitz-models @ git+https://github.com/Jylpah/blitz-models.git",
     
 ]
