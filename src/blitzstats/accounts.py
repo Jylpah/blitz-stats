@@ -1207,7 +1207,7 @@ async def cmd_fetch_wi(
     start_page: int = args.wi_start_page
     rate_limit: float = args.wi_rate_limit
     token: str = args.wi_auth_token  # temp fix...
-    replay_idQ: IterableQueue[str] = IterableQueue()
+    replay_idQ: IterableQueue[str] = IterableQueue(maxsize=10)
 
     wi: WoTinspector = WoTinspector(rate_limit=rate_limit, auth_token=token)
 
