@@ -1455,7 +1455,6 @@ async def cmd_prune(db: Backend, args: Namespace) -> bool:
 async def prune_worker(
     db: Backend,
     tankQ: Queue[BSTank],
-    # tank: BSTank,
     release: BSBlitzRelease,
     regions: set[Region],
     commit: bool = False,
@@ -1482,7 +1481,7 @@ async def prune_worker(
                         stats.log("deletion errors")
                 else:
                     async for newer in db.tank_stats_get(
-                        release=release,
+                        releases={release},
                         regions=regions,
                         accounts=[BSAccount(id=dup.account_id)],
                         tanks=[tank],
@@ -1998,7 +1997,9 @@ async def export_update_fetcher(
     try:
         while (tank_id := await tankQ.get()) is not None:
             async for tank_stat in db.tank_stats_get(
-                release=release, regions=regions, tanks=[BSTank(tank_id=tank_id)]
+                releases={release} if release is not None else set(),
+                regions=regions,
+                tanks=[BSTank(tank_id=tank_id)],
             ):
                 tank_stats.append(tank_stat.obj_src())
                 if len(tank_stats) == TANK_STATS_BATCH:
