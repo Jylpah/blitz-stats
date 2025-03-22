@@ -366,9 +366,9 @@ class Backend(ABC):
             if (
                 import_model := get_sub_type(args.import_model, JSONExportable)
             ) is None:
-                assert (
-                    False
-                ), "--import-model not found or is not a subclass of JSONExportable"
+                assert False, (
+                    "--import-model not found or is not a subclass of JSONExportable"
+                )
             import_db.set_model(import_type, import_model)
 
             return import_db
@@ -588,9 +588,9 @@ class Backend(ABC):
         if database is None:
             pass
         else:
-            assert is_alphanum(
-                database
-            ), f"Illegal characters in the table name: {database}"
+            assert is_alphanum(database), (
+                f"Illegal characters in the table name: {database}"
+            )
             self._database = database
         return None
 
@@ -1085,7 +1085,7 @@ class Backend(ABC):
     @abstractmethod
     async def tank_stats_get(
         self,
-        release: BSBlitzRelease | None = None,
+        releases: set[BSBlitzRelease] = set(),
         regions: set[Region] = Region.API_regions(),
         accounts: Sequence[BSAccount] | None = None,
         tanks: Sequence[BSTank] | None = None,

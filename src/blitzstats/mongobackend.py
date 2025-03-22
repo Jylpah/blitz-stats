@@ -1857,7 +1857,7 @@ class MongoBackend(Backend):
 
     async def _mk_pipeline_tank_stats(
         self,
-        release: BSBlitzRelease | None = None,
+        releases: set[BSBlitzRelease] | None = None,
         regions: set[Region] = Region.API_regions(),
         accounts: Sequence[BSAccount] | None = None,
         tanks: Sequence[BSTank] | None = None,
@@ -1894,8 +1894,8 @@ class MongoBackend(Backend):
             # https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
 
             match.append({alias("region"): {"$in": [r.value for r in regions]}})
-            if release is not None:
-                match.append({alias("release"): release.release})
+            if releases is not None:
+                match.append({alias("release"): {"$in": [r.release for r in releases]}})
             if accounts is not None:
                 match.append({alias("account_id"): {"$in": [a.id for a in accounts]}})
             if tanks is not None:
@@ -1971,7 +1971,7 @@ class MongoBackend(Backend):
 
     async def tank_stats_get(
         self,
-        release: BSBlitzRelease | None = None,
+        releases: set[BSBlitzRelease] = set(),
         regions: set[Region] = Region.API_regions(),
         accounts: Sequence[BSAccount] | None = None,
         tanks: Sequence[BSTank] | None = None,
@@ -1982,9 +1982,10 @@ class MongoBackend(Backend):
         """Return tank stats from the backend"""
         try:
             debug("starting")
+
             pipeline: List[Dict[str, Any]] | None
             pipeline = await self._mk_pipeline_tank_stats(
-                release=release,
+                releases=releases,
                 regions=regions,
                 tanks=tanks,
                 accounts=accounts,
@@ -2065,7 +2066,7 @@ class MongoBackend(Backend):
             else:
                 pipeline: List[Dict[str, Any]] | None
                 pipeline = await self._mk_pipeline_tank_stats(
-                    release=release,
+                    releases={release} if release is not None else set(),
                     regions=regions,
                     tanks=tanks,
                     accounts=accounts,
@@ -2122,7 +2123,9 @@ class MongoBackend(Backend):
             pipeline: List[Dict[str, Any]] | None
             if (
                 pipeline := await self._mk_pipeline_tank_stats(
-                    release=release, regions=regions, tanks=[tank]
+                    releases={release} if release is not None else set(),
+                    regions=regions,
+                    tanks=[tank],
                 )
             ) is None:
                 raise ValueError("Could not create $match pipeline")
@@ -2185,7 +2188,10 @@ class MongoBackend(Backend):
 
             if (
                 pipeline := await self._mk_pipeline_tank_stats(
-                    release=release, regions=regions, accounts=accounts, tanks=tanks
+                    releases={release} if release is not None else set(),
+                    regions=regions,
+                    accounts=accounts,
+                    tanks=tanks,
                 )
             ) is None:
                 raise ValueError("could not build filtering pipeline")
@@ -2224,7 +2230,10 @@ class MongoBackend(Backend):
             for r in regions:
                 if (
                     pipeline := await self._mk_pipeline_tank_stats(
-                        release=release, regions={r}, accounts=accounts, tanks=tanks
+                        releases={release} if release is not None else set(),
+                        regions={r},
+                        accounts=accounts,
+                        tanks=tanks,
                     )
                 ) is None:
                     raise ValueError("could not build filtering pipeline")
