@@ -1637,7 +1637,7 @@ async def create_accountQ(
     """Helper to make accountQ from arguments"""
     stats: EventCounter = EventCounter(f"{db.driver}: accounts")
     debug("starting")
-    regions: set[Region] = set(args.region)
+    regions: set[Region] = set(args.regions)
     try:
         accounts: List[BSAccount] | None = None
         try:
