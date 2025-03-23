@@ -15,7 +15,7 @@ from tqdm import tqdm
 from pyutils import EventCounter
 from queutils import IterableQueue, QueueDone
 from pydantic_exportables.exportable import export
-from pyutils.utils import alive_bar_monitor, chunker
+from pyutils.utils import chunker
 
 from blitzmodels import (
     Region,
@@ -36,9 +36,9 @@ from .backend import (
     ACCOUNTS_Q_MAX,
 )
 from .models import BSAccount, StatsTypes, BSBlitzRelease
+from .utils import tqdm_monitorQ
 
-
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 error = logger.error
 message = logger.warning
 verbose = logger.info
@@ -1248,15 +1248,6 @@ async def cmd_fetch_wi(
                 )
             )
 
-        # replays_done: int = 0
-        # with alive_bar(
-        #     total=None, title="Fetching replays ", manual=True, enrich_print=False
-        # ) as bar:
-        # while not replay_idQ.is_done:
-        #     replays: int = replay_idQ.qsize()
-        #     pbar_replays.update(replays - replays_done)
-        #     replays_done = replays
-        #     await sleep(0.5)
         await replay_idQ.join()
         await stats.gather_stats(workers, merge_child=True)
 
@@ -1537,16 +1528,12 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
                 )
             )
 
-        bar: Task | None = None
+        monitors: list[Task] = list()
+        bar: tqdm | None = None
         if not export_stdout:
-            bar = create_task(
-                alive_bar_monitor(
-                    list(accountQs.values()),
-                    "Exporting accounts",
-                    total=total,
-                    enrich_print=False,
-                )
-            )
+            bar = tqdm(total=total, desc="Exporting accounts")
+            for Q in accountQs.values():
+                monitors.append(create_task(tqdm_monitorQ(Q, bar=bar, close=False)))
 
         await wait(account_workers)
 
@@ -1554,7 +1541,7 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
             await queue.finish()
             await queue.join()
         if bar is not None:
-            bar.cancel()
+            bar.close()
 
         await stats.gather_stats(account_workers)
         await stats.gather_stats(export_workers, cancel=False)
