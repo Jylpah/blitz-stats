@@ -20,7 +20,7 @@ MAX_EPOCH: int = (
     2**36
 )  ##  Sunday, August 20, 4147 7:32:16, I doubt Python3 is supported anymore then
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 error = logger.error
 message = logger.warning
 verbose = logger.info
@@ -438,9 +438,9 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
 async def cmd_import(db: Backend, args: Namespace) -> bool:
     """Import releases from other backend"""
     try:
-        assert is_alphanum(
-            args.import_model
-        ), f"invalid --import-model: {args.import_model}"
+        assert is_alphanum(args.import_model), (
+            f"invalid --import-model: {args.import_model}"
+        )
 
         stats: EventCounter = EventCounter("releases import")
         releaseQ: Queue[BSBlitzRelease] = Queue(100)

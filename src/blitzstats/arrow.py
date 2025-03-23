@@ -24,7 +24,7 @@ import pyarrow.parquet as pq  # type: ignore
 from pyutils import EventCounter
 from queutils import AsyncQueue
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 error = logger.error
 message = logger.warning
 verbose = logger.info
@@ -95,9 +95,9 @@ async def data_writer(
     """Worker to write on data stats to a file in format"""
     debug("starting")
     # global export_total_rows
-    assert (
-        export_format in EXPORT_DATA_FORMATS
-    ), f"export format has to be one of: {', '.join(EXPORT_DATA_FORMATS)}"
+    assert export_format in EXPORT_DATA_FORMATS, (
+        f"export format has to be one of: {', '.join(EXPORT_DATA_FORMATS)}"
+    )
     stats: EventCounter = EventCounter("writer")
 
     try:
@@ -138,9 +138,9 @@ async def dataset_writer(
     """Worker to write on data stats to a file in format"""
     global EXPORT_WRITE_BATCH
     debug("starting")
-    assert (
-        export_format in EXPORT_DATA_FORMATS
-    ), f"export format has to be one of: {', '.join(EXPORT_DATA_FORMATS)}"
+    assert export_format in EXPORT_DATA_FORMATS, (
+        f"export format has to be one of: {', '.join(EXPORT_DATA_FORMATS)}"
+    )
     stats: EventCounter = EventCounter("writer")
 
     try:

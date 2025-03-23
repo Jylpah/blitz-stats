@@ -45,7 +45,7 @@ from .accounts import (
 )
 from .releases import release_mapper
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 error = logger.error
 message = logger.warning
 verbose = logger.info
@@ -332,7 +332,7 @@ async def cmd(db: Backend, args: Namespace) -> bool:
 
         else:
             raise ValueError(
-                f"Unsupported command: player-achievements { args.player_achievements_cmd}"
+                f"Unsupported command: player-achievements {args.player_achievements_cmd}"
             )
 
     except Exception as err:
@@ -581,9 +581,9 @@ async def fetch_backend_worker(
 async def cmd_import(db: Backend, args: Namespace) -> bool:
     """Import player achievements from other backend"""
     try:
-        assert is_alphanum(
-            args.import_model
-        ), f"invalid --import-model: {args.import_model}"
+        assert is_alphanum(args.import_model), (
+            f"invalid --import-model: {args.import_model}"
+        )
         debug("starting")
         player_achievementsQ: Queue[List[PlayerAchievementsMaxSeries]] = Queue(
             PLAYER_ACHIEVEMENTS_Q_MAX
