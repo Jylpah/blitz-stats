@@ -1,6 +1,6 @@
 [project]
 name = "blitz-stats"
-version = "1.0.2"
+version = "1.1.0a1"
 authors = [{ name = "Jylpah", email = "jylpah@gmail.com" }]
 description = "Tool to fetch, manage and export stats for Wargaming's World of Tanks Blitz game "
 readme = "README.md"
@@ -89,7 +89,12 @@ extend-include = ["*.ipynb"]
 extend-exclude = [".venv", ".vscode", "/usr/lib/**"]
 lint.fixable = ["ALL"]
 
-
 [tool.pyright]
 reportGeneralTypeIssues = false
+reportInvalidStringEscapeSequence = false
 typeCheckingMode = "off"
+include = ["src", "tests"]
+extraPaths = ["src"]
+
+[tool.coverage.run]
+omit= ['tests/*']
