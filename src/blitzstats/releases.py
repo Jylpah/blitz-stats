@@ -372,7 +372,7 @@ async def cmd_edit(db: Backend, args: Namespace) -> bool:
                 fields.append("launch_date")
                 release.launch_date = datetime.fromisoformat(args.launch_date)
             if len(fields) > 0:
-                update: Dict[str, Any] = release.dict(
+                update: Dict[str, Any] = release.model_dump(
                     exclude_unset=True, exclude_none=True
                 )
                 del update["release"]
