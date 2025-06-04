@@ -15,9 +15,11 @@ from math import ceil
 from sortedcollections import NearestDict  # type: ignore
 from pydantic import BaseModel
 from alive_progress import alive_bar  # type: ignore
+from tqdm import tqdm
 
 from multiprocessing import Manager, cpu_count
 from multiprocessing.pool import Pool, AsyncResult
+from multiprocessing.managers import DictProxy
 import queue
 
 from eventcounter import EventCounter
@@ -41,6 +43,7 @@ from .models import BSAccount, BSBlitzRelease, StatsTypes
 from .accounts import (
     split_accountQ_batch,
     create_accountQ_batch,
+    create_accountQ,
     accounts_parse_args,
 )
 from .releases import release_mapper
@@ -392,7 +395,7 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
             for _ in range(ceil(min([args.wg_workers, accounts]))):
                 tasks.append(
                     create_task(
-                        fetch_api_region_worker(
+                        fetch_api_region_batch_worker(
                             wg_api=wg,
                             region=region,
                             accountQ=regionQs[region.name],
@@ -409,8 +412,6 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
                 title="Fetching player achievement",
             )
         )
-        # tasks.append(create_task(split_accountQ(accountQ, regionQs)))
-        # stats.merge_child(await create_accountQ(db, args, accountQ, StatsTypes.player_achievements))
 
         # waiting for region queues to finish
         for rname, Q in regionQs.items():
@@ -428,7 +429,7 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
                 for _ in range(ceil(min([args.wg_workers, accounts]))):
                     tasks.append(
                         create_task(
-                            fetch_api_region_worker(
+                            fetch_api_region_batch_worker(
                                 wg_api=wg,
                                 region=region,
                                 accountQ=regionQs[region.name],
@@ -466,7 +467,197 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
     return False
 
 
-async def fetch_api_region_worker(
+async def cmd_fetchMP(db: Backend, args: Namespace) -> bool:
+    """
+    fetch player achievements
+    """
+    debug("starting")
+
+    try:
+        stats: EventCounter = EventCounter("player-achievements fetch")
+        regions: set[Region] = {Region(r) for r in args.regions}
+        # worker: Task
+        WORKERS: int = len(regions)
+        with Manager() as manager:
+            totals: DictProxy[Region, int] = manager.dict()
+            progress: DictProxy[Region, int] = manager.dict()
+            bars: Dict[Region, tqdm] = dict()
+            initialized: dict[Region, bool] = dict()
+            message("Fetching player achievements")
+            i: int = 0
+            for region in sorted(regions):
+                totals[region] = 0
+                progress[region] = 0
+                initialized[region] = False
+                bars[region] = tqdm(
+                    total=0,
+                    position=i,
+                    desc=f"{region}",
+                    bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} ETA {remaining} {rate_fmt}]",
+                    unit="",
+                    leave=True,
+                )
+                i += 1
+
+            with Pool(
+                processes=WORKERS,
+                initializer=fetch_mp_init,
+                initargs=[db.config],
+            ) as pool:
+                debug(f"starting {WORKERS} workers")
+                results: AsyncResult = pool.starmap_async(
+                    fetch_mp_worker_start,
+                    [(args, r, progress, totals) for r in regions],
+                )
+                pool.close()
+
+                while not results.ready():
+                    await sleep(0.5)
+                    for r in regions:
+                        if not initialized[r] and totals[r] > 0:
+                            bars[r].total = totals[r]
+                            bars[r].refresh()
+                            initialized[r] = True
+                        else:
+                            if totals[r] > bars[r].total:
+                                bars[r].total = totals[r]
+                                bars[r].refresh()
+                            bars[r].update(progress[r] - bars[r].n)
+                for r in regions:
+                    bars[r].close()
+
+                for res in results.get():
+                    stats.merge_child(res)
+                pool.join()
+
+        if (msg := stats.print(do_print=False, clean=True)) is not None:
+            message(msg)
+        return True
+    except Exception as err:
+        error(f"{err}")
+
+    return False
+
+
+def fetch_mp_init(
+    backend_config: Dict[str, Any],
+):
+    """Initialize static/global backend into a forked process"""
+    global db
+    debug(f"starting (PID={getpid()})")
+
+    if (tmp_db := Backend.create(**backend_config)) is None:
+        raise ValueError("could not create backend")
+    db = tmp_db
+    debug("finished")
+
+
+def fetch_mp_worker_start(
+    args: Namespace,
+    region: Region,
+    progress: DictProxy,  # [Region, int]
+    totals: DictProxy,  # [Region, int]
+) -> EventCounter:
+    """Forkable player achievements fetch worker for tank stats"""
+    debug(f"starting fetch worker {region}")
+    return run(fetch_mp_worker(args, region, progress, totals), debug=False)
+
+
+async def fetch_mp_worker(
+    args: Namespace,
+    region: Region,
+    progress: DictProxy,  # [Region, int]
+    totals: DictProxy,  # [Region, int]
+) -> EventCounter:
+    """
+    Forkable player achievements fetch worker for latest (career) stats
+    """
+    global db
+
+    debug(f"fetch worker starting: {region}")
+    stats: EventCounter = EventCounter(f"fetch {region}")
+    accountQ: IterableQueue[BSAccount] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
+    retryQ: IterableQueue[BSAccount] | None = None
+    # retryQ: IterableQueue[BSAccount] = IterableQueue(maxsize=5)
+    statsQ: Queue[List[PlayerAchievementsMaxSeries]] = Queue(PLAYER_ACHIEVEMENTS_Q_MAX)
+
+    THREADS: int = args.wg_workers
+    wg: WGApi = WGApi(
+        app_id=args.wg_app_id,
+        rate_limit=args.wg_rate_limit,
+    )
+    try:
+        args.regions = {region}
+        if not args.disabled:
+            retryQ = IterableQueue()  # must not use maxsize
+
+        workers: List[Task] = list()
+        workers.append(create_task(fetch_backend_worker(db, statsQ)))
+
+        for _ in range(THREADS):
+            workers.append(
+                create_task(
+                    fetch_api_region_worker(
+                        wg_api=wg,
+                        region=region,
+                        accountQ=accountQ,
+                        statsQ=statsQ,
+                        retryQ=retryQ,
+                    )
+                )
+            )
+
+        if (accounts_args := await accounts_parse_args(db, args)) is not None:
+            totals[region] = await db.accounts_count(
+                StatsTypes.tank_stats, **accounts_args
+            )
+            await create_accountQ(
+                db=db,
+                args=args,
+                accountQ=accountQ,
+                stats_type=StatsTypes.player_achievements,
+            )
+        else:
+            raise ValueError(f"could not parse account args: {args}")
+
+        debug(f"waiting for account queue to finish: {region}")
+        await accountQ.join()
+
+        # Process retryQ
+        # TODO: Rethink the logic of failedQ vs. retry Q
+        if retryQ is not None and not retryQ.empty():
+            retry_accounts: int = retryQ.qsize()
+            totals[region] += retry_accounts
+            debug(f"retryQ: size={retry_accounts} is_filled={retryQ.is_filled}")
+            for _ in range(THREADS):
+                workers.append(
+                    create_task(
+                        fetch_api_region_worker(
+                            wg_api=wg, region=region, accountQ=retryQ, statsQ=statsQ
+                        )
+                    )
+                )
+            # await retryQ.add_producer()
+            # async for account in failedQ:
+            #     await retryQ.put(account)
+            #     stats.log("retry")
+            #     progress[region] += 1
+            # await retryQ.finish()
+            # await retryQ.join()
+
+        await statsQ.join()
+        await stats.gather_stats(workers)
+
+    except Exception as err:
+        error(f"{err}")
+    finally:
+        wg.print()
+        await wg.close()
+
+    return stats
+
+
+async def fetch_api_region_batch_worker(
     wg_api: WGApi,
     region: Region,
     accountQ: IterableQueue[List[BSAccount]],
@@ -525,6 +716,70 @@ async def fetch_api_region_worker(
     return stats
 
 
+async def fetch_api_region_worker(
+    wg_api: WGApi,
+    region: Region,
+    accountQ: IterableQueue[BSAccount],
+    statsQ: Queue[List[PlayerAchievementsMaxSeries]],
+    retryQ: IterableQueue[BSAccount] | None = None,
+) -> EventCounter:
+    """Fetch stats from a single region"""
+    debug("starting")
+
+    stats: EventCounter
+    if retryQ is None:
+        stats = EventCounter(f"re-try {region.name}")
+    else:
+        stats = EventCounter(f"fetch {region.name}")
+        await retryQ.add_producer()
+
+    try:
+        while True:
+            accounts: Dict[int, BSAccount] = dict()
+            account_ids: List[int] = list()
+
+            async for account in accountQ:
+                accounts[account.id] = account
+                if len(accounts) >= 100:
+                    break
+            try:
+                account_ids = [a for a in accounts.keys()]
+                debug(f"account_ids={account_ids}")
+                if len(account_ids) > 0:
+                    res: List[PlayerAchievementsMaxSeries] | None
+                    if (
+                        res := await wg_api.get_player_achievements(account_ids, region)
+                    ) is None:
+                        res = list()
+                    else:
+                        await statsQ.put(res)
+                        if retryQ is not None:
+                            # retry accounts without stats
+                            for ms in res:
+                                try:
+                                    accounts.pop(ms.account_id)
+                                except KeyError as kerr:
+                                    error(f"KeyError: {kerr}")
+                    stats.log("stats found", len(res))
+                    if retryQ is None:
+                        stats.log("no stats", len(account_ids) - len(res))
+                    else:
+                        stats.log("re-tries", len(account_ids) - len(res))
+                        for a in accounts.values():
+                            await retryQ.put(a)
+                else:
+                    break  # while True
+            except Exception as err:
+                error(f"{err}")
+
+    except Exception as err:
+        error(f"{err}")
+    if retryQ is not None:
+        await retryQ.finish()
+    return stats
+
+
+# TODO: Use IterableQueue instead?
 async def fetch_backend_worker(
     db: Backend, statsQ: Queue[List[PlayerAchievementsMaxSeries]]
 ) -> EventCounter:
@@ -555,6 +810,9 @@ async def fetch_backend_worker(
                             account := await db.account_get(account_id=pac.account_id)
                         ) is not None:
                             account.stats_updated(StatsTypes.player_achievements)
+                            await db.account_update(
+                                account, fields=[StatsTypes.player_achievements]
+                            )
             except Exception as err:
                 error(f"{err}")
             finally:

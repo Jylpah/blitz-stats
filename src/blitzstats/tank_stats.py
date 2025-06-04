@@ -2,10 +2,9 @@ from argparse import ArgumentParser, Namespace, SUPPRESS
 from configparser import ConfigParser
 from datetime import datetime
 from typing import Optional, Any, List, Dict
-import logging
 from asyncio import run, create_task, gather, sleep, wait, Queue, CancelledError, Task
 from sortedcollections import NearestDict  # type: ignore
-
+from tqdm import tqdm
 import copy
 from os import getpid
 
@@ -21,6 +20,7 @@ from alive_progress import alive_bar  # type: ignore
 # multiprocessing
 from multiprocessing import Manager, cpu_count
 from multiprocessing.pool import Pool, AsyncResult
+from multiprocessing.managers import DictProxy
 import queue
 
 # export data
@@ -32,7 +32,7 @@ import pyarrow.dataset as ds  # type: ignore
 
 from eventcounter import EventCounter
 from queutils import IterableQueue, QueueDone, AsyncQueue
-from pyutils.utils import alive_bar_monitor
+from multilevellogger import MultiLevelLogger, getMultiLevelLogger
 
 from pydantic_exportables import JSONExportable, export
 from blitzmodels import (
@@ -63,11 +63,12 @@ from .arrow import (
     EXPORT_DATA_FORMATS,
     DEFAULT_EXPORT_DATA_FORMAT,
 )
+from .utils import tqdm_monitorQ
 
-logger = logging.getLogger(__name__)
+logger: MultiLevelLogger = getMultiLevelLogger(__name__)
 error = logger.error
-message = logger.warning
-verbose = logger.info
+message = logger.message
+verbose = logger.verbose
 debug = logger.debug
 
 # Constants
@@ -713,50 +714,62 @@ async def cmd_fetchMP(db: Backend, args: Namespace) -> bool:
     try:
         stats: EventCounter = EventCounter("tank-stats fetch")
         regions: set[Region] = {Region(r) for r in args.regions}
-        worker: Task
-
+        # worker: Task
+        WORKERS: int = len(regions)
         with Manager() as manager:
-            counterQ: queue.Queue[int] = manager.Queue(ACCOUNTS_Q_MAX)
-            counterQas: AsyncQueue[int] = AsyncQueue(counterQ)
-            WORKERS: int = len(regions)
+            totals: DictProxy[Region, int] = manager.dict()
+            progress: DictProxy[Region, int] = manager.dict()
+            bars: Dict[Region, tqdm] = dict()
+            initialized: dict[Region, bool] = dict()
+            message("Fetching tank stats")
+            i: int = 0
+            for region in sorted(regions):
+                totals[region] = 0
+                progress[region] = 0
+                initialized[region] = False
+                bars[region] = tqdm(
+                    total=0,
+                    position=i,
+                    desc=f"{region}",
+                    bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} ETA {remaining} {rate_fmt}]",
+                    unit="",
+                    leave=True,
+                )
+                i += 1
 
             with Pool(
                 processes=WORKERS,
                 initializer=fetch_mp_init,
-                initargs=[db.config, args, counterQ],
+                initargs=[db.config],
             ) as pool:
-                accounts_args: Dict[str, Any] | None
-                if (accounts_args := await accounts_parse_args(db, args)) is None:
-                    raise ValueError(f"could not parse account args: {args}")
-
-                # worker = create_task(fetch_backend_worker(db, statsQ, force=args.force))
-                counter: QCounter = QCounter(counterQas)
-                worker = create_task(counter.start())
-                message("counting accounts ...")
-                accounts: int = await db.accounts_count(
-                    StatsTypes.tank_stats, **accounts_args
-                )
                 debug(f"starting {WORKERS} workers")
-                results: AsyncResult = pool.map_async(fetch_mp_worker_start, regions)
+                results: AsyncResult = pool.starmap_async(
+                    fetch_mp_worker_start,
+                    [(args, r, progress, totals) for r in regions],
+                )
                 pool.close()
 
-                done: int
-                prev: int = 0
-                with alive_bar(accounts, title="Fetching tank stats ") as bar:
-                    while not results.ready():
-                        done = counter.count
-                        if done - prev > 0:
-                            bar(done - prev)
-                        prev = done
-                        await sleep(1)
+                while not results.ready():
+                    await sleep(0.5)
+                    for r in regions:
+                        if not initialized[r] and totals[r] > 0:
+                            bars[r].total = totals[r]
+                            bars[r].refresh()
+                            initialized[r] = True
+                        else:
+                            if totals[r] > bars[r].total:
+                                bars[r].total = totals[r]
+                                bars[r].refresh()
+                            bars[r].update(progress[r] - bars[r].n)
+                for r in regions:
+                    bars[r].close()
 
-                # await statsQ.join()
-                worker.cancel()
                 for res in results.get():
                     stats.merge_child(res)
                 pool.join()
 
-        message(stats.print(do_print=False, clean=True))
+        if (msg := stats.print(do_print=False, clean=True)) is not None:
+            message(msg)
         return True
     except Exception as err:
         error(f"{err}")
@@ -766,37 +779,44 @@ async def cmd_fetchMP(db: Backend, args: Namespace) -> bool:
 
 def fetch_mp_init(
     backend_config: Dict[str, Any],
-    args: Namespace,
-    counterQ: queue.Queue[int],
 ):
     """Initialize static/global backend into a forked process"""
-    global db, counterQas, mp_args
+    global db
     debug(f"starting (PID={getpid()})")
 
     if (tmp_db := Backend.create(**backend_config)) is None:
         raise ValueError("could not create backend")
     db = tmp_db
-    mp_args = args
-    counterQas = AsyncQueue(counterQ)
     debug("finished")
 
 
-def fetch_mp_worker_start(region: Region) -> EventCounter:
+def fetch_mp_worker_start(
+    args: Namespace,
+    region: Region,
+    progress: DictProxy,  # [Region, int]
+    totals: DictProxy,  # [Region, int]
+) -> EventCounter:
     """Forkable tank stats fetch worker for tank stats"""
     debug(f"starting fetch worker {region}")
-    return run(fetch_mp_worker(region), debug=False)
+    return run(fetch_mp_worker(args, region, progress, totals), debug=False)
 
 
-async def fetch_mp_worker(region: Region) -> EventCounter:
-    """Forkable tank stats import worker for latest (career) stats"""
-    global db, counterQas, mp_args
+async def fetch_mp_worker(
+    args: Namespace,
+    region: Region,
+    progress: DictProxy,  # [Region, int]
+    totals: DictProxy,  # [Region, int]
+) -> EventCounter:
+    """Forkable tank stats fetch worker for latest (career) stats"""
+    global db
 
     debug(f"fetch worker starting: {region}")
     stats: EventCounter = EventCounter(f"fetch {region}")
-    accountQ: IterableQueue[BSAccount] = IterableQueue(maxsize=100)
-    retryQ: IterableQueue[BSAccount] | None = None
+    accountQ: IterableQueue[BSAccount] = IterableQueue(maxsize=20)
+    failedQ: IterableQueue[BSAccount] | None = None
+    retryQ: IterableQueue[BSAccount] = IterableQueue(maxsize=5)
     statsQ: Queue[List[TankStat]] = Queue(TANK_STATS_Q_MAX)
-    args: Namespace = mp_args
+    # args: Namespace = mp_args
     THREADS: int = args.wg_workers
     wg: WGApi = WGApi(
         app_id=args.wg_app_id,
@@ -804,9 +824,8 @@ async def fetch_mp_worker(region: Region) -> EventCounter:
     )
     try:
         args.regions = {region}
-
         if not args.disabled:
-            retryQ = IterableQueue()  # must not use maxsize
+            failedQ = IterableQueue()  # must not use maxsize
 
         workers: List[Task] = list()
         workers.append(create_task(fetch_backend_worker(db, statsQ, force=args.force)))
@@ -819,33 +838,40 @@ async def fetch_mp_worker(region: Region) -> EventCounter:
                         wg_api=wg,
                         accountQ=accountQ,
                         statsQ=statsQ,
-                        retryQ=retryQ,
+                        retryQ=failedQ,
                         disabled=args.disabled,
                     )
                 )
             )
-        BATCH: int = 100
-        i: int = 0
+        # BATCH: int = 100
+        # i: int = 0
         await accountQ.add_producer()
         if (accounts_args := await accounts_parse_args(db, args)) is not None:
+            totals[region] = await db.accounts_count(
+                StatsTypes.tank_stats, **accounts_args
+            )
             async for account in db.accounts_get(
                 stats_type=StatsTypes.tank_stats, **accounts_args
             ):
                 await accountQ.put(account)
                 stats.log("read")
-                i += 1
-                if i == BATCH:
-                    await counterQas.put(BATCH)
-                    i = 0
-            await counterQas.put(i)
+                progress[region] += 1
+                # i += 1
+                # if i == BATCH:
+                #     await counterQas.put(BATCH)
+                #     i = 0
+            # await counterQas.put(i)
+        else:
+            raise ValueError(f"could not parse account args: {args}")
         await accountQ.finish()
 
         debug(f"waiting for account queue to finish: {region}")
         await accountQ.join()
 
         # Process retryQ
-        if retryQ is not None and not retryQ.empty():
-            retry_accounts: int = retryQ.qsize()
+        if failedQ is not None and not failedQ.empty():
+            retry_accounts: int = failedQ.qsize()
+            totals[region] += retry_accounts
             debug(f"retryQ: size={retry_accounts} is_filled={retryQ.is_filled}")
             for _ in range(THREADS):
                 workers.append(
@@ -853,6 +879,12 @@ async def fetch_mp_worker(region: Region) -> EventCounter:
                         fetch_api_worker(db, wg_api=wg, accountQ=retryQ, statsQ=statsQ)
                     )
                 )
+            await retryQ.add_producer()
+            async for account in failedQ:
+                await retryQ.put(account)
+                stats.log("retry")
+                progress[region] += 1
+            await retryQ.finish()
             await retryQ.join()
 
         await statsQ.join()
@@ -896,24 +928,35 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
         workers.append(create_task(fetch_backend_worker(db, statsQ, force=args.force)))
 
         # Process accountQ
-        accounts: int
+        accounts: int = -1
         if len(args.accounts) > 0:
             accounts = len(args.accounts)
         elif args.file is not None:
             accounts = await BSAccount.count_file(args.file)
-        else:
-            accounts_args: Dict[str, Any] | None
-            if (accounts_args := await accounts_parse_args(db, args)) is None:
-                raise ValueError(f"could not parse account args: {args}")
+        # else:
+        #     accounts_args: Dict[str, Any] | None
+        #     if (accounts_args := await accounts_parse_args(db, args)) is None:
+        #         raise ValueError(f"could not parse account args: {args}")
 
-            accounts = await db.accounts_count(StatsTypes.tank_stats, **accounts_args)
+        # accounts = await db.accounts_count(StatsTypes.tank_stats, **accounts_args)
 
         WORKERS: int = max([int(args.wg_workers), 1])
         WORKERS = min([WORKERS, ceil(accounts / 4)])
+        tasks_bar: list[Task] = list()
+        bar_position: int = 0
         for r in regions:
             accountQs[r] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
             r_args = copy.copy(args)
             r_args.regions = {r}
+
+            if len(args.accounts) == 0 and args.file is None:
+                accounts_args: Dict[str, Any] | None
+                if (accounts_args := await accounts_parse_args(db, args)) is None:
+                    raise ValueError(f"could not parse account args: {args}")
+                accounts = await db.accounts_count(
+                    StatsTypes.tank_stats, **accounts_args | {"regions": {r}}
+                )
+
             workers.append(
                 create_task(
                     create_accountQ(
@@ -934,32 +977,34 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
                         )
                     )
                 )
-
-        task_bar: Task = create_task(
-            alive_bar_monitor(
-                [Q for Q in accountQs.values()],
-                total=accounts,
-                title="Fetching tank stats",
+            tasks_bar.append(
+                create_task(
+                    tqdm_monitorQ(
+                        accountQs[r],
+                        tqdm(
+                            total=accounts,
+                            desc=f"Fetching tank stats [{r}]",
+                            position=bar_position,
+                        ),
+                    )
+                )
             )
-        )
+            bar_position += 1
 
-        # stats.merge_child(await create_accountQ(db, args, accountQ, StatsTypes.tank_stats))
-        # debug(f'AccountQ created. count={accountQ.count}, size={accountQ.qsize()}')
         for r, Q in accountQs.items():
             debug(f"waiting for account queue to finish: {r}")
             await accountQs[r].join()
-        task_bar.cancel()
 
         # Process retryQ
         if retryQ is not None and not retryQ.empty():
             retry_accounts: int = retryQ.qsize()
             debug(f"retryQ: size={retry_accounts} is_filled={retryQ.is_filled}")
             task_bar = create_task(
-                alive_bar_monitor(
-                    [retryQ], total=retry_accounts, title="Retrying failed accounts"
+                tqdm_monitorQ(
+                    retryQ, tqdm(total=retry_accounts, desc="Retrying failed accounts")
                 )
             )
-            for _ in range(min([args.wg_workers, ceil(retry_accounts / 4)])):
+            for _ in range(min([args.wg_workers, ceil(retry_accounts / len(regions))])):
                 workers.append(
                     create_task(
                         fetch_api_worker(db, wg_api=wg, accountQ=retryQ, statsQ=statsQ)
@@ -976,7 +1021,8 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
         for ec in await gather(*workers, return_exceptions=True):
             if isinstance(ec, EventCounter):
                 stats.merge_child(ec)
-        message(stats.print(do_print=False, clean=True))
+        if (msg := stats.print(do_print=False, clean=True)) is not None:
+            message(msg)
         return True
     except Exception as err:
         error(f"{err}")
@@ -1113,10 +1159,6 @@ async def fetch_backend_worker(
                         account.inactive = False
                     else:
                         stats.log("accounts w/o new stats")
-                        # if account.is_inactive():
-                        # 	if not account.inactive:
-                        # 		stats.log('accounts marked inactive')
-                        # 	account.inactive = True
 
                     await db.account_insert(account=account, force=True)
             except Exception as err:
@@ -1223,7 +1265,8 @@ async def cmd_edit(db: Backend, args: Namespace) -> bool:
 
         await stats.gather_stats(edit_tasks, cancel=False)
 
-        message(stats.print(do_print=False, clean=False))
+        if (msg := stats.print(do_print=False, clean=True)) is not None:
+            message(msg)
 
     except Exception as err:
         error(f"{err}")
@@ -1588,39 +1631,21 @@ async def cmd_export_text(db: Backend, args: Namespace) -> bool:
                     )
                 )
             )
-        bar: Task | None = None
+        monitors: list[Task] = list()
         if not export_stdout:
-            bar = create_task(
-                alive_bar_monitor(
-                    list(tank_statQs.values()),
-                    "Exporting tank_stats",
-                    total=total,
-                    enrich_print=False,
-                    refresh_secs=1,
-                )
-            )
+            bar: tqdm = tqdm(total=total, desc="Exporting tank_stats")
+            for Q in tank_statQs.values():
+                monitors.append(create_task(tqdm_monitorQ(Q, bar)))
 
         await wait([backend_worker])
         for queue in tank_statQs.values():
             await queue.join()
-        if bar is not None:
-            bar.cancel()
+
         await stats.gather_stats([backend_worker], cancel=False)
-        # for res in await gather(backend_worker):
-        #     if isinstance(res, EventCounter):
-        #         stats.merge_child(res)
-        #     elif type(res) is BaseException:
-        #         error(f"{db.driver}: tank_stats_get_worker() returned error: {res}")
-        # for worker in export_workers:
-        #     worker.cancel()
         await stats.gather_stats(export_workers, cancel=False)
-        # for res in await gather(*export_workers):
-        #     if isinstance(res, EventCounter):
-        #         stats.merge_child(res)
-        #     elif type(res) is BaseException:
-        #         error(f"export(format={args.format}) returned error: {res}")
         if not export_stdout:
-            message(stats.print(do_print=False, clean=True))
+            if (msg := stats.print(do_print=False, clean=True)) is not None:
+                message(msg)
 
     except Exception as err:
         error(f"{err}")
@@ -2094,7 +2119,8 @@ async def cmd_importMP(db: Backend, args: Namespace) -> bool:
                     stats.merge_child(res)
                 pool.join()
 
-        message(stats.print(do_print=False, clean=True))
+        if (msg := stats.print(do_print=False, clean=True)) is not None:
+            message(msg)
         return True
     except Exception as err:
         error(f"{err}")
