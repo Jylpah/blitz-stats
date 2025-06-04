@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 # from icecream import ic  # type: ignore
 
-from pyutils import EventCounter
+from eventcounter import EventCounter
 from queutils import IterableQueue, QueueDone
 from pydantic_exportables.exportable import export
 from pyutils.utils import chunker

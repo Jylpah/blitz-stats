@@ -30,7 +30,7 @@ import pyarrow.dataset as ds  # type: ignore
 
 # from pandas.io.json import json_normalize	# type: ignore
 
-from pyutils import EventCounter, QCounter
+from eventcounter import EventCounter
 from queutils import IterableQueue, QueueDone, AsyncQueue
 from pyutils.utils import alive_bar_monitor
 

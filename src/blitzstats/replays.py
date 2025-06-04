@@ -11,7 +11,7 @@ from multiprocessing.pool import Pool, AsyncResult
 from pydantic import BaseModel
 
 from queutils import AsyncQueue
-from pyutils import EventCounter
+from eventcounter import EventCounter
 from pyutils.utils import is_alphanum
 from pydantic_exportables import JSONExportable
 

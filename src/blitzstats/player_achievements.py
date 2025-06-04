@@ -20,7 +20,7 @@ from multiprocessing import Manager, cpu_count
 from multiprocessing.pool import Pool, AsyncResult
 import queue
 
-from pyutils import EventCounter
+from eventcounter import EventCounter
 from queutils import IterableQueue, QueueDone, AsyncQueue
 from pyutils.utils import epoch_now, alive_bar_monitor, is_alphanum
 from blitzmodels import (

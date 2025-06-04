@@ -7,7 +7,7 @@ from sortedcollections import NearestDict  # type: ignore
 from math import ceil
 from datetime import date, datetime
 
-from pyutils import EventCounter
+from eventcounter import EventCounter
 from queutils import IterableQueue
 from pydantic_exportables import export
 from pyutils.utils import is_alphanum
