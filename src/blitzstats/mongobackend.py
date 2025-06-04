@@ -207,6 +207,17 @@ class MongoBackend(Backend):
             kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
             # ic("about to create mongodb", kwargs)
+            if not mongodb_rc["tls"]:
+                # if TLS is not enabled, remove TLS options
+                for key in [
+                    "tls",
+                    "tlsAllowInvalidCertificates",
+                    "tlsAllowInvalidHostnames",
+                    "tlsCertificateKeyFile",
+                    "tlsCAFile",
+                ]:
+                    kwargs.pop(key, None)
+
             self.set_database(database)
             self._client = AsyncIOMotorClient(**kwargs)
             debug(f"{self._client}")
@@ -646,7 +657,7 @@ class MongoBackend(Backend):
             if update is not None:
                 pass
             elif fields is not None:
-                update = data.dict(include=set(fields))
+                update = data.model_dump(include=set(fields))
             else:
                 raise ValueError("'update', 'obj' and 'fields' cannot be all None")
 
