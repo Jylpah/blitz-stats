@@ -1146,9 +1146,8 @@ async def fetch_account_info_worker(
 
     try:
         await accountQ.add_producer()
-        while True:
+        async for ids in idQ:
             valid_stats: bool = False
-            ids = await idQ.get()
             N_ids: int = len(ids)
             try:
                 stats.log("account_ids", N_ids)
@@ -1174,8 +1173,6 @@ async def fetch_account_info_worker(
                 stats.log("errors")
                 error(f"{err}")
             finally:
-                # debug(f'accounts={len(accounts)}, left={left}')
-                idQ.task_done()
                 if not force:
                     left = null_responses if valid_stats else left - 1
                     if left <= 0:  # too many NULL responses, stop
@@ -1190,8 +1187,11 @@ async def fetch_account_info_worker(
     finally:
         debug(f"closing accountQ: {region}")
         await accountQ.finish()
-        debug(f"closing idQ: {region}")
-        await idQ.finish(all=True, empty=True)
+    debug(f"closing idQ: {region}")
+    await idQ.finish(all=True)
+    # empty idQ
+    async for _ in idQ:
+        pass
     return stats
 
 
@@ -1733,19 +1733,6 @@ async def create_accountQ_batch(
                 await accountQ.put(accounts)
                 stats.log("read", len(accounts))
         else:
-            # message('counting accounts...')
-            # start = time()
-            # total : int = await db.accounts_count(stats_type=stats_type,
-            # 										regions=regions,
-            # 										inactive=inactive,
-            # 										disabled=disabled,
-            # 										active_since=active_since,
-            # 										inactive_since=inactive_since,
-            # 										sample=sample,
-            # 										cache_valid=cache_valid)
-            # end = time()
-            # message(f'{total} accounts, counting took {end - start}')
-
             accounts_args: Dict[str, Any] | None
             if (accounts_args := await accounts_parse_args(db, args)) is not None:
                 accounts_args["regions"] = {region}
