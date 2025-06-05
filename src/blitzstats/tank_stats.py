@@ -12,7 +12,7 @@ import os.path
 from math import ceil
 
 # from asyncstdlib import enumerate
-from alive_progress import alive_bar  # type: ignore
+# from alive_progress import alive_bar  # type: ignore
 
 # from icecream import ic  # type: ignore
 # from yappi import profile 	# type: ignore
@@ -722,20 +722,20 @@ async def cmd_fetchMP(db: Backend, args: Namespace) -> bool:
             bars: Dict[Region, tqdm] = dict()
             initialized: dict[Region, bool] = dict()
             message("Fetching tank stats")
-            i: int = 0
+            position: int = 0
             for region in sorted(regions):
                 totals[region] = 0
                 progress[region] = 0
                 initialized[region] = False
                 bars[region] = tqdm(
                     total=0,
-                    position=i,
+                    position=position,
                     desc=f"{region}",
                     bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} ETA {remaining} {rate_fmt}]",
                     unit="",
                     leave=True,
                 )
-                i += 1
+                position += 1
 
             with Pool(
                 processes=WORKERS,
@@ -750,7 +750,7 @@ async def cmd_fetchMP(db: Backend, args: Namespace) -> bool:
                 pool.close()
 
                 while not results.ready():
-                    await sleep(0.5)
+                    await sleep(1)
                     for r in regions:
                         if not initialized[r] and totals[r] > 0:
                             bars[r].total = totals[r]
@@ -769,7 +769,7 @@ async def cmd_fetchMP(db: Backend, args: Namespace) -> bool:
                 pool.join()
 
         if (msg := stats.print(do_print=False, clean=True)) is not None:
-            message(msg)
+            tqdm.write(msg)
         return True
     except Exception as err:
         error(f"{err}")
@@ -1364,7 +1364,7 @@ async def cmd_edit(db: Backend, args: Namespace) -> bool:
 
 async def cmd_edit_rel_remap(
     db: Backend,
-    tank_statQ: Queue[TankStat],
+    tank_statQ: IterableQueue[TankStat],
     commit: bool = False,
     total: int | None = None,
 ) -> EventCounter:
@@ -1378,42 +1378,84 @@ async def cmd_edit_rel_remap(
             stats.log("updated", 0)
         else:
             stats.log("would update", 0)
-        with alive_bar(
-            total,
-            title="Remapping tank stats' releases ",
-            refresh_secs=1,
-            enrich_print=False,
-        ) as bar:
-            while True:
-                ts: TankStat = await tank_statQ.get()
-                try:
-                    if (release := releases[ts.last_battle_time]) is None:
-                        error(f"Could not map: {ts}")
-                        stats.log("errors")
-                        continue
-                    if ts.release != release.release:
-                        if commit:
-                            ts.release = release.release
-                            debug(f"Remapping {ts.release} to {release.release}: {ts}")
-                            if await db.tank_stat_update(ts, fields=["release"]):
-                                debug(f"remapped release for {ts}")
-                                stats.log("updated")
-                            else:
-                                debug(f"failed to remap release for {ts}")
-                                stats.log("failed to update")
+        bar: tqdm = tqdm(
+            total=total,
+            desc="Remapping tank stats' releases",
+            bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} ETA {remaining} {rate_fmt}]",
+            unit="",
+            leave=True,
+            position=0,
+        )
+
+        async for ts in tank_statQ:
+            try:
+                if (release := releases[ts.last_battle_time]) is None:
+                    error(f"Could not map: {ts}")
+                    stats.log("errors")
+                    continue
+                if ts.release != release.release:
+                    if commit:
+                        ts.release = release.release
+                        debug(f"Remapping {ts.release} to {release.release}: {ts}")
+                        if await db.tank_stat_update(ts, fields=["release"]):
+                            # debug(f"remapped release for {ts}")
+                            stats.log("updated")
                         else:
-                            stats.log("would update")
-                            verbose(
-                                f"would update release {ts.release:<7} to {release.release:<7} for {ts}"
-                            )
+                            # debug(f"failed to remap release for {ts}")
+                            stats.log("failed to update")
                     else:
-                        debug(f"No need to remap: {ts}")
-                        stats.log("no need")
-                except Exception as err:
-                    error(f"could not remap {ts}: {err}")
-                finally:
-                    tank_statQ.task_done()
-                    bar()
+                        stats.log("would update")
+                        verbose(
+                            f"would update release {ts.release:<7} to {release.release:<7} for {ts}"
+                        )
+                else:
+                    # debug(f"No need to remap: {ts}")
+                    stats.log("no need")
+            except Exception as err:
+                error(f"could not remap {ts}: {err}")
+            except (CancelledError, KeyboardInterrupt):
+                message("Cancelled")
+                break
+            finally:
+                tank_statQ.task_done()
+                bar.update(1)
+
+        # with alive_bar(
+        #     total,
+        #     title="Remapping tank stats' releases ",
+        #     refresh_secs=1,
+        #     enrich_print=False,
+        # ) as bar:
+        #     while True:
+        #         ts: TankStat = await tank_statQ.get()
+        #         try:
+        #             if (release := releases[ts.last_battle_time]) is None:
+        #                 error(f"Could not map: {ts}")
+        #                 stats.log("errors")
+        #                 continue
+        #             if ts.release != release.release:
+        #                 if commit:
+        #                     ts.release = release.release
+        #                     debug(f"Remapping {ts.release} to {release.release}: {ts}")
+        #                     if await db.tank_stat_update(ts, fields=["release"]):
+        #                         debug(f"remapped release for {ts}")
+        #                         stats.log("updated")
+        #                     else:
+        #                         debug(f"failed to remap release for {ts}")
+        #                         stats.log("failed to update")
+        #                 else:
+        #                     stats.log("would update")
+        #                     verbose(
+        #                         f"would update release {ts.release:<7} to {release.release:<7} for {ts}"
+        #                     )
+        #             else:
+        #                 debug(f"No need to remap: {ts}")
+        #                 stats.log("no need")
+        #         except Exception as err:
+        #             error(f"could not remap {ts}: {err}")
+        #         finally:
+        #             tank_statQ.task_done()
+        #             bar()
     except QueueDone:
         debug("tank stat queue processed")
     except CancelledError:
@@ -1440,7 +1482,7 @@ async def cmd_prune(db: Backend, args: Namespace) -> bool:
         release: BSBlitzRelease = BSBlitzRelease(release=args.release)
         stats: EventCounter = EventCounter(f"tank-stats prune {release}")
         commit: bool = args.commit
-        tankQ: Queue[BSTank] = Queue()
+        tankQ: IterableQueue[BSTank] = IterableQueue()
         workers: List[Task] = list()
         WORKERS: int = args.workers
         if sample > 0:
@@ -1453,12 +1495,12 @@ async def cmd_prune(db: Backend, args: Namespace) -> bool:
             message("Press CTRL+C to cancel in 3 secs...")
             await sleep(3)
             progress_str = "Pruning duplicates "
-
+        await tankQ.add_producer()
         async for tank_id in db.tank_stats_unique(
             "tank_id", int, release=release, regions=regions
         ):
             await tankQ.put(BSTank(tank_id=tank_id))
-
+        await tankQ.finish()
         # N : int = await db.tankopedia_count()
         N: int = tankQ.qsize()
 
@@ -1475,16 +1517,26 @@ async def cmd_prune(db: Backend, args: Namespace) -> bool:
                     )
                 )
             )
-        prev: int = 0
-        done: int
-        left: int
-        with alive_bar(N, title=progress_str, refresh_secs=1) as bar:
-            while (left := tankQ.qsize()) > 0:
-                done = N - left
-                if (done - prev) > 0:
-                    bar(done - prev)
-                prev = done
-                await sleep(1)
+        # prev: int = 0
+        # done: int
+        # left: int
+        bar: tqdm = tqdm(
+            total=N,
+            desc=progress_str,
+            bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} ETA {remaining} {rate_fmt}]",
+            unit="",
+            leave=True,
+            position=0,
+        )
+        await tqdm_monitorQ(tankQ, bar)
+
+        # with alive_bar(N, title=progress_str, refresh_secs=1) as bar:
+        #     while (left := tankQ.qsize()) > 0:
+        #         done = N - left
+        #         if (done - prev) > 0:
+        #             bar(done - prev)
+        #         prev = done
+        #         await sleep(1)
 
         await tankQ.join()
         await stats.gather_stats(workers)
@@ -1729,16 +1781,31 @@ async def cmd_export_career(db: Backend, args: Namespace) -> bool:
                 prev: int = 0
                 done: int = 0
                 delta: int = 0
-                with alive_bar(
-                    N, title="Exporting tank stats ", enrich_print=False, refresh_secs=1
+                with tqdm(
+                    total=N,
+                    desc="Exporting tank stats",
+                    bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} ETA {remaining} {rate_fmt}]",
+                    unit="",
+                    leave=True,
+                    position=0,
                 ) as bar:
                     while not Qcreator.done():
                         done = aworkQ.items
                         delta = done - prev
                         if delta > 0:
-                            bar(delta)
+                            bar.update(delta)
                         prev = done
                         await sleep(1)
+                # with alive_bar(
+                #     N, title="Exporting tank stats ", enrich_print=False, refresh_secs=1
+                # ) as bar:
+                #     while not Qcreator.done():
+                #         done = aworkQ.items
+                #         delta = done - prev
+                #         if delta > 0:
+                #             bar(delta)
+                #         prev = done
+                #         await sleep(1)
 
                 for _ in range(WORKERS):
                     await aworkQ.put(None)
@@ -1924,17 +1991,35 @@ async def cmd_export_update(db: Backend, args: Namespace) -> bool:
                 prev: int = 0
                 done: int
 
-                with alive_bar(
-                    N, title="Exporting tank stats ", enrich_print=False, refresh_secs=1
+                with tqdm(
+                    total=N,
+                    desc="Exporting tank stats",
+                    bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} ETA {remaining} {rate_fmt}]",
+                    unit="",
+                    leave=True,
+                    position=0,
                 ) as bar:
                     while True:
                         left = atankQ.qsize()
                         done = N - left
-                        bar(done - prev)
+                        if (done - prev) > 0:
+                            bar.update(done - prev)
                         prev = done
                         if left == 0:
                             break
                         await sleep(1)
+
+                # with alive_bar(
+                #     N, title="Exporting tank stats ", enrich_print=False, refresh_secs=1
+                # ) as bar:
+                #     while True:
+                #         left = atankQ.qsize()
+                #         done = N - left
+                #         bar(done - prev)
+                #         prev = done
+                #         if left == 0:
+                #             break
+                #         await sleep(1)
 
                 await atankQ.join()
                 for _ in range(WORKERS):
@@ -2097,8 +2182,16 @@ async def cmd_importMP(db: Backend, args: Namespace) -> bool:
                 message("Counting tank stats to import ...")
                 N: int = await import_db.tank_stats_count(sample=args.sample)
 
-                with alive_bar(
-                    N, title="Importing tank stats ", enrich_print=False, refresh_secs=1
+                # with alive_bar(
+                #     N, title="Importing tank stats ", enrich_print=False, refresh_secs=1
+                # ) as bar:
+                with tqdm(
+                    total=N,
+                    desc=f"Importing {import_model.__name__} from {import_db.table_uri(BSTableType.TankStats)}",
+                    bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} ETA {remaining} {rate_fmt}]",
+                    unit="",
+                    leave=True,
+                    position=0,
                 ) as bar:
                     async for objs in import_db.objs_export(
                         table_type=BSTableType.TankStats, sample=args.sample
@@ -2107,7 +2200,7 @@ async def cmd_importMP(db: Backend, args: Namespace) -> bool:
                         # debug(f'read {read} tank_stat objects')
                         readQ.put(objs)
                         stats.log(f"{db.driver}:stats read", read)
-                        bar(read)
+                        bar.update(read)
 
                 debug(
                     f"Finished exporting {import_model} from {import_db.table_uri(BSTableType.TankStats)}"
@@ -2279,14 +2372,24 @@ async def split_tank_statQ_by_region(
     try:
         for Q in regionQs.values():
             await Q.add_producer()
-        with alive_bar(
-            Q_all.qsize(),
-            title=bar_title,
-            manual=True,
-            refresh_secs=1,
-            enrich_print=False,
+
+        with tqdm(
+            total=Q_all.qsize(),
+            desc=bar_title,
+            bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} ETA {remaining} {rate_fmt}]",
+            unit="",
+            leave=True,
+            position=0,
             disable=not progress,
         ) as bar:
+            # with alive_bar(
+            #     Q_all.qsize(),
+            #     title=bar_title,
+            #     manual=True,
+            #     refresh_secs=1,
+            #     enrich_print=False,
+            #     disable=not progress,
+            # ) as bar:
             async for tank_stat in Q_all:
                 try:
                     if tank_stat.region is None:
@@ -2305,9 +2408,7 @@ async def split_tank_statQ_by_region(
                     error(f"{err}")
                 finally:
                     stats.log("total")
-                    bar()
-                    # if progress and Q_all.qsize() == 0:
-                    #     break
+                    bar.update()
 
     except CancelledError:
         debug("Cancelled")
