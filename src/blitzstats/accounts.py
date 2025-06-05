@@ -820,15 +820,13 @@ async def update_account_info_worker(
     debug("starting")
     stats: EventCounter = EventCounter(f"{region}")
     infos: List[AccountInfo] | None
-    accounts: Dict[int, BSAccount]
     account: BSAccount
-    ids: List[int] = list()
 
-    await updateQ.add_producer()
     try:
-        while True:
-            accounts = dict()
-            for account in await workQ.get():
+        await updateQ.add_producer()
+        async for account_bacth in workQ:
+            accounts: Dict[int, BSAccount] = dict()
+            for account in account_bacth:
                 accounts[account.id] = account
             N: int = len(accounts)
             try:
@@ -836,7 +834,7 @@ async def update_account_info_worker(
                 if N == 0 or N > 100:
                     raise ValueError(f"Incorrect number of account_ids give {N}")
 
-                ids = list(accounts.keys())
+                ids: List[int] = list(accounts.keys())
                 ids_stats: List[int] = list()
                 if (infos := await wg.get_account_info(ids, region)) is not None:
                     stats.log("stats found", len(infos))
@@ -887,13 +885,8 @@ async def update_account_info_worker(
             except Exception as err:
                 stats.log("errors")
                 error(f"{err}")
-            finally:
-                # debug(f'accounts={len(accounts)}, left={left}')
-                workQ.task_done()
 
-    except QueueDone:
-        debug("account_id queue is done")
-    except CancelledError:
+    except KeyboardInterrupt:
         debug("cancelled")
     except Exception as err:
         error(f"{err}")
@@ -1180,7 +1173,7 @@ async def fetch_account_info_worker(
 
     except QueueDone:
         debug("account_id queue is done")
-    except CancelledError:
+    except KeyboardInterrupt:
         debug("cancelled")
     except Exception as err:
         error(f"{err}")
@@ -1747,7 +1740,7 @@ async def create_accountQ_batch(
                         stats.log("errors")
             else:
                 error(f"could not parse args: {args}")
-    except CancelledError:
+    except KeyboardInterrupt:
         debug("Cancelled")
     except Exception as err:
         error(f"{err}")
