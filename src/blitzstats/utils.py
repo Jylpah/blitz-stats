@@ -1,5 +1,5 @@
 from tqdm import tqdm
-from asyncio import sleep, CancelledError
+from asyncio import sleep
 from queutils import IterableQueue
 import logging
 
@@ -8,17 +8,17 @@ error = logger.error
 
 
 async def tqdm_monitorQ(
-    Q: IterableQueue, bar: tqdm, freq: float = 0.5, close: bool = True
+    Q: IterableQueue, bar: tqdm, batch: int = 1, freq: float = 0.5, close: bool = True
 ) -> None:
     """
     tqdm monitor for IterableQueue
     """
     try:
         while not Q.is_done:
-            bar.update(Q.count - bar.n)
+            bar.update(Q.count * batch - bar.n)
             await sleep(freq)
-        bar.update(Q.count - bar.n)
-    except CancelledError:
+        bar.update(Q.count * batch - bar.n)
+    except KeyboardInterrupt:
         pass
     except Exception as err:
         error(f"{err}")
