@@ -23,8 +23,8 @@ from multiprocessing.managers import DictProxy
 import queue
 
 from eventcounter import EventCounter
-from queutils import IterableQueue, QueueDone, AsyncQueue
-from pyutils.utils import epoch_now, alive_bar_monitor, is_alphanum
+from queutils import IterableQueue, AsyncQueue
+from pyutils.utils import epoch_now, is_alphanum
 from blitzmodels import (
     Region,
     PlayerAchievementsMaxSeries,
@@ -47,6 +47,7 @@ from .accounts import (
     accounts_parse_args,
 )
 from .releases import release_mapper
+from .utils import tqdm_monitorQ
 
 logger = logging.getLogger(__name__)
 error = logger.error
@@ -378,9 +379,19 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
 
         if args.sample > 1:
             args.sample = int(args.sample / len(regions))
-
+        bars: dict[str, tqdm] = dict()
+        position: int = 0
         for region in regions:
             regionQs[region.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
+            bars[region.name] = tqdm(
+                total=accounts,
+                position=position,
+                desc=f"{region.name}",
+                bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} ETA {remaining} {rate_fmt}]",
+                unit="",
+                leave=True,
+            )
+            position += 1
             tasks.append(
                 create_task(
                     create_accountQ_batch(
@@ -404,23 +415,20 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
                         )
                     )
                 )
-        task_bar: Task = create_task(
-            alive_bar_monitor(
-                list(regionQs.values()),
-                total=accounts,
-                batch=100,
-                title="Fetching player achievement",
-            )
-        )
+        tqdm.write("Fetching player achievements")
+        task_bar: list[Task] = list()
+        for region_name, Q in regionQs.items():
+            task_bar.append(create_task(tqdm_monitorQ(Q, bars[region_name], batch=100)))
 
         # waiting for region queues to finish
         for rname, Q in regionQs.items():
             debug(f"waiting for region queue to finish: {rname} size={Q.qsize()}")
             await Q.join()
-        task_bar.cancel()
+        # task_bar.cancel()
 
-        print(f"retryQ: size={retryQ.qsize()},  is_filled={retryQ.is_filled}")
+        debug(f"retryQ: size={retryQ.qsize()},  is_filled={retryQ.is_filled}")
         if not retryQ.empty():
+            position = 0
             regionQs = dict()
             accounts = retryQ.qsize()
             for region in regions:
@@ -437,20 +445,30 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
                             )
                         )
                     )
-            task_bar = create_task(
-                alive_bar_monitor(
-                    list(regionQs.values()),
+                bars[region.name] = tqdm(
                     total=accounts,
-                    title="Re-trying player achievement",
+                    position=position,
+                    desc=f"{region.name} re-try",
+                    bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} ETA {remaining} {rate_fmt}]",
+                    unit="",
+                    leave=True,
                 )
-            )
+                position += 1
+                task_bar.append(
+                    create_task(
+                        tqdm_monitorQ(
+                            regionQs[region.name], bars[region.name], batch=100
+                        )
+                    )
+                )
+
             await split_accountQ_batch(retryQ, regionQs)
             for rname, Q in regionQs.items():
                 debug(
                     f"waiting for region re-try queue to finish: {rname} size={Q.qsize()}"
                 )
                 await Q.join()
-            task_bar.cancel()
+
         else:
             debug("no accounts in retryQ")
 
@@ -531,7 +549,7 @@ async def cmd_fetchMP(db: Backend, args: Namespace) -> bool:
                 pool.join()
 
         if (msg := stats.print(do_print=False, clean=True)) is not None:
-            message(msg)
+            tqdm.write(msg)
         return True
     except Exception as err:
         error(f"{err}")
@@ -577,8 +595,7 @@ async def fetch_mp_worker(
     debug(f"fetch worker starting: {region}")
     stats: EventCounter = EventCounter(f"fetch {region}")
     accountQ: IterableQueue[BSAccount] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
-    retryQ: IterableQueue[BSAccount] | None = None
-    # retryQ: IterableQueue[BSAccount] = IterableQueue(maxsize=5)
+    retryQ: IterableQueue[BSAccount] = IterableQueue()  # must not use maxsize
     statsQ: Queue[List[PlayerAchievementsMaxSeries]] = Queue(PLAYER_ACHIEVEMENTS_Q_MAX)
 
     THREADS: int = args.wg_workers
@@ -588,9 +605,6 @@ async def fetch_mp_worker(
     )
     try:
         args.regions = {region}
-        if not args.disabled:
-            retryQ = IterableQueue()  # must not use maxsize
-
         workers: List[Task] = list()
         workers.append(create_task(fetch_backend_worker(db, statsQ)))
 
@@ -625,7 +639,7 @@ async def fetch_mp_worker(
 
         # Process retryQ
         # TODO: Rethink the logic of failedQ vs. retry Q
-        if retryQ is not None and not retryQ.empty():
+        if not retryQ.empty():
             retry_accounts: int = retryQ.qsize()
             totals[region] += retry_accounts
             debug(f"retryQ: size={retry_accounts} is_filled={retryQ.is_filled}")
@@ -651,7 +665,10 @@ async def fetch_mp_worker(
     except Exception as err:
         error(f"{err}")
     finally:
-        wg.print()
+        if (wg_api_res := wg.print(do_print=False)) is not None:
+            tqdm.write(wg_api_res)
+        else:
+            error("could not get WG API stats")
         await wg.close()
 
     return stats
@@ -675,14 +692,13 @@ async def fetch_api_region_batch_worker(
         await retryQ.add_producer()
 
     try:
-        while True:
+        account_batch: List[BSAccount]
+        async for account_batch in accountQ:
             accounts: Dict[int, BSAccount] = dict()
-            account_ids: List[int] = list()
-
-            for account in await accountQ.get():
+            for account in account_batch:
                 accounts[account.id] = account
             try:
-                account_ids = [a for a in accounts.keys()]
+                account_ids: List[int] = [a for a in accounts.keys()]
                 debug(f"account_ids={account_ids}")
                 if len(account_ids) > 0:
                     if (
@@ -704,10 +720,6 @@ async def fetch_api_region_batch_worker(
                             await retryQ.put(a)
             except Exception as err:
                 error(f"{err}")
-            finally:
-                accountQ.task_done()
-
-    except QueueDone:
         debug("accountQ finished")
     except Exception as err:
         error(f"{err}")
