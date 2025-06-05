@@ -6,7 +6,7 @@ from os.path import isfile
 from typing import Optional, Any, Sequence, AsyncGenerator, TypeVar, Type, List, Dict
 from datetime import datetime
 from enum import StrEnum, IntEnum
-from asyncio import Queue, CancelledError
+from asyncio import Queue
 from pydantic import Field
 
 from pydantic_exportables import JSONExportable
@@ -811,7 +811,7 @@ class Backend(ABC):
             async for account in self.accounts_get(**getargs):
                 await accountQ.put(account)
                 stats.log("queued")
-        except CancelledError:
+        except KeyboardInterrupt:
             debug("Cancelled")
         except Exception as err:
             error(f"{err}")
@@ -849,7 +849,7 @@ class Backend(ABC):
         except QueueDone:
             # IterableQueue() support
             pass
-        except CancelledError:
+        except KeyboardInterrupt:
             debug("Cancelled")
         except Exception as err:
             error(f"{err}")
@@ -960,7 +960,7 @@ class Backend(ABC):
                     stats.log("errors")
                 finally:
                     releaseQ.task_done()
-        except CancelledError:
+        except KeyboardInterrupt:
             debug("Cancelled")
         except Exception as err:
             error(f"{err}")
@@ -1030,7 +1030,7 @@ class Backend(ABC):
                     stats.log("errors")
                 finally:
                     replayQ.task_done()
-        except CancelledError:
+        except KeyboardInterrupt:
             debug("Cancelled")
         except Exception as err:
             error(f"{err}")
@@ -1192,7 +1192,7 @@ class Backend(ABC):
                 await tank_statsQ.finish()
                 debug("tank_stats_get_worker(): finished")
 
-        except CancelledError:
+        except KeyboardInterrupt:
             debug("Cancelled")
         except Exception as err:
             error(f"{err}")
@@ -1227,7 +1227,7 @@ class Backend(ABC):
                     stats.log("errors", read)
                 finally:
                     tank_statsQ.task_done()
-        except CancelledError:
+        except KeyboardInterrupt:
             debug("Cancelled")
         except Exception as err:
             error(f"{err}")
@@ -1358,7 +1358,7 @@ class Backend(ABC):
                     stats.log("errors", read)
                 finally:
                     player_achievementsQ.task_done()
-        except CancelledError:
+        except KeyboardInterrupt:
             debug("Cancelled")
         except Exception as err:
             error(f"{err}")
@@ -1478,7 +1478,7 @@ class Backend(ABC):
                     stats.log("errors")
                 finally:
                     tankQ.task_done()
-        except CancelledError:
+        except KeyboardInterrupt:
             debug("Cancelled")
         except Exception as err:
             error(f"{err}")
