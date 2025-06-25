@@ -16,7 +16,7 @@ from blitzmodels.wg_api import TankStat, PlayerAchievementsMaxSeries
 
 # from blitzmodels.wotinspector.wi_apiv2 import Replay
 from eventcounter import EventCounter
-from queutils import IterableQueue, QueueDone
+from queutils import IterableQueue
 from pyutils.utils import is_alphanum
 
 from .models import (
@@ -823,14 +823,13 @@ class Backend(ABC):
         raise NotImplementedError
 
     async def accounts_insert_worker(
-        self, accountQ: Queue[BSAccount], force: bool = False
+        self, accountQ: IterableQueue[BSAccount], force: bool = False
     ) -> EventCounter:
         """insert/replace accounts. force=None: insert, force=True/False: upsert=force"""
         debug(f"starting, force={force}")
         stats: EventCounter = EventCounter("accounts insert")
         try:
-            while True:
-                account = await accountQ.get()
+            async for account in accountQ:
                 try:
                     debug(
                         f"Trying to insert account_id={account.id} into {self.backend}.{self.table_accounts}"
@@ -844,11 +843,7 @@ class Backend(ABC):
                 except Exception as err:
                     debug(f"Error: {err}")
                     stats.log("not added/updated")
-                finally:
-                    accountQ.task_done()
-        except QueueDone:
-            # IterableQueue() support
-            pass
+
         except KeyboardInterrupt:
             debug("Cancelled")
         except Exception as err:
