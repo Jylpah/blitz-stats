@@ -1539,7 +1539,7 @@ async def cmd_prune(db: Backend, args: Namespace) -> bool:
         #         await sleep(1)
 
         await tankQ.join()
-        await stats.gather_stats(workers)
+        await stats.gather(workers, cancel=False)
         stats.print()
         return True
     except Exception as err:

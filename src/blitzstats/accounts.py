@@ -727,7 +727,7 @@ async def cmd_update(db: Backend, args: Namespace) -> bool:
             error(f"{err}")
 
         await updateQ.join()
-        await stats.gather_stats([db_worker])
+        await stats.gather([db_worker], merge_child=True)
         stats.print()
 
     except Exception as err:
@@ -798,11 +798,11 @@ async def cmd_update_wg(
                 message("cancelled")
                 for workQ in workQs.values():
                     await workQ.finish(all=True)
-        await stats.gather_stats(workQ_creators, merge_child=False)
+        await stats.gather(workQ_creators, merge_child=False)
         for region in workQs.keys():
             debug(f"waiting for idQ for {region} to complete")
             await workQs[region].join()
-        await stats.gather_stats(api_workers)
+        await stats.gather(api_workers, merge_child=True)
         wg.print()
         await wg.close()
     except Exception as err:
@@ -1368,7 +1368,7 @@ async def cmd_import(db: Backend, args: Namespace) -> bool:
     """Import accounts from other backend"""
     try:
         stats: EventCounter = EventCounter("accounts import")
-        accountQ: Queue[BSAccount] = Queue(ACCOUNTS_Q_MAX)
+        accountQ: IterableQueue[BSAccount] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
         regions: set[Region] = {Region(r) for r in args.regions}
         import_db: Backend | None = None
         import_backend: str = args.import_backend
