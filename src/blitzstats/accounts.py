@@ -783,14 +783,24 @@ async def cmd_update_wg(
                     )
                 )
 
-        with alive_bar(None, title="Updating accounts from WG API ") as bar:
+        print(
+            f"Updating accounts from WG API: active since={args.active_since} inactive since={args.inactive_since}"
+        )
+
+        with tqdm(
+            desc=f"{', '.join(regions)}",
+            total=int(args.sample) * len(regions),
+            bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} ETA {remaining} {rate_fmt}]",
+            unit="",
+            leave=True,
+        ) as bar:
             try:
                 prev: int = 0
                 done: int
-                while not updateQ.is_filled:
+                while not updateQ.is_done:
                     done = updateQ.count
                     if done - prev > 0:
-                        bar(done - prev)
+                        bar.update((done - prev) * 100)
                     prev = done
                     await sleep(1)
 
