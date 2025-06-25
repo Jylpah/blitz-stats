@@ -1549,7 +1549,7 @@ async def cmd_prune(db: Backend, args: Namespace) -> bool:
 
 async def prune_worker(
     db: Backend,
-    tankQ: Queue[BSTank],
+    tankQ: IterableQueue[BSTank],
     release: BSBlitzRelease,
     regions: set[Region],
     commit: bool = False,
@@ -1559,8 +1559,7 @@ async def prune_worker(
     debug("starting")
     stats: EventCounter = EventCounter("duplicates")
     try:
-        while True:
-            tank = await tankQ.get()
+        async for tank in tankQ:
             async for dup in db.tank_stats_duplicates(tank, release, regions):
                 stats.log("found")
                 if commit:
@@ -1582,14 +1581,10 @@ async def prune_worker(
                         tanks=[tank],
                         since=dup.last_battle_time + 1,
                     ):
-                        verbose(f"duplicate:  {dup}")
-                        verbose(f"newer stat: {newer}")
+                        message(f"duplicate:  {dup}")
+                        message(f"newer stat: {newer}")
                 if sample == 1:
-                    tankQ.task_done()
                     raise CancelledError
-                elif sample > 1:
-                    sample -= 1
-            tankQ.task_done()
     except CancelledError:
         debug("cancelled")
     except Exception as err:
