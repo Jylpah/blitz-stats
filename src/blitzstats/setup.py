@@ -5,7 +5,7 @@ import logging
 
 from .backend import Backend, BSTableType
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 error = logger.error
 message = logger.warning
 verbose = logger.info

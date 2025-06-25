@@ -29,7 +29,7 @@ from blitzmodels import (
 )
 from blitzmodels.wotinspector.wi_apiv2 import Replay
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 error = logger.error
 message = logger.warning
 verbose = logger.info
@@ -453,8 +453,7 @@ class BSTank(JSONExportable, CSVExportable, TXTExportable):
 def Tank2BSTank(in_obj: Tank) -> Optional[BSTank]:
     """Transform Tank object to BSTank"""
     try:
-        # debug(f'type={type(in_obj)}')
-        # debug(f'in_obj={in_obj}')
+
         tank_type: EnumVehicleTypeInt | None = None
         if in_obj.type is not None:
             tank_type = in_obj.type.as_int
@@ -476,12 +475,10 @@ def Tank2BSTank(in_obj: Tank) -> Optional[BSTank]:
 def BSTank2Tank(in_obj: "BSTank") -> Optional["Tank"]:
     """Transform BSTank object to Tank"""
     try:
-        # debug(f'type={type(in_obj)}')
-        # debug(f'in_obj={in_obj}')
         tank_type: EnumVehicleTypeStr | None = None
         if in_obj.type is not None:
             tank_type = in_obj.type.as_str
-        # debug(f'trying to transform tank:{in_obj.dict()}')
+
         return Tank(
             tank_id=in_obj.tank_id,
             name=in_obj.name,

@@ -1,6 +1,6 @@
 [project]
 name = "blitz-stats"
-version = "1.0.2"
+version = "1.1.0a2"
 authors = [{ name = "Jylpah", email = "jylpah@gmail.com" }]
 description = "Tool to fetch, manage and export stats for Wargaming's World of Tanks Blitz game "
 readme = "README.md"
@@ -21,6 +21,8 @@ dependencies = [
     "aiosqlite>=0.19.0",
     "alive-progress>=3.1.1",
     "asyncstdlib>=3.10.6",
+    "eventcounter=>0.4.3",
+    "queutils>=0.8.4",
     "isort>=5.12.0",
     "pyarrow>=11.0.0",
     "pandas>=2.0.0",
@@ -29,8 +31,8 @@ dependencies = [
     "pymongo>=4.3.3",
     "lz4>=4.3.2",
     "sortedcollections>=2.1.0",
-    # Fixed commit until Pydantic V2 refactoring done
-    "pyutils @ git+https://github.com/Jylpah/pyutils.git@main-1.0",
+    "tqdm>=4.67",
+    "pyutils @ git+https://github.com/Jylpah/pyutils.git",
     "blitz-models @ git+https://github.com/Jylpah/blitz-models.git",
     
 ]
@@ -38,16 +40,16 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "build>=0.10.0",
-    "mypy==1.2.0",
+    "mypy>=1.15.0",
     "pip-chill==1.0.3",
     "pytest",
     "pytest-asyncio",
     "pytest-datafiles",
+    "ruff",
+    "types-tqdm>=4.67",
     "yappi>=1.4.0",
     "types-aiofiles>=23.1.0.1",
     "types-requests>=2.28.11.17",
-    "pyutils[dev] @ git+https://github.com/Jylpah/pyutils.git@dev",
-    "blitz-utils[dev] @ git+https://github.com/Jylpah/blitz-utils.git",
 ]
 
 
@@ -86,8 +88,14 @@ include = ["pyproject.toml", "src/**/*.py", "tests/**/*.py"]
 indent-width = 4
 extend-include = ["*.ipynb"]
 extend-exclude = [".venv", ".vscode", "/usr/lib/**"]
-fixable = ["ALL"]
-
+lint.fixable = ["ALL"]
 
 [tool.pyright]
 reportGeneralTypeIssues = false
+reportInvalidStringEscapeSequence = false
+typeCheckingMode = "off"
+include = ["src", "tests"]
+extraPaths = ["src"]
+
+[tool.coverage.run]
+omit= ['tests/*']

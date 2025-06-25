@@ -7,7 +7,8 @@ import json
 
 # from yappi import profile 					# type: ignore
 
-from pyutils import IterableQueue, EventCounter
+from eventcounter import EventCounter
+from queutils import IterableQueue
 from pydantic_exportables import export
 from blitzmodels import (
     EnumNation,
@@ -28,7 +29,7 @@ from .backend import (
 )
 from .models import BSTank
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 error = logger.error
 message = logger.warning
 verbose = logger.info

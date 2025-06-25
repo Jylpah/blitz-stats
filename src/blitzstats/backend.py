@@ -6,7 +6,7 @@ from os.path import isfile
 from typing import Optional, Any, Sequence, AsyncGenerator, TypeVar, Type, List, Dict
 from datetime import datetime
 from enum import StrEnum, IntEnum
-from asyncio import Queue, CancelledError
+from asyncio import Queue
 from pydantic import Field
 
 from pydantic_exportables import JSONExportable
@@ -15,7 +15,8 @@ from blitzmodels import EnumVehicleTier, EnumVehicleTypeInt, EnumNation, Region
 from blitzmodels.wg_api import TankStat, PlayerAchievementsMaxSeries
 
 # from blitzmodels.wotinspector.wi_apiv2 import Replay
-from pyutils import EventCounter, IterableQueue, QueueDone
+from eventcounter import EventCounter
+from queutils import IterableQueue
 from pyutils.utils import is_alphanum
 
 from .models import (
@@ -28,7 +29,7 @@ from .models import (
 
 
 # Setup logging
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 error = logger.error
 message = logger.warning
 verbose = logger.info
@@ -365,9 +366,9 @@ class Backend(ABC):
             if (
                 import_model := get_sub_type(args.import_model, JSONExportable)
             ) is None:
-                assert (
-                    False
-                ), "--import-model not found or is not a subclass of JSONExportable"
+                assert False, (
+                    "--import-model not found or is not a subclass of JSONExportable"
+                )
             import_db.set_model(import_type, import_model)
 
             return import_db
@@ -587,9 +588,9 @@ class Backend(ABC):
         if database is None:
             pass
         else:
-            assert is_alphanum(
-                database
-            ), f"Illegal characters in the table name: {database}"
+            assert is_alphanum(database), (
+                f"Illegal characters in the table name: {database}"
+            )
             self._database = database
         return None
 
@@ -810,7 +811,7 @@ class Backend(ABC):
             async for account in self.accounts_get(**getargs):
                 await accountQ.put(account)
                 stats.log("queued")
-        except CancelledError:
+        except KeyboardInterrupt:
             debug("Cancelled")
         except Exception as err:
             error(f"{err}")
@@ -822,14 +823,13 @@ class Backend(ABC):
         raise NotImplementedError
 
     async def accounts_insert_worker(
-        self, accountQ: Queue[BSAccount], force: bool = False
+        self, accountQ: IterableQueue[BSAccount], force: bool = False
     ) -> EventCounter:
         """insert/replace accounts. force=None: insert, force=True/False: upsert=force"""
         debug(f"starting, force={force}")
         stats: EventCounter = EventCounter("accounts insert")
         try:
-            while True:
-                account = await accountQ.get()
+            async for account in accountQ:
                 try:
                     debug(
                         f"Trying to insert account_id={account.id} into {self.backend}.{self.table_accounts}"
@@ -843,12 +843,8 @@ class Backend(ABC):
                 except Exception as err:
                     debug(f"Error: {err}")
                     stats.log("not added/updated")
-                finally:
-                    accountQ.task_done()
-        except QueueDone:
-            # IterableQueue() support
-            pass
-        except CancelledError:
+
+        except KeyboardInterrupt:
             debug("Cancelled")
         except Exception as err:
             error(f"{err}")
@@ -959,7 +955,7 @@ class Backend(ABC):
                     stats.log("errors")
                 finally:
                     releaseQ.task_done()
-        except CancelledError:
+        except KeyboardInterrupt:
             debug("Cancelled")
         except Exception as err:
             error(f"{err}")
@@ -1029,7 +1025,7 @@ class Backend(ABC):
                     stats.log("errors")
                 finally:
                     replayQ.task_done()
-        except CancelledError:
+        except KeyboardInterrupt:
             debug("Cancelled")
         except Exception as err:
             error(f"{err}")
@@ -1084,7 +1080,7 @@ class Backend(ABC):
     @abstractmethod
     async def tank_stats_get(
         self,
-        release: BSBlitzRelease | None = None,
+        releases: set[BSBlitzRelease] = set(),
         regions: set[Region] = Region.API_regions(),
         accounts: Sequence[BSAccount] | None = None,
         tanks: Sequence[BSTank] | None = None,
@@ -1191,7 +1187,7 @@ class Backend(ABC):
                 await tank_statsQ.finish()
                 debug("tank_stats_get_worker(): finished")
 
-        except CancelledError:
+        except KeyboardInterrupt:
             debug("Cancelled")
         except Exception as err:
             error(f"{err}")
@@ -1226,7 +1222,7 @@ class Backend(ABC):
                     stats.log("errors", read)
                 finally:
                     tank_statsQ.task_done()
-        except CancelledError:
+        except KeyboardInterrupt:
             debug("Cancelled")
         except Exception as err:
             error(f"{err}")
@@ -1357,7 +1353,7 @@ class Backend(ABC):
                     stats.log("errors", read)
                 finally:
                     player_achievementsQ.task_done()
-        except CancelledError:
+        except KeyboardInterrupt:
             debug("Cancelled")
         except Exception as err:
             error(f"{err}")
@@ -1477,7 +1473,7 @@ class Backend(ABC):
                     stats.log("errors")
                 finally:
                     tankQ.task_done()
-        except CancelledError:
+        except KeyboardInterrupt:
             debug("Cancelled")
         except Exception as err:
             error(f"{err}")

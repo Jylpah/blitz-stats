@@ -2,10 +2,9 @@ from argparse import ArgumentParser, Namespace, SUPPRESS
 from configparser import ConfigParser
 from datetime import datetime
 from typing import Optional, Any, List, Dict
-import logging
 from asyncio import run, create_task, gather, sleep, wait, Queue, CancelledError, Task
 from sortedcollections import NearestDict  # type: ignore
-
+from tqdm import tqdm
 import copy
 from os import getpid
 
@@ -13,7 +12,7 @@ import os.path
 from math import ceil
 
 # from asyncstdlib import enumerate
-from alive_progress import alive_bar  # type: ignore
+# from alive_progress import alive_bar  # type: ignore
 
 # from icecream import ic  # type: ignore
 # from yappi import profile 	# type: ignore
@@ -21,6 +20,7 @@ from alive_progress import alive_bar  # type: ignore
 # multiprocessing
 from multiprocessing import Manager, cpu_count
 from multiprocessing.pool import Pool, AsyncResult
+from multiprocessing.managers import DictProxy
 import queue
 
 # export data
@@ -30,15 +30,9 @@ import pyarrow.dataset as ds  # type: ignore
 
 # from pandas.io.json import json_normalize	# type: ignore
 
-from pyutils import (
-    IterableQueue,
-    QueueDone,
-    EventCounter,
-    AsyncQueue,
-    QCounter,
-)
-
-from pyutils.utils import alive_bar_monitor
+from eventcounter import EventCounter
+from queutils import IterableQueue, QueueDone, AsyncQueue
+from multilevellogger import MultiLevelLogger, getMultiLevelLogger
 
 from pydantic_exportables import JSONExportable, export
 from blitzmodels import (
@@ -69,11 +63,12 @@ from .arrow import (
     EXPORT_DATA_FORMATS,
     DEFAULT_EXPORT_DATA_FORMAT,
 )
+from .utils import tqdm_monitorQ
 
-logger = logging.getLogger()
+logger: MultiLevelLogger = getMultiLevelLogger(__name__)
 error = logger.error
-message = logger.warning
-verbose = logger.info
+message = logger.message
+verbose = logger.verbose
 debug = logger.debug
 
 # Constants
@@ -596,13 +591,11 @@ def add_args_export_data(
     try:
         debug("starting")
         EXPORT_FORMAT: str = DEFAULT_EXPORT_DATA_FORMAT
-        # EXPORT_FILE: str = "update_totals"
         EXPORT_DIR: str = "export"
 
         if config is not None and "EXPORT" in config.sections():
             configEXP = config["EXPORT"]
             EXPORT_FORMAT = configEXP.get("data_format", DEFAULT_EXPORT_DATA_FORMAT)
-            # EXPORT_FILE = configEXP.get("file", EXPORT_FILE)
             EXPORT_DIR = configEXP.get("dir", EXPORT_DIR)
 
         parser.add_argument(
@@ -721,52 +714,62 @@ async def cmd_fetchMP(db: Backend, args: Namespace) -> bool:
     try:
         stats: EventCounter = EventCounter("tank-stats fetch")
         regions: set[Region] = {Region(r) for r in args.regions}
-        worker: Task
-
+        # worker: Task
+        WORKERS: int = len(regions)
         with Manager() as manager:
-            counterQ: queue.Queue[int] = manager.Queue(ACCOUNTS_Q_MAX)
-            counterQas: AsyncQueue[int] = AsyncQueue(counterQ)
-            # writeQ 	: queue.Queue[List[TankStat]]	= manager.Queue(TANK_STATS_Q_MAX)
-            # statsQ	: AsyncQueue[List[TankStat]]	= AsyncQueue(writeQ)
-            WORKERS: int = len(regions)
+            totals: DictProxy[Region, int] = manager.dict()
+            progress: DictProxy[Region, int] = manager.dict()
+            bars: Dict[Region, tqdm] = dict()
+            initialized: dict[Region, bool] = dict()
+            message("Fetching tank stats")
+            position: int = 0
+            for region in sorted(regions):
+                totals[region] = 0
+                progress[region] = 0
+                initialized[region] = False
+                bars[region] = tqdm(
+                    total=0,
+                    position=position,
+                    desc=f"{region}",
+                    bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} ETA {remaining} {rate_fmt}]",
+                    unit="",
+                    leave=True,
+                )
+                position += 1
 
             with Pool(
                 processes=WORKERS,
                 initializer=fetch_mp_init,
-                initargs=[db.config, args, counterQ],
+                initargs=[db.config],
             ) as pool:
-                accounts_args: Dict[str, Any] | None
-                if (accounts_args := await accounts_parse_args(db, args)) is None:
-                    raise ValueError(f"could not parse account args: {args}")
-
-                # worker = create_task(fetch_backend_worker(db, statsQ, force=args.force))
-                counter: QCounter = QCounter(counterQas)
-                worker = create_task(counter.start())
-                message("counting accounts ...")
-                accounts: int = await db.accounts_count(
-                    StatsTypes.tank_stats, **accounts_args
-                )
                 debug(f"starting {WORKERS} workers")
-                results: AsyncResult = pool.map_async(fetch_mp_worker_start, regions)
+                results: AsyncResult = pool.starmap_async(
+                    fetch_mp_worker_start,
+                    [(args, r, progress, totals) for r in regions],
+                )
                 pool.close()
 
-                done: int
-                prev: int = 0
-                with alive_bar(accounts, title="Fetching tank stats ") as bar:
-                    while not results.ready():
-                        done = counter.count
-                        if done - prev > 0:
-                            bar(done - prev)
-                        prev = done
-                        await sleep(1)
+                while not results.ready():
+                    await sleep(1)
+                    for r in regions:
+                        if not initialized[r] and totals[r] > 0:
+                            bars[r].total = totals[r]
+                            bars[r].refresh()
+                            initialized[r] = True
+                        else:
+                            if totals[r] > bars[r].total:
+                                bars[r].total = totals[r]
+                                bars[r].refresh()
+                            bars[r].update(progress[r] - bars[r].n)
+                for r in regions:
+                    bars[r].close()
 
-                # await statsQ.join()
-                worker.cancel()
                 for res in results.get():
                     stats.merge_child(res)
                 pool.join()
 
-        message(stats.print(do_print=False, clean=True))
+        if (msg := stats.print(do_print=False, clean=True)) is not None:
+            tqdm.write(msg)
         return True
     except Exception as err:
         error(f"{err}")
@@ -776,37 +779,44 @@ async def cmd_fetchMP(db: Backend, args: Namespace) -> bool:
 
 def fetch_mp_init(
     backend_config: Dict[str, Any],
-    args: Namespace,
-    counterQ: queue.Queue[int],
 ):
     """Initialize static/global backend into a forked process"""
-    global db, counterQas, mp_args
+    global db
     debug(f"starting (PID={getpid()})")
 
     if (tmp_db := Backend.create(**backend_config)) is None:
         raise ValueError("could not create backend")
     db = tmp_db
-    mp_args = args
-    counterQas = AsyncQueue(counterQ)
     debug("finished")
 
 
-def fetch_mp_worker_start(region: Region) -> EventCounter:
+def fetch_mp_worker_start(
+    args: Namespace,
+    region: Region,
+    progress: DictProxy,  # [Region, int]
+    totals: DictProxy,  # [Region, int]
+) -> EventCounter:
     """Forkable tank stats fetch worker for tank stats"""
     debug(f"starting fetch worker {region}")
-    return run(fetch_mp_worker(region), debug=False)
+    return run(fetch_mp_worker(args, region, progress, totals), debug=False)
 
 
-async def fetch_mp_worker(region: Region) -> EventCounter:
-    """Forkable tank stats import worker for latest (career) stats"""
-    global db, counterQas, mp_args
+async def fetch_mp_worker(
+    args: Namespace,
+    region: Region,
+    progress: DictProxy,  # [Region, int]
+    totals: DictProxy,  # [Region, int]
+) -> EventCounter:
+    """Forkable tank stats fetch worker for latest (career) stats"""
+    global db
 
     debug(f"fetch worker starting: {region}")
     stats: EventCounter = EventCounter(f"fetch {region}")
-    accountQ: IterableQueue[BSAccount] = IterableQueue(maxsize=100)
-    retryQ: IterableQueue[BSAccount] | None = None
+    accountQ: IterableQueue[BSAccount] = IterableQueue(maxsize=20)
+    failedQ: IterableQueue[BSAccount] | None = None
+    retryQ: IterableQueue[BSAccount] = IterableQueue(maxsize=5)
     statsQ: Queue[List[TankStat]] = Queue(TANK_STATS_Q_MAX)
-    args: Namespace = mp_args
+    # args: Namespace = mp_args
     THREADS: int = args.wg_workers
     wg: WGApi = WGApi(
         app_id=args.wg_app_id,
@@ -814,9 +824,8 @@ async def fetch_mp_worker(region: Region) -> EventCounter:
     )
     try:
         args.regions = {region}
-
         if not args.disabled:
-            retryQ = IterableQueue()  # must not use maxsize
+            failedQ = IterableQueue()  # must not use maxsize
 
         workers: List[Task] = list()
         workers.append(create_task(fetch_backend_worker(db, statsQ, force=args.force)))
@@ -829,33 +838,40 @@ async def fetch_mp_worker(region: Region) -> EventCounter:
                         wg_api=wg,
                         accountQ=accountQ,
                         statsQ=statsQ,
-                        retryQ=retryQ,
+                        retryQ=failedQ,
                         disabled=args.disabled,
                     )
                 )
             )
-        BATCH: int = 100
-        i: int = 0
+        # BATCH: int = 100
+        # i: int = 0
         await accountQ.add_producer()
         if (accounts_args := await accounts_parse_args(db, args)) is not None:
+            totals[region] = await db.accounts_count(
+                StatsTypes.tank_stats, **accounts_args
+            )
             async for account in db.accounts_get(
                 stats_type=StatsTypes.tank_stats, **accounts_args
             ):
                 await accountQ.put(account)
                 stats.log("read")
-                i += 1
-                if i == BATCH:
-                    await counterQas.put(BATCH)
-                    i = 0
-            await counterQas.put(i)
+                progress[region] += 1
+                # i += 1
+                # if i == BATCH:
+                #     await counterQas.put(BATCH)
+                #     i = 0
+            # await counterQas.put(i)
+        else:
+            raise ValueError(f"could not parse account args: {args}")
         await accountQ.finish()
 
         debug(f"waiting for account queue to finish: {region}")
         await accountQ.join()
 
         # Process retryQ
-        if retryQ is not None and not retryQ.empty():
-            retry_accounts: int = retryQ.qsize()
+        if failedQ is not None and not failedQ.empty():
+            retry_accounts: int = failedQ.qsize()
+            totals[region] += retry_accounts
             debug(f"retryQ: size={retry_accounts} is_filled={retryQ.is_filled}")
             for _ in range(THREADS):
                 workers.append(
@@ -863,6 +879,12 @@ async def fetch_mp_worker(region: Region) -> EventCounter:
                         fetch_api_worker(db, wg_api=wg, accountQ=retryQ, statsQ=statsQ)
                     )
                 )
+            await retryQ.add_producer()
+            async for account in failedQ:
+                await retryQ.put(account)
+                stats.log("retry")
+                progress[region] += 1
+            await retryQ.finish()
             await retryQ.join()
 
         await statsQ.join()
@@ -906,24 +928,35 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
         workers.append(create_task(fetch_backend_worker(db, statsQ, force=args.force)))
 
         # Process accountQ
-        accounts: int
+        accounts: int = -1
         if len(args.accounts) > 0:
             accounts = len(args.accounts)
         elif args.file is not None:
             accounts = await BSAccount.count_file(args.file)
-        else:
-            accounts_args: Dict[str, Any] | None
-            if (accounts_args := await accounts_parse_args(db, args)) is None:
-                raise ValueError(f"could not parse account args: {args}")
+        # else:
+        #     accounts_args: Dict[str, Any] | None
+        #     if (accounts_args := await accounts_parse_args(db, args)) is None:
+        #         raise ValueError(f"could not parse account args: {args}")
 
-            accounts = await db.accounts_count(StatsTypes.tank_stats, **accounts_args)
+        # accounts = await db.accounts_count(StatsTypes.tank_stats, **accounts_args)
 
         WORKERS: int = max([int(args.wg_workers), 1])
         WORKERS = min([WORKERS, ceil(accounts / 4)])
+        tasks_bar: list[Task] = list()
+        bar_position: int = 0
         for r in regions:
             accountQs[r] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
             r_args = copy.copy(args)
             r_args.regions = {r}
+
+            if len(args.accounts) == 0 and args.file is None:
+                accounts_args: Dict[str, Any] | None
+                if (accounts_args := await accounts_parse_args(db, args)) is None:
+                    raise ValueError(f"could not parse account args: {args}")
+                accounts = await db.accounts_count(
+                    StatsTypes.tank_stats, **accounts_args | {"regions": {r}}
+                )
+
             workers.append(
                 create_task(
                     create_accountQ(
@@ -944,32 +977,34 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
                         )
                     )
                 )
-
-        task_bar: Task = create_task(
-            alive_bar_monitor(
-                [Q for Q in accountQs.values()],
-                total=accounts,
-                title="Fetching tank stats",
+            tasks_bar.append(
+                create_task(
+                    tqdm_monitorQ(
+                        accountQs[r],
+                        tqdm(
+                            total=accounts,
+                            desc=f"Fetching tank stats [{r}]",
+                            position=bar_position,
+                        ),
+                    )
+                )
             )
-        )
+            bar_position += 1
 
-        # stats.merge_child(await create_accountQ(db, args, accountQ, StatsTypes.tank_stats))
-        # debug(f'AccountQ created. count={accountQ.count}, size={accountQ.qsize()}')
         for r, Q in accountQs.items():
             debug(f"waiting for account queue to finish: {r}")
             await accountQs[r].join()
-        task_bar.cancel()
 
         # Process retryQ
         if retryQ is not None and not retryQ.empty():
             retry_accounts: int = retryQ.qsize()
             debug(f"retryQ: size={retry_accounts} is_filled={retryQ.is_filled}")
             task_bar = create_task(
-                alive_bar_monitor(
-                    [retryQ], total=retry_accounts, title="Retrying failed accounts"
+                tqdm_monitorQ(
+                    retryQ, tqdm(total=retry_accounts, desc="Retrying failed accounts")
                 )
             )
-            for _ in range(min([args.wg_workers, ceil(retry_accounts / 4)])):
+            for _ in range(min([args.wg_workers, ceil(retry_accounts / len(regions))])):
                 workers.append(
                     create_task(
                         fetch_api_worker(db, wg_api=wg, accountQ=retryQ, statsQ=statsQ)
@@ -986,7 +1021,8 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
         for ec in await gather(*workers, return_exceptions=True):
             if isinstance(ec, EventCounter):
                 stats.merge_child(ec)
-        message(stats.print(do_print=False, clean=True))
+        if (msg := stats.print(do_print=False, clean=True)) is not None:
+            message(msg)
         return True
     except Exception as err:
         error(f"{err}")
@@ -1123,10 +1159,6 @@ async def fetch_backend_worker(
                         account.inactive = False
                     else:
                         stats.log("accounts w/o new stats")
-                        # if account.is_inactive():
-                        # 	if not account.inactive:
-                        # 		stats.log('accounts marked inactive')
-                        # 	account.inactive = True
 
                     await db.account_insert(account=account, force=True)
             except Exception as err:
@@ -1233,7 +1265,8 @@ async def cmd_edit(db: Backend, args: Namespace) -> bool:
 
         await stats.gather_stats(edit_tasks, cancel=False)
 
-        message(stats.print(do_print=False, clean=False))
+        if (msg := stats.print(do_print=False, clean=True)) is not None:
+            message(msg)
 
     except Exception as err:
         error(f"{err}")
@@ -1331,7 +1364,7 @@ async def cmd_edit(db: Backend, args: Namespace) -> bool:
 
 async def cmd_edit_rel_remap(
     db: Backend,
-    tank_statQ: Queue[TankStat],
+    tank_statQ: IterableQueue[TankStat],
     commit: bool = False,
     total: int | None = None,
 ) -> EventCounter:
@@ -1345,42 +1378,84 @@ async def cmd_edit_rel_remap(
             stats.log("updated", 0)
         else:
             stats.log("would update", 0)
-        with alive_bar(
-            total,
-            title="Remapping tank stats' releases ",
-            refresh_secs=1,
-            enrich_print=False,
-        ) as bar:
-            while True:
-                ts: TankStat = await tank_statQ.get()
-                try:
-                    if (release := releases[ts.last_battle_time]) is None:
-                        error(f"Could not map: {ts}")
-                        stats.log("errors")
-                        continue
-                    if ts.release != release.release:
-                        if commit:
-                            ts.release = release.release
-                            debug(f"Remapping {ts.release} to {release.release}: {ts}")
-                            if await db.tank_stat_update(ts, fields=["release"]):
-                                debug(f"remapped release for {ts}")
-                                stats.log("updated")
-                            else:
-                                debug(f"failed to remap release for {ts}")
-                                stats.log("failed to update")
+        bar: tqdm = tqdm(
+            total=total,
+            desc="Remapping tank stats' releases",
+            bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} ETA {remaining} {rate_fmt}]",
+            unit="",
+            leave=True,
+            position=0,
+        )
+
+        async for ts in tank_statQ:
+            try:
+                if (release := releases[ts.last_battle_time]) is None:
+                    error(f"Could not map: {ts}")
+                    stats.log("errors")
+                    continue
+                if ts.release != release.release:
+                    if commit:
+                        ts.release = release.release
+                        debug(f"Remapping {ts.release} to {release.release}: {ts}")
+                        if await db.tank_stat_update(ts, fields=["release"]):
+                            # debug(f"remapped release for {ts}")
+                            stats.log("updated")
                         else:
-                            stats.log("would update")
-                            verbose(
-                                f"would update release {ts.release} to {release.release} for {ts}"
-                            )
+                            # debug(f"failed to remap release for {ts}")
+                            stats.log("failed to update")
                     else:
-                        debug(f"No need to remap: {ts}")
-                        stats.log("no need")
-                except Exception as err:
-                    error(f"could not remap {ts}: {err}")
-                finally:
-                    tank_statQ.task_done()
-                    bar()
+                        stats.log("would update")
+                        verbose(
+                            f"would update release {ts.release:<7} to {release.release:<7} for {ts}"
+                        )
+                else:
+                    # debug(f"No need to remap: {ts}")
+                    stats.log("no need")
+            except Exception as err:
+                error(f"could not remap {ts}: {err}")
+            except (CancelledError, KeyboardInterrupt):
+                message("Cancelled")
+                break
+            finally:
+                tank_statQ.task_done()
+                bar.update(1)
+
+        # with alive_bar(
+        #     total,
+        #     title="Remapping tank stats' releases ",
+        #     refresh_secs=1,
+        #     enrich_print=False,
+        # ) as bar:
+        #     while True:
+        #         ts: TankStat = await tank_statQ.get()
+        #         try:
+        #             if (release := releases[ts.last_battle_time]) is None:
+        #                 error(f"Could not map: {ts}")
+        #                 stats.log("errors")
+        #                 continue
+        #             if ts.release != release.release:
+        #                 if commit:
+        #                     ts.release = release.release
+        #                     debug(f"Remapping {ts.release} to {release.release}: {ts}")
+        #                     if await db.tank_stat_update(ts, fields=["release"]):
+        #                         debug(f"remapped release for {ts}")
+        #                         stats.log("updated")
+        #                     else:
+        #                         debug(f"failed to remap release for {ts}")
+        #                         stats.log("failed to update")
+        #                 else:
+        #                     stats.log("would update")
+        #                     verbose(
+        #                         f"would update release {ts.release:<7} to {release.release:<7} for {ts}"
+        #                     )
+        #             else:
+        #                 debug(f"No need to remap: {ts}")
+        #                 stats.log("no need")
+        #         except Exception as err:
+        #             error(f"could not remap {ts}: {err}")
+        #         finally:
+        #             tank_statQ.task_done()
+        #             bar()
     except QueueDone:
         debug("tank stat queue processed")
     except CancelledError:
@@ -1407,7 +1482,7 @@ async def cmd_prune(db: Backend, args: Namespace) -> bool:
         release: BSBlitzRelease = BSBlitzRelease(release=args.release)
         stats: EventCounter = EventCounter(f"tank-stats prune {release}")
         commit: bool = args.commit
-        tankQ: Queue[BSTank] = Queue()
+        tankQ: IterableQueue[BSTank] = IterableQueue()
         workers: List[Task] = list()
         WORKERS: int = args.workers
         if sample > 0:
@@ -1420,12 +1495,12 @@ async def cmd_prune(db: Backend, args: Namespace) -> bool:
             message("Press CTRL+C to cancel in 3 secs...")
             await sleep(3)
             progress_str = "Pruning duplicates "
-
+        await tankQ.add_producer()
         async for tank_id in db.tank_stats_unique(
             "tank_id", int, release=release, regions=regions
         ):
             await tankQ.put(BSTank(tank_id=tank_id))
-
+        await tankQ.finish()
         # N : int = await db.tankopedia_count()
         N: int = tankQ.qsize()
 
@@ -1442,19 +1517,29 @@ async def cmd_prune(db: Backend, args: Namespace) -> bool:
                     )
                 )
             )
-        prev: int = 0
-        done: int
-        left: int
-        with alive_bar(N, title=progress_str, refresh_secs=1) as bar:
-            while (left := tankQ.qsize()) > 0:
-                done = N - left
-                if (done - prev) > 0:
-                    bar(done - prev)
-                prev = done
-                await sleep(1)
+        # prev: int = 0
+        # done: int
+        # left: int
+        bar: tqdm = tqdm(
+            total=N,
+            desc=progress_str,
+            bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} ETA {remaining} {rate_fmt}]",
+            unit="",
+            leave=True,
+            position=0,
+        )
+        await tqdm_monitorQ(tankQ, bar)
+
+        # with alive_bar(N, title=progress_str, refresh_secs=1) as bar:
+        #     while (left := tankQ.qsize()) > 0:
+        #         done = N - left
+        #         if (done - prev) > 0:
+        #             bar(done - prev)
+        #         prev = done
+        #         await sleep(1)
 
         await tankQ.join()
-        await stats.gather_stats(workers)
+        await stats.gather(workers, cancel=False)
         stats.print()
         return True
     except Exception as err:
@@ -1464,8 +1549,7 @@ async def cmd_prune(db: Backend, args: Namespace) -> bool:
 
 async def prune_worker(
     db: Backend,
-    tankQ: Queue[BSTank],
-    # tank: BSTank,
+    tankQ: IterableQueue[BSTank],
     release: BSBlitzRelease,
     regions: set[Region],
     commit: bool = False,
@@ -1475,8 +1559,7 @@ async def prune_worker(
     debug("starting")
     stats: EventCounter = EventCounter("duplicates")
     try:
-        while True:
-            tank = await tankQ.get()
+        async for tank in tankQ:
             async for dup in db.tank_stats_duplicates(tank, release, regions):
                 stats.log("found")
                 if commit:
@@ -1492,20 +1575,16 @@ async def prune_worker(
                         stats.log("deletion errors")
                 else:
                     async for newer in db.tank_stats_get(
-                        release=release,
+                        releases={release},
                         regions=regions,
                         accounts=[BSAccount(id=dup.account_id)],
                         tanks=[tank],
                         since=dup.last_battle_time + 1,
                     ):
-                        verbose(f"duplicate:  {dup}")
-                        verbose(f"newer stat: {newer}")
+                        message(f"duplicate:  {dup}")
+                        message(f"newer stat: {newer}")
                 if sample == 1:
-                    tankQ.task_done()
                     raise CancelledError
-                elif sample > 1:
-                    sample -= 1
-            tankQ.task_done()
     except CancelledError:
         debug("cancelled")
     except Exception as err:
@@ -1599,39 +1678,21 @@ async def cmd_export_text(db: Backend, args: Namespace) -> bool:
                     )
                 )
             )
-        bar: Task | None = None
+        monitors: list[Task] = list()
         if not export_stdout:
-            bar = create_task(
-                alive_bar_monitor(
-                    list(tank_statQs.values()),
-                    "Exporting tank_stats",
-                    total=total,
-                    enrich_print=False,
-                    refresh_secs=1,
-                )
-            )
+            bar: tqdm = tqdm(total=total, desc="Exporting tank_stats")
+            for Q in tank_statQs.values():
+                monitors.append(create_task(tqdm_monitorQ(Q, bar)))
 
         await wait([backend_worker])
         for queue in tank_statQs.values():
             await queue.join()
-        if bar is not None:
-            bar.cancel()
+
         await stats.gather_stats([backend_worker], cancel=False)
-        # for res in await gather(backend_worker):
-        #     if isinstance(res, EventCounter):
-        #         stats.merge_child(res)
-        #     elif type(res) is BaseException:
-        #         error(f"{db.driver}: tank_stats_get_worker() returned error: {res}")
-        # for worker in export_workers:
-        #     worker.cancel()
         await stats.gather_stats(export_workers, cancel=False)
-        # for res in await gather(*export_workers):
-        #     if isinstance(res, EventCounter):
-        #         stats.merge_child(res)
-        #     elif type(res) is BaseException:
-        #         error(f"export(format={args.format}) returned error: {res}")
         if not export_stdout:
-            message(stats.print(do_print=False, clean=True))
+            if (msg := stats.print(do_print=False, clean=True)) is not None:
+                message(msg)
 
     except Exception as err:
         error(f"{err}")
@@ -1715,16 +1776,31 @@ async def cmd_export_career(db: Backend, args: Namespace) -> bool:
                 prev: int = 0
                 done: int = 0
                 delta: int = 0
-                with alive_bar(
-                    N, title="Exporting tank stats ", enrich_print=False, refresh_secs=1
+                with tqdm(
+                    total=N,
+                    desc="Exporting tank stats",
+                    bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} ETA {remaining} {rate_fmt}]",
+                    unit="",
+                    leave=True,
+                    position=0,
                 ) as bar:
                     while not Qcreator.done():
                         done = aworkQ.items
                         delta = done - prev
                         if delta > 0:
-                            bar(delta)
+                            bar.update(delta)
                         prev = done
                         await sleep(1)
+                # with alive_bar(
+                #     N, title="Exporting tank stats ", enrich_print=False, refresh_secs=1
+                # ) as bar:
+                #     while not Qcreator.done():
+                #         done = aworkQ.items
+                #         delta = done - prev
+                #         if delta > 0:
+                #             bar(delta)
+                #         prev = done
+                #         await sleep(1)
 
                 for _ in range(WORKERS):
                     await aworkQ.put(None)
@@ -1910,17 +1986,35 @@ async def cmd_export_update(db: Backend, args: Namespace) -> bool:
                 prev: int = 0
                 done: int
 
-                with alive_bar(
-                    N, title="Exporting tank stats ", enrich_print=False, refresh_secs=1
+                with tqdm(
+                    total=N,
+                    desc="Exporting tank stats",
+                    bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} ETA {remaining} {rate_fmt}]",
+                    unit="",
+                    leave=True,
+                    position=0,
                 ) as bar:
                     while True:
                         left = atankQ.qsize()
                         done = N - left
-                        bar(done - prev)
+                        if (done - prev) > 0:
+                            bar.update(done - prev)
                         prev = done
                         if left == 0:
                             break
                         await sleep(1)
+
+                # with alive_bar(
+                #     N, title="Exporting tank stats ", enrich_print=False, refresh_secs=1
+                # ) as bar:
+                #     while True:
+                #         left = atankQ.qsize()
+                #         done = N - left
+                #         bar(done - prev)
+                #         prev = done
+                #         if left == 0:
+                #             break
+                #         await sleep(1)
 
                 await atankQ.join()
                 for _ in range(WORKERS):
@@ -2008,7 +2102,9 @@ async def export_update_fetcher(
     try:
         while (tank_id := await tankQ.get()) is not None:
             async for tank_stat in db.tank_stats_get(
-                release=release, regions=regions, tanks=[BSTank(tank_id=tank_id)]
+                releases={release} if release is not None else set(),
+                regions=regions,
+                tanks=[BSTank(tank_id=tank_id)],
             ):
                 tank_stats.append(tank_stat.obj_src())
                 if len(tank_stats) == TANK_STATS_BATCH:
@@ -2081,8 +2177,16 @@ async def cmd_importMP(db: Backend, args: Namespace) -> bool:
                 message("Counting tank stats to import ...")
                 N: int = await import_db.tank_stats_count(sample=args.sample)
 
-                with alive_bar(
-                    N, title="Importing tank stats ", enrich_print=False, refresh_secs=1
+                # with alive_bar(
+                #     N, title="Importing tank stats ", enrich_print=False, refresh_secs=1
+                # ) as bar:
+                with tqdm(
+                    total=N,
+                    desc=f"Importing {import_model.__name__} from {import_db.table_uri(BSTableType.TankStats)}",
+                    bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} ETA {remaining} {rate_fmt}]",
+                    unit="",
+                    leave=True,
+                    position=0,
                 ) as bar:
                     async for objs in import_db.objs_export(
                         table_type=BSTableType.TankStats, sample=args.sample
@@ -2091,7 +2195,7 @@ async def cmd_importMP(db: Backend, args: Namespace) -> bool:
                         # debug(f'read {read} tank_stat objects')
                         readQ.put(objs)
                         stats.log(f"{db.driver}:stats read", read)
-                        bar(read)
+                        bar.update(read)
 
                 debug(
                     f"Finished exporting {import_model} from {import_db.table_uri(BSTableType.TankStats)}"
@@ -2103,7 +2207,8 @@ async def cmd_importMP(db: Backend, args: Namespace) -> bool:
                     stats.merge_child(res)
                 pool.join()
 
-        message(stats.print(do_print=False, clean=True))
+        if (msg := stats.print(do_print=False, clean=True)) is not None:
+            message(msg)
         return True
     except Exception as err:
         error(f"{err}")
@@ -2262,14 +2367,24 @@ async def split_tank_statQ_by_region(
     try:
         for Q in regionQs.values():
             await Q.add_producer()
-        with alive_bar(
-            Q_all.qsize(),
-            title=bar_title,
-            manual=True,
-            refresh_secs=1,
-            enrich_print=False,
+
+        with tqdm(
+            total=Q_all.qsize(),
+            desc=bar_title,
+            bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} ETA {remaining} {rate_fmt}]",
+            unit="",
+            leave=True,
+            position=0,
             disable=not progress,
         ) as bar:
+            # with alive_bar(
+            #     Q_all.qsize(),
+            #     title=bar_title,
+            #     manual=True,
+            #     refresh_secs=1,
+            #     enrich_print=False,
+            #     disable=not progress,
+            # ) as bar:
             async for tank_stat in Q_all:
                 try:
                     if tank_stat.region is None:
@@ -2288,9 +2403,7 @@ async def split_tank_statQ_by_region(
                     error(f"{err}")
                 finally:
                     stats.log("total")
-                    bar()
-                    # if progress and Q_all.qsize() == 0:
-                    #     break
+                    bar.update()
 
     except CancelledError:
         debug("Cancelled")

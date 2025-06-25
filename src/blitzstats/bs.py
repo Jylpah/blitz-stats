@@ -43,7 +43,7 @@ class BSParser(ArgumentParser):
 
 
 # logging.getLogger("asyncio").setLevel(logging.DEBUG)
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 error = logger.error
 message = logger.warning
 verbose = logger.info
@@ -194,7 +194,7 @@ async def main() -> int:
                 BACKEND = configDef.get("driver", None)
             else:
                 error(f"No section BACKEND found from config: {args.config}")
-                error(f"Sections found: {' ,'.join([s for s in config.sections() ])}")
+                error(f"Sections found: {' ,'.join([s for s in config.sections()])}")
         else:
             debug("No config file found")
 

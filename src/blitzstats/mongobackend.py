@@ -21,7 +21,7 @@ from bson import ObjectId
 from motor.motor_asyncio import (  # type: ignore
     AsyncIOMotorClient,
     AsyncIOMotorDatabase,
-    AsyncIOMotorCursor,
+    AsyncIOMotorCommandCursor,
     AsyncIOMotorCollection,
 )  # type: ignore
 from pymongo.results import (
@@ -74,7 +74,7 @@ from .models import (
 )
 
 # Setup logging
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 error = logger.error
 message = logger.warning
 verbose = logger.info
@@ -207,6 +207,17 @@ class MongoBackend(Backend):
             kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
             # ic("about to create mongodb", kwargs)
+            if not mongodb_rc["tls"]:
+                # if TLS is not enabled, remove TLS options
+                for key in [
+                    "tls",
+                    "tlsAllowInvalidCertificates",
+                    "tlsAllowInvalidHostnames",
+                    "tlsCertificateKeyFile",
+                    "tlsCAFile",
+                ]:
+                    kwargs.pop(key, None)
+
             self.set_database(database)
             self._client = AsyncIOMotorClient(**kwargs)
             debug(f"{self._client}")
@@ -390,8 +401,9 @@ class MongoBackend(Backend):
     def backend(self: "MongoBackend") -> str:
         host: str = "UNKNOWN"
         try:
-            host, port = self._client.address
-            return f"{self.driver}://{host}:{port}/{self.database}"
+            if (server := self._client.address()) is not None:
+                host, port = server
+                return f"{self.driver}://{host}:{port}/{self.database}"
         except Exception as err:
             debug(f"Error determing host: {err}")
         return f"{self.driver}://{host}/{self.database}"
@@ -645,7 +657,7 @@ class MongoBackend(Backend):
             if update is not None:
                 pass
             elif fields is not None:
-                update = data.dict(include=set(fields))
+                update = data.model_dump(include=set(fields))
             else:
                 raise ValueError("'update', 'obj' and 'fields' cannot be all None")
 
@@ -852,7 +864,9 @@ class MongoBackend(Backend):
             elif sample >= 1:
                 pipeline.append({"$sample": {"size": int(sample)}})
 
-            cursor: AsyncIOMotorCursor = dbc.aggregate(pipeline, allowDiskUse=True)
+            cursor: AsyncIOMotorCommandCursor = dbc.aggregate(
+                pipeline, allowDiskUse=True
+            )
             while objs := await cursor.to_list(batch):
                 yield objs
             debug(f"finished exporting {table_type}")
@@ -1854,7 +1868,7 @@ class MongoBackend(Backend):
 
     async def _mk_pipeline_tank_stats(
         self,
-        release: BSBlitzRelease | None = None,
+        releases: set[BSBlitzRelease] | None = None,
         regions: set[Region] = Region.API_regions(),
         accounts: Sequence[BSAccount] | None = None,
         tanks: Sequence[BSTank] | None = None,
@@ -1891,8 +1905,8 @@ class MongoBackend(Backend):
             # https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
 
             match.append({alias("region"): {"$in": [r.value for r in regions]}})
-            if release is not None:
-                match.append({alias("release"): release.release})
+            if releases is not None:
+                match.append({alias("release"): {"$in": [r.release for r in releases]}})
             if accounts is not None:
                 match.append({alias("account_id"): {"$in": [a.id for a in accounts]}})
             if tanks is not None:
@@ -1968,7 +1982,7 @@ class MongoBackend(Backend):
 
     async def tank_stats_get(
         self,
-        release: BSBlitzRelease | None = None,
+        releases: set[BSBlitzRelease] = set(),
         regions: set[Region] = Region.API_regions(),
         accounts: Sequence[BSAccount] | None = None,
         tanks: Sequence[BSTank] | None = None,
@@ -1979,9 +1993,10 @@ class MongoBackend(Backend):
         """Return tank stats from the backend"""
         try:
             debug("starting")
+
             pipeline: List[Dict[str, Any]] | None
             pipeline = await self._mk_pipeline_tank_stats(
-                release=release,
+                releases=releases,
                 regions=regions,
                 tanks=tanks,
                 accounts=accounts,
@@ -2062,7 +2077,7 @@ class MongoBackend(Backend):
             else:
                 pipeline: List[Dict[str, Any]] | None
                 pipeline = await self._mk_pipeline_tank_stats(
-                    release=release,
+                    releases={release} if release is not None else set(),
                     regions=regions,
                     tanks=tanks,
                     accounts=accounts,
@@ -2119,7 +2134,9 @@ class MongoBackend(Backend):
             pipeline: List[Dict[str, Any]] | None
             if (
                 pipeline := await self._mk_pipeline_tank_stats(
-                    release=release, regions=regions, tanks=[tank]
+                    releases={release} if release is not None else set(),
+                    regions=regions,
+                    tanks=[tank],
                 )
             ) is None:
                 raise ValueError("Could not create $match pipeline")
@@ -2182,7 +2199,10 @@ class MongoBackend(Backend):
 
             if (
                 pipeline := await self._mk_pipeline_tank_stats(
-                    release=release, regions=regions, accounts=accounts, tanks=tanks
+                    releases={release} if release is not None else set(),
+                    regions=regions,
+                    accounts=accounts,
+                    tanks=tanks,
                 )
             ) is None:
                 raise ValueError("could not build filtering pipeline")
@@ -2221,7 +2241,10 @@ class MongoBackend(Backend):
             for r in regions:
                 if (
                     pipeline := await self._mk_pipeline_tank_stats(
-                        release=release, regions={r}, accounts=accounts, tanks=tanks
+                        releases={release} if release is not None else set(),
+                        regions={r},
+                        accounts=accounts,
+                        tanks=tanks,
                     )
                 ) is None:
                     raise ValueError("could not build filtering pipeline")

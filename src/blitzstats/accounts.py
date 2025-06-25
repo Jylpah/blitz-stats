@@ -8,16 +8,14 @@ from aiofiles import open
 from asyncstdlib import enumerate
 from alive_progress import alive_bar  # type: ignore
 from pydantic import ValidationError
+from tqdm import tqdm
 
 # from icecream import ic  # type: ignore
 
-from pyutils import (
-    EventCounter,
-    IterableQueue,
-    QueueDone,
-)
+from eventcounter import EventCounter
+from queutils import IterableQueue, QueueDone
 from pydantic_exportables.exportable import export
-from pyutils.utils import alive_bar_monitor, chunker
+from pyutils.utils import chunker
 
 from blitzmodels import (
     Region,
@@ -38,9 +36,9 @@ from .backend import (
     ACCOUNTS_Q_MAX,
 )
 from .models import BSAccount, StatsTypes, BSBlitzRelease
+from .utils import tqdm_monitorQ
 
-
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 error = logger.error
 message = logger.warning
 verbose = logger.info
@@ -729,7 +727,7 @@ async def cmd_update(db: Backend, args: Namespace) -> bool:
             error(f"{err}")
 
         await updateQ.join()
-        await stats.gather_stats([db_worker])
+        await stats.gather([db_worker], merge_child=True)
         stats.print()
 
     except Exception as err:
@@ -800,11 +798,11 @@ async def cmd_update_wg(
                 message("cancelled")
                 for workQ in workQs.values():
                     await workQ.finish(all=True)
-        await stats.gather_stats(workQ_creators, merge_child=False)
+        await stats.gather(workQ_creators, merge_child=False)
         for region in workQs.keys():
             debug(f"waiting for idQ for {region} to complete")
             await workQs[region].join()
-        await stats.gather_stats(api_workers)
+        await stats.gather(api_workers, merge_child=True)
         wg.print()
         await wg.close()
     except Exception as err:
@@ -822,15 +820,13 @@ async def update_account_info_worker(
     debug("starting")
     stats: EventCounter = EventCounter(f"{region}")
     infos: List[AccountInfo] | None
-    accounts: Dict[int, BSAccount]
     account: BSAccount
-    ids: List[int] = list()
 
-    await updateQ.add_producer()
     try:
-        while True:
-            accounts = dict()
-            for account in await workQ.get():
+        await updateQ.add_producer()
+        async for account_bacth in workQ:
+            accounts: Dict[int, BSAccount] = dict()
+            for account in account_bacth:
                 accounts[account.id] = account
             N: int = len(accounts)
             try:
@@ -838,7 +834,7 @@ async def update_account_info_worker(
                 if N == 0 or N > 100:
                     raise ValueError(f"Incorrect number of account_ids give {N}")
 
-                ids = list(accounts.keys())
+                ids: List[int] = list(accounts.keys())
                 ids_stats: List[int] = list()
                 if (infos := await wg.get_account_info(ids, region)) is not None:
                     stats.log("stats found", len(infos))
@@ -889,13 +885,8 @@ async def update_account_info_worker(
             except Exception as err:
                 stats.log("errors")
                 error(f"{err}")
-            finally:
-                # debug(f'accounts={len(accounts)}, left={left}')
-                workQ.task_done()
 
-    except QueueDone:
-        debug("account_id queue is done")
-    except CancelledError:
+    except KeyboardInterrupt:
         debug("cancelled")
     except Exception as err:
         error(f"{err}")
@@ -1148,9 +1139,8 @@ async def fetch_account_info_worker(
 
     try:
         await accountQ.add_producer()
-        while True:
+        async for ids in idQ:
             valid_stats: bool = False
-            ids = await idQ.get()
             N_ids: int = len(ids)
             try:
                 stats.log("account_ids", N_ids)
@@ -1176,8 +1166,6 @@ async def fetch_account_info_worker(
                 stats.log("errors")
                 error(f"{err}")
             finally:
-                # debug(f'accounts={len(accounts)}, left={left}')
-                idQ.task_done()
                 if not force:
                     left = null_responses if valid_stats else left - 1
                     if left <= 0:  # too many NULL responses, stop
@@ -1185,15 +1173,18 @@ async def fetch_account_info_worker(
 
     except QueueDone:
         debug("account_id queue is done")
-    except CancelledError:
+    except KeyboardInterrupt:
         debug("cancelled")
     except Exception as err:
         error(f"{err}")
     finally:
         debug(f"closing accountQ: {region}")
         await accountQ.finish()
-        debug(f"closing idQ: {region}")
-        await idQ.finish(all=True, empty=True)
+    debug(f"closing idQ: {region}")
+    await idQ.finish(all=True)
+    # empty idQ
+    async for _ in idQ:
+        pass
     return stats
 
 
@@ -1204,14 +1195,19 @@ async def cmd_fetch_wi(
     debug("starting")
     stats: EventCounter = EventCounter("WoTinspector")
     workersN: int = args.wi_workers
-    workers: List[Task] = list()
+    workers: List[Task[EventCounter | BaseException]] = list()
     max_pages: int = args.wi_max_pages
     start_page: int = args.wi_start_page
     rate_limit: float = args.wi_rate_limit
     token: str = args.wi_auth_token  # temp fix...
-    replay_idQ: IterableQueue[str] = IterableQueue()
+    replay_idQ: IterableQueue[str] = IterableQueue(maxsize=10)
 
     wi: WoTinspector = WoTinspector(rate_limit=rate_limit, auth_token=token)
+
+    pbar_pages = tqdm(total=max_pages, desc="Pages", position=2)
+    pbar_replays = tqdm(total=max_pages * 20, desc="Replays", position=0)
+    pbar_errors = tqdm(total=max_pages * 20, desc="Errors", position=1)
+
     if accountQ is not None:
         await accountQ.add_producer()
     try:
@@ -1225,31 +1221,39 @@ async def cmd_fetch_wi(
         pages: range = range(start_page, (start_page + max_pages), step)
 
         workers.append(
-            create_task(fetch_wi_get_replay_ids(db, wi, args, replay_idQ, pages))
+            create_task(
+                fetch_wi_get_replay_ids(
+                    db, wi, args, replay_idQ, pages, pbar=pbar_pages
+                )
+            )
         )
         for _ in range(workersN):
             workers.append(
-                create_task(fetch_wi_fetch_replays(db, wi, replay_idQ, accountQ))
+                create_task(
+                    fetch_wi_fetch_replays(
+                        db,
+                        wi,
+                        replay_idQ,
+                        accountQ,
+                        pbar=pbar_replays,
+                        pbar_errors=pbar_errors,
+                    )
+                )
             )
 
-        replays_done: int = 0
-        with alive_bar(
-            total=None, title="Fetching replays ", manual=True, enrich_print=False
-        ) as bar:
-            while not replay_idQ.is_done:
-                replays: int = replay_idQ.qsize()
-                bar(replays - replays_done)
-                replays_done = replays
-                await sleep(0.5)
+        await replay_idQ.join()
+        await stats.gather_stats(workers, merge_child=True)
 
-        # await replay_idQ.join()
-
-        for worker in await gather(*workers, return_exceptions=True):
-            stats.merge_child(worker)
+    except KeyboardInterrupt:
+        debug("CTRL+C pressed, stopping...")
+        pbar_pages.close()
+        await replay_idQ.finish(empty=True, all=True)
 
     except Exception as err:
         error(f"{err}")
     finally:
+        pbar_errors.close()
+        pbar_replays.close()
         if accountQ is not None:
             await accountQ.finish()
         await wi.close()
@@ -1262,6 +1266,7 @@ async def fetch_wi_get_replay_ids(
     args: Namespace,
     replay_idQ: IterableQueue[str],
     pages: range,
+    pbar: tqdm,
     # disable_bar: bool = False,
 ) -> EventCounter:
     """Spider replays.WoTinspector.com and feed found replay IDs into replayQ. Return stats"""
@@ -1276,6 +1281,7 @@ async def fetch_wi_get_replay_ids(
         await replay_idQ.add_producer()
 
         for page in pages:
+            pbar.update(1)
             try:
                 if old_replays > max_old_replays:
                     raise CancelledError
@@ -1304,17 +1310,19 @@ async def fetch_wi_get_replay_ids(
                 else:
                     debug(f"No replays found for page {page}")
             except KeyboardInterrupt:
-                debug("CTRL+C pressed, stopping...")
-                raise CancelledError
+                raise
             except Exception as err:
                 error(f"{err}")
+    except KeyboardInterrupt:
+        debug("CTRL+C pressed, stopping...")
+        await replay_idQ.finish(empty=True, all=True)
     except CancelledError:
-        # debug(f'Cancelled')
-        message(f"{max_old_replays} found. Stopping spidering for more")
+        message(f"{old_replays} found. Stopping spidering for more")
     except Exception as err:
         error(f"{err}")
     finally:
         await replay_idQ.finish()
+        pbar.close()
     return stats
 
 
@@ -1323,6 +1331,8 @@ async def fetch_wi_fetch_replays(
     wi: WoTinspector,
     replay_idQ: IterableQueue[str],
     accountQ: Queue[BSAccount] | None,
+    pbar: tqdm,
+    pbar_errors: tqdm,
 ) -> EventCounter:
     debug("starting")
     stats: EventCounter = EventCounter("Fetch replays")
@@ -1333,6 +1343,7 @@ async def fetch_wi_fetch_replays(
                 if (replay := await wi.get_replay(replay_id)) is None:
                     verbose(f"Could not fetch replay id: {replay_id}")
                     stats.log("errors")
+                    pbar_errors.update(1)
                     continue
                 if accountQ is not None:
                     account_ids: List[int] = replay.allies + replay.enemies
@@ -1341,11 +1352,13 @@ async def fetch_wi_fetch_replays(
                         await accountQ.put(BSAccount(id=account_id))
                 if await db.replay_insert(replay):
                     stats.log("replays added")
+                    pbar.update(1)
                 else:
                     stats.log("replays not added")
             except Exception as err:
                 error(f"error fetching replay_id={replay_id}")
                 debug(f"{err}")
+
     except Exception as err:
         error(f"{err}")
     return stats
@@ -1355,7 +1368,7 @@ async def cmd_import(db: Backend, args: Namespace) -> bool:
     """Import accounts from other backend"""
     try:
         stats: EventCounter = EventCounter("accounts import")
-        accountQ: Queue[BSAccount] = Queue(ACCOUNTS_Q_MAX)
+        accountQ: IterableQueue[BSAccount] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
         regions: set[Region] = {Region(r) for r in args.regions}
         import_db: Backend | None = None
         import_backend: str = args.import_backend
@@ -1508,16 +1521,12 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
                 )
             )
 
-        bar: Task | None = None
+        monitors: list[Task] = list()
+        bar: tqdm | None = None
         if not export_stdout:
-            bar = create_task(
-                alive_bar_monitor(
-                    list(accountQs.values()),
-                    "Exporting accounts",
-                    total=total,
-                    enrich_print=False,
-                )
-            )
+            bar = tqdm(total=total, desc="Exporting accounts")
+            for Q in accountQs.values():
+                monitors.append(create_task(tqdm_monitorQ(Q, bar=bar, close=False)))
 
         await wait(account_workers)
 
@@ -1525,7 +1534,7 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
             await queue.finish()
             await queue.join()
         if bar is not None:
-            bar.cancel()
+            bar.close()
 
         await stats.gather_stats(account_workers)
         await stats.gather_stats(export_workers, cancel=False)
@@ -1576,9 +1585,9 @@ async def count_accounts(
                 try:
                     inactive = OptAccountsInactive(args.inactive)
                 except ValueError:
-                    assert (
-                        False
-                    ), f"Incorrect value for argument 'inactive': {args.inactive}"
+                    assert False, (
+                        f"Incorrect value for argument 'inactive': {args.inactive}"
+                    )
 
                 accounts_N = await db.accounts_count(
                     stats_type=stats_type,
@@ -1608,7 +1617,7 @@ async def create_accountQ(
     """Helper to make accountQ from arguments"""
     stats: EventCounter = EventCounter(f"{db.driver}: accounts")
     debug("starting")
-    regions: set[Region] = set(args.region)
+    regions: set[Region] = set(args.regions)
     try:
         accounts: List[BSAccount] | None = None
         try:
@@ -1717,19 +1726,6 @@ async def create_accountQ_batch(
                 await accountQ.put(accounts)
                 stats.log("read", len(accounts))
         else:
-            # message('counting accounts...')
-            # start = time()
-            # total : int = await db.accounts_count(stats_type=stats_type,
-            # 										regions=regions,
-            # 										inactive=inactive,
-            # 										disabled=disabled,
-            # 										active_since=active_since,
-            # 										inactive_since=inactive_since,
-            # 										sample=sample,
-            # 										cache_valid=cache_valid)
-            # end = time()
-            # message(f'{total} accounts, counting took {end - start}')
-
             accounts_args: Dict[str, Any] | None
             if (accounts_args := await accounts_parse_args(db, args)) is not None:
                 accounts_args["regions"] = {region}
@@ -1744,7 +1740,7 @@ async def create_accountQ_batch(
                         stats.log("errors")
             else:
                 error(f"could not parse args: {args}")
-    except CancelledError:
+    except KeyboardInterrupt:
         debug("Cancelled")
     except Exception as err:
         error(f"{err}")

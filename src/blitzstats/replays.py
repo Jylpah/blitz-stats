@@ -10,7 +10,8 @@ from multiprocessing import Manager, cpu_count
 from multiprocessing.pool import Pool, AsyncResult
 from pydantic import BaseModel
 
-from pyutils import EventCounter, AsyncQueue
+from queutils import AsyncQueue
+from eventcounter import EventCounter
 from pyutils.utils import is_alphanum
 from pydantic_exportables import JSONExportable
 
@@ -21,7 +22,7 @@ from .backend import Backend, BSTableType, get_sub_type
 from .accounts import add_args_fetch_wi as add_args_accounts_fetch_wi
 from .accounts import cmd_fetch_wi as cmd_accounts_fetch_wi
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 error = logger.error
 message = logger.warning
 verbose = logger.info
@@ -257,6 +258,9 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
     try:
         debug("starting")
         stats = EventCounter("replays fetch")
+        message(
+            f"Fetching replays... start={args.wi_start_page}, pages={args.wi_max_pages}"
+        )
         stats.merge(await cmd_accounts_fetch_wi(db, args, accountQ=None))
         stats.print()
         return True
@@ -296,9 +300,9 @@ async def cmd_export_find(db: Backend, args: Namespace) -> bool:
 async def cmd_import(db: Backend, args: Namespace) -> bool:
     """Import replays from other backend"""
     try:
-        assert is_alphanum(
-            args.import_model
-        ), f"invalid --import-model: {args.import_model}"
+        assert is_alphanum(args.import_model), (
+            f"invalid --import-model: {args.import_model}"
+        )
 
         stats: EventCounter = EventCounter("replays import")
         replayQ: Queue[JSONExportable] = Queue(REPLAY_Q_MAX)

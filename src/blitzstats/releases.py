@@ -7,10 +7,8 @@ from sortedcollections import NearestDict  # type: ignore
 from math import ceil
 from datetime import date, datetime
 
-from pyutils import (
-    EventCounter,
-    IterableQueue,
-)
+from eventcounter import EventCounter
+from queutils import IterableQueue
 from pydantic_exportables import export
 from pyutils.utils import is_alphanum
 from blitzmodels import Release  # noqa
@@ -22,7 +20,7 @@ MAX_EPOCH: int = (
     2**36
 )  ##  Sunday, August 20, 4147 7:32:16, I doubt Python3 is supported anymore then
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 error = logger.error
 message = logger.warning
 verbose = logger.info
@@ -374,7 +372,7 @@ async def cmd_edit(db: Backend, args: Namespace) -> bool:
                 fields.append("launch_date")
                 release.launch_date = datetime.fromisoformat(args.launch_date)
             if len(fields) > 0:
-                update: Dict[str, Any] = release.dict(
+                update: Dict[str, Any] = release.model_dump(
                     exclude_unset=True, exclude_none=True
                 )
                 del update["release"]
@@ -440,9 +438,9 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
 async def cmd_import(db: Backend, args: Namespace) -> bool:
     """Import releases from other backend"""
     try:
-        assert is_alphanum(
-            args.import_model
-        ), f"invalid --import-model: {args.import_model}"
+        assert is_alphanum(args.import_model), (
+            f"invalid --import-model: {args.import_model}"
+        )
 
         stats: EventCounter = EventCounter("releases import")
         releaseQ: Queue[BSBlitzRelease] = Queue(100)
