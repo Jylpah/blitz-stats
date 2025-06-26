@@ -304,6 +304,7 @@ def read_args_releases(strs: List[str] | None) -> List[BSBlitzRelease] | None:
 async def cmd(db: Backend, args: Namespace) -> bool:
     try:
         debug("starting")
+        db.late_init()
         if args.releases_cmd == "add":
             debug("releases add")
             return await cmd_add(db, args)

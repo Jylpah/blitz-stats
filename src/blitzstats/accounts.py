@@ -683,7 +683,7 @@ def add_args_remove(
 async def cmd(db: Backend, args: Namespace) -> bool:
     try:
         debug("starting")
-
+        db.late_init()
         if args.accounts_cmd == "fetch":
             return await cmd_fetch(db, args)
 
