@@ -673,7 +673,6 @@ async def cmd(db: Backend, args: Namespace) -> bool:
     try:
         debug("starting")
         if args.tank_stats_cmd == "fetch":
-            return await cmd_fetch(db, args)
             if len(args.accounts) > 0 or args.file is not None:
                 return await cmd_fetch(db, args)
             else:
@@ -817,6 +816,8 @@ async def fetch_mp_worker(
     """Forkable tank stats fetch worker for latest (career) stats"""
     global db
 
+    if db is None:
+        raise ValueError("db is not initialized")
     debug(f"fetch worker starting: {region}")
     stats: EventCounter = EventCounter(f"fetch {region}")
     accountQ: IterableQueue[BSAccount] = IterableQueue(maxsize=20)

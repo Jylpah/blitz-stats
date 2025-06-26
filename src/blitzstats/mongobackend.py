@@ -118,7 +118,7 @@ class MongoBackend(Backend):
         database: str | None = None,
         table_config: Dict[BSTableType, str] | None = None,
         model_config: Dict[BSTableType, type[JSONExportable]] | None = None,
-        delayed_init: bool = True,
+        delayed_init: bool = False,
         **kwargs,
     ):
         """Init MongoDB backend from config file and CLI args
@@ -208,10 +208,9 @@ class MongoBackend(Backend):
             kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
             # ic("about to create mongodb", kwargs)
-            if not mongodb_rc["tls"]:
+            if not kwargs["tls"]:
                 # if TLS is not enabled, remove TLS options
                 for key in [
-                    "tls",
                     "tlsAllowInvalidCertificates",
                     "tlsAllowInvalidHostnames",
                     "tlsCertificateKeyFile",
@@ -221,8 +220,9 @@ class MongoBackend(Backend):
 
             self.set_database(database)
             self._db_config = kwargs
-            if not delayed_init:
-                self.late_init()
+            self._client = AsyncIOMotorClient(connect=False, **self.db_config)
+            debug(f"{self._client}")
+            self.db = self._client[self.database]
 
             self.config_tables(table_config=table_config)
             self.config_models(model_config=model_config)
@@ -238,12 +238,6 @@ class MongoBackend(Backend):
         except Exception as err:
             error(f"Error connecting Mongo DB: {err}")
             raise err
-
-    def late_init(self) -> None:
-        """Late init MongoDB backend"""
-        self._client = AsyncIOMotorClient(connect=True, **self.db_config)
-        debug(f"{self._client}")
-        self.db = self._client[self.database]
 
     def debug(self) -> None:
         """Print out debug info"""

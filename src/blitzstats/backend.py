@@ -201,7 +201,6 @@ class Backend(ABC):
         database: str | None = None,
         table_config: Dict[BSTableType, str] | None = None,
         model_config: Dict[BSTableType, type[JSONExportable]] | None = None,
-        delayed_init: bool = True,
         **kwargs,
     ):
         """Init MongoDB backend from config file and CLI args
@@ -261,11 +260,6 @@ class Backend(ABC):
             self.set_model(BSTableType.EventLog, configBackend.get("m_event_log"))
 
     @abstractmethod
-    def late_init(self) -> None:
-        """Late init to be called if the instance was created with delayed_init=True"""
-        raise NotImplementedError
-
-    @abstractmethod
     def debug(self) -> None:
         """Print out debug info"""
         raise NotImplementedError
@@ -321,7 +315,6 @@ class Backend(ABC):
         driver: str,
         config: ConfigParser | None = None,
         copy_from: Optional["Backend"] = None,
-        delayed_init: bool = True,
         **kwargs,
     ) -> Optional["Backend"]:
         try:
@@ -329,9 +322,7 @@ class Backend(ABC):
             if copy_from is not None and copy_from.driver == driver:
                 return copy_from.copy(**kwargs)
             elif driver in cls._backends:
-                return cls._backends[driver](
-                    config=config, delayed_init=delayed_init, **kwargs
-                )
+                return cls._backends[driver](config=config, **kwargs)
             else:
                 assert False, f"Backend not implemented: {driver}"
         except Exception as err:
