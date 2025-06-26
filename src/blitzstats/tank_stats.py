@@ -923,7 +923,6 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
     )
 
     try:
-        db.late_init()
         stats: EventCounter = EventCounter("tank-stats fetch")
         regions: set[Region] = {Region(r) for r in args.regions}
         accountQs: Dict[Region, IterableQueue[BSAccount]] = dict()
