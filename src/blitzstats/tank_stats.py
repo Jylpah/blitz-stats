@@ -32,7 +32,9 @@ import pyarrow.dataset as ds  # type: ignore
 
 from eventcounter import EventCounter
 from queutils import IterableQueue, QueueDone, AsyncQueue
-from multilevellogger import MultiLevelLogger, getMultiLevelLogger
+
+# from multilevellogger import MultiLevelLogger, getMultiLevelLogger
+import logging
 
 from pydantic_exportables import JSONExportable, export
 from blitzmodels import (
@@ -65,11 +67,13 @@ from .arrow import (
 )
 from .utils import tqdm_monitorQ
 
-logger: MultiLevelLogger = getMultiLevelLogger(__name__)
+logger = logging.getLogger(__name__)
 error = logger.error
-message = logger.message
-verbose = logger.verbose
+message = logger.warning
+verbose = logger.info
 debug = logger.debug
+
+logger.setLevel(logging.getLogger().level)
 
 # Constants
 
@@ -722,20 +726,6 @@ async def cmd_fetchMP(db: Backend, args: Namespace) -> bool:
             bars: Dict[Region, tqdm] = dict()
             initialized: dict[Region, bool] = dict()
             message("Fetching tank stats")
-            position: int = 0
-            for region in sorted(regions):
-                totals[region] = 0
-                progress[region] = 0
-                initialized[region] = False
-                bars[region] = tqdm(
-                    total=0,
-                    position=position,
-                    desc=f"{region}",
-                    bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} ETA {remaining} {rate_fmt}]",
-                    unit="",
-                    leave=True,
-                )
-                position += 1
 
             with Pool(
                 processes=WORKERS,
@@ -743,6 +733,21 @@ async def cmd_fetchMP(db: Backend, args: Namespace) -> bool:
                 initargs=[db.config],
             ) as pool:
                 debug(f"starting {WORKERS} workers")
+                position: int = 0
+                for region in sorted(regions):
+                    totals[region] = 0
+                    progress[region] = 0
+                    initialized[region] = False
+                    bars[region] = tqdm(
+                        total=0,
+                        position=position,
+                        desc=f"{region}",
+                        bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} ETA {remaining} {rate_fmt}]",
+                        unit="",
+                        leave=True,
+                    )
+                    position += 1
+
                 results: AsyncResult = pool.starmap_async(
                     fetch_mp_worker_start,
                     [(args, r, progress, totals) for r in regions],
@@ -769,7 +774,8 @@ async def cmd_fetchMP(db: Backend, args: Namespace) -> bool:
                 pool.join()
 
         if (msg := stats.print(do_print=False, clean=True)) is not None:
-            tqdm.write(msg)
+            # tqdm.write(msg)
+            message(msg)
         return True
     except Exception as err:
         error(f"{err}")
@@ -784,7 +790,7 @@ def fetch_mp_init(
     global db
     debug(f"starting (PID={getpid()})")
 
-    if (tmp_db := Backend.create(**backend_config)) is None:
+    if (tmp_db := Backend.create(delayed_init=False, **backend_config)) is None:
         raise ValueError("could not create backend")
     db = tmp_db
     debug("finished")
@@ -810,6 +816,8 @@ async def fetch_mp_worker(
     """Forkable tank stats fetch worker for latest (career) stats"""
     global db
 
+    if db is None:
+        raise ValueError("db is not initialized")
     debug(f"fetch worker starting: {region}")
     stats: EventCounter = EventCounter(f"fetch {region}")
     accountQ: IterableQueue[BSAccount] = IterableQueue(maxsize=20)
@@ -920,6 +928,7 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
         accountQs: Dict[Region, IterableQueue[BSAccount]] = dict()
         retryQ: IterableQueue[BSAccount] | None = None
         statsQ: Queue[List[TankStat]] = Queue(maxsize=TANK_STATS_Q_MAX)
+        accounts_args: Dict[str, Any] | None
 
         if not args.disabled:
             retryQ = IterableQueue()  # must not use maxsize
@@ -933,12 +942,10 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
             accounts = len(args.accounts)
         elif args.file is not None:
             accounts = await BSAccount.count_file(args.file)
-        # else:
-        #     accounts_args: Dict[str, Any] | None
-        #     if (accounts_args := await accounts_parse_args(db, args)) is None:
-        #         raise ValueError(f"could not parse account args: {args}")
-
-        # accounts = await db.accounts_count(StatsTypes.tank_stats, **accounts_args)
+        else:
+            if (accounts_args := await accounts_parse_args(db, args)) is None:
+                raise ValueError(f"could not parse account args: {args}")
+            accounts = await db.accounts_count(StatsTypes.tank_stats, **accounts_args)
 
         WORKERS: int = max([int(args.wg_workers), 1])
         WORKERS = min([WORKERS, ceil(accounts / 4)])
@@ -950,7 +957,6 @@ async def cmd_fetch(db: Backend, args: Namespace) -> bool:
             r_args.regions = {r}
 
             if len(args.accounts) == 0 and args.file is None:
-                accounts_args: Dict[str, Any] | None
                 if (accounts_args := await accounts_parse_args(db, args)) is None:
                     raise ValueError(f"could not parse account args: {args}")
                 accounts = await db.accounts_count(

@@ -118,6 +118,7 @@ class MongoBackend(Backend):
         database: str | None = None,
         table_config: Dict[BSTableType, str] | None = None,
         model_config: Dict[BSTableType, type[JSONExportable]] | None = None,
+        delayed_init: bool = False,
         **kwargs,
     ):
         """Init MongoDB backend from config file and CLI args
@@ -207,10 +208,9 @@ class MongoBackend(Backend):
             kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
             # ic("about to create mongodb", kwargs)
-            if not mongodb_rc["tls"]:
+            if not kwargs["tls"]:
                 # if TLS is not enabled, remove TLS options
                 for key in [
-                    "tls",
                     "tlsAllowInvalidCertificates",
                     "tlsAllowInvalidHostnames",
                     "tlsCertificateKeyFile",
@@ -219,10 +219,11 @@ class MongoBackend(Backend):
                     kwargs.pop(key, None)
 
             self.set_database(database)
-            self._client = AsyncIOMotorClient(**kwargs)
+            self._db_config = kwargs
+            self._client = AsyncIOMotorClient(connect=False, **self.db_config)
             debug(f"{self._client}")
             self.db = self._client[self.database]
-            self._db_config = kwargs
+
             self.config_tables(table_config=table_config)
             self.config_models(model_config=model_config)
 
@@ -477,7 +478,7 @@ class MongoBackend(Backend):
             debug(f"collection={dbc.name}, model={model}, pipeline={pipeline}")
             async for obj in dbc.aggregate(pipeline, allowDiskUse=True, **options):
                 try:
-                    yield model.parse_obj(obj)
+                    yield model.model_validate(obj)
                 except ValidationError as err:
                     error(
                         f"Could not validate {model} ob={obj} from {self.table_uri(table_type)}: {err}"
@@ -502,7 +503,7 @@ class MongoBackend(Backend):
             datas: List[JSONExportable] = list()
             async for obj in dbc.aggregate(pipeline, allowDiskUse=True, **options):
                 try:
-                    datas.append(model.parse_obj(obj))
+                    datas.append(model.model_validate(obj))
                     if len(datas) == batch:
                         yield datas
                         datas = list()
@@ -587,7 +588,7 @@ class MongoBackend(Backend):
             dbc: AsyncIOMotorCollection = self.get_collection(table_type)
             model: type[JSONExportable] = self.get_model(table_type)
             if (res := await dbc.find_one({"_id": idx})) is not None:
-                return model.parse_obj(res)
+                return model.model_validate(res)
         except Exception as err:
             error(f"Error getting _id={idx} from {self.table_uri(table_type)}: {err}")
         return None
@@ -843,6 +844,9 @@ class MongoBackend(Backend):
         except Exception as err:
             error(f"Error fetching data from {self.table_uri(table_type)}: {err}")
 
+    # TODO: PyMongo migration
+    # batch : int | None = None
+    # https://www.mongodb.com/docs/languages/python/pymongo-driver/current/reference/migration/#migrate-from-motor
     async def objs_export(
         self,
         table_type: BSTableType,
@@ -2509,7 +2513,7 @@ class MongoBackend(Backend):
             err: MongoErrorLog
             async for error_obj in dbc.find(query).sort("d", ASCENDING):
                 try:
-                    err = MongoErrorLog.parse_obj(error_obj)
+                    err = MongoErrorLog.model_validate(error_obj)
                     debug(
                         f'Read "{err.msg}" from {self.table_uri(BSTableType.EventLog)}'
                     )
