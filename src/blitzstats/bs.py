@@ -43,7 +43,7 @@ class BSParser(ArgumentParser):
 
 
 # logging.getLogger("asyncio").setLevel(logging.DEBUG)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 error = logger.error
 message = logger.warning
 verbose = logger.info
