@@ -683,7 +683,6 @@ def add_args_remove(
 async def cmd(db: Backend, args: Namespace) -> bool:
     try:
         debug("starting")
-
         if args.accounts_cmd == "fetch":
             return await cmd_fetch(db, args)
 
@@ -800,7 +799,7 @@ async def cmd_update_wg(
                 while not updateQ.is_done:
                     done = updateQ.count
                     if done - prev > 0:
-                        bar.update((done - prev) * 100)
+                        bar.update(done - prev)
                     prev = done
                     await sleep(1)
 

@@ -260,7 +260,7 @@ async def main() -> int:
         debug("arguments given:")
         debug(str(args))
 
-        backend: Backend | None = Backend.create(args.backend, config=config)
+        backend: Backend | None = Backend.create(driver=args.backend, config=config)
         assert backend is not None, "Could not initialize backend"
 
         if yappi is not None and args.profile > 0:
