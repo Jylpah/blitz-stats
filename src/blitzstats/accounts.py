@@ -800,7 +800,7 @@ async def cmd_update_wg(
                 while not updateQ.is_done:
                     done = updateQ.count
                     if done - prev > 0:
-                        bar.update((done - prev) * 100)
+                        bar.update(done - prev)
                     prev = done
                     await sleep(1)
 
