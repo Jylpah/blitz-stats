@@ -1,6 +1,6 @@
 [project]
 name = "blitz-stats"
-version = "1.1.0a2"
+version = "1.1.1"
 authors = [{ name = "Jylpah", email = "jylpah@gmail.com" }]
 description = "Tool to fetch, manage and export stats for Wargaming's World of Tanks Blitz game "
 readme = "README.md"
@@ -34,7 +34,7 @@ dependencies = [
     "tqdm>=4.67",
     "pyutils @ git+https://github.com/Jylpah/pyutils.git",
     "blitz-models @ git+https://github.com/Jylpah/blitz-models.git",
-    
+
 ]
 
 [project.optional-dependencies]
@@ -98,4 +98,4 @@ include = ["src", "tests"]
 extraPaths = ["src"]
 
 [tool.coverage.run]
-omit= ['tests/*']
+omit = ['tests/*']
