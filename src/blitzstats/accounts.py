@@ -783,7 +783,13 @@ async def cmd_update_wg(
                 )
 
         print(
-            f"Updating accounts from WG API: active since={args.active_since} inactive since={args.inactive_since}"
+            "Updating accounts from WG API:" + " active since={args.active_since}"
+            if args.active_since is not None
+            else "" + " inactive since={args.inactive_since}"
+            if args.inactive_since is not None
+            else "" + " sample={args.sample}"
+            if args.sample > 0
+            else ""
         )
 
         with tqdm(
