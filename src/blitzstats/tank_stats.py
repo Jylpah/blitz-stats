@@ -2,7 +2,8 @@ from argparse import ArgumentParser, Namespace, SUPPRESS
 from configparser import ConfigParser
 from datetime import datetime
 from typing import Optional, Any, List, Dict
-from asyncio import run, create_task, gather, sleep, wait, Queue, CancelledError, Task
+from asyncio import create_task, gather, sleep, wait, Queue, CancelledError, Task
+import asyncio
 from sortedcollections import NearestDict  # type: ignore
 from tqdm import tqdm
 import copy
@@ -804,7 +805,7 @@ def fetch_mp_worker_start(
 ) -> EventCounter:
     """Forkable tank stats fetch worker for tank stats"""
     debug(f"starting fetch worker {region}")
-    return run(fetch_mp_worker(args, region, progress, totals), debug=False)
+    return asyncio.run(fetch_mp_worker(args, region, progress, totals), debug=False)
 
 
 async def fetch_mp_worker(
@@ -1845,7 +1846,7 @@ def export_career_mp_init(
 def export_career_stats_mp_worker_start(worker: int = 0) -> EventCounter:
     """Forkable tank stats import worker cor career stats"""
     debug(f"starting import worker #{worker}")
-    return run(export_career_stats_mp_worker(worker), debug=False)
+    return asyncio.run(export_career_stats_mp_worker(worker), debug=False)
 
 
 async def export_career_stats_mp_worker(worker: int = 0) -> EventCounter:
@@ -2060,7 +2061,7 @@ def export_update_mp_init(
 def export_data_update_mp_worker_start(worker: int = 0) -> EventCounter:
     """Forkable tank stats import worker"""
     debug(f"starting import worker #{worker}")
-    return run(export_data_update_mp_worker(worker), debug=False)
+    return asyncio.run(export_data_update_mp_worker(worker), debug=False)
 
 
 async def export_data_update_mp_worker(worker: int = 0) -> EventCounter:
@@ -2243,7 +2244,7 @@ def import_mp_init(
 def import_mp_worker_start(id: int = 0) -> EventCounter:
     """Forkable tank stats import worker"""
     debug(f"starting import worker #{id}")
-    return run(import_mp_worker(id), debug=False)
+    return asyncio.run(import_mp_worker(id), debug=False)
 
 
 async def import_mp_worker(id: int = 0) -> EventCounter:

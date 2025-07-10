@@ -4,12 +4,13 @@ from typing import Optional, Any, List, Dict
 import logging
 from asyncio import (
     create_task,
-    run,
+    # run,
     Queue,
     CancelledError,
     Task,
     sleep,
 )
+import asyncio
 from os import getpid
 from math import ceil
 from sortedcollections import NearestDict  # type: ignore
@@ -578,7 +579,7 @@ def fetch_mp_worker_start(
 ) -> EventCounter:
     """Forkable player achievements fetch worker for tank stats"""
     debug(f"starting fetch worker {region}")
-    return run(fetch_mp_worker(args, region, progress, totals), debug=False)
+    return asyncio.run(fetch_mp_worker(args, region, progress, totals), debug=False)
 
 
 async def fetch_mp_worker(
@@ -1034,7 +1035,7 @@ def import_mp_init(
 def import_mp_worker_start(id: int = 0) -> EventCounter:
     """Forkable player achievements import worker"""
     debug(f"starting import worker #{id}")
-    return run(import_mp_worker(id), debug=False)
+    return asyncio.run(import_mp_worker(id), debug=False)
 
 
 async def import_mp_worker(id: int = 0) -> EventCounter:
