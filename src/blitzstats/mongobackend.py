@@ -58,7 +58,7 @@ from blitzmodels import (
 
 from .backend import (
     Backend,
-    OptAccountsDistributed,
+    OptDistributed,
     OptAccountsInactive,
     BSTableType,
     EventLog,
@@ -933,7 +933,7 @@ class MongoBackend(Backend):
         accounts: Sequence[BSAccount] | None = None,
         id_range: range | None = None,
         inactive: OptAccountsInactive = OptAccountsInactive.auto,
-        dist: OptAccountsDistributed | None = None,
+        dist: OptDistributed | None = None,
         disabled: bool | None = False,
         active_since: int = 0,
         inactive_since: int = 0,
@@ -1037,7 +1037,7 @@ class MongoBackend(Backend):
         disabled: bool | None = False,
         active_since: int = 0,
         inactive_since: int = 0,
-        dist: OptAccountsDistributed | None = None,
+        dist: OptDistributed | None = None,
         sample: float = 0,
         cache_valid: float = 0,
     ) -> AsyncGenerator[BSAccount, None]:
@@ -1097,7 +1097,7 @@ class MongoBackend(Backend):
         disabled: bool | None = False,
         active_since: int = 0,
         inactive_since: int = 0,
-        dist: OptAccountsDistributed | None = None,
+        dist: OptDistributed | None = None,
         sample: float = 0,
         cache_valid: float = 0,
     ) -> int:

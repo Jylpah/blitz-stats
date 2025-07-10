@@ -3,7 +3,17 @@ from configparser import ConfigParser
 from argparse import Namespace, ArgumentParser
 from abc import ABC, abstractmethod
 from os.path import isfile
-from typing import Optional, Any, Sequence, AsyncGenerator, TypeVar, Type, List, Dict
+from typing import (
+    Optional,
+    Any,
+    Sequence,
+    AsyncGenerator,
+    TypeVar,
+    Type,
+    List,
+    Dict,
+    Self,
+)
 from datetime import datetime
 from enum import StrEnum, IntEnum
 from asyncio import Queue
@@ -98,7 +108,7 @@ class OptAccountsInactive(StrEnum):
         return cls.auto
 
 
-class OptAccountsDistributed:
+class OptDistributed:
     def __init__(self, mod: int, div: int):
         assert isinstance(mod, int) and mod >= 0, "Modulus has to be integer >= 0"
         assert isinstance(div, int) and div > 0, "Divisor has to be positive integer"
@@ -106,7 +116,7 @@ class OptAccountsDistributed:
         self.mod: int = mod % div
 
     @classmethod
-    def parse(cls, input: str) -> Optional["OptAccountsDistributed"]:
+    def parse(cls, input: str) -> Optional[Self]:
         try:
             if input is None:
                 return None
@@ -115,7 +125,7 @@ class OptAccountsDistributed:
                 raise ValueError(f'Input ({input} does not match format "I:N")')
             mod: int = int(res[0])
             div: int = int(res[1])
-            return OptAccountsDistributed(mod, div)
+            return cls(mod, div)
         except Exception as err:
             error(f"{err}")
         return None
@@ -777,7 +787,7 @@ class Backend(ABC):
         disabled: bool | None = False,
         active_since: int = 0,
         inactive_since: int = 0,
-        dist: OptAccountsDistributed | None = None,
+        dist: OptDistributed | None = None,
         sample: float = 0,
         cache_valid: float = 0,
     ) -> AsyncGenerator[BSAccount, None]:
@@ -795,7 +805,7 @@ class Backend(ABC):
         disabled: bool | None = False,
         active_since: int = 0,
         inactive_since: int = 0,
-        dist: OptAccountsDistributed | None = None,
+        dist: OptDistributed | None = None,
         sample: float = 0,
         cache_valid: float = 0,
     ) -> int:

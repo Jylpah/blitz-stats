@@ -30,7 +30,7 @@ from blitzmodels.wotinspector.wi_apiv2 import Replay, ReplaySummary, WoTinspecto
 from .backend import (
     Backend,
     OptAccountsInactive,
-    OptAccountsDistributed,
+    OptDistributed,
     batch_gen,
     BSTableType,
     ACCOUNTS_Q_MAX,
@@ -1443,7 +1443,7 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
         # disabled: bool = args.disabled
         inactive: OptAccountsInactive = OptAccountsInactive.default()
         regions: set[Region] = {Region(r) for r in args.regions}
-        distributed: OptAccountsDistributed
+        distributed: OptDistributed
         filename: str = args.filename
         force: bool = args.force
         export_stdout: bool = filename == "-"
@@ -1959,7 +1959,7 @@ async def accounts_parse_args(
             debug("could not read --cache-valid")
 
         try:
-            if (dist := OptAccountsDistributed.parse(args.distributed)) is not None:
+            if (dist := OptDistributed.parse(args.distributed)) is not None:
                 res["dist"] = dist
         except Exception:
             debug("could not read --distributed")
