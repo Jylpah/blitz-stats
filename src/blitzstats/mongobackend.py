@@ -59,7 +59,7 @@ from blitzmodels import (
 from .backend import (
     Backend,
     OptDistributed,
-    OptAccountsInactive,
+    # OptAccountsInactive,
     BSTableType,
     EventLog,
     A,
@@ -932,7 +932,7 @@ class MongoBackend(Backend):
         regions: set[Region] = Region.API_regions(),
         accounts: Sequence[BSAccount] | None = None,
         id_range: range | None = None,
-        inactive: OptAccountsInactive = OptAccountsInactive.auto,
+        # inactive: OptAccountsInactive = OptAccountsInactive.auto,
         dist: OptDistributed | None = None,
         disabled: bool | None = False,
         active_since: int = 0,
@@ -975,14 +975,12 @@ class MongoBackend(Backend):
                         }
                     }
                 )
-            if disabled is not None:
-                match.append({alias("disabled"): disabled})
-            if inactive == OptAccountsInactive.yes:
-                match.append({alias("inactive"): True})
-            elif inactive == OptAccountsInactive.no:
-                match.append({alias("inactive"): False})
 
-            match.append({alias("region"): {"$in": [r.value for r in regions]}})
+            # if inactive == OptAccountsInactive.yes:
+            #     match.append({alias("inactive"): True})
+            # elif inactive == OptAccountsInactive.no:
+            #     match.append({alias("inactive"): False})
+
             # match.append({ alias('id') : {  '$lt' : WG_ACCOUNT_ID_MAX}})  # exclude Chinese account ids
 
             if id_range is not None:
@@ -1035,7 +1033,7 @@ class MongoBackend(Backend):
         stats_type: StatsTypes | None = None,
         regions: set[Region] = Region.API_regions(),
         accounts: Sequence[BSAccount] | None = None,
-        inactive: OptAccountsInactive = OptAccountsInactive.default(),
+        # inactive: OptAccountsInactive = OptAccountsInactive.default(),
         disabled: bool | None = False,
         active_since: int = 0,
         inactive_since: int = 0,
@@ -1052,7 +1050,7 @@ class MongoBackend(Backend):
                 stats_type=stats_type,
                 regions=regions,
                 accounts=accounts,
-                inactive=inactive,
+                # inactive=inactive,
                 disabled=disabled,
                 active_since=active_since,
                 inactive_since=inactive_since,
@@ -1074,14 +1072,13 @@ class MongoBackend(Backend):
                 try:
                     if (player := BSAccount.transform(data)) is None:
                         continue
-                    # if not force and not disabled and inactive is None and player.inactive:
-                    if (
-                        not disabled
-                        and inactive == OptAccountsInactive.auto
-                        and stats_type is not None
-                    ):
-                        if not player.update_needed(stats_type):
-                            continue
+                        # if (
+                        #     not disabled
+                        #     # and inactive == OptAccountsInactive.auto
+                        #     and stats_type is not None
+                        # ):
+                        #     if not player.update_needed(stats_type):
+                        #         continue
                     yield player
                 except Exception as err:
                     error(f"{err}")
@@ -1095,7 +1092,7 @@ class MongoBackend(Backend):
         stats_type: StatsTypes | None = None,
         regions: set[Region] = Region.API_regions(),
         accounts: Sequence[BSAccount] | None = None,
-        inactive: OptAccountsInactive = OptAccountsInactive.default(),
+        # inactive: OptAccountsInactive = OptAccountsInactive.default(),
         disabled: bool | None = False,
         active_since: int = 0,
         inactive_since: int = 0,
@@ -1115,7 +1112,7 @@ class MongoBackend(Backend):
             elif (
                 stats_type is None
                 and regions == Region.API_regions()
-                and inactive == OptAccountsInactive.both
+                # and inactive == OptAccountsInactive.both
                 and disabled is None
                 and active_since == 0
                 and inactive_since == 0
@@ -1126,7 +1123,7 @@ class MongoBackend(Backend):
                 pipeline = await self._mk_pipeline_accounts(
                     stats_type=stats_type,
                     regions=regions,
-                    inactive=inactive,
+                    # inactive=inactive,
                     disabled=disabled,
                     active_since=active_since,
                     inactive_since=inactive_since,
@@ -1182,7 +1179,7 @@ class MongoBackend(Backend):
                     pipeline := await self._mk_pipeline_accounts(
                         regions={region},
                         id_range=region.id_range,
-                        inactive=OptAccountsInactive.both,
+                        # inactive=OptAccountsInactive.both,
                         disabled=None,
                     )
                 ) is None:

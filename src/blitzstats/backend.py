@@ -97,15 +97,15 @@ def get_sub_type(name: str, parent: type[T]) -> Optional[type[T]]:
 ##############################################
 
 
-class OptAccountsInactive(StrEnum):
-    auto = "auto"
-    no = "no"
-    yes = "yes"
-    both = "both"
+# class OptAccountsInactive(StrEnum):
+#     auto = "auto"
+#     no = "no"
+#     yes = "yes"
+#     both = "both"
 
-    @classmethod
-    def default(cls) -> "OptAccountsInactive":
-        return cls.auto
+#     @classmethod
+#     def default(cls) -> "OptAccountsInactive":
+#         return cls.auto
 
 
 class OptDistributed:
@@ -783,7 +783,7 @@ class Backend(ABC):
         stats_type: StatsTypes | None = None,
         regions: set[Region] = Region.API_regions(),
         accounts: Sequence[BSAccount] | None = None,
-        inactive: OptAccountsInactive = OptAccountsInactive.default(),
+        # inactive: OptAccountsInactive = OptAccountsInactive.default(),
         disabled: bool | None = False,
         active_since: int = 0,
         inactive_since: int = 0,
@@ -801,7 +801,7 @@ class Backend(ABC):
         stats_type: StatsTypes | None = None,
         regions: set[Region] = Region.API_regions(),
         accounts: Sequence[BSAccount] | None = None,
-        inactive: OptAccountsInactive = OptAccountsInactive.default(),
+        # inactive: OptAccountsInactive = OptAccountsInactive.default(),
         disabled: bool | None = False,
         active_since: int = 0,
         inactive_since: int = 0,

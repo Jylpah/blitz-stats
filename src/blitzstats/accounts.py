@@ -29,7 +29,7 @@ from blitzmodels.wotinspector.wi_apiv2 import Replay, ReplaySummary, WoTinspecto
 
 from .backend import (
     Backend,
-    OptAccountsInactive,
+    # OptAccountsInactive,
     OptDistributed,
     batch_gen,
     BSTableType,
@@ -195,13 +195,13 @@ def add_args_update_wg(
             metavar="RELEASE/DAYS",
             help="update account info for accounts that have been inactive since RELEASE/DAYS",
         )
-        parser.add_argument(
-            "--inactive",
-            type=str,
-            choices=[o.value for o in OptAccountsInactive],
-            default=OptAccountsInactive.both.value,
-            help="Include inactive accounts",
-        )
+        # parser.add_argument(
+        #     "--inactive",
+        #     type=str,
+        #     choices=[o.value for o in OptAccountsInactive],
+        #     default=OptAccountsInactive.both.value,
+        #     help="Include inactive accounts",
+        # )
         parser.add_argument(
             "--accounts",
             type=str,
@@ -518,13 +518,13 @@ def add_args_export(
         parser.add_argument(
             "--disabled", action="store_true", default=False, help="Disabled accounts"
         )
-        parser.add_argument(
-            "--inactive",
-            type=str,
-            choices=[o.value for o in OptAccountsInactive],
-            default=OptAccountsInactive.no.value,
-            help="Include inactive accounts",
-        )
+        # parser.add_argument(
+        #     "--inactive",
+        #     type=str,
+        #     choices=[o.value for o in OptAccountsInactive],
+        #     default=OptAccountsInactive.no.value,
+        #     help="Include inactive accounts",
+        # )
         parser.add_argument(
             "--active-since",
             type=str,
@@ -1410,7 +1410,9 @@ async def cmd_import(db: Backend, args: Namespace) -> bool:
 
         message("Counting accounts to import ...")
         N: int = await db.accounts_count(
-            regions=regions, inactive=OptAccountsInactive.both, sample=args.sample
+            regions=regions,
+            # inactive=OptAccountsInactive.both,
+            sample=args.sample,
         )
 
         with alive_bar(N, title="Importing accounts ", enrich_print=False) as bar:
@@ -1443,7 +1445,7 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
         # query_args : Dict[str, str | int | float | bool ] = dict()
         stats: EventCounter = EventCounter("accounts export")
         # disabled: bool = args.disabled
-        inactive: OptAccountsInactive = OptAccountsInactive.default()
+        # inactive: OptAccountsInactive = OptAccountsInactive.default()
         regions: set[Region] = {Region(r) for r in args.regions}
         distributed: OptDistributed
         filename: str = args.filename
@@ -1598,18 +1600,18 @@ async def count_accounts(
                 accounts_N = int(args.sample)
             else:
                 message("Counting accounts to fetch stats...")
-                inactive: OptAccountsInactive = OptAccountsInactive.default()
-                try:
-                    inactive = OptAccountsInactive(args.inactive)
-                except ValueError:
-                    assert False, (
-                        f"Incorrect value for argument 'inactive': {args.inactive}"
-                    )
+                # inactive: OptAccountsInactive = OptAccountsInactive.default()
+                # try:
+                #     inactive = OptAccountsInactive(args.inactive)
+                # except ValueError:
+                #     assert False, (
+                #         f"Incorrect value for argument 'inactive': {args.inactive}"
+                #     )
 
                 accounts_N = await db.accounts_count(
                     stats_type=stats_type,
                     regions=regions,
-                    inactive=inactive,
+                    # inactive=inactive,
                     sample=args.sample,
                     cache_valid=args.cache_valid,
                 )
@@ -1622,7 +1624,7 @@ async def count_accounts(
 #
 # create_accountQ()
 #
-###########################################
+########################################
 
 
 async def create_accountQ(

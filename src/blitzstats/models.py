@@ -69,8 +69,7 @@ class BSAccount(Account):
         indexes: List[List[BackendIndex]] = list()
         indexes.append(
             [
-                ("disabled", ASCENDING),
-                ("inactive", ASCENDING),
+                # ("inactive", ASCENDING),
                 ("region", ASCENDING),
                 ("last_battle_time", DESCENDING),
             ]
