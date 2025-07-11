@@ -960,14 +960,6 @@ class MongoBackend(Backend):
             # Pipeline build based on ESR rule
             # https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
 
-            # https://www.mongodb.com/docs/manual/reference/operator/aggregation/sample/
-            # $sample has to be the first stage in the pipeline
-            if sample >= 1:
-                pipeline.append({"$sample": {"size": int(sample)}})
-            elif sample > 0:
-                n: int = cast(int, await dbc.estimated_document_count())
-                pipeline.append({"$sample": {"size": int(n * sample)}})
-
             if accounts is not None:
                 db_accounts: List[JSONExportable] = db_model.transform_many(accounts)
                 match.append(
@@ -989,13 +981,18 @@ class MongoBackend(Backend):
                 match.append({alias("id"): {"$gte": id_range.start}})
                 match.append({alias("id"): {"$lte": id_range.stop}})
 
+            if dist is not None:
+                match.append({alias("id"): {"$mod": [dist.div, dist.mod]}})
+
+            match.append({alias("region"): {"$in": [r.value for r in regions]}})
+
             if active_since > 0:
                 match.append({alias("last_battle_time"): {"$gte": active_since}})
             if inactive_since > 0:
                 match.append({alias("last_battle_time"): {"$lt": inactive_since}})
 
-            if dist is not None:
-                match.append({alias("id"): {"$mod": [dist.div, dist.mod]}})
+            if disabled is not None:
+                match.append({alias("disabled"): disabled})
 
             if cache_valid > 0:
                 if update_field is not None:
@@ -1008,10 +1005,28 @@ class MongoBackend(Backend):
                         }
                     )
                 else:
-                    error("--cache-valid requires stat_type")
+                    error("--cache-valid > 0 requires stat_type")
 
             if len(match) > 0:
                 pipeline.append({"$match": {"$and": match}})
+
+            # https://www.mongodb.com/docs/manual/reference/operator/aggregation/sample/
+            # $sample has to be the first stage in the pipeline, BUT this does not work with $match
+
+            if sample > 0:
+                n: int = cast(int, await dbc.estimated_document_count())
+                if sample < 1:
+                    sample = n * sample
+                # sample_rate: float = sample
+                # if sample > 1:
+                #     sample_rate = 0.001
+                # #     n: int = cast(int, await dbc.estimated_document_count())
+                # #     sample_rate = sample / n
+                # # match.append({"$sampleRate": min(0.5, max(0.1, sample_rate))})
+                pipeline.append({"$sample": {"size": int(sample)}})
+
+            # if sample > 1:
+            #     pipeline.append({"$limit": int(sample)})
 
             return pipeline
         except Exception as err:
