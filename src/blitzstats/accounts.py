@@ -1942,10 +1942,10 @@ async def accounts_parse_args(
         except Exception:
             debug("could not read --accounts")
 
-        try:
-            res["inactive"] = OptAccountsInactive(args.inactive)
-        except Exception:
-            debug("could not read --inactive")
+        # try:
+        #     res["inactive"] = OptAccountsInactive(args.inactive)
+        # except Exception:
+        #     debug("could not read --inactive")
 
         try:
             res["disabled"] = args.disabled
