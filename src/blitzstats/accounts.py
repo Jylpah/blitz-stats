@@ -906,8 +906,7 @@ async def update_account_info_worker(
     except Exception as err:
         error(f"{err}")
     finally:
-        debug(f"closing updateQ: {region}")
-        await updateQ.finish()
+        await updateQ.finish_producer()
     return stats
 
 
