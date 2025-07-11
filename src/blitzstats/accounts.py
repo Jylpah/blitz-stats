@@ -1817,6 +1817,9 @@ async def create_accountQ_batch(
                     try:
                         await accountQ.put(accounts)
                         stats.log("read", len(accounts))
+                    except QueueDone:
+                        debug("accountQ is finished")
+                        break
                     except Exception as err:
                         error(f"Could not add accounts to queue: {err}")
                         stats.log("errors")
