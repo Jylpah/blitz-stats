@@ -1807,7 +1807,7 @@ async def create_accountQ_active(
 
 
 async def split_accountQ(
-    inQ: IterableQueue[BSAccount], regionQs: Dict[str, IterableQueue[BSAccount]]
+    inQ: IterableQueue[BSAccount], regionQs: Dict[Region, IterableQueue[BSAccount]]
 ) -> EventCounter:
     """split accountQ by region"""
     debug("starting")
@@ -1822,9 +1822,9 @@ async def split_accountQ(
                     raise ValueError(
                         f"account ({account.id}) does not have region defined"
                     )
-                if account.region.name in regionQs.keys():
-                    await regionQs[account.region.name].put(account)
-                    stats.log(account.region.name)
+                if account.region in regionQs.keys():
+                    await regionQs[account.region].put(account)
+                    stats.log(account.region)
                 else:
                     stats.log(f"excluded region: {account.region}")
             except CancelledError:
