@@ -1848,13 +1848,13 @@ async def split_accountQ(
 
 async def split_accountQ_batch(
     inQ: IterableQueue[BSAccount],
-    regionQs: Dict[str, IterableQueue[List[BSAccount]]],
+    regionQs: Dict[Region, IterableQueue[List[BSAccount]]],
     batch: int = 100,
 ) -> EventCounter:
     """Make accountQ batches by region"""
     stats: EventCounter = EventCounter("batch maker")
-    batches: Dict[str, List[BSAccount]] = dict()
-    region: str
+    batches: Dict[Region, List[BSAccount]] = dict()
+    region: Region
     try:
         for region, Q in regionQs.items():
             batches[region] = list()
