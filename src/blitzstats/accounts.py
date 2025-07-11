@@ -45,7 +45,7 @@ from .backend import (
     ACCOUNTS_Q_MAX,
 )
 from .models import BSAccount, StatsTypes, BSBlitzRelease
-from .utils import tqdm_monitorQ
+from .utils import tqdm_monitorQ, tqdm_opts
 
 logger = logging.getLogger(__name__)
 error = logger.error
