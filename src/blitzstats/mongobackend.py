@@ -958,6 +958,14 @@ class MongoBackend(Backend):
             # Pipeline build based on ESR rule
             # https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
 
+            # https://www.mongodb.com/docs/manual/reference/operator/aggregation/sample/
+            # $sample has to be the first stage in the pipeline
+            if sample >= 1:
+                pipeline.append({"$sample": {"size": int(sample)}})
+            elif sample > 0:
+                n: int = cast(int, await dbc.estimated_document_count())
+                pipeline.append({"$sample": {"size": int(n * sample)}})
+
             if accounts is not None:
                 db_accounts: List[JSONExportable] = db_model.transform_many(accounts)
                 match.append(
@@ -1004,12 +1012,6 @@ class MongoBackend(Backend):
 
             if len(match) > 0:
                 pipeline.append({"$match": {"$and": match}})
-
-            if sample >= 1:
-                pipeline.append({"$sample": {"size": int(sample)}})
-            elif sample > 0:
-                n: int = cast(int, await dbc.estimated_document_count())
-                pipeline.append({"$sample": {"size": int(n * sample)}})
 
             return pipeline
         except Exception as err:
