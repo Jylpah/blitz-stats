@@ -657,7 +657,7 @@ async def fetch_mp_worker(
             #     await retryQ.put(account)
             #     stats.log("retry")
             #     progress[region] += 1
-            # await retryQ.finish()
+            # await retryQ.finish_producer()
             # await retryQ.join()
 
         await statsQ.join()
@@ -725,7 +725,7 @@ async def fetch_api_region_batch_worker(
     except Exception as err:
         error(f"{err}")
     if retryQ is not None:
-        await retryQ.finish()
+        await retryQ.finish_producer()
     return stats
 
 
@@ -788,7 +788,7 @@ async def fetch_api_region_worker(
     except Exception as err:
         error(f"{err}")
     if retryQ is not None:
-        await retryQ.finish()
+        await retryQ.finish_producer()
     return stats
 
 
@@ -1166,7 +1166,7 @@ async def player_releases_worker(
             stats.log("read", len(pa_list))
     except Exception as err:
         error(f"{err}")
-    # await outputQ.finish()
+    # await outputQ.finish_producer()
     return stats
 
 

@@ -1076,7 +1076,7 @@ async def cmd_fetch_wg(
                             ids = list()
                     if len(ids) > 0:
                         await idQs[region].put(ids)
-                    await idQs[region].finish()
+                    await idQs[region].finish_producer()
 
             except Exception as err:
                 error(f"could not create account queue for '{region}': {err}")
@@ -1096,7 +1096,7 @@ async def cmd_fetch_wg(
             except KeyboardInterrupt:
                 message("cancelled")
                 for idQ in idQs.values():
-                    await idQ.finish(all=True)
+                    await idQ.finish_producer(all=True)
         await stats.gather_stats(id_creators)
         for region in idQs.keys():
             debug(f"waiting for idQ for {region} to complete")
@@ -1133,7 +1133,7 @@ async def account_idQ_maker(
     finally:
         stats.log("queued", last - start)
         debug("closing idQ")
-        await idQ.finish()
+        await idQ.finish_producer()
     return stats
 
 
@@ -1194,9 +1194,9 @@ async def fetch_account_info_worker(
         error(f"{err}")
     finally:
         debug(f"closing accountQ: {region}")
-        await accountQ.finish()
+        await accountQ.finish_producer()
     debug(f"closing idQ: {region}")
-    await idQ.finish(all=True)
+    await idQ.finish_producer(all=True)
     # empty idQ
     async for _ in idQ:
         pass
@@ -1262,15 +1262,16 @@ async def cmd_fetch_wi(
     except KeyboardInterrupt:
         debug("CTRL+C pressed, stopping...")
         pbar_pages.close()
-        await replay_idQ.finish(empty=True, all=True)
-
+        await replay_idQ.finish_producer(all=True)
+        async for _ in replay_idQ:
+            pass  # empty replay_idQ
     except Exception as err:
         error(f"{err}")
     finally:
         pbar_errors.close()
         pbar_replays.close()
         if accountQ is not None:
-            await accountQ.finish()
+            await accountQ.finish_producer()
         await wi.close()
     return stats
 
@@ -1330,13 +1331,15 @@ async def fetch_wi_get_replay_ids(
                 error(f"{err}")
     except KeyboardInterrupt:
         debug("CTRL+C pressed, stopping...")
-        await replay_idQ.finish(empty=True, all=True)
+        await replay_idQ.finish_producer(all=True)
+        async for _ in replay_idQ:
+            pass  # empty replay_idQ
     except CancelledError:
         message(f"{old_replays} found. Stopping spidering for more")
     except Exception as err:
         error(f"{err}")
     finally:
-        await replay_idQ.finish()
+        await replay_idQ.finish_producer()
         pbar.close()
     return stats
 
@@ -1684,7 +1687,7 @@ async def create_accountQ(
     except Exception as err:
         error(f"{err}")
     finally:
-        await accountQ.finish()
+        await accountQ.finish_producer()
     debug("finished")
     return stats
 
@@ -1760,7 +1763,7 @@ async def create_accountQ_batch(
     except Exception as err:
         error(f"{err}")
     finally:
-        await accountQ.finish()
+        await accountQ.finish_producer()
 
     return stats
 
@@ -1838,7 +1841,7 @@ async def split_accountQ(
     except Exception as err:
         error(f"{err}")
     for Q in regionQs.values():
-        await Q.finish()
+        await Q.finish_producer()
     return stats
 
 
@@ -1886,7 +1889,7 @@ async def split_accountQ_batch(
     except Exception as err:
         error(f"{err}")
     for Q in regionQs.values():
-        await Q.finish()
+        await Q.finish_producer()
     return stats
 
 

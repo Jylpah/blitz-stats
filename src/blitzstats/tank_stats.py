@@ -872,7 +872,7 @@ async def fetch_mp_worker(
             # await counterQas.put(i)
         else:
             raise ValueError(f"could not parse account args: {args}")
-        await accountQ.finish()
+        await accountQ.finish_producer()
 
         debug(f"waiting for account queue to finish: {region}")
         await accountQ.join()
@@ -893,7 +893,7 @@ async def fetch_mp_worker(
                 await retryQ.put(account)
                 stats.log("retry")
                 progress[region] += 1
-            await retryQ.finish()
+            await retryQ.finish_producer()
             await retryQ.join()
 
         await statsQ.join()
@@ -1107,7 +1107,7 @@ async def fetch_api_worker(
         error(f"{err}")
     finally:
         if retryQ is not None:
-            await retryQ.finish()
+            await retryQ.finish_producer()
 
     stats.log(
         "accounts total", -stats.get_value("accounts to re-try")
@@ -1507,7 +1507,7 @@ async def cmd_prune(db: Backend, args: Namespace) -> bool:
             "tank_id", int, release=release, regions=regions
         ):
             await tankQ.put(BSTank(tank_id=tank_id))
-        await tankQ.finish()
+        await tankQ.finish_producer()
         # N : int = await db.tankopedia_count()
         N: int = tankQ.qsize()
 
@@ -2418,7 +2418,7 @@ async def split_tank_statQ_by_region(
         error(f"{err}")
     finally:
         for Q in regionQs.values():
-            await Q.finish()
+            await Q.finish_producer()
     return stats
 
 

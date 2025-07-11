@@ -551,7 +551,7 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
                     is_premium=is_premium,
                 )
             )
-            await tankQ.finish()
+            await tankQ.finish_producer()
             await tankQ.join()
             await stats.gather_stats([export_worker], cancel=False)
         elif args.format == "json":

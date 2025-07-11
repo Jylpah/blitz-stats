@@ -1194,7 +1194,7 @@ class Backend(ABC):
                 stats.log("queued")
 
             if type(tank_statsQ) is IterableQueue:
-                await tank_statsQ.finish()
+                await tank_statsQ.finish_producer()
                 debug("tank_stats_get_worker(): finished")
 
         except KeyboardInterrupt:
