@@ -388,7 +388,7 @@ class BSTank(JSONExportable, CSVExportable, TXTExportable):
         validate_assignment = True
         populate_by_name = True
         # use_enum_values			= True
-        extra = Extra.allow
+        extra = "allow"
 
     @property
     def index(self) -> Idx:
