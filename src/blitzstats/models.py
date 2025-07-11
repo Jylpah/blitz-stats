@@ -1,7 +1,7 @@
 import logging
 from enum import StrEnum
-from typing import Optional, Any, Dict, List, ClassVar, Self
-from pydantic import field_validator, model_validator, Field, Extra
+from typing import Optional, Any, Dict, List, ClassVar
+from pydantic import field_validator, Field
 
 from pyutils.utils import epoch_now
 from pydantic_exportables import (
