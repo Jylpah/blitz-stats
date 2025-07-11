@@ -1971,29 +1971,32 @@ async def accounts_parse_args(
         days: int
         today: datetime = datetime.utcnow()
         start: datetime
-        try:
-            if (rel := await db.release_get(args.inactive_since)) is not None:
-                if (prev := await db.release_get_previous(rel)) is not None:
-                    res["inactive_since"] = prev.cut_off
-            else:
-                days = int(args.inactive_since)
-                start = today - timedelta(days=days)
-                res["inactive_since"] = int(start.timestamp())
-        except Exception as err:
-            debug(f"could not read --inactive-since: {err}")
 
-        try:
-            if (rel := await db.release_get(args.active_since)) is not None:
-                # debug(f'active_since={rel}')
-                if (prev := await db.release_get_previous(rel)) is not None:
-                    # debug(f'active_since: prev={prev}')
-                    res["active_since"] = prev.cut_off
-            else:
-                days = int(args.active_since)
-                start = today - timedelta(days=days)
-                res["active_since"] = int(start.timestamp())
-        except Exception as err:
-            debug(f"could not read --active-since: {err}")
+        if args.inactive_since is not None:
+            try:
+                if (rel := await db.release_get(args.inactive_since)) is not None:
+                    if (prev := await db.release_get_previous(rel)) is not None:
+                        res["inactive_since"] = prev.cut_off
+                else:
+                    days = int(args.inactive_since)
+                    start = today - timedelta(days=days)
+                    res["inactive_since"] = int(start.timestamp())
+            except Exception as err:
+                debug(f"could not read --inactive-since: {err}")
+
+        if args.active_since is not None:
+            try:
+                if (rel := await db.release_get(args.active_since)) is not None:
+                    # debug(f'active_since={rel}')
+                    if (prev := await db.release_get_previous(rel)) is not None:
+                        # debug(f'active_since: prev={prev}')
+                        res["active_since"] = prev.cut_off
+                else:
+                    days = int(args.active_since)
+                    start = today - timedelta(days=days)
+                    res["active_since"] = int(start.timestamp())
+            except Exception as err:
+                debug(f"could not read --active-since: {err}")
 
         return res
     except Exception as err:
