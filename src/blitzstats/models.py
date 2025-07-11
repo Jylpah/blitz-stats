@@ -134,21 +134,21 @@ class BSAccount(Account):
         else:
             ValueError("time field must be >= 0")
 
-    @model_validator(mode="after")
-    def set_inactive(self) -> Self:
-        """ "
-        Set 'inactive' field based in players inactivity.
-        If 'last_battle_time' == 0, set the player ACTIVE since to avoid
-        inactivating players when creating player objects with default field values
-        """
-        if self.last_battle_time > 0:
-            self._set_skip_validation(
-                "inactive",
-                epoch_now() - self.last_battle_time > self._min_inactivity_secs,
-            )
-        else:
-            self._set_skip_validation("inactive", False)
-        return self
+    # @model_validator(mode="after")
+    # def set_inactive(self) -> Self:
+    #     """ "
+    #     Set 'inactive' field based in players inactivity.
+    #     If 'last_battle_time' == 0, set the player ACTIVE since to avoid
+    #     inactivating players when creating player objects with default field values
+    #     """
+    #     if self.last_battle_time > 0:
+    #         self._set_skip_validation(
+    #             "inactive",
+    #             epoch_now() - self.last_battle_time > self._min_inactivity_secs,
+    #         )
+    #     else:
+    #         self._set_skip_validation("inactive", False)
+    #     return self
 
     def stats_updated(self, stats: StatsTypes) -> None:
         assert type(stats) is StatsTypes, "'stats' need to be type(StatsTypes)"
