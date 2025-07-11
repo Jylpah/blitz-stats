@@ -402,9 +402,11 @@ class MongoBackend(Backend):
     def backend(self: "MongoBackend") -> str:
         host: str = "UNKNOWN"
         try:
-            if (server := self._client.address()) is not None:
-                host, port = server
-                return f"{self.driver}://{host}:{port}/{self.database}"
+            if (server := self._client.address) is not None:
+                # TODO: Refactor after moving away from Motor
+                # AsyncIOMotorClient.address is a @property, not method
+                host, port = server  # type: ignore
+                return f"{self.driver}://{host}:{port}/{self.database}"  # type: ignore
         except Exception as err:
             debug(f"Error determing host: {err}")
         return f"{self.driver}://{host}/{self.database}"
