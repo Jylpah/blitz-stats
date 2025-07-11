@@ -724,9 +724,8 @@ async def cmd_update(db: Backend, args: Namespace) -> bool:
 
         except Exception as err:
             error(f"{err}")
-
         await updateQ.join()
-        await stats.gather([db_worker], merge_child=True)
+        await stats.gather([db_worker], merge_child=True, cancel=True)
         stats.print()
 
     except Exception as err:
@@ -747,6 +746,7 @@ async def cmd_update_wg(
     """Update accounts from WG API"""
     debug("starting")
     stats: EventCounter = EventCounter("WG API")
+    BATCH: int = 100  # max number of accounts to fetch in one request
     try:
         regions: set[Region] = {Region(r) for r in args.regions}
         wg: WGApi = WGApi(
@@ -754,25 +754,27 @@ async def cmd_update_wg(
             rate_limit=args.wg_rate_limit,
         )
         WORKERS: int = max([args.wg_workers, 1])
+        accountQ: IterableQueue[BSAccount] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
         workQ_creators: List[Task] = list()
         api_workers: List[Task] = list()
         workQs: Dict[Region, IterableQueue[List[BSAccount]]] = dict()
 
-        for region in regions:
-            workQs[region] = IterableQueue(maxsize=100)
-            workQ_creators.append(
-                create_task(
-                    create_accountQ_batch(
-                        db,
-                        args,
-                        region,
-                        accountQ=workQs[region],
-                        stats_type=StatsTypes.account_info,
-                    )
-                )
-            )
+        # for region in regions:
+        #     workQs[region] = IterableQueue(maxsize=3)
+        #     workQ_creators.append(
+        #         create_task(
+        #             create_accountQ_batch(
+        #                 db,
+        #                 args,
+        #                 region,
+        #                 accountQ=workQs[region],
+        #                 stats_type=StatsTypes.account_info,
+        #             )
+        #         )
+        #     )
 
         for region in regions:
+            workQs[region] = IterableQueue(maxsize=50)
             for _ in range(WORKERS):
                 api_workers.append(
                     create_task(
@@ -782,19 +784,49 @@ async def cmd_update_wg(
                     )
                 )
 
-        print(
-            "Updating accounts from WG API:" + " active since={args.active_since}"
-            if args.active_since is not None
-            else "" + " inactive since={args.inactive_since}"
-            if args.inactive_since is not None
-            else "" + " sample={args.sample}"
-            if args.sample > 0
-            else ""
+        workQ_creators.append(
+            create_task(
+                create_accountQ(
+                    db, args, accountQ=accountQ, stats_type=StatsTypes.account_info
+                )
+            )
+        )
+        workQ_creators.append(
+            create_task(split_accountQ_batch(accountQ, workQs, batch=BATCH))
         )
 
+        # for region in regions:
+        #     workQs[region] = IterableQueue(maxsize=50)
+        #     workQ_creators.append(
+        #         create_task(
+        #             create_accountQ_batch(
+        #                 db,
+        #                 args,
+        #                 region,
+        #                 accountQ=workQs[region],
+        #                 stats_type=StatsTypes.account_info,
+        #             )
+        #         )
+        #     )
+
+        message(
+            "Updating accounts from WG API:"
+            + (
+                f" active since={args.active_since}"
+                if args.active_since is not None
+                else ""
+            )
+            + (
+                f" inactive since={args.inactive_since}"
+                if args.inactive_since is not None
+                else ""
+            )
+            + (f" sample={int(args.sample)}" if args.sample > 0 else "")
+        )
+        # cancel: bool = False
         with tqdm(
             desc=f"{', '.join(regions)}",
-            total=int(args.sample) * len(regions),
+            total=int(args.sample),
             bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} ETA {remaining} {rate_fmt}]",
             unit="",
             leave=True,
@@ -806,20 +838,37 @@ async def cmd_update_wg(
                     done = updateQ.count
                     if done - prev > 0:
                         bar.update(done - prev)
+
+                    # if args.sample >= 1:
+                    #     if not cancel and (
+                    #         accountQ.qsize() + accountQ.wip + accountQ.count
+                    #         >= args.sample
+                    #     ):
+                    #         for workQ in workQs.values():
+                    #             await workQ.finish_producer(all=True)
+                    #         cancel = True
+                    #     if updateQ.count + updateQ.qsize() + updateQ.wip >= args.sample:
+                    #         await updateQ.finish_producer(all=True)
+                    #     if updateQ.count >= args.sample:
+                    #         raise CancelledError("Sample size reached")
+
                     prev = done
-                    await sleep(1)
+                    await sleep(0.05)
 
             except KeyboardInterrupt:
                 message("cancelled")
-                for workQ in workQs.values():
-                    await workQ.finish(all=True)
+            #    cancel = True
+            # except CancelledError as err:
+            #     debug(f"{err}")
+
         await stats.gather(workQ_creators, merge_child=False)
-        for region in workQs.keys():
-            debug(f"waiting for idQ for {region} to complete")
-            await workQs[region].join()
+        for region, workQ in workQs.items():
+            debug(f"waiting for workQ for {region} to complete")
+            await workQ.join()
         await stats.gather(api_workers, merge_child=True)
         wg.print()
-        await wg.close()
+        async with timeout(3):
+            await wg.close()
     except Exception as err:
         error(f"{err}")
     return stats
@@ -839,9 +888,9 @@ async def update_account_info_worker(
 
     try:
         await updateQ.add_producer()
-        async for account_bacth in workQ:
+        async for account_batch in workQ:
             accounts: Dict[int, BSAccount] = dict()
-            for account in account_bacth:
+            for account in account_batch:
                 accounts[account.id] = account
             N: int = len(accounts)
             try:
@@ -880,18 +929,23 @@ async def update_account_info_worker(
                             )  # to updated account_info_updated
                         except KeyError as err:
                             error(f"{err}")
+                        except QueueDone:
+                            debug("updateQ is done")
+                            break
 
                     # accounts w/o stats
                     no_stats: set[int] = set(ids) - set(ids_stats)
-                    for account_id in no_stats:
-                        try:
-                            a = accounts[account_id]
-                            a.disabled = True
-                            await updateQ.put(a)
-                            # error(f'disabled account: {a}')
-                            stats.log("disabled")
-                        except KeyError as err:
-                            error(f"account w/o stats: {account_id}: {err}")
+                    if len(no_stats) > 0:
+                        stats.log("no stats", len(no_stats))
+                    # for account_id in no_stats:
+                    #     try:
+                    #         a = accounts[account_id]
+                    #         a.disabled = True
+                    #         await updateQ.put(a)
+                    #         # error(f'disabled account: {a}')
+                    #         stats.log("disabled")
+                    #     except KeyError as err:
+                    #         error(f"account w/o stats: {account_id}: {err}")
                 else:
                     stats.log("query errors")
 
