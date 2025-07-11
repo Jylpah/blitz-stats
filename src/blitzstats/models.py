@@ -71,23 +71,24 @@ class BSAccount(Account):
             [
                 # ("inactive", ASCENDING),
                 ("region", ASCENDING),
+                # ("disabled", ASCENDING),
                 ("last_battle_time", DESCENDING),
             ]
         )
-        indexes.append(
-            [
-                ("disabled", ASCENDING),
-                ("region", ASCENDING),
-                ("last_battle_time", DESCENDING),
-            ]
-        )
-        indexes.append(
-            [
-                ("disabled", ASCENDING),
-                ("region", ASCENDING),
-                ("id", ASCENDING),
-            ]
-        )
+        # indexes.append(
+        #     [
+        #         # ("disabled", ASCENDING),
+        #         ("region", ASCENDING),
+        #         ("last_battle_time", DESCENDING),
+        #     ]
+        # )
+        # indexes.append(
+        #     [
+        #         ("disabled", ASCENDING),
+        #         ("region", ASCENDING),
+        #         ("id", ASCENDING),
+        #     ]
+        # )
         indexes.append([("nickname", TEXT)])
         # indexes.append([ 	('disabled', ASCENDING),
         # 					('inactive', ASCENDING),
