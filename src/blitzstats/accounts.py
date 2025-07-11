@@ -1515,38 +1515,41 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
         force: bool = args.force
         export_stdout: bool = filename == "-"
         # sample: float = args.sample
-        accountQs: Dict[str, IterableQueue[BSAccount]] = dict()
-        account_workers: List[Task] = list()
+        accountQ: IterableQueue[BSAccount] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
+        # accountQs: Dict[str, IterableQueue[BSAccount]] = dict()
+        regionQs: Dict[Region, IterableQueue[BSAccount]] = dict()
+
+        account_worker: Task
         export_workers: List[Task] = list()
+        monitors: List[Task] = list()
+        bar: tqdm
+        bars: list[tqdm] = list()
+        position: int = 0
 
         accounts_args: Dict[str, Any] | None
         if (accounts_args := await accounts_parse_args(db, args)) is None:
             raise ValueError(f"could not parse args: {args}")
 
-        try:
-            inactive = OptAccountsInactive(args.inactive)
-            if (
-                inactive == OptAccountsInactive.auto
-            ):  # auto mode requires specication of stats type
-                inactive = OptAccountsInactive.no
-        except ValueError:
-            assert False, f"Incorrect value for argument 'inactive': {args.inactive}"
+        # try:
+        #     inactive = OptAccountsInactive(args.inactive)
+        #     if (
+        #         inactive == OptAccountsInactive.auto
+        #     ):  # auto mode requires specication of stats type
+        #         inactive = OptAccountsInactive.no
+        # except ValueError:
+        #     assert False, f"Incorrect value for argument 'inactive': {args.inactive}"
 
         total: int = await db.accounts_count(**accounts_args)
+        await accountQ.add_producer()
+        account_worker = create_task(db.accounts_get_worker(accountQ, **accounts_args))
 
         if "dist" in accounts_args:
             distributed = accounts_args["dist"]
             i: int = distributed.mod
-            Qid: str = str(i)
-            accountQs[Qid] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
-            await accountQs[Qid].add_producer()
-            account_workers.append(
-                create_task(db.accounts_get_worker(accountQs[Qid], **accounts_args))
-            )
             export_workers.append(
                 create_task(
                     export(
-                        iterable=accountQs[Qid],
+                        iterable=accountQ,
                         format=args.format,
                         filename=f"{filename}.{i}",
                         force=force,
@@ -1554,25 +1557,48 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
                     )
                 )
             )
+            if not export_stdout:
+                bar = tqdm(
+                    total=total, desc=f"Exporting {i}/{distributed.div}", **tqdm_opts
+                )
+                monitors.append(
+                    create_task(
+                        tqdm_monitorQ(
+                            accountQ,
+                            bar=bar,
+                            close=False,
+                        )
+                    )
+                )
+                bars.append(bar)
         elif args.by_region:
-            accountQs["all"] = IterableQueue(maxsize=ACCOUNTS_Q_MAX, count_items=False)
-
-            # fetch accounts for all the regios
-            await accountQs["all"].add_producer()
-            account_workers.append(
-                create_task(db.accounts_get_worker(accountQs["all"], **accounts_args))
-            )
-            # by region
             for region in regions:
-                accountQs[region.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
-
-                await accountQs[region.name].add_producer()
+                regionQs[region] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
+                if not export_stdout:
+                    bar = tqdm(
+                        total=total,
+                        desc=f"Exporting {region}",
+                        position=position,
+                        **tqdm_opts,
+                    )
+                    position += 1
+                    monitors.append(
+                        create_task(
+                            tqdm_monitorQ(
+                                regionQs[region],
+                                bar=bar,
+                                close=False,
+                            )
+                        )
+                    )
+                    bars.append(bar)
+                await regionQs[region].add_producer()
                 export_workers.append(
                     create_task(
                         export(
-                            iterable=accountQs[region.name],
+                            iterable=regionQs[region],
                             format=args.format,
-                            filename=f"{filename}.{region.name}",
+                            filename=f"{filename}.{region}",
                             force=force,
                             append=args.append,
                         )
@@ -1580,21 +1606,28 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
                 )
             # split by region
             export_workers.append(
-                create_task(split_accountQ(inQ=accountQs["all"], regionQs=accountQs))
+                create_task(split_accountQ(inQ=accountQ, regionQs=regionQs))
             )
         else:
-            accountQs["all"] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
-            await accountQs["all"].add_producer()
-            account_workers.append(
-                create_task(db.accounts_get_worker(accountQs["all"], **accounts_args))
-            )
-
+            # export all accounts to one file
             if filename != "-":
                 filename += ".all"
+            if not export_stdout:
+                bar = tqdm(total=total, desc="Exporting accounts", **tqdm_opts)
+                monitors.append(
+                    create_task(
+                        tqdm_monitorQ(
+                            accountQ,
+                            bar=bar,
+                            close=False,
+                        )
+                    )
+                )
+                bars.append(bar)
             export_workers.append(
                 create_task(
                     export(
-                        iterable=accountQs["all"],
+                        iterable=accountQ,
                         format=args.format,
                         filename=filename,
                         force=force,
@@ -1603,22 +1636,18 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
                 )
             )
 
-        monitors: list[Task] = list()
-        bar: tqdm | None = None
+        await wait([account_worker])
+
         if not export_stdout:
-            bar = tqdm(total=total, desc="Exporting accounts")
-            for Q in accountQs.values():
-                monitors.append(create_task(tqdm_monitorQ(Q, bar=bar, close=False)))
+            await gather(*monitors)
+            for bar in bars:
+                bar.close()
 
-        await wait(account_workers)
+        # for queue in accountQs.values():
+        #     await queue.finish_producer()
+        #     await queue.join()
 
-        for queue in accountQs.values():
-            await queue.finish()
-            await queue.join()
-        if bar is not None:
-            bar.close()
-
-        await stats.gather_stats(account_workers)
+        # await stats.gather_stats(account_workers)
         await stats.gather_stats(export_workers, cancel=False)
 
         if not export_stdout:
