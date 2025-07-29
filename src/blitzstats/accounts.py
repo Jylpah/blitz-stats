@@ -3,7 +3,16 @@ from configparser import ConfigParser
 from typing import Optional, Any, Sequence, List, Dict
 from datetime import datetime, timedelta
 import logging
-from asyncio import create_task, gather, wait, Queue, CancelledError, Task, sleep
+from asyncio import (
+    create_task,
+    gather,
+    wait,
+    timeout,
+    Queue,
+    CancelledError,
+    Task,
+    sleep,
+)
 from aiofiles import open
 from asyncstdlib import enumerate
 from alive_progress import alive_bar  # type: ignore
@@ -29,14 +38,14 @@ from blitzmodels.wotinspector.wi_apiv2 import Replay, ReplaySummary, WoTinspecto
 
 from .backend import (
     Backend,
-    OptAccountsInactive,
-    OptAccountsDistributed,
+    # OptAccountsInactive,
+    OptDistributed,
     batch_gen,
     BSTableType,
     ACCOUNTS_Q_MAX,
 )
 from .models import BSAccount, StatsTypes, BSBlitzRelease
-from .utils import tqdm_monitorQ
+from .utils import tqdm_monitorQ, tqdm_opts
 
 logger = logging.getLogger(__name__)
 error = logger.error
@@ -195,13 +204,13 @@ def add_args_update_wg(
             metavar="RELEASE/DAYS",
             help="update account info for accounts that have been inactive since RELEASE/DAYS",
         )
-        parser.add_argument(
-            "--inactive",
-            type=str,
-            choices=[o.value for o in OptAccountsInactive],
-            default=OptAccountsInactive.both.value,
-            help="Include inactive accounts",
-        )
+        # parser.add_argument(
+        #     "--inactive",
+        #     type=str,
+        #     choices=[o.value for o in OptAccountsInactive],
+        #     default=OptAccountsInactive.both.value,
+        #     help="Include inactive accounts",
+        # )
         parser.add_argument(
             "--accounts",
             type=str,
@@ -518,13 +527,13 @@ def add_args_export(
         parser.add_argument(
             "--disabled", action="store_true", default=False, help="Disabled accounts"
         )
-        parser.add_argument(
-            "--inactive",
-            type=str,
-            choices=[o.value for o in OptAccountsInactive],
-            default=OptAccountsInactive.no.value,
-            help="Include inactive accounts",
-        )
+        # parser.add_argument(
+        #     "--inactive",
+        #     type=str,
+        #     choices=[o.value for o in OptAccountsInactive],
+        #     default=OptAccountsInactive.no.value,
+        #     help="Include inactive accounts",
+        # )
         parser.add_argument(
             "--active-since",
             type=str,
@@ -724,9 +733,8 @@ async def cmd_update(db: Backend, args: Namespace) -> bool:
 
         except Exception as err:
             error(f"{err}")
-
         await updateQ.join()
-        await stats.gather([db_worker], merge_child=True)
+        await stats.gather([db_worker], merge_child=True, cancel=True)
         stats.print()
 
     except Exception as err:
@@ -747,6 +755,7 @@ async def cmd_update_wg(
     """Update accounts from WG API"""
     debug("starting")
     stats: EventCounter = EventCounter("WG API")
+    BATCH: int = 100  # max number of accounts to fetch in one request
     try:
         regions: set[Region] = {Region(r) for r in args.regions}
         wg: WGApi = WGApi(
@@ -754,25 +763,27 @@ async def cmd_update_wg(
             rate_limit=args.wg_rate_limit,
         )
         WORKERS: int = max([args.wg_workers, 1])
+        accountQ: IterableQueue[BSAccount] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
         workQ_creators: List[Task] = list()
         api_workers: List[Task] = list()
         workQs: Dict[Region, IterableQueue[List[BSAccount]]] = dict()
 
-        for region in regions:
-            workQs[region] = IterableQueue(maxsize=100)
-            workQ_creators.append(
-                create_task(
-                    create_accountQ_batch(
-                        db,
-                        args,
-                        region,
-                        accountQ=workQs[region],
-                        stats_type=StatsTypes.account_info,
-                    )
-                )
-            )
+        # for region in regions:
+        #     workQs[region] = IterableQueue(maxsize=3)
+        #     workQ_creators.append(
+        #         create_task(
+        #             create_accountQ_batch(
+        #                 db,
+        #                 args,
+        #                 region,
+        #                 accountQ=workQs[region],
+        #                 stats_type=StatsTypes.account_info,
+        #             )
+        #         )
+        #     )
 
         for region in regions:
+            workQs[region] = IterableQueue(maxsize=50)
             for _ in range(WORKERS):
                 api_workers.append(
                     create_task(
@@ -782,13 +793,49 @@ async def cmd_update_wg(
                     )
                 )
 
-        print(
-            f"Updating accounts from WG API: active since={args.active_since} inactive since={args.inactive_since}"
+        workQ_creators.append(
+            create_task(
+                create_accountQ(
+                    db, args, accountQ=accountQ, stats_type=StatsTypes.account_info
+                )
+            )
+        )
+        workQ_creators.append(
+            create_task(split_accountQ_batch(accountQ, workQs, batch=BATCH))
         )
 
+        # for region in regions:
+        #     workQs[region] = IterableQueue(maxsize=50)
+        #     workQ_creators.append(
+        #         create_task(
+        #             create_accountQ_batch(
+        #                 db,
+        #                 args,
+        #                 region,
+        #                 accountQ=workQs[region],
+        #                 stats_type=StatsTypes.account_info,
+        #             )
+        #         )
+        #     )
+
+        message(
+            "Updating accounts from WG API:"
+            + (
+                f" active since={args.active_since}"
+                if args.active_since is not None
+                else ""
+            )
+            + (
+                f" inactive since={args.inactive_since}"
+                if args.inactive_since is not None
+                else ""
+            )
+            + (f" sample={int(args.sample)}" if args.sample > 0 else "")
+        )
+        # cancel: bool = False
         with tqdm(
             desc=f"{', '.join(regions)}",
-            total=int(args.sample) * len(regions),
+            total=int(args.sample),
             bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} ETA {remaining} {rate_fmt}]",
             unit="",
             leave=True,
@@ -800,20 +847,37 @@ async def cmd_update_wg(
                     done = updateQ.count
                     if done - prev > 0:
                         bar.update(done - prev)
+
+                    # if args.sample >= 1:
+                    #     if not cancel and (
+                    #         accountQ.qsize() + accountQ.wip + accountQ.count
+                    #         >= args.sample
+                    #     ):
+                    #         for workQ in workQs.values():
+                    #             await workQ.finish_producer(all=True)
+                    #         cancel = True
+                    #     if updateQ.count + updateQ.qsize() + updateQ.wip >= args.sample:
+                    #         await updateQ.finish_producer(all=True)
+                    #     if updateQ.count >= args.sample:
+                    #         raise CancelledError("Sample size reached")
+
                     prev = done
-                    await sleep(1)
+                    await sleep(0.05)
 
             except KeyboardInterrupt:
                 message("cancelled")
-                for workQ in workQs.values():
-                    await workQ.finish(all=True)
+            #    cancel = True
+            # except CancelledError as err:
+            #     debug(f"{err}")
+
         await stats.gather(workQ_creators, merge_child=False)
-        for region in workQs.keys():
-            debug(f"waiting for idQ for {region} to complete")
-            await workQs[region].join()
+        for region, workQ in workQs.items():
+            debug(f"waiting for workQ for {region} to complete")
+            await workQ.join()
         await stats.gather(api_workers, merge_child=True)
         wg.print()
-        await wg.close()
+        async with timeout(3):
+            await wg.close()
     except Exception as err:
         error(f"{err}")
     return stats
@@ -833,9 +897,9 @@ async def update_account_info_worker(
 
     try:
         await updateQ.add_producer()
-        async for account_bacth in workQ:
+        async for account_batch in workQ:
             accounts: Dict[int, BSAccount] = dict()
-            for account in account_bacth:
+            for account in account_batch:
                 accounts[account.id] = account
             N: int = len(accounts)
             try:
@@ -874,18 +938,23 @@ async def update_account_info_worker(
                             )  # to updated account_info_updated
                         except KeyError as err:
                             error(f"{err}")
+                        except QueueDone:
+                            debug("updateQ is done")
+                            break
 
                     # accounts w/o stats
                     no_stats: set[int] = set(ids) - set(ids_stats)
-                    for account_id in no_stats:
-                        try:
-                            a = accounts[account_id]
-                            a.disabled = True
-                            await updateQ.put(a)
-                            # error(f'disabled account: {a}')
-                            stats.log("disabled")
-                        except KeyError as err:
-                            error(f"account w/o stats: {account_id}: {err}")
+                    if len(no_stats) > 0:
+                        stats.log("no stats", len(no_stats))
+                    # for account_id in no_stats:
+                    #     try:
+                    #         a = accounts[account_id]
+                    #         a.disabled = True
+                    #         await updateQ.put(a)
+                    #         # error(f'disabled account: {a}')
+                    #         stats.log("disabled")
+                    #     except KeyError as err:
+                    #         error(f"account w/o stats: {account_id}: {err}")
                 else:
                     stats.log("query errors")
 
@@ -900,8 +969,7 @@ async def update_account_info_worker(
     except Exception as err:
         error(f"{err}")
     finally:
-        debug(f"closing updateQ: {region}")
-        await updateQ.finish()
+        await updateQ.finish_producer()
     return stats
 
 
@@ -1070,7 +1138,7 @@ async def cmd_fetch_wg(
                             ids = list()
                     if len(ids) > 0:
                         await idQs[region].put(ids)
-                    await idQs[region].finish()
+                    await idQs[region].finish_producer()
 
             except Exception as err:
                 error(f"could not create account queue for '{region}': {err}")
@@ -1090,7 +1158,7 @@ async def cmd_fetch_wg(
             except KeyboardInterrupt:
                 message("cancelled")
                 for idQ in idQs.values():
-                    await idQ.finish(all=True)
+                    await idQ.finish_producer(all=True)
         await stats.gather_stats(id_creators)
         for region in idQs.keys():
             debug(f"waiting for idQ for {region} to complete")
@@ -1127,7 +1195,7 @@ async def account_idQ_maker(
     finally:
         stats.log("queued", last - start)
         debug("closing idQ")
-        await idQ.finish()
+        await idQ.finish_producer()
     return stats
 
 
@@ -1188,9 +1256,9 @@ async def fetch_account_info_worker(
         error(f"{err}")
     finally:
         debug(f"closing accountQ: {region}")
-        await accountQ.finish()
+        await accountQ.finish_producer()
     debug(f"closing idQ: {region}")
-    await idQ.finish(all=True)
+    await idQ.finish_producer(all=True)
     # empty idQ
     async for _ in idQ:
         pass
@@ -1256,15 +1324,16 @@ async def cmd_fetch_wi(
     except KeyboardInterrupt:
         debug("CTRL+C pressed, stopping...")
         pbar_pages.close()
-        await replay_idQ.finish(empty=True, all=True)
-
+        await replay_idQ.finish_producer(all=True)
+        async for _ in replay_idQ:
+            pass  # empty replay_idQ
     except Exception as err:
         error(f"{err}")
     finally:
         pbar_errors.close()
         pbar_replays.close()
         if accountQ is not None:
-            await accountQ.finish()
+            await accountQ.finish_producer()
         await wi.close()
     return stats
 
@@ -1324,13 +1393,15 @@ async def fetch_wi_get_replay_ids(
                 error(f"{err}")
     except KeyboardInterrupt:
         debug("CTRL+C pressed, stopping...")
-        await replay_idQ.finish(empty=True, all=True)
+        await replay_idQ.finish_producer(all=True)
+        async for _ in replay_idQ:
+            pass  # empty replay_idQ
     except CancelledError:
         message(f"{old_replays} found. Stopping spidering for more")
     except Exception as err:
         error(f"{err}")
     finally:
-        await replay_idQ.finish()
+        await replay_idQ.finish_producer()
         pbar.close()
     return stats
 
@@ -1402,7 +1473,9 @@ async def cmd_import(db: Backend, args: Namespace) -> bool:
 
         message("Counting accounts to import ...")
         N: int = await db.accounts_count(
-            regions=regions, inactive=OptAccountsInactive.both, sample=args.sample
+            regions=regions,
+            # inactive=OptAccountsInactive.both,
+            sample=args.sample,
         )
 
         with alive_bar(N, title="Importing accounts ", enrich_print=False) as bar:
@@ -1435,45 +1508,48 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
         # query_args : Dict[str, str | int | float | bool ] = dict()
         stats: EventCounter = EventCounter("accounts export")
         # disabled: bool = args.disabled
-        inactive: OptAccountsInactive = OptAccountsInactive.default()
+        # inactive: OptAccountsInactive = OptAccountsInactive.default()
         regions: set[Region] = {Region(r) for r in args.regions}
-        distributed: OptAccountsDistributed
+        distributed: OptDistributed
         filename: str = args.filename
         force: bool = args.force
         export_stdout: bool = filename == "-"
         # sample: float = args.sample
-        accountQs: Dict[str, IterableQueue[BSAccount]] = dict()
-        account_workers: List[Task] = list()
+        accountQ: IterableQueue[BSAccount] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
+        # accountQs: Dict[str, IterableQueue[BSAccount]] = dict()
+        regionQs: Dict[Region, IterableQueue[BSAccount]] = dict()
+
+        account_worker: Task
         export_workers: List[Task] = list()
+        monitors: List[Task] = list()
+        bar: tqdm
+        bars: list[tqdm] = list()
+        position: int = 0
 
         accounts_args: Dict[str, Any] | None
         if (accounts_args := await accounts_parse_args(db, args)) is None:
             raise ValueError(f"could not parse args: {args}")
 
-        try:
-            inactive = OptAccountsInactive(args.inactive)
-            if (
-                inactive == OptAccountsInactive.auto
-            ):  # auto mode requires specication of stats type
-                inactive = OptAccountsInactive.no
-        except ValueError:
-            assert False, f"Incorrect value for argument 'inactive': {args.inactive}"
+        # try:
+        #     inactive = OptAccountsInactive(args.inactive)
+        #     if (
+        #         inactive == OptAccountsInactive.auto
+        #     ):  # auto mode requires specication of stats type
+        #         inactive = OptAccountsInactive.no
+        # except ValueError:
+        #     assert False, f"Incorrect value for argument 'inactive': {args.inactive}"
 
         total: int = await db.accounts_count(**accounts_args)
+        await accountQ.add_producer()
+        account_worker = create_task(db.accounts_get_worker(accountQ, **accounts_args))
 
         if "dist" in accounts_args:
             distributed = accounts_args["dist"]
             i: int = distributed.mod
-            Qid: str = str(i)
-            accountQs[Qid] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
-            await accountQs[Qid].add_producer()
-            account_workers.append(
-                create_task(db.accounts_get_worker(accountQs[Qid], **accounts_args))
-            )
             export_workers.append(
                 create_task(
                     export(
-                        iterable=accountQs[Qid],
+                        iterable=accountQ,
                         format=args.format,
                         filename=f"{filename}.{i}",
                         force=force,
@@ -1481,25 +1557,48 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
                     )
                 )
             )
+            if not export_stdout:
+                bar = tqdm(
+                    total=total, desc=f"Exporting {i}/{distributed.div}", **tqdm_opts
+                )
+                monitors.append(
+                    create_task(
+                        tqdm_monitorQ(
+                            accountQ,
+                            bar=bar,
+                            close=False,
+                        )
+                    )
+                )
+                bars.append(bar)
         elif args.by_region:
-            accountQs["all"] = IterableQueue(maxsize=ACCOUNTS_Q_MAX, count_items=False)
-
-            # fetch accounts for all the regios
-            await accountQs["all"].add_producer()
-            account_workers.append(
-                create_task(db.accounts_get_worker(accountQs["all"], **accounts_args))
-            )
-            # by region
             for region in regions:
-                accountQs[region.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
-
-                await accountQs[region.name].add_producer()
+                regionQs[region] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
+                if not export_stdout:
+                    bar = tqdm(
+                        total=total,
+                        desc=f"Exporting {region}",
+                        position=position,
+                        **tqdm_opts,
+                    )
+                    position += 1
+                    monitors.append(
+                        create_task(
+                            tqdm_monitorQ(
+                                regionQs[region],
+                                bar=bar,
+                                close=False,
+                            )
+                        )
+                    )
+                    bars.append(bar)
+                await regionQs[region].add_producer()
                 export_workers.append(
                     create_task(
                         export(
-                            iterable=accountQs[region.name],
+                            iterable=regionQs[region],
                             format=args.format,
-                            filename=f"{filename}.{region.name}",
+                            filename=f"{filename}.{region}",
                             force=force,
                             append=args.append,
                         )
@@ -1507,21 +1606,28 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
                 )
             # split by region
             export_workers.append(
-                create_task(split_accountQ(inQ=accountQs["all"], regionQs=accountQs))
+                create_task(split_accountQ(inQ=accountQ, regionQs=regionQs))
             )
         else:
-            accountQs["all"] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
-            await accountQs["all"].add_producer()
-            account_workers.append(
-                create_task(db.accounts_get_worker(accountQs["all"], **accounts_args))
-            )
-
+            # export all accounts to one file
             if filename != "-":
                 filename += ".all"
+            if not export_stdout:
+                bar = tqdm(total=total, desc="Exporting accounts", **tqdm_opts)
+                monitors.append(
+                    create_task(
+                        tqdm_monitorQ(
+                            accountQ,
+                            bar=bar,
+                            close=False,
+                        )
+                    )
+                )
+                bars.append(bar)
             export_workers.append(
                 create_task(
                     export(
-                        iterable=accountQs["all"],
+                        iterable=accountQ,
                         format=args.format,
                         filename=filename,
                         force=force,
@@ -1530,22 +1636,18 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
                 )
             )
 
-        monitors: list[Task] = list()
-        bar: tqdm | None = None
+        await wait([account_worker])
+
         if not export_stdout:
-            bar = tqdm(total=total, desc="Exporting accounts")
-            for Q in accountQs.values():
-                monitors.append(create_task(tqdm_monitorQ(Q, bar=bar, close=False)))
+            await gather(*monitors)
+            for bar in bars:
+                bar.close()
 
-        await wait(account_workers)
+        # for queue in accountQs.values():
+        #     await queue.finish_producer()
+        #     await queue.join()
 
-        for queue in accountQs.values():
-            await queue.finish()
-            await queue.join()
-        if bar is not None:
-            bar.close()
-
-        await stats.gather_stats(account_workers)
+        # await stats.gather_stats(account_workers)
         await stats.gather_stats(export_workers, cancel=False)
 
         if not export_stdout:
@@ -1590,18 +1692,18 @@ async def count_accounts(
                 accounts_N = int(args.sample)
             else:
                 message("Counting accounts to fetch stats...")
-                inactive: OptAccountsInactive = OptAccountsInactive.default()
-                try:
-                    inactive = OptAccountsInactive(args.inactive)
-                except ValueError:
-                    assert False, (
-                        f"Incorrect value for argument 'inactive': {args.inactive}"
-                    )
+                # inactive: OptAccountsInactive = OptAccountsInactive.default()
+                # try:
+                #     inactive = OptAccountsInactive(args.inactive)
+                # except ValueError:
+                #     assert False, (
+                #         f"Incorrect value for argument 'inactive': {args.inactive}"
+                #     )
 
                 accounts_N = await db.accounts_count(
                     stats_type=stats_type,
                     regions=regions,
-                    inactive=inactive,
+                    # inactive=inactive,
                     sample=args.sample,
                     cache_valid=args.cache_valid,
                 )
@@ -1614,7 +1716,7 @@ async def count_accounts(
 #
 # create_accountQ()
 #
-###########################################
+########################################
 
 
 async def create_accountQ(
@@ -1678,7 +1780,7 @@ async def create_accountQ(
     except Exception as err:
         error(f"{err}")
     finally:
-        await accountQ.finish()
+        await accountQ.finish_producer()
     debug("finished")
     return stats
 
@@ -1744,6 +1846,9 @@ async def create_accountQ_batch(
                     try:
                         await accountQ.put(accounts)
                         stats.log("read", len(accounts))
+                    except QueueDone:
+                        debug("accountQ is finished")
+                        break
                     except Exception as err:
                         error(f"Could not add accounts to queue: {err}")
                         stats.log("errors")
@@ -1754,7 +1859,7 @@ async def create_accountQ_batch(
     except Exception as err:
         error(f"{err}")
     finally:
-        await accountQ.finish()
+        await accountQ.finish_producer()
 
     return stats
 
@@ -1797,7 +1902,7 @@ async def create_accountQ_active(
 
 
 async def split_accountQ(
-    inQ: IterableQueue[BSAccount], regionQs: Dict[str, IterableQueue[BSAccount]]
+    inQ: IterableQueue[BSAccount], regionQs: Dict[Region, IterableQueue[BSAccount]]
 ) -> EventCounter:
     """split accountQ by region"""
     debug("starting")
@@ -1812,9 +1917,9 @@ async def split_accountQ(
                     raise ValueError(
                         f"account ({account.id}) does not have region defined"
                     )
-                if account.region.name in regionQs.keys():
-                    await regionQs[account.region.name].put(account)
-                    stats.log(account.region.name)
+                if account.region in regionQs.keys():
+                    await regionQs[account.region].put(account)
+                    stats.log(account.region)
                 else:
                     stats.log(f"excluded region: {account.region}")
             except CancelledError:
@@ -1832,19 +1937,19 @@ async def split_accountQ(
     except Exception as err:
         error(f"{err}")
     for Q in regionQs.values():
-        await Q.finish()
+        await Q.finish_producer()
     return stats
 
 
 async def split_accountQ_batch(
     inQ: IterableQueue[BSAccount],
-    regionQs: Dict[str, IterableQueue[List[BSAccount]]],
+    regionQs: Dict[Region, IterableQueue[List[BSAccount]]],
     batch: int = 100,
 ) -> EventCounter:
     """Make accountQ batches by region"""
     stats: EventCounter = EventCounter("batch maker")
-    batches: Dict[str, List[BSAccount]] = dict()
-    region: str
+    batches: Dict[Region, List[BSAccount]] = dict()
+    region: Region
     try:
         for region, Q in regionQs.items():
             batches[region] = list()
@@ -1880,7 +1985,7 @@ async def split_accountQ_batch(
     except Exception as err:
         error(f"{err}")
     for Q in regionQs.values():
-        await Q.finish()
+        await Q.finish_producer()
     return stats
 
 
@@ -1932,10 +2037,10 @@ async def accounts_parse_args(
         except Exception:
             debug("could not read --accounts")
 
-        try:
-            res["inactive"] = OptAccountsInactive(args.inactive)
-        except Exception:
-            debug("could not read --inactive")
+        # try:
+        #     res["inactive"] = OptAccountsInactive(args.inactive)
+        # except Exception:
+        #     debug("could not read --inactive")
 
         try:
             res["disabled"] = args.disabled
@@ -1953,7 +2058,7 @@ async def accounts_parse_args(
             debug("could not read --cache-valid")
 
         try:
-            if (dist := OptAccountsDistributed.parse(args.distributed)) is not None:
+            if (dist := OptDistributed.parse(args.distributed)) is not None:
                 res["dist"] = dist
         except Exception:
             debug("could not read --distributed")
@@ -1961,29 +2066,32 @@ async def accounts_parse_args(
         days: int
         today: datetime = datetime.utcnow()
         start: datetime
-        try:
-            if (rel := await db.release_get(args.inactive_since)) is not None:
-                if (prev := await db.release_get_previous(rel)) is not None:
-                    res["inactive_since"] = prev.cut_off
-            else:
-                days = int(args.inactive_since)
-                start = today - timedelta(days=days)
-                res["inactive_since"] = int(start.timestamp())
-        except Exception as err:
-            debug(f"could not read --inactive-since: {err}")
 
-        try:
-            if (rel := await db.release_get(args.active_since)) is not None:
-                # debug(f'active_since={rel}')
-                if (prev := await db.release_get_previous(rel)) is not None:
-                    # debug(f'active_since: prev={prev}')
-                    res["active_since"] = prev.cut_off
-            else:
-                days = int(args.active_since)
-                start = today - timedelta(days=days)
-                res["active_since"] = int(start.timestamp())
-        except Exception as err:
-            debug(f"could not read --active-since: {err}")
+        if args.inactive_since is not None:
+            try:
+                if (rel := await db.release_get(args.inactive_since)) is not None:
+                    if (prev := await db.release_get_previous(rel)) is not None:
+                        res["inactive_since"] = prev.cut_off
+                else:
+                    days = int(args.inactive_since)
+                    start = today - timedelta(days=days)
+                    res["inactive_since"] = int(start.timestamp())
+            except Exception as err:
+                debug(f"could not read --inactive-since: {err}")
+
+        if args.active_since is not None:
+            try:
+                if (rel := await db.release_get(args.active_since)) is not None:
+                    # debug(f'active_since={rel}')
+                    if (prev := await db.release_get_previous(rel)) is not None:
+                        # debug(f'active_since: prev={prev}')
+                        res["active_since"] = prev.cut_off
+                else:
+                    days = int(args.active_since)
+                    start = today - timedelta(days=days)
+                    res["active_since"] = int(start.timestamp())
+            except Exception as err:
+                debug(f"could not read --active-since: {err}")
 
         return res
     except Exception as err:

@@ -425,7 +425,7 @@ async def cmd_export(db: Backend, args: Namespace) -> bool:
         ):
             debug(f"adding release {release.release} to the export queue")
             await releaseQ.put(release)
-        await releaseQ.finish()
+        await releaseQ.finish_producer()
         await releaseQ.join()
         await wait([export_worker])
 

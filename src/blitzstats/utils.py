@@ -2,9 +2,16 @@ from tqdm import tqdm
 from asyncio import sleep
 from queutils import IterableQueue
 import logging
+from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 error = logger.error
+
+tqdm_opts: Dict[str, Any] = {
+    "bar_format": "{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed} ETA {remaining} {rate_fmt}]",
+    "unit": "",
+    "leave": True,
+}
 
 
 async def tqdm_monitorQ(

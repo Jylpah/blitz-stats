@@ -58,8 +58,8 @@ from blitzmodels import (
 
 from .backend import (
     Backend,
-    OptAccountsDistributed,
-    OptAccountsInactive,
+    OptDistributed,
+    # OptAccountsInactive,
     BSTableType,
     EventLog,
     A,
@@ -402,9 +402,11 @@ class MongoBackend(Backend):
     def backend(self: "MongoBackend") -> str:
         host: str = "UNKNOWN"
         try:
-            if (server := self._client.address()) is not None:
-                host, port = server
-                return f"{self.driver}://{host}:{port}/{self.database}"
+            if (server := self._client.address) is not None:
+                # TODO: Refactor after moving away from Motor
+                # AsyncIOMotorClient.address is a @property, not method
+                host, port = server  # type: ignore
+                return f"{self.driver}://{host}:{port}/{self.database}"  # type: ignore
         except Exception as err:
             debug(f"Error determing host: {err}")
         return f"{self.driver}://{host}/{self.database}"
@@ -932,8 +934,8 @@ class MongoBackend(Backend):
         regions: set[Region] = Region.API_regions(),
         accounts: Sequence[BSAccount] | None = None,
         id_range: range | None = None,
-        inactive: OptAccountsInactive = OptAccountsInactive.auto,
-        dist: OptAccountsDistributed | None = None,
+        # inactive: OptAccountsInactive = OptAccountsInactive.auto,
+        dist: OptDistributed | None = None,
         disabled: bool | None = False,
         active_since: int = 0,
         inactive_since: int = 0,
@@ -967,27 +969,30 @@ class MongoBackend(Backend):
                         }
                     }
                 )
-            if disabled is not None:
-                match.append({alias("disabled"): disabled})
-            if inactive == OptAccountsInactive.yes:
-                match.append({alias("inactive"): True})
-            elif inactive == OptAccountsInactive.no:
-                match.append({alias("inactive"): False})
 
-            match.append({alias("region"): {"$in": [r.value for r in regions]}})
+            # if inactive == OptAccountsInactive.yes:
+            #     match.append({alias("inactive"): True})
+            # elif inactive == OptAccountsInactive.no:
+            #     match.append({alias("inactive"): False})
+
             # match.append({ alias('id') : {  '$lt' : WG_ACCOUNT_ID_MAX}})  # exclude Chinese account ids
 
             if id_range is not None:
                 match.append({alias("id"): {"$gte": id_range.start}})
                 match.append({alias("id"): {"$lte": id_range.stop}})
 
+            if dist is not None:
+                match.append({alias("id"): {"$mod": [dist.div, dist.mod]}})
+
+            match.append({alias("region"): {"$in": [r.value for r in regions]}})
+
             if active_since > 0:
                 match.append({alias("last_battle_time"): {"$gte": active_since}})
             if inactive_since > 0:
                 match.append({alias("last_battle_time"): {"$lt": inactive_since}})
 
-            if dist is not None:
-                match.append({alias("id"): {"$mod": [dist.div, dist.mod]}})
+            if disabled is not None:
+                match.append({alias("disabled"): disabled})
 
             if cache_valid > 0:
                 if update_field is not None:
@@ -1000,16 +1005,28 @@ class MongoBackend(Backend):
                         }
                     )
                 else:
-                    error("--cache-valid requires stat_type")
+                    error("--cache-valid > 0 requires stat_type")
 
             if len(match) > 0:
                 pipeline.append({"$match": {"$and": match}})
 
-            if sample >= 1:
-                pipeline.append({"$sample": {"size": int(sample)}})
-            elif sample > 0:
+            # https://www.mongodb.com/docs/manual/reference/operator/aggregation/sample/
+            # $sample has to be the first stage in the pipeline, BUT this does not work with $match
+
+            if sample > 0:
                 n: int = cast(int, await dbc.estimated_document_count())
-                pipeline.append({"$sample": {"size": int(n * sample)}})
+                if sample < 1:
+                    sample = n * sample
+                # sample_rate: float = sample
+                # if sample > 1:
+                #     sample_rate = 0.001
+                # #     n: int = cast(int, await dbc.estimated_document_count())
+                # #     sample_rate = sample / n
+                # # match.append({"$sampleRate": min(0.5, max(0.1, sample_rate))})
+                pipeline.append({"$sample": {"size": int(sample)}})
+
+            # if sample > 1:
+            #     pipeline.append({"$limit": int(sample)})
 
             return pipeline
         except Exception as err:
@@ -1033,11 +1050,11 @@ class MongoBackend(Backend):
         stats_type: StatsTypes | None = None,
         regions: set[Region] = Region.API_regions(),
         accounts: Sequence[BSAccount] | None = None,
-        inactive: OptAccountsInactive = OptAccountsInactive.default(),
+        # inactive: OptAccountsInactive = OptAccountsInactive.default(),
         disabled: bool | None = False,
         active_since: int = 0,
         inactive_since: int = 0,
-        dist: OptAccountsDistributed | None = None,
+        dist: OptDistributed | None = None,
         sample: float = 0,
         cache_valid: float = 0,
     ) -> AsyncGenerator[BSAccount, None]:
@@ -1050,7 +1067,7 @@ class MongoBackend(Backend):
                 stats_type=stats_type,
                 regions=regions,
                 accounts=accounts,
-                inactive=inactive,
+                # inactive=inactive,
                 disabled=disabled,
                 active_since=active_since,
                 inactive_since=inactive_since,
@@ -1072,14 +1089,13 @@ class MongoBackend(Backend):
                 try:
                     if (player := BSAccount.transform(data)) is None:
                         continue
-                    # if not force and not disabled and inactive is None and player.inactive:
-                    if (
-                        not disabled
-                        and inactive == OptAccountsInactive.auto
-                        and stats_type is not None
-                    ):
-                        if not player.update_needed(stats_type):
-                            continue
+                        # if (
+                        #     not disabled
+                        #     # and inactive == OptAccountsInactive.auto
+                        #     and stats_type is not None
+                        # ):
+                        #     if not player.update_needed(stats_type):
+                        #         continue
                     yield player
                 except Exception as err:
                     error(f"{err}")
@@ -1093,11 +1109,11 @@ class MongoBackend(Backend):
         stats_type: StatsTypes | None = None,
         regions: set[Region] = Region.API_regions(),
         accounts: Sequence[BSAccount] | None = None,
-        inactive: OptAccountsInactive = OptAccountsInactive.default(),
+        # inactive: OptAccountsInactive = OptAccountsInactive.default(),
         disabled: bool | None = False,
         active_since: int = 0,
         inactive_since: int = 0,
-        dist: OptAccountsDistributed | None = None,
+        dist: OptDistributed | None = None,
         sample: float = 0,
         cache_valid: float = 0,
     ) -> int:
@@ -1113,7 +1129,7 @@ class MongoBackend(Backend):
             elif (
                 stats_type is None
                 and regions == Region.API_regions()
-                and inactive == OptAccountsInactive.both
+                # and inactive == OptAccountsInactive.both
                 and disabled is None
                 and active_since == 0
                 and inactive_since == 0
@@ -1124,7 +1140,7 @@ class MongoBackend(Backend):
                 pipeline = await self._mk_pipeline_accounts(
                     stats_type=stats_type,
                     regions=regions,
-                    inactive=inactive,
+                    # inactive=inactive,
                     disabled=disabled,
                     active_since=active_since,
                     inactive_since=inactive_since,
@@ -1180,7 +1196,7 @@ class MongoBackend(Backend):
                     pipeline := await self._mk_pipeline_accounts(
                         regions={region},
                         id_range=region.id_range,
-                        inactive=OptAccountsInactive.both,
+                        # inactive=OptAccountsInactive.both,
                         disabled=None,
                     )
                 ) is None:
@@ -1908,8 +1924,9 @@ class MongoBackend(Backend):
             # Pipeline build based on ESR rule
             # https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
 
-            match.append({alias("region"): {"$in": [r.value for r in regions]}})
-            if releases is not None:
+            if len(regions) > 0:
+                match.append({alias("region"): {"$in": [r.value for r in regions]}})
+            if releases is not None and len(releases) > 0:
                 match.append({alias("release"): {"$in": [r.release for r in releases]}})
             if accounts is not None:
                 match.append({alias("account_id"): {"$in": [a.id for a in accounts]}})
@@ -1922,11 +1939,11 @@ class MongoBackend(Backend):
 
             pipeline.append({"$match": {"$and": match}})
 
-            if sample >= 1:
+            if sample > 0:
+                if sample < 1:
+                    sample = await dbc.estimated_document_count() * sample
+
                 pipeline.append({"$sample": {"size": int(sample)}})
-            elif sample > 0:
-                n: int = cast(int, await dbc.estimated_document_count())
-                pipeline.append({"$sample": {"size": int(n * sample)}})
 
             # message(f'pipeline={pipeline}')
             return pipeline
@@ -2058,7 +2075,7 @@ class MongoBackend(Backend):
 
     async def tank_stats_count(
         self,
-        release: BSBlitzRelease | None = None,
+        releases: set[BSBlitzRelease] = set(),
         regions: set[Region] = Region.API_regions(),
         accounts: Sequence[BSAccount] | None = None,
         tanks: Sequence[BSTank] | None = None,
@@ -2070,7 +2087,7 @@ class MongoBackend(Backend):
             debug("starting")
             dbc: AsyncIOMotorCollection = self.collection_tank_stats
 
-            if release is None and regions == Region.API_regions():
+            if len(releases) == 0 and regions == Region.API_regions():
                 total: int = cast(int, await dbc.estimated_document_count())
                 if sample == 0:
                     return total
@@ -2081,7 +2098,7 @@ class MongoBackend(Backend):
             else:
                 pipeline: List[Dict[str, Any]] | None
                 pipeline = await self._mk_pipeline_tank_stats(
-                    releases={release} if release is not None else set(),
+                    releases=releases,
                     regions=regions,
                     tanks=tanks,
                     accounts=accounts,

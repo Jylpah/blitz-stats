@@ -1,7 +1,7 @@
 import logging
 from enum import StrEnum
-from typing import Optional, Any, Dict, List, ClassVar, Self
-from pydantic import field_validator, model_validator, Field, Extra
+from typing import Optional, Any, Dict, List, ClassVar
+from pydantic import field_validator, Field
 
 from pyutils.utils import epoch_now
 from pydantic_exportables import (
@@ -69,26 +69,26 @@ class BSAccount(Account):
         indexes: List[List[BackendIndex]] = list()
         indexes.append(
             [
-                ("disabled", ASCENDING),
-                ("inactive", ASCENDING),
+                # ("inactive", ASCENDING),
                 ("region", ASCENDING),
+                # ("disabled", ASCENDING),
                 ("last_battle_time", DESCENDING),
             ]
         )
-        indexes.append(
-            [
-                ("disabled", ASCENDING),
-                ("region", ASCENDING),
-                ("last_battle_time", DESCENDING),
-            ]
-        )
-        indexes.append(
-            [
-                ("disabled", ASCENDING),
-                ("region", ASCENDING),
-                ("id", ASCENDING),
-            ]
-        )
+        # indexes.append(
+        #     [
+        #         # ("disabled", ASCENDING),
+        #         ("region", ASCENDING),
+        #         ("last_battle_time", DESCENDING),
+        #     ]
+        # )
+        # indexes.append(
+        #     [
+        #         ("disabled", ASCENDING),
+        #         ("region", ASCENDING),
+        #         ("id", ASCENDING),
+        #     ]
+        # )
         indexes.append([("nickname", TEXT)])
         # indexes.append([ 	('disabled', ASCENDING),
         # 					('inactive', ASCENDING),
@@ -135,21 +135,21 @@ class BSAccount(Account):
         else:
             ValueError("time field must be >= 0")
 
-    @model_validator(mode="after")
-    def set_inactive(self) -> Self:
-        """ "
-        Set 'inactive' field based in players inactivity.
-        If 'last_battle_time' == 0, set the player ACTIVE since to avoid
-        inactivating players when creating player objects with default field values
-        """
-        if self.last_battle_time > 0:
-            self._set_skip_validation(
-                "inactive",
-                epoch_now() - self.last_battle_time > self._min_inactivity_secs,
-            )
-        else:
-            self._set_skip_validation("inactive", False)
-        return self
+    # @model_validator(mode="after")
+    # def set_inactive(self) -> Self:
+    #     """ "
+    #     Set 'inactive' field based in players inactivity.
+    #     If 'last_battle_time' == 0, set the player ACTIVE since to avoid
+    #     inactivating players when creating player objects with default field values
+    #     """
+    #     if self.last_battle_time > 0:
+    #         self._set_skip_validation(
+    #             "inactive",
+    #             epoch_now() - self.last_battle_time > self._min_inactivity_secs,
+    #         )
+    #     else:
+    #         self._set_skip_validation("inactive", False)
+    #     return self
 
     def stats_updated(self, stats: StatsTypes) -> None:
         assert type(stats) is StatsTypes, "'stats' need to be type(StatsTypes)"
@@ -389,7 +389,7 @@ class BSTank(JSONExportable, CSVExportable, TXTExportable):
         validate_assignment = True
         populate_by_name = True
         # use_enum_values			= True
-        extra = Extra.allow
+        extra = "allow"
 
     @property
     def index(self) -> Idx:
