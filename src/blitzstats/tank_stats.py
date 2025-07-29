@@ -66,7 +66,7 @@ from .arrow import (
     EXPORT_DATA_FORMATS,
     DEFAULT_EXPORT_DATA_FORMAT,
 )
-from .utils import tqdm_monitorQ
+from .utils import tqdm_monitorQ, tqdm_opts
 
 logger = logging.getLogger(__name__)
 error = logger.error
@@ -525,7 +525,7 @@ def add_args_export(
             type=str,
             nargs="?",
             default=EXPORT_FILE,
-            help="file to export tank-stats to. Use '-' for STDIN",
+            help="File to export tank-stats to. Use '-' for STDIN",
         )
         parser.add_argument(
             "--basedir",
@@ -533,7 +533,7 @@ def add_args_export(
             type=str,
             nargs="?",
             default=".",
-            help="base dir to export data",
+            help="Base dir to export data",
         )
         parser.add_argument(
             "--append", action="store_true", default=False, help="Append to file(s)"
@@ -542,7 +542,7 @@ def add_args_export(
             "--force",
             action="store_true",
             default=False,
-            help="overwrite existing file(s) when exporting",
+            help="Overwrite existing file(s) when exporting",
         )
         # parser.add_argument('--disabled', action='store_true', default=False, help='Disabled accounts')
         # parser.add_argument('--inactive', type=str, choices=[ o.value for o in OptAccountsInactive ],
@@ -554,7 +554,7 @@ def add_args_export(
             nargs="*",
             choices=[r.value for r in Region.API_regions()],
             default=[r.value for r in Region.API_regions()],
-            help="filter by region (default is API = eu + com + asia)",
+            help="Filter by region (default is API = eu + com + asia)",
         )
         parser.add_argument(
             "--by-region",
@@ -568,7 +568,7 @@ def add_args_export(
             default=[],
             nargs="*",
             metavar="ACCOUNT_ID [ACCOUNT_ID1 ...]",
-            help="exports tank stats for the listed ACCOUNT_ID(s). \
+            help="Exports tank stats for the listed ACCOUNT_ID(s). \
 									ACCOUNT_ID format 'account_id:region' or 'account_id'",
         )
         parser.add_argument(
@@ -577,7 +577,7 @@ def add_args_export(
             default=[],
             nargs="*",
             metavar="TANK_ID [TANK_ID1 ...]",
-            help="export tank stats for the listed TANK_ID(s)",
+            help="Export tank stats for the listed TANK_ID(s)",
         )
         # parser.add_argument(
         #     "--release",
@@ -598,7 +598,7 @@ def add_args_export(
             "--sample",
             type=float,
             default=0,
-            help="sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number",
+            help="Sample size. 0 < SAMPLE < 1 : %% of stats, 1<=SAMPLE : Absolute number",
         )
         return True
     except Exception as err:
@@ -623,14 +623,14 @@ def add_args_export_data(
             "EXPORT_TYPE",
             type=str,
             choices=["update", "career"],
-            help="export latest stats or stats for the update",
+            help="Export latest stats or stats for the update",
         )
         parser.add_argument("RELEASE", type=str, help="export stats for a RELEASE")
         parser.add_argument(
             "--after",
             action="store_true",
             default=False,
-            help="exports stats at the end of release (default=False)",
+            help="Exports stats at the end of release (default=False)",
         )
         parser.add_argument(
             "--format",
@@ -638,7 +638,7 @@ def add_args_export_data(
             nargs="?",
             choices=EXPORT_DATA_FORMATS,
             default=EXPORT_FORMAT,
-            help="export file format",
+            help="Export file format",
         )
         # parser.add_argument('--filename', metavar='FILE', type=str, nargs='?', default=None,
         # 					help='file to export tank-stats to')
@@ -649,7 +649,7 @@ def add_args_export_data(
             type=str,
             nargs="?",
             default=EXPORT_DIR,
-            help=f"directory to export data (default: {EXPORT_DIR})",
+            help=f"Directory to export data (default: {EXPORT_DIR})",
         )
         parser.add_argument(
             "--regions",
@@ -658,19 +658,19 @@ def add_args_export_data(
             nargs="*",
             choices=[r.value for r in Region.API_regions()],
             default=[r.value for r in Region.API_regions()],
-            help="filter by region (default: " + " + ".join(Region.API_regions()) + ")",
+            help="Filter by region (default: " + " + ".join(Region.API_regions()) + ")",
         )
         parser.add_argument(
             "--workers",
             type=int,
             default=0,
-            help="set number of worker processes (default=0 i.e. auto)",
+            help="Set number of worker processes (default=0 i.e. auto)",
         )
         parser.add_argument(
             "--force",
             action="store_true",
             default=False,
-            help="overwrite existing file(s) when exporting",
+            help="Overwrite existing file(s) when exporting",
         )
 
         return True
@@ -1638,9 +1638,14 @@ async def cmd_export_text(db: Backend, args: Namespace) -> bool:
         if len(args.releases) > 0:
             releases = await get_releases(db, args.releases)
 
-        tank_statQs: Dict[str, IterableQueue[TankStat]] = dict()
+        tank_statQ: IterableQueue[TankStat] = IterableQueue(maxsize=TANK_STATS_Q_MAX)
+        regionQs: Dict[Region, IterableQueue[TankStat]] = dict()
         backend_worker: Task
         export_workers: List[Task] = list()
+
+        monitors: list[Task] = list()
+        bars: List[tqdm] = list()
+        position: int = 0
 
         total: int = await db.tank_stats_count(
             regions=regions,
@@ -1650,13 +1655,13 @@ async def cmd_export_text(db: Backend, args: Namespace) -> bool:
             releases=set(releases),
         )
 
-        tank_statQs["all"] = IterableQueue(
-            maxsize=ACCOUNTS_Q_MAX, count_items=not args.by_region
-        )
+        # regionQs["all"] = IterableQueue(
+        #     maxsize=ACCOUNTS_Q_MAX, count_items=not args.by_region
+        # )
         # fetch tank_stats for all the regios
         backend_worker = create_task(
             db.tank_stats_get_worker(
-                tank_statQs["all"],
+                tank_statQ,
                 regions=regions,
                 sample=sample,
                 accounts=accounts,
@@ -1666,33 +1671,56 @@ async def cmd_export_text(db: Backend, args: Namespace) -> bool:
         )
         if args.by_region:
             for region in regions:
-                tank_statQs[region.name] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
+                regionQs[region] = IterableQueue(maxsize=ACCOUNTS_Q_MAX)
+                if not export_stdout:
+                    bar = tqdm(
+                        total=total,
+                        desc=f"Exporting tank stats: {region}",
+                        position=position,
+                        **tqdm_opts,
+                    )
+                    position += 1
+                    bars.append(bar)
+                    monitors.append(
+                        create_task(tqdm_monitorQ(regionQs[region], bar, close=False))
+                    )
                 export_workers.append(
                     create_task(
                         export(
-                            iterable=tank_statQs[region.name],
+                            iterable=regionQs[region],
                             format=args.format,
-                            filename=f"{filename}.{region.name}",
+                            filename=f"{filename}.{region}",
                             force=force,
                             append=args.append,
                         )
                     )
                 )
-            # split by region
+
+            # split tank stats by region
             export_workers.append(
                 create_task(
-                    split_tank_statQ_by_region(
-                        Q_all=tank_statQs["all"], regionQs=tank_statQs
-                    )
+                    split_tank_statQ_by_region(Q_all=tank_statQ, regionQs=regionQs)
                 )
             )
         else:
             if filename != "-":
                 filename += ".all"
+            if not export_stdout:
+                bar = tqdm(
+                    total=total,
+                    desc="Exporting tank stats",
+                    position=position,
+                    **tqdm_opts,
+                )
+                position += 1
+                bars.append(bar)
+                monitors.append(
+                    create_task(tqdm_monitorQ(tank_statQ, bar, close=False))
+                )
             export_workers.append(
                 create_task(
                     export(
-                        iterable=tank_statQs["all"],
+                        iterable=tank_statQ,
                         format=args.format,
                         filename=filename,
                         force=force,
@@ -1700,15 +1728,14 @@ async def cmd_export_text(db: Backend, args: Namespace) -> bool:
                     )
                 )
             )
-        monitors: list[Task] = list()
-        if not export_stdout:
-            bar: tqdm = tqdm(total=total, desc="Exporting tank_stats")
-            for Q in tank_statQs.values():
-                monitors.append(create_task(tqdm_monitorQ(Q, bar)))
 
         await wait([backend_worker])
-        for queue in tank_statQs.values():
+        for queue in regionQs.values():
             await queue.join()
+
+        if not export_stdout:
+            for bar in bars:
+                bar.close()
 
         await stats.gather_stats([backend_worker], cancel=False)
         await stats.gather_stats(export_workers, cancel=False)
@@ -2380,7 +2407,7 @@ async def map_releases_worker(
 
 async def split_tank_statQ_by_region(
     Q_all: IterableQueue[TankStat],
-    regionQs: Dict[str, IterableQueue[TankStat]],
+    regionQs: Dict[Region, IterableQueue[TankStat]],
     progress: bool = False,
     bar_title: str = "Splitting tank stats queue",
 ) -> EventCounter:
@@ -2413,11 +2440,11 @@ async def split_tank_statQ_by_region(
                         raise ValueError(
                             f"account ({tank_stat.id}) does not have region defined"
                         )
-                    if tank_stat.region.name in regionQs:
-                        await regionQs[tank_stat.region.name].put(tank_stat)
+                    if tank_stat.region in regionQs:
+                        await regionQs[tank_stat.region].put(tank_stat)
                         stats.log(tank_stat.region.name)
                     else:
-                        stats.log(f"excluded region: {tank_stat.region.name}")
+                        stats.log(f"excluded region: {tank_stat.region}")
                 except CancelledError:
                     raise CancelledError from None
                 except Exception as err:
