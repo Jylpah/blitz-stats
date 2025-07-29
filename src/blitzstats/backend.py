@@ -1115,7 +1115,7 @@ class Backend(ABC):
     @abstractmethod
     async def tank_stats_count(
         self,
-        release: BSBlitzRelease | None = None,
+        releases: set[BSBlitzRelease] = set(),
         regions: set[Region] = Region.API_regions(),
         accounts: Sequence[BSAccount] | None = None,
         tanks: Sequence[BSTank] | None = None,

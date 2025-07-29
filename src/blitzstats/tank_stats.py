@@ -327,12 +327,20 @@ def add_args_edit_common(
         default=[r.value for r in Region.API_regions()],
         help=f"Filter by region (default is API = {' + '.join([r.value for r in Region.API_regions()])})",
     )
+    # parser.add_argument(
+    #     "--release",
+    #     type=str,
+    #     metavar="RELEASE",
+    #     default=None,
+    #     help="Apply edits to a RELEASE",
+    # )
     parser.add_argument(
-        "--release",
+        "--releases",
         type=str,
-        metavar="RELEASE",
-        default=None,
-        help="Apply edits to a RELEASE",
+        nargs="*",
+        default=[],
+        metavar="RELEASE [RELEASE1 ...]",
+        help="Apply edits  for RELEASES",
     )
     parser.add_argument(
         "--since",
@@ -571,12 +579,20 @@ def add_args_export(
             metavar="TANK_ID [TANK_ID1 ...]",
             help="export tank stats for the listed TANK_ID(s)",
         )
+        # parser.add_argument(
+        #     "--release",
+        #     type=str,
+        #     metavar="RELEASE",
+        #     default=None,
+        #     help="export stats for a RELEASE",
+        # )
         parser.add_argument(
-            "--release",
+            "--releases",
             type=str,
-            metavar="RELEASE",
-            default=None,
-            help="export stats for a RELEASE",
+            nargs="*",
+            default=[],
+            metavar="RELEASE [RELEASE1 ...]",
+            help="Export stats for RELEASES",
         )
         parser.add_argument(
             "--sample",
@@ -1192,10 +1208,9 @@ async def fetch_backend_worker(
 async def cmd_edit(db: Backend, args: Namespace) -> bool:
     try:
         debug("starting")
-        release: BSBlitzRelease | None = None
-        if args.release is not None:
-            # release = BSBlitzRelease(release=args.release)
-            release = await db.release_get(release=args.release)
+        releases: list[BSBlitzRelease] = list()
+        if len(args.releases) > 0:
+            releases = await get_releases(db, args.releases)
         stats: EventCounter = EventCounter("tank-stats edit")
         regions: set[Region] = {Region(r) for r in args.regions}
         since: int = 0
@@ -1210,7 +1225,7 @@ async def cmd_edit(db: Backend, args: Namespace) -> bool:
 
         if args.tank_stats_edit_cmd == "remap-release":
             N: int = await db.tank_stats_count(
-                release=release,
+                releases=set(releases),
                 regions=regions,
                 accounts=accounts,
                 since=since,
@@ -1223,7 +1238,7 @@ async def cmd_edit(db: Backend, args: Namespace) -> bool:
             stats.merge_child(
                 await db.tank_stats_get_worker(
                     tank_statQ,
-                    release=release,
+                    releases=set(releases),
                     regions=regions,
                     accounts=accounts,
                     since=since,
@@ -1619,9 +1634,9 @@ async def cmd_export_text(db: Backend, args: Namespace) -> bool:
         sample: float = args.sample
         accounts: List[BSAccount] | None = read_args_accounts(args.accounts)
         tanks: List[BSTank] | None = read_args_tanks(args.tanks)
-        release: BSBlitzRelease | None = None
-        if args.release is not None:
-            release = (await get_releases(db, [args.release]))[0]
+        releases: list[BSBlitzRelease] = list()
+        if len(args.releases) > 0:
+            releases = await get_releases(db, args.releases)
 
         tank_statQs: Dict[str, IterableQueue[TankStat]] = dict()
         backend_worker: Task
@@ -1632,7 +1647,7 @@ async def cmd_export_text(db: Backend, args: Namespace) -> bool:
             sample=sample,
             accounts=accounts,
             tanks=tanks,
-            release=release,
+            releases=set(releases),
         )
 
         tank_statQs["all"] = IterableQueue(
@@ -1646,7 +1661,7 @@ async def cmd_export_text(db: Backend, args: Namespace) -> bool:
                 sample=sample,
                 accounts=accounts,
                 tanks=tanks,
-                release=release,
+                releases=set(releases),
             )
         )
         if args.by_region:

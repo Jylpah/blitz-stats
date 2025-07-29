@@ -1924,8 +1924,9 @@ class MongoBackend(Backend):
             # Pipeline build based on ESR rule
             # https://www.mongodb.com/docs/manual/tutorial/equality-sort-range-rule/#std-label-esr-indexing-rule
 
-            match.append({alias("region"): {"$in": [r.value for r in regions]}})
-            if releases is not None:
+            if len(regions) > 0:
+                match.append({alias("region"): {"$in": [r.value for r in regions]}})
+            if releases is not None and len(releases) > 0:
                 match.append({alias("release"): {"$in": [r.release for r in releases]}})
             if accounts is not None:
                 match.append({alias("account_id"): {"$in": [a.id for a in accounts]}})
@@ -1938,11 +1939,11 @@ class MongoBackend(Backend):
 
             pipeline.append({"$match": {"$and": match}})
 
-            if sample >= 1:
+            if sample > 0:
+                if sample < 1:
+                    sample = await dbc.estimated_document_count() * sample
+
                 pipeline.append({"$sample": {"size": int(sample)}})
-            elif sample > 0:
-                n: int = cast(int, await dbc.estimated_document_count())
-                pipeline.append({"$sample": {"size": int(n * sample)}})
 
             # message(f'pipeline={pipeline}')
             return pipeline
@@ -2074,7 +2075,7 @@ class MongoBackend(Backend):
 
     async def tank_stats_count(
         self,
-        release: BSBlitzRelease | None = None,
+        releases: set[BSBlitzRelease] = set(),
         regions: set[Region] = Region.API_regions(),
         accounts: Sequence[BSAccount] | None = None,
         tanks: Sequence[BSTank] | None = None,
@@ -2086,7 +2087,7 @@ class MongoBackend(Backend):
             debug("starting")
             dbc: AsyncIOMotorCollection = self.collection_tank_stats
 
-            if release is None and regions == Region.API_regions():
+            if len(releases) == 0 and regions == Region.API_regions():
                 total: int = cast(int, await dbc.estimated_document_count())
                 if sample == 0:
                     return total
@@ -2097,7 +2098,7 @@ class MongoBackend(Backend):
             else:
                 pipeline: List[Dict[str, Any]] | None
                 pipeline = await self._mk_pipeline_tank_stats(
-                    releases={release} if release is not None else set(),
+                    releases=releases,
                     regions=regions,
                     tanks=tanks,
                     accounts=accounts,
