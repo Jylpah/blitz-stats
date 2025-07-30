@@ -748,6 +748,15 @@ async def cmd_update(db: Backend, args: Namespace) -> bool:
 #
 ###########################################
 
+# TODO: use multiprocessing to speed this up
+#   - Pattern from tanks.cmd_fecthMP()
+#   - Separate async threads to count items and update totals
+#   - Each worker processes all the regions, identify region from the first account.region
+#   - Use args.dist to divide the work between multiprocessing workers
+#   - divide rate limit by number of workers
+#   - Current performance is ~500 accounts / second. There is room for upti 6000/sec
+#   - Use Yappi for profiling first
+
 
 async def cmd_update_wg(
     db: Backend, args: Namespace, updateQ: IterableQueue[BSAccount]
@@ -946,15 +955,15 @@ async def update_account_info_worker(
                     no_stats: set[int] = set(ids) - set(ids_stats)
                     if len(no_stats) > 0:
                         stats.log("no stats", len(no_stats))
-                    # for account_id in no_stats:
-                    #     try:
-                    #         a = accounts[account_id]
-                    #         a.disabled = True
-                    #         await updateQ.put(a)
-                    #         # error(f'disabled account: {a}')
-                    #         stats.log("disabled")
-                    #     except KeyError as err:
-                    #         error(f"account w/o stats: {account_id}: {err}")
+                        for account_id in no_stats:
+                            try:
+                                a = accounts[account_id]
+                                a.disabled = True
+                                await updateQ.put(a)
+                                # error(f'disabled account: {a}')
+                                stats.log("disabled")
+                            except KeyError as err:
+                                error(f"account w/o stats: {account_id}: {err}")
                 else:
                     stats.log("query errors")
 
