@@ -748,6 +748,15 @@ async def cmd_update(db: Backend, args: Namespace) -> bool:
 #
 ###########################################
 
+# TODO: use multiprocessing to speed this up
+#   - Pattern from tanks.cmd_fecthMP()
+#   - Separate async threads to count items and update totals
+#   - Each worker processes all the regions, identify region from the first account.region
+#   - Use args.dist to divide the work between multiprocessing workers
+#   - divide rate limit by number of workers
+#   - Current performance is ~500 accounts / second. There is room for upti 6000/sec
+#   - Use Yappi for profiling first
+
 
 async def cmd_update_wg(
     db: Backend, args: Namespace, updateQ: IterableQueue[BSAccount]
