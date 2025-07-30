@@ -954,16 +954,8 @@ async def update_account_info_worker(
                     # accounts w/o stats
                     no_stats: set[int] = set(ids) - set(ids_stats)
                     if len(no_stats) > 0:
+                        # accounts without stats will bve disabled when fetching tank stats
                         stats.log("no stats", len(no_stats))
-                        for account_id in no_stats:
-                            try:
-                                a = accounts[account_id]
-                                a.disabled = True
-                                await updateQ.put(a)
-                                # error(f'disabled account: {a}')
-                                stats.log("disabled")
-                            except KeyError as err:
-                                error(f"account w/o stats: {account_id}: {err}")
                 else:
                     stats.log("query errors")
 
