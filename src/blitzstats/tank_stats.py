@@ -203,7 +203,7 @@ def add_args_fetch(
         parser.add_argument(
             "--cache-valid",
             type=float,
-            default=1,
+            default=7,
             metavar="DAYS",
             help="Fetch stats only for accounts with stats older than DAYS",
         )
