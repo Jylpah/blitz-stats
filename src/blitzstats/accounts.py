@@ -337,6 +337,15 @@ def add_args_fetch_wg(
                     0 starts from the region(s) first ID",
         )
         parser.add_argument(
+            "--end-id",
+            dest="wg_end_id",
+            metavar="ACCOUNT_ID",
+            type=int,
+            default=0,
+            help="stop fetching account_ids at ACCOUNT_ID \
+                    default = 0 ends at the region(s) MAX_ID",
+        )
+        parser.add_argument(
             "--force",
             action="store_true",
             default=False,
@@ -1087,7 +1096,25 @@ async def cmd_fetch_wg(
 
         if start == -1 and not force and args.file is None:
             message("finding latest accounts by region")
-            latest = await db.accounts_latest(regions)
+            for region in regions:
+                max_id: int = region.id_range.stop + 1
+                if region == Region.asia:
+                    max_id = 3000000000
+                account: BSAccount | None = None
+                if (
+                    account := await db.account_highest_id(
+                        region, start_id=0, max_id=max_id
+                    )
+                ) is not None:
+                    latest[region] = account
+                    debug(
+                        f"highest account_id for {region} is {account.id} ({account.nickname})"
+                    )
+                else:
+                    raise ValueError(
+                        f"Could not find highest account_id for {region}, please use --start 0 or --force"
+                    )
+
         for region in regions:
             try:
                 idQs[region] = IterableQueue(maxsize=100)
