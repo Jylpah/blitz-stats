@@ -327,7 +327,7 @@ def add_args_fetch_wg(
             help="filter by region (default: " + " + ".join(Region.API_regions()) + ")",
         )
         parser.add_argument(
-            "--start",
+            "--start-id",
             dest="wg_start_id",
             metavar="ACCOUNT_ID",
             type=int,
