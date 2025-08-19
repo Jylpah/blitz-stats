@@ -873,6 +873,13 @@ class Backend(ABC):
         """Return the latest accounts (=highest account_id) per region"""
         raise NotImplementedError
 
+    @abstractmethod
+    async def account_highest_id(
+        self, region: Region, start_id: int = 0, max_id: int = 0
+    ) -> BSAccount | None:
+        """Return the highest account_id for the region"""
+        raise NotImplementedError
+
     # ----------------------------------------
     # Releases
     # ----------------------------------------

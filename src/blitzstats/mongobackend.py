@@ -1211,6 +1211,39 @@ class MongoBackend(Backend):
             error(f"{err}")
         return res
 
+    async def account_highest_id(
+        self, region: Region, start_id: int = 0, max_id: int = 0
+    ) -> BSAccount | None:
+        """Return the highest account_id for the region"""
+        debug("starting")
+        try:
+            model: type[JSONExportable] = self.model_accounts
+            dbc: AsyncIOMotorCollection = self.collection_accounts
+            a = AliasMapper(model)
+            alias: Callable = a.alias
+            pipeline: List[Dict[str, Any]] | None
+            if start_id == 0:
+                start_id = region.id_range.start
+            if max_id == 0:
+                max_id = region.id_range.stop
+
+            if (
+                pipeline := await self._mk_pipeline_accounts(
+                    regions={region},
+                    id_range=range(start_id, max_id),
+                    # inactive=OptAccountsInactive.both,
+                    disabled=None,
+                )
+            ) is None:
+                raise ValueError("could not create pipeline")
+            pipeline.append({"$sort": {alias("id"): DESCENDING}})
+            async for doc in dbc.aggregate(pipeline, allowDiskUse=True):
+                return BSAccount.from_obj(doc, model)
+
+        except Exception as err:
+            error(f"{err}")
+        return None
+
     ########################################################
     #
     # MongoBackend(): player_achievements
