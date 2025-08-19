@@ -314,7 +314,7 @@ def add_args_fetch_wg(
 ) -> bool:
     try:
         debug("starting")
-        NULL_RESPONSES: int = 20
+        NULL_RESPONSES: int = 2000
         if not add_args_wg(parser, config):
             return False
         parser.add_argument(
